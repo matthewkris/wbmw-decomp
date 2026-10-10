@@ -32,7 +32,8 @@ with reuse for other games in mind (see `docs/PROCESS.md`).
 3. **Differential fuzzing** (`--fuzz NAME COUNT`, shadow mode): from a real in-game state, call
    the routine directly with random data registers, condition codes, random seed and entity
    arrays (a4 a random entity), each call checked against the original. Routines that take
-   pointers need an input generator (`SetGfxSlots` has one: random valid slot lists). The
+   pointers need an input generator (`SetGfxSlots`: random valid slot lists; `UpdateAnim` and
+   `SetAnimNow`: any of the 774 animations, resumed at any item of its script). The
    self-test (`WBMW_PORT_BREAK`) shows both shadow runs and fuzzing catch a single flipped flag
    on every call.
 4. A path that cannot run in the harness is listed below as unverified, with the reason.
@@ -50,7 +51,7 @@ frame.
 
 ## Status
 
-15 routines, all with zero mismatches: shadow-checked calls in the two standard runs, plus
+19 routines, all with zero mismatches: shadow-checked calls in the two standard runs, plus
 20,000 fuzz cases each where noted.
 
 | Routine | Address | Gameplay calls | Fuzz | Coverage |
@@ -66,6 +67,8 @@ frame.
 | `Accel` | $B42 | 0 | 20,000 | all |
 | `QueueSound`, `QueueSoundFF` | $366, $364 | 35 / 6 | | all but the busy wait |
 | `SetGfxSlots` | $234C | 20 | 20,000 random lists | all |
+| `SetAnim`, `ResetAnimTimer`, `SetAnimNow` | $7E8, $7F4, $7FC | 84 / 1 / 17 | 20,000 each | all |
+| `UpdateAnim` (with its command handlers) | $80E | 19,217 | 50,000 (every animation, from any item of its script) | all |
 
 Unverified: the wait in `QueueSound` while the sound driver is busy ($386-$394). The harness
 does not run the Z80, so the busy flag is never set. The `$C0` (skip a slot) command of

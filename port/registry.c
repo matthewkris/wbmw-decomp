@@ -6,6 +6,7 @@
 void Random(Cpu *), SetVRAMWrite(Cpu *), UnpackPalette(Cpu *), LoadPalettes(Cpu *);
 void ApplyVelX(Cpu *), ApplyVelY(Cpu *), ApplyVelocity(Cpu *), FrictionX(Cpu *), FrictionY(Cpu *);
 void AccelX(Cpu *), AccelY(Cpu *), Accel(Cpu *), QueueSound(Cpu *), QueueSoundFF(Cpu *), SetGfxSlots(Cpu *);
+void SetAnim(Cpu *), ResetAnimTimer(Cpu *), SetAnimNow(Cpu *), UpdateAnim(Cpu *);
 
 const PortRoutine port_routines[] = {
     {0x0005D8, 0x0005FE, "Random", Random},
@@ -23,5 +24,9 @@ const PortRoutine port_routines[] = {
     {0x000366, 0x0003B8, "QueueSound", QueueSound},
     {0x000364, 0x000366, "QueueSoundFF", QueueSoundFF},
     {0x00234C, 0x0023A6, "SetGfxSlots", SetGfxSlots},
+    {0x0007E8, 0x0007F4, "SetAnim", SetAnim},
+    {0x0007F4, 0x0007FC, "ResetAnimTimer", ResetAnimTimer},
+    {0x0007FC, 0x00080E, "SetAnimNow", SetAnimNow},
+    {0x00080E, 0x000A1A, "UpdateAnim", UpdateAnim},     /* with its command handlers */
 };
 const int port_routine_count = sizeof port_routines / sizeof port_routines[0];

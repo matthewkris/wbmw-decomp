@@ -177,6 +177,61 @@ void hybrid_init(int m)
 static uint64_t rng = 0x9E3779B97F4A7C15ull;
 static uint32_t rnd(void) { rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17; return (uint32_t)(rng >> 16); }
 
+/* every valid (set, group, animation) of anim_data, as the byte offsets entities store; the
+ * tables of each level are packed back to back (docs/NOTES.md, Sprites) */
+#define ANIM_DATA 0xA0000u
+static int anim_n; static uint8_t anim_sga[2048][3];
+
+static int16_t aw(uint32_t off) { return (int16_t)bus_read16(ANIM_DATA + off); }
+
+/* packed tables (as tools/sprites.py): sorted unique starts; each table ends at the next start,
+ * the last where the lowest offset any of them holds begins. Fills end[] for each start. */
+static int packed(int *starts, int n, int *end)
+{
+    for (int i = 0; i < n; i++)                       /* sort and dedupe */
+        for (int j = i + 1; j < n; j++) if (starts[j] < starts[i]) { int t = starts[i]; starts[i] = starts[j]; starts[j] = t; }
+    int m = 0;
+    for (int i = 0; i < n; i++) if (!m || starts[i] != starts[m - 1]) starts[m++] = starts[i];
+    int low = 0x7FFF;
+    for (int i = 0; i < m; i++) {
+        int o = starts[i];
+        while (o < (i + 1 < m ? starts[i + 1] : low)) { if (aw(o) < low) low = aw(o); o += 2; }
+        end[i] = o;
+    }
+    return m;
+}
+
+static int table_end(const int *starts, const int *end, int m, int start)
+{
+    for (int i = 0; i < m; i++) if (starts[i] == start) return end[i];
+    return start;
+}
+
+static void anim_walk(void)
+{
+    if (anim_n) return;
+    static int s1[64], s2[512], s3[512], e2[512], e3[512];
+    int n1 = aw(0) / 2;
+    for (int i = 0; i < n1; i++) s1[i] = aw(2 * i);
+    int c2 = 0;
+    for (int i = 0; i < n1; i++) s2[c2++] = s1[i];
+    int m2 = packed(s2, c2, e2);
+    int c3 = 0;
+    for (int i = 0; i < m2; i++) for (int o = s2[i]; o < e2[i] && c3 < 512; o += 2) s3[c3++] = aw(o);
+    int m3 = packed(s3, c3, e3);
+    for (int s = 0; s < n1; s++) {
+        int g0 = aw(2 * s), g1 = table_end(s2, e2, m2, g0);
+        for (int g = 0; g0 + 2 * g < g1; g++) {
+            int a0 = aw(g0 + 2 * g), a1 = table_end(s3, e3, m3, a0);
+            for (int a = 0; a0 + 2 * a < a1 && anim_n < 2048; a++) {
+                anim_sga[anim_n][0] = (uint8_t)(2 * s); anim_sga[anim_n][1] = (uint8_t)(2 * g);
+                anim_sga[anim_n][2] = (uint8_t)(2 * a); anim_n++;
+            }
+        }
+    }
+    fprintf(stderr, "fuzz: %d animations\n", anim_n);
+}
+
 int hybrid_fuzz(const char *name, long count)
 {
     int idx = -1;
@@ -208,6 +263,27 @@ int hybrid_fuzz(const char *name, long count)
             }
             ram[p] = 0xFF;
             m68k_set_reg(M68K_REG_A0, 0xFFFF4E00);
+        }
+        if (!strncmp(name, "UpdateAnim", 10) || !strcmp(name, "SetAnimNow")) {
+            /* a valid animation for the chosen entity, its script started or part-way through */
+            anim_walk();
+            uint32_t e = m68k_get_reg(NULL, M68K_REG_A4);
+            const uint8_t *t = anim_sga[rnd() % (unsigned)anim_n];
+            ram[0xC300 + e] = t[0]; ram[0xC301 + e] = t[1]; ram[0xC302 + e] = t[2];
+            m68k_set_reg(M68K_REG_D0, (m68k_get_reg(NULL, M68K_REG_D0) & ~0xFFu) | t[2]);
+            uint32_t l2 = ANIM_DATA + (uint32_t)aw(t[0]);
+            uint32_t l3 = ANIM_DATA + (uint32_t)(int16_t)bus_read16(l2 + t[1]);
+            uint32_t script = ANIM_DATA + (uint32_t)(int16_t)bus_read16(l3 + t[2]);
+            /* resume at a random item of the script, so commands after the first frame run too */
+            uint32_t items[64]; int ni = 0;
+            for (uint32_t p = script; ni < 64; ) {
+                unsigned b = bus_read8(p);
+                items[ni++] = p;
+                if (b >= 0xF0) { unsigned k = b & 15; p += 1 + (k >= 10 && k <= 12 ? 2 : 0); if (k == 13 || k == 15) break; }
+                else { p += 3; if (!b) break; }
+            }
+            uint32_t at = items[rnd() % (unsigned)ni];
+            for (int k2 = 0; k2 < 4; k2++) { ram[0xC400 + e + k2] = (uint8_t)(at >> (24 - 8 * k2)); ram[0xC500 + e + k2] = (uint8_t)(script >> (24 - 8 * k2)); }
         }
         uint32_t sp = m68k_get_reg(NULL, M68K_REG_SP) - 4;
         bus_write16(sp, 0x0000); bus_write16(sp + 2, 0x0200);   /* return to an address the check recognises */

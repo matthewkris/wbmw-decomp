@@ -92,6 +92,18 @@ static inline uint32_t add_b(uint16_t *ccr, uint32_t src, uint32_t dst)     /* a
     *ccr = (uint16_t)((r & 0x80 ? CC_N : 0) | (r ? 0 : CC_Z) | (v ? CC_V : 0) | (c ? CC_C | CC_X : 0));
     return r;
 }
+static inline uint32_t sub_b(uint16_t *ccr, uint32_t src, uint32_t dst)     /* sub.b / subq.b */
+{
+    uint32_t s = src & 0xFF, d = dst & 0xFF, r = (d - s) & 0xFF;
+    int v = ((s ^ d) & (r ^ d) & 0x80) != 0;
+    *ccr = (uint16_t)((r & 0x80 ? CC_N : 0) | (r ? 0 : CC_Z) | (v ? CC_V : 0) | (s > d ? CC_C | CC_X : 0));
+    return r;
+}
+static inline uint16_t tst_b(uint16_t ccr, uint32_t v)
+{
+    return (uint16_t)((ccr & CC_X) | (v & 0x80 ? CC_N : 0) | ((v & 0xFF) ? 0 : CC_Z));
+}
+static inline uint32_t ext_w(uint32_t r) { return set_w(r, (uint32_t)(int32_t)(int8_t)(r & 0xFF)); }
 static inline void cmp_b(uint16_t *ccr, uint32_t src, uint32_t dst)         /* cmp.b / cmpi.b: X kept */
 {
     uint32_t s = src & 0xFF, d = dst & 0xFF, r = (d - s) & 0xFF;
