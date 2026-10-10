@@ -61,6 +61,7 @@ static void capture(Result *r)
 }
 
 static Result *want, *got;
+static int fuzzing;
 static uint8_t *snap; static size_t snap_n;
 static struct { int open, idx; uint32_t ret, sp; long call; } shadow;
 static int reports;
@@ -107,6 +108,7 @@ static void check(void)
     }
     shadow.open = 0;
     md_irq_hold(0);
+    if (fuzzing) m68k_end_timeslice();              /* one fuzz case per execute */
 }
 
 static void run_port(int idx)
@@ -120,10 +122,15 @@ static void run_port(int idx)
     m68k_set_reg(M68K_REG_PC, ret);
 }
 
+/* coverage: which instructions the originals executed inside shadow checks */
+static uint8_t *visited; static const char *cov_path;
+void hybrid_coverage(const char *path) { cov_path = path; }
+
 int md_instr_hook(unsigned int pc)
 {
     if (mode == PORT_OFF) return 0;
     if (shadow.open) {
+        if (visited && pc < SLOTS) visited[pc] = 1;
         if (pc == shadow.ret && m68k_get_reg(NULL, M68K_REG_SP) == shadow.sp) check();
         return 0;
     }
@@ -138,6 +145,7 @@ int md_instr_hook(unsigned int pc)
     shadow.sp = sp + 4; shadow.idx = idx; shadow.call = stats[idx].calls;
     const uint8_t *s = md_snapshot(&snap_n);
     snap = realloc(snap, snap_n); memcpy(snap, s, snap_n);
+    if (visited) visited[pc] = 1;                   /* the entry instruction runs inside the check */
     md_irq_hold(1);                                 /* before the restore, so no interrupt is taken here */
     run_port(idx);
     capture(want);
@@ -158,6 +166,60 @@ void hybrid_init(int m)
     for (int i = 0; brk && i < port_routine_count; i++)
         if (!strcmp(brk, port_routines[i].name)) { break_idx = i; fprintf(stderr, "self-test: corrupting %s\n", brk); }
     want = malloc(sizeof *want); got = malloc(sizeof *got);
+    if (cov_path && mode == PORT_SHADOW) visited = calloc(SLOTS, 1);
+}
+
+/* Differential fuzzing: call one ported routine directly, many times, from the current machine
+ * state with random inputs, each call checked by the shadow machinery (so --coverage records the
+ * paths). Inputs: every data register, the condition codes, the random seed, all of the
+ * entity arrays ($FFC000-$FFDFFF) and a4 = a random entity. Address registers other than a4 and
+ * a7 keep their values, so this suits routines that take numbers and entities, not pointers. */
+static uint64_t rng = 0x9E3779B97F4A7C15ull;
+static uint32_t rnd(void) { rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17; return (uint32_t)(rng >> 16); }
+
+int hybrid_fuzz(const char *name, long count)
+{
+    int idx = -1;
+    for (int i = 0; i < port_routine_count; i++) if (!strcmp(port_routines[i].name, name)) idx = i;
+    if (idx < 0 || mode != PORT_SHADOW) { fprintf(stderr, "fuzz: %s is not a ported routine (or not in shadow mode)\n", name); return -1; }
+    size_t n; const uint8_t *s = md_snapshot(&n);
+    uint8_t *base = malloc(n); memcpy(base, s, n);
+    long before = stats[idx].bad;
+    fuzzing = 1;
+    for (long k = 0; k < count; k++) {
+        md_restore(base, n);
+        for (int i = 0; i < 8; i++) m68k_set_reg(M68K_REG_D0 + i, rnd() << 16 ^ rnd());
+        m68k_set_reg(M68K_REG_A4, (rnd() & 63) * 4);
+        m68k_set_reg(M68K_REG_SR, (m68k_get_reg(NULL, M68K_REG_SR) & ~0x1Fu) | (rnd() & 0x1F));
+        for (uint32_t a = 0xC000; a < 0xE000; a++) ram[a] = (uint8_t)rnd();
+        for (uint32_t a = 0x8A52; a < 0x8A56; a++) ram[a] = (uint8_t)(rnd() & (k & 1 ? 0xFF : 0));  /* seed 0 half the time */
+        if (!strcmp(name, "SetGfxSlots")) {         /* a random valid slot list in scratch RAM */
+            uint32_t p = 0x4E00;                    /* restored after every case, so any RAM will do */
+            int slot = (int)(rnd() % 48);
+            ram[p++] = (uint8_t)(0x80 | slot);
+            for (int cmds = 1 + (int)(rnd() % 8); cmds-- && slot < 56; ) {
+                switch (rnd() % 5) {
+                case 0: ram[p++] = (uint8_t)(rnd() & 0x7F); ram[p++] = (uint8_t)rnd(); slot++; break;
+                case 1: slot = (int)(rnd() % 48); ram[p++] = (uint8_t)(0x80 | slot); break;
+                case 2: ram[p++] = 0xC0; slot++; break;
+                case 3: { int n = 1 + (int)(rnd() % 4); ram[p++] = (uint8_t)(0xC0 | n); ram[p++] = (uint8_t)rnd(); ram[p++] = (uint8_t)rnd(); slot += n; break; }
+                case 4: { int n = (int)(rnd() % 4); ram[p++] = (uint8_t)(0xF8 | n); slot += n + 1; break; }
+                }
+            }
+            ram[p] = 0xFF;
+            m68k_set_reg(M68K_REG_A0, 0xFFFF4E00);
+        }
+        uint32_t sp = m68k_get_reg(NULL, M68K_REG_SP) - 4;
+        bus_write16(sp, 0x0000); bus_write16(sp + 2, 0x0200);   /* return to an address the check recognises */
+        m68k_set_reg(M68K_REG_SP, sp);
+        m68k_set_reg(M68K_REG_PC, port_routines[idx].addr);
+        m68k_execute(1000000);
+        if (shadow.open) { fprintf(stderr, "fuzz: %s did not return\n", name); break; }
+    }
+    fuzzing = 0;
+    md_restore(base, n); free(base);
+    fprintf(stderr, "fuzz %s: %ld cases, %ld mismatches\n", name, count, stats[idx].bad - before);
+    return stats[idx].bad != before;
 }
 
 void hybrid_report(void)
@@ -172,4 +234,15 @@ void hybrid_report(void)
         total += stats[i].calls; bad += stats[i].bad;
     }
     if (mode == PORT_SHADOW) fprintf(stderr, "  all: %ld calls checked, %ld mismatches\n", total, bad);
+    if (visited) {                      /* one line per routine: name start end, then executed PCs */
+        FILE *f = fopen(cov_path, "w");
+        if (!f) { perror(cov_path); return; }
+        for (int i = 0; i < port_routine_count; i++) {
+            const PortRoutine *p = &port_routines[i];
+            fprintf(f, "%s %06X %06X", p->name, (unsigned)p->addr, (unsigned)p->end);
+            for (uint32_t a = p->addr; a < p->end; a++) if (visited[a]) fprintf(f, " %06X", (unsigned)a);
+            fprintf(f, "\n");
+        }
+        fclose(f);
+    }
 }

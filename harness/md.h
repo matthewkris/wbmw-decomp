@@ -64,6 +64,8 @@ void md_irq_hold(int on);
 enum { PORT_OFF, PORT_REPLACE, PORT_SHADOW };
 void hybrid_init(int mode);
 void hybrid_report(void);
+void hybrid_coverage(const char *path);
+int hybrid_fuzz(const char *name, long count);
 int md_instr_hook(unsigned int pc);
 
 /* png.c */

@@ -24,11 +24,19 @@ with reuse for other games in mind (see `docs/PROCESS.md`).
 
 ## How a ported routine is accepted
 
-1. **Shadow mode, zero mismatches, over runs that call it.** A new game played into the first
-   room (`work/run3/input.txt` style script) and the attract demo (no input, 3,000 frames) are
-   the standard runs. A routine with no calls in them is not accepted until a run that calls it
-   is added.
-2. Replace mode still plays (the owner can check with `play.exe --port replace`).
+1. **Zero shadow mismatches** over the standard runs (a new game played into the first room,
+   the attract demo with no input) and over differential fuzzing.
+2. **Every instruction of the original covered.** `--coverage FILE` records which instructions
+   of each ported routine's original ran inside a shadow check; `tools/coverage.py` merges runs
+   and lists the ones that never did. Gameplay alone rarely reaches every branch, so:
+3. **Differential fuzzing** (`--fuzz NAME COUNT`, shadow mode): from a real in-game state, call
+   the routine directly with random data registers, condition codes, random seed and entity
+   arrays (a4 a random entity), each call checked against the original. Routines that take
+   pointers need an input generator (`SetGfxSlots` has one: random valid slot lists). The
+   self-test (`WBMW_PORT_BREAK`) shows both shadow runs and fuzzing catch a single flipped flag
+   on every call.
+4. A path that cannot run in the harness is listed below as unverified, with the reason.
+5. Replace mode still plays (`play.exe --port replace`).
 
 Replace mode is **not** compared byte for byte with the pure run. The C routines take no 68000
 time, so the rest of the 68000 code runs earlier in each frame: a loading step that overran a
@@ -42,18 +50,26 @@ frame.
 
 ## Status
 
-| Routine | Address | Shadow-checked calls (new game + demo) |
-|---|---|---|
-| `Random` | $5D8 | 47 |
-| `SetVRAMWrite` | $5A0 | 3,851 |
-| `LoadPalettes` (with `UnpackPalette` inside) | $135C | 11 |
-| `ApplyVelocity` | $AB4 | 87 |
-| `ApplyVelX`, `ApplyVelY` | $AB8, $AD6 | 4,232 each |
-| `FrictionX` | $B92 | 1,198 |
-| `UnpackPalette` called on its own | $1370 | 0: not yet accepted |
-| `FrictionY` | $BAC | 0: not yet accepted |
+15 routines, all with zero mismatches: shadow-checked calls in the two standard runs, plus
+20,000 fuzz cases each where noted.
 
-All checked calls match: 13,658 calls, 0 mismatches.
+| Routine | Address | Gameplay calls | Fuzz | Coverage |
+|---|---|---|---|---|
+| `Random` | $5D8 | 47 | 20,000 | all |
+| `SetVRAMWrite` | $5A0 | 3,851 | 20,000 | all |
+| `LoadPalettes` | $135C | 11 | | all |
+| `UnpackPalette` | $1370 | inside `LoadPalettes` | | all |
+| `ApplyVelocity` | $AB4 | 87 | 20,000 | all |
+| `ApplyVelX`, `ApplyVelY` | $AB8, $AD6 | 4,232 each | 20,000 each | all |
+| `FrictionX`, `FrictionY` | $B92, $BAC | 1,198 / 0 | 20,000 each | all |
+| `AccelX`, `AccelY` | $AF4, $B44 | 1,839 / 4,319 | 20,000 each | all |
+| `Accel` | $B42 | 0 | 20,000 | all |
+| `QueueSound`, `QueueSoundFF` | $366, $364 | 35 / 6 | | all but the busy wait |
+| `SetGfxSlots` | $234C | 20 | 20,000 random lists | all |
+
+Unverified: the wait in `QueueSound` while the sound driver is busy ($386-$394). The harness
+does not run the Z80, so the busy flag is never set. The `$C0` (skip a slot) command of
+`SetGfxSlots` is used by none of the game's 79 slot lists; it is checked only by fuzzing.
 
 ## Decisions
 
@@ -64,7 +80,9 @@ unused flag, a stack residue), because the shadow check can only prove equivalen
 is left out. Once the callers of a routine are also C, the side effects nobody reads can be
 dropped. Doing it in that order keeps every step checkable.
 
-### Tasks and `Yield`: proposed, not yet built
+### Tasks and `Yield`: stackful coroutines (decided 2026-10-10, not yet built)
+
+The owner chose coroutines over state machines.
 
 The game is cooperative tasks: `Yield` ($400) saves its return address in the task slot and
 returns to the scheduler, and several subsystems keep continuation addresses in RAM. The

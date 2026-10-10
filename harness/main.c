@@ -1,7 +1,7 @@
 /* Reference harness main loop.
  *
  *   harness ROM [--frames N] [--out DIR] [--png-every K] [--ram-every K] [--vdp-every K] [--input FILE]
- *               [--save-state-at F FILE] [--load-state FILE] [--pc-trace F] [--port replace|shadow] [--quiet]
+ *               [--save-state-at F FILE] [--load-state FILE] [--pc-trace F] [--port replace|shadow] [--coverage FILE] [--fuzz NAME COUNT] [--quiet]
  *
  * Runs N NTSC frames (262 lines of 488 68000 cycles). Every K frames it writes DIR/frame_NNNNN.png
  * and/or DIR/ram_NNNNN.bin (the 64 KB of work RAM) and/or DIR/vdp_NNNNN.bin (VRAM 64 KB, CRAM 128 bytes,
@@ -10,7 +10,9 @@
  * --save-state-at writes a save state after frame F. --load-state starts from a save state
  * instead of power-on; frame numbers (for --frames, the dumps and the input file) continue from
  * the frame it was saved at. --port runs the routines in port/ in place of the originals
- * (replace) or checks every call of them against the originals (shadow); see hybrid.c. */
+ * (replace) or checks every call of them against the originals (shadow); see hybrid.c.
+ * --fuzz (with --port shadow) runs the frames, then calls one ported routine COUNT times with
+ * random inputs, each call checked against the original. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -52,6 +54,7 @@ int main(int argc, char **argv)
 {
     const char *rom_path = NULL, *out = ".", *input = NULL, *save_path = NULL, *load_path = NULL;
     int save_at = -1, first = 0, port = PORT_OFF;
+    const char *fuzz_name = NULL; long fuzz_count = 0;
     int frames = 600, png_every = 0, ram_every = 0, vdp_every = 0, quiet = 0;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atoi(argv[++i]);
@@ -66,6 +69,8 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--port") && i + 1 < argc) {
             i++; port = !strcmp(argv[i], "replace") ? PORT_REPLACE : !strcmp(argv[i], "shadow") ? PORT_SHADOW : PORT_OFF;
         }
+        else if (!strcmp(argv[i], "--coverage") && i + 1 < argc) hybrid_coverage(argv[++i]);
+        else if (!strcmp(argv[i], "--fuzz") && i + 2 < argc) { fuzz_name = argv[++i]; fuzz_count = atol(argv[++i]); }
         else if (!strcmp(argv[i], "--quiet")) quiet = 1;
         else rom_path = argv[i];
     }
@@ -104,6 +109,7 @@ int main(int argc, char **argv)
             fprintf(stderr, "frame %d  pc %06X  frame counter %08X\n", fr, m68k_get_reg(NULL, M68K_REG_PC),
                     ram[0x8002] << 24 | ram[0x8003] << 16 | ram[0x8004] << 8 | ram[0x8005]);
     }
+    int fuzz_bad = fuzz_name ? hybrid_fuzz(fuzz_name, fuzz_count) : 0;
     hybrid_report();
-    return 0;
+    return fuzz_bad ? 1 : 0;
 }

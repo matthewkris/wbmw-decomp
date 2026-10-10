@@ -31,6 +31,88 @@ void SetVRAMWrite(Cpu *c)
     c->ccr = cc_move_l((uint16_t)(c->ccr & ~CC_X), t);
 }
 
+/* QueueSound ($366): put sound command d0 in the 16-entry ring at Z80 $1C30. Takes the Z80 bus,
+ * waits while the driver's busy flag at Z80 $1C00 is set (releasing the bus and pausing between
+ * tries), writes at ring[(head $1C2E + count $1C2F) & 15], bumps the count, releases the bus.
+ * Flags from the final `move.w #0,($a11100)`; X from the `addq.b #1` on the count. */
+void QueueSound(Cpu *c)
+{
+    c->a[0] = 0xA00000;
+    for (;;) {
+        wr16(0xA11100, 0x100);
+        while (rd8(0xA11100) & 1) {}
+        if (!rd8(0xA01C00)) break;
+        wr16(0xA11100, 0);
+        c->d[1] = 0x0000FFFF;                             /* moveq #31,d1; dbra to -1 */
+    }
+    uint16_t cc = c->ccr;
+    uint32_t n = add_b(&cc, rd8(0xA01C2F), rd8(0xA01C2E));
+    c->d[1] = set_w(c->d[1], 0x1C30 + (n & 0xF));       /* andi.w #$f; addi.w #$1c30 */
+    wr8(0xA00000 + (c->d[1] & 0xFFFF), (uint8_t)c->d[0]);
+    wr8(0xA01C2F, (uint8_t)add_b(&cc, 1, rd8(0xA01C2F)));
+    wr16(0xA11100, 0);
+    c->ccr = (uint16_t)((cc & CC_X) | CC_Z);
+}
+
+/* QueueSoundFF ($364): moveq #-1,d0, then QueueSound */
+void QueueSoundFF(Cpu *c) { c->d[0] = 0xFFFFFFFF; QueueSound(c); }
+
+/* SetGfxSlots ($234C): a0 = list. Fills the VRAM graphics slot list at $FF8E08 (one graphics
+ * block id per 32 tiles); a1 is the write pointer and carries over from the caller.
+ *   $00-$7F hi, lo   write the word hi:lo at a1
+ *   $80-$BF          a1 = $FF8E08 + 2 * (n & $3F)
+ *   $C0              skip a slot
+ *   $C1-$F7 word     n & $3F consecutive ids from word
+ *   $F8-$FE          (n & 7) + 1 empty slots ($FFFF), also in the "loaded" copy 128 bytes on
+ *   $FF              end */
+void SetGfxSlots(Cpu *c)
+{
+    uint16_t cc = c->ccr;
+    uint32_t d0 = c->d[0], d1 = c->d[1];
+    for (;;) {
+        uint32_t b = rd8(c->a[0]++);
+        d0 = set_b(d0, b);
+        if (b < 0x80) {
+            wr8(c->a[1]++, (uint8_t)b);
+            wr8(c->a[1]++, rd8(c->a[0]++));
+            continue;
+        }
+        if (b < 0xC0) {
+            d0 = set_w(d0, b & 0x3F);
+            d0 = set_w(d0, add_w(&cc, d0, d0));                           /* add.w d0,d0 */
+            c->a[1] = 0xFFFF8E08 + (uint32_t)(int32_t)(int16_t)(d0 & 0xFFFF);
+            continue;
+        }
+        if (b == 0xC0) { c->a[1] += 2; continue; }
+        if (b == 0xFF) break;
+        if (b < 0xF8) {
+            d0 = set_w(d0, b & 0x3F);
+            d0 = set_w(d0, sub_w(&cc, 1, d0));                            /* subq.w #1,d0 */
+            d1 = set_b(d1, rd8(c->a[0]++));
+            cc = (uint16_t)((cc & ~CC_X) | (d1 & 0x100 ? CC_X : 0));     /* lsl.w #8: bit 8 goes out last */
+            d1 = set_w(d1, (d1 & 0xFF) << 8);
+            d1 = set_b(d1, rd8(c->a[0]++));
+            for (;;) {
+                wr16(c->a[1], (uint16_t)d1); c->a[1] += 2;
+                d1 = set_w(d1, add_w(&cc, 1, d1));                        /* addq.w #1,d1 */
+                d0 = set_w(d0, (d0 - 1) & 0xFFFF);                        /* dbra */
+                if ((d0 & 0xFFFF) == 0xFFFF) break;
+            }
+            continue;
+        }
+        d0 = set_w(d0, b & 7);
+        d1 = 0xFFFFFFFF;                                                  /* moveq #-1,d1 */
+        for (;;) {
+            wr16(c->a[1] + 0x80, 0xFFFF);
+            wr16(c->a[1], 0xFFFF); c->a[1] += 2;
+            d0 = set_w(d0, (d0 - 1) & 0xFFFF);
+            if ((d0 & 0xFFFF) == 0xFFFF) break;
+        }
+    }
+    c->d[0] = d0; c->d[1] = d1;
+    c->ccr = (uint16_t)((cc & CC_X) | CC_Z);                              /* cmpi.b #$ff,d0: equal */
+}
+
 /* UnpackPalette ($1370): d0 = record number, a1 = destination. Writes colours 1-15 of one
  * palette line as CRAM words: record = 17 bytes at $599C + 17 * d0, a word of high blue bits
  * (LSB first) then 15 bytes BBGGGRRR. */

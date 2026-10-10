@@ -21,7 +21,7 @@ major milestone.
 | 6 | Name the code | `labels` in `layout.json`, NOTES tables | still byte-identical; names read right in context |
 | 7 | Reference harness | `harness/` on Musashi | boots into the game; matches the decoders' renders |
 | 8 | Playable window, save states, run diff | `play.exe`, `--save-state-at`, `cmpruns.py` | a run from a state equals the straight run |
-| 9 | Port subsystem by subsystem | not started | RAM equal to the 68000 run, every frame |
+| 9 | Port routine by routine | `port/`, `harness/hybrid.c` | shadow check on every call, full coverage, differential fuzzing |
 
 Each stage made the next one cheaper or checkable. Stage 3 is what made stage 2 trustworthy;
 stage 7 is what made stage 5 trustworthy; stage 8 is what will make stage 9 trustworthy.
@@ -50,6 +50,11 @@ the harness check each other.
 **Instrument before guessing.** The menu hang took one PC-sampling run to locate (stuck in the
 EEPROM "no acknowledge" loop) after several rounds of reading code and forming theories had not.
 Adding `--pc-trace`, `--vdp-every` and `cmpruns.py` paid for themselves immediately.
+
+**Port by equivalence, measured three ways.** Each C routine is checked against the original
+on every call (shadow mode), its branches are counted (coverage), and branches gameplay does not
+reach are driven by differential fuzzing from a real game state. All three are game-independent
+and live in the harness.
 
 **Owner checks what only a person can.** The owner played builds and reported a drop that
 seemed odd; reading the drop routine answered it with exact odds. Give the owner something

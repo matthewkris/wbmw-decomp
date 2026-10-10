@@ -41,6 +41,7 @@ no sound.
     work/harness/harness ROM [--frames N] [--out DIR] [--png-every K] [--ram-every K]
                              [--vdp-every K] [--input FILE] [--pc-trace FRAME] [--quiet]
                              [--save-state-at F FILE] [--load-state FILE] [--port replace|shadow]
+                             [--coverage FILE] [--fuzz NAME COUNT]
 
 * `--png-every K`: `DIR/frame_NNNNN.png` every K frames.
 * `--ram-every K`: `DIR/ram_NNNNN.bin`, the 64 KB of work RAM (`$FF0000`–`$FFFFFF`).
@@ -75,6 +76,10 @@ port step goes through: the same input from the same state, one run all 68000, o
 routine replaced, RAM compared every frame.
 * `--port replace|shadow`: run the C routines in `port/` instead of the originals, or check every
   call of them against the originals; see `docs/PORT.md`. `play.exe` takes `--port` too.
+* `--coverage FILE` (shadow): record which instructions of each ported routine's original ran
+  inside a check; `python tools/coverage.py work/map.json FILE...` reports what never ran.
+* `--fuzz NAME COUNT` (shadow): after the frames, call one ported routine COUNT times with random
+  inputs, each checked against the original; exit status 1 on any mismatch.
 
 `core.c` (power-on, interrupts, the frame loop) is shared by both programs, so a frame in the
 window is the same frame the headless harness produces.
