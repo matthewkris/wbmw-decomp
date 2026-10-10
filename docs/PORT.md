@@ -131,12 +131,33 @@ How the translator handles what plain translation cannot:
 First use, `MoveWithCollision` ($2FD0): 22 routines, 849 instructions, generated with no
 unsupported instruction. Zero mismatches in the two standard runs (about 16,000 checked calls of
 the generated routines) and in 5,000 fuzz cases per routine from two states; the self-test
-catches a corrupted generated routine on every call. Coverage: 12 of the 22 fully covered. The
-uncovered paths are mostly collision with moving platforms (`$3B74`, `$3D06`, parts of `$341C`,
-`$3584`, `$3C22`, and `MoveWithCollision`'s on-a-platform branch): they need platform objects
-(room command `$14`), which no standard run has. A save state in a room with moving platforms
-(the owner can make one with F2 in `play.exe`) is the way to cover them. `$3860`'s table entry 0
-is a deliberate hang (`nop; bra *`) and stays uncovered.
+catches a corrupted generated routine on every call. Coverage then: 12 of the 22 fully covered,
+the gaps mostly collision with moving platforms, which no standard run reaches.
+
+The owner then made a save state among the floating platforms of area 1, room 2 (F2 in
+`play.exe`, kept as `work/platform.state`, not committed). From it: eight runs of 1,200 frames
+with random input (30,000 to 40,000 checked calls each) and 5,000 fuzz cases for each partly
+covered routine, all with zero mismatches. Coverage is now 13 of the 22 fully covered:
+
+| Routine | Before | With the platform state |
+|---|---|---|
+| `$2FD0` `MoveWithCollision` | 66/73 | 66/73 |
+| `$341C` | 46/93 | 46/93 |
+| `$3584` | 216/252 | 216/252 |
+| `$3694` | 44/54 | 44/54 |
+| `$36D4` | 29/36 | 29/36 |
+| `$370A` | 14/19 | 14/19 |
+| `$3860` | 30/32 | 30/32 (the 2 left are the deliberate hang, `nop; bra *`, table entry 0) |
+| `$3AFC` | partial | all |
+| `$3B74` | partial | 37/59 |
+| `$3C22` | partial | all |
+| `$3D06` | 3/78 | 50/78 |
+
+Fuzzing added nothing over the random runs: its generators randomise the entity, not the
+platform objects, so the paths left need specific situations (standing on a platform as it
+reverses, hitting one from below or the side, slopes). They are the open item for this
+subsystem: more owner states (riding each kind of platform, jumping into one from below) or a
+fuzz generator that places a platform next to the entity.
 
 ### Exactness first, cleanup later
 

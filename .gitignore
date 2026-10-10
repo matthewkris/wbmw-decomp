@@ -2,3 +2,6 @@
 rom/
 work/
 __pycache__/
+# save data and save states from the harness window
+*.state
+*.sav
