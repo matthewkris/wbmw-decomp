@@ -8,6 +8,11 @@ recompilation. The game is hand-written 68000 assembly (38 stack frames in 28,00
 so there is no original C to recover. "Decompiling" here means understanding each routine and
 rewriting it in C that behaves identically.
 
+The owner intends to reuse this process on other games. `docs/PROCESS.md` records the process,
+its lessons, and which parts are general (any Mega Drive or 68000 game) versus specific to this
+one. Read it, weigh reuse in design decisions (configuration over constants, platform layer
+separate from game logic), and update it at each major milestone.
+
 This is a long project spread over many sessions. Work started in a cloud session that did the
 first survey; you are picking it up on the owner's machine. Read `docs/NOTES.md` before doing
 anything else. It holds every address and structural fact found so far.
@@ -136,6 +141,9 @@ How the rebuild works, and what to keep:
 - **Record findings in `docs/NOTES.md`** as you go, with addresses. Later sessions start from it.
 - **Hints, not hard-coding.** Manual knowledge the tracer cannot derive goes in
   `analysis/hints.json` (extra entry points, manual tables, data ranges), not into the scripts.
+  The same goes for every game fact a tool needs (addresses, sizes, hashes, file names): read it
+  from `analysis/`, so the tool works on the next game. `docs/PROCESS.md` lists the places that
+  still hard-code this game; fix them when you next touch those tools.
 
 ## Using the tools
 
