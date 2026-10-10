@@ -9,6 +9,9 @@ void AccelX(Cpu *), AccelY(Cpu *), Accel(Cpu *), QueueSound(Cpu *), QueueSoundFF
 void SetAnim(Cpu *), ResetAnimTimer(Cpu *), SetAnimNow(Cpu *), UpdateAnim(Cpu *);
 void DecodeGfxBlock(Cpu *), StreamGfxBlocks(Cpu *), CopyRawTiles(Cpu *);
 void BuildSprites(Cpu *), AddEntitySprites(Cpu *);
+void HitboxOverlapSwap(Cpu *), HitboxOverlap(Cpu *), BoxPairOverlap(Cpu *), BodyVsHurtBoxes(Cpu *);
+void BodyVsAttackBoxesSwap(Cpu *), BodyVsAttackBoxes(Cpu *), BoxVsBody(Cpu *), ResolveContact(Cpu *);
+void ContactSide(Cpu *), CheckBodyContact(Cpu *), BodyOverlap(Cpu *);
 
 const PortRoutine port_routines[] = {
     {0x0005D8, 0x0005FE, "Random", Random},
@@ -35,5 +38,16 @@ const PortRoutine port_routines[] = {
     {0x0022A8, 0x0022F0, "CopyRawTiles", CopyRawTiles},
     {0x0053AA, 0x0054C4, "BuildSprites", BuildSprites},
     {0x0054C4, 0x00557E, "AddEntitySprites", AddEntitySprites},
+    {0x000C36, 0x000C3E, "HitboxOverlapSwap", HitboxOverlapSwap},
+    {0x000C3E, 0x000CA0, "HitboxOverlap", HitboxOverlap},
+    {0x000CA0, 0x000D24, "BoxPairOverlap", BoxPairOverlap},
+    {0x000D2C, 0x000D6E, "BodyVsHurtBoxes", BodyVsHurtBoxes},
+    {0x000D6E, 0x000D76, "BodyVsAttackBoxesSwap", BodyVsAttackBoxesSwap},
+    {0x000D76, 0x000DB6, "BodyVsAttackBoxes", BodyVsAttackBoxes},
+    {0x000DB6, 0x000E1A, "BoxVsBody", BoxVsBody},
+    {0x000E1A, 0x000E4A, "ResolveContact", ResolveContact},
+    {0x000E4A, 0x000E64, "ContactSide", ContactSide},
+    {0x000E64, 0x000E9A, "CheckBodyContact", CheckBodyContact},
+    {0x000E9A, 0x000EE2, "BodyOverlap", BodyOverlap},
 };
 const int port_routine_count = sizeof port_routines / sizeof port_routines[0];

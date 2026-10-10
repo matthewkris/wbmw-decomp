@@ -329,6 +329,34 @@ int hybrid_fuzz(const char *name, long count)
             }
             if (!strcmp(name, "AddEntitySprites")) m68k_set_reg(M68K_REG_A3, 0x00FF2800 + (rnd() % 64) * 8);
         }
+        if (strstr(name, "Overlap") || strstr(name, "Body") || strstr(name, "Contact")) {
+            /* two entities close together, with small random box lists (or none) */
+            uint32_t a4 = m68k_get_reg(NULL, M68K_REG_A4), a2 = (rnd() & 63) * 4;
+            m68k_set_reg(M68K_REG_A2, a2);
+            put_word(0xC800 + a2, (uint32_t)(int32_t)(int16_t)(ram[0xC800 + a4] << 8 | ram[0xC801 + a4]) + rnd() % 96 - 48);
+            put_word(0xC900 + a2, (uint32_t)(int32_t)(int16_t)(ram[0xC900 + a4] << 8 | ram[0xC901 + a4]) + rnd() % 96 - 48);
+            uint32_t p = 0x4E00;
+            uint32_t ents[2] = {a2, a4};
+            for (int e = 0; e < 2; e++)
+                for (int list = 0; list < 2; list++) {              /* -$2A00 attack, -$2900 hurt */
+                    uint32_t field = (list ? 0xD700 : 0xD600) + ents[e];
+                    if (rnd() % 8 == 0) { put_long(field, 0); continue; }
+                    put_long(field, 0x00FF0000 + p);
+                    int n = 1 + (int)(rnd() % 4);
+                    ram[p++] = (uint8_t)n;
+                    for (int b = 0; b < n; b++) {
+                        ram[p++] = (uint8_t)(rnd() % 64 - 32); ram[p++] = (uint8_t)(rnd() % 64 - 32);
+                        ram[p++] = (uint8_t)(rnd() % 24); ram[p++] = (uint8_t)(rnd() % 24);
+                    }
+                }
+            for (int e = 0; e < 2; e++) {
+                ram[0xCB00 + ents[e]] = (uint8_t)(rnd() % 32); ram[0xCB01 + ents[e]] = (uint8_t)(rnd() % 32);
+            }
+            if (!strcmp(name, "BoxPairOverlap") || !strcmp(name, "BoxVsBody")) {
+                m68k_set_reg(M68K_REG_A0, 0x00FF4E01); m68k_set_reg(M68K_REG_A1, 0x00FF4E05);
+                for (uint32_t q = 0x4E00; q < 0x4E10; q++) ram[q] = (uint8_t)(rnd() % 64 - 32);
+            }
+        }
         if (!strcmp(name, "DecodeGfxBlock")) {     /* a real block, into the game's decode buffer */
             m68k_set_reg(M68K_REG_D0, (rnd() << 16) | (rnd() % 768));
             m68k_set_reg(M68K_REG_A1, 0x00FF2D00);

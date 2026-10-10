@@ -51,7 +51,7 @@ frame.
 
 ## Status
 
-24 routines, all with zero mismatches: shadow-checked calls in the two standard runs, plus
+35 routines, all with zero mismatches: shadow-checked calls in the two standard runs, plus
 20,000 fuzz cases each where noted.
 
 | Routine | Address | Gameplay calls | Fuzz | Coverage |
@@ -75,6 +75,17 @@ frame.
 
 | `BuildSprites` (the per-frame sprite table) | $53AA | 6,711 frames | 3,000 frames of random entities | all |
 | `AddEntitySprites` | $54C4 | inside `BuildSprites` | 20,000 (real mappings, random camera, window, budget) | all |
+
+| `CheckBodyContact`, `BodyOverlap` | $E64, $E9A | 1,277 / 64 | 20,000 each | all |
+| `BodyVsAttackBoxes` (+ `Swap`) | $D76, $D6E | 1,187 / 0 | 20,000 each | all |
+| `HitboxOverlap` (+ `Swap`), `BoxPairOverlap` | $C3E, $C36, $CA0 | 0 | 20,000 each | all |
+| `BodyVsHurtBoxes`, `BoxVsBody` | $D2C, $DB6 | 0 | 20,000 each | all |
+| `ResolveContact`, `ContactSide` | $E1A, $E4A | inside the above | 20,000 each | all |
+
+The hitbox routines are mostly reached from enemy code the standard runs barely exercise (no
+enemy fights in them), so fuzzing carries them: two entities close together with random box
+lists, facing and contact flags. `BoxPairOverlap` keeps an original bug: the target box's y
+offset is sign-extended before being negated, so a flipped offset of -8 becomes -248.
 
 Once `StreamGfxBlocks` is ported, `DecodeGfxBlock` is only ever reached inside it, so its gameplay
 checks now happen as part of `StreamGfxBlocks`'s (nested ported calls run as C inside an

@@ -135,7 +135,15 @@
   "00F742": "LoadShieldGfx",
   "00F75E": "shield_tiles",
   "00F710": "sword_gfx_lists",
-  "0053AA": "BuildSprites"
+  "0053AA": "BuildSprites",
+  "000CA0": "BoxPairOverlap",
+  "000D2C": "BodyVsHurtBoxes",
+  "000D6E": "BodyVsAttackBoxesSwap",
+  "000D76": "BodyVsAttackBoxes",
+  "000DB6": "BoxVsBody",
+  "000E1A": "ResolveContact",
+  "000E4A": "ContactSide",
+  "000E9A": "BodyOverlap"
  },
  "vector_names": {
   "000200": "EntryPoint",
