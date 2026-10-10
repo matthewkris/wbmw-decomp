@@ -35,6 +35,10 @@ Done:
 - **Graphics decoded.** `tools/gfx.py` decodes all 726 chunks of the graphics table (raw, a
   per-tile mask/bitplane format and Huffman-coded LZ77), verifies each against the chunk
   boundaries, and writes tile sheets as PNG (`make gfx`, output in `work/`).
+- **Kernel named.** 109 routines and data labels in the `labels` section of
+  `analysis/layout.json`: scheduler, sound queue, VDP setup, random, entity animation and physics,
+  hitboxes, the enemy library. Documented in `docs/NOTES.md` under "Entities" (field map of the
+  entity arrays) and "Named routines".
 - **Palettes decoded.** 160 packed palette records at `$599C`; `gfx.py --palette N` renders in
   real colours and `--swatches` shows them all. Hand-given names (`palette_table`,
   `LoadPalettes`, `DecodeGfxBlock`, ...) go in the `labels` section of `analysis/layout.json`.
@@ -43,26 +47,26 @@ Done:
 
 Not done, in the order I would do it:
 
-1. **Name the kernel.** Start with the most-called routines: `$7E8` (160 callers), `$400`
-   (yield, 123), `$366` (queue sound command, 98), `$5D8` (73), `$43BC` (61), `$48C4` (49).
-   Keep names in a symbol file the tools read, not hard-coded in scripts.
-2. **Decode the directory blocks.** Each has its own format; several hold long pointer tables
+1. **Decode the directory blocks.** Each has its own format; several hold long pointer tables
    (`$211CA`, `$2246C–$224B8`) that are still inside `incbin` ranges.
-3. **Disassemble the Z80 sound driver** (`$98000`, 6,775 bytes) and confirm whether
+2. **Disassemble the Z80 sound driver** (`$98000`, 6,775 bytes) and confirm whether
    `$99A77–$9F776` is its music data.
-4. **Build a reference harness**: the original 68000 code running under an interpreter core
+3. **Build a reference harness**: the original 68000 code running under an interpreter core
    against a reimplemented hardware layer, able to run headless, dump frames as images, and dump
    RAM per frame. This is the oracle every later step is checked against.
-5. **Port subsystem by subsystem to C**, comparing RAM state frame by frame against the harness.
-6. **Replace the emulated hardware** with a native renderer and input layer.
+4. **Port subsystem by subsystem to C**, comparing RAM state frame by frame against the harness.
+5. **Replace the emulated hardware** with a native renderer and input layer.
 
 ## The next step
 
-Name the kernel, starting with the most-called routines listed above, using the `labels`
-section of `analysis/layout.json`. Each name should come with a line in `docs/NOTES.md` saying
-what the routine takes and returns. Then decode the area blocks (`area00`–`area18`): they hold
-the room maps, which say which tiles and palette lines make up each screen, so they are what
-turns tile sheets into real screenshots.
+Decode the area blocks (`area00`–`area18`, read at `$93C4`): they hold the room maps, which
+say which tiles and palette lines make up each screen. `MapBlockAt` ($2542), `TileAttrAt`
+($30DA) and `DrawTileList` ($234C) are the readers to start from. The goal is a tool that renders
+a room to PNG from the owner's ROM, checked against the game by the owner.
+
+Keep naming as you go: every routine you understand gets a label in `analysis/layout.json` and,
+if others will call it, a row in "Named routines". Names marked provisional there should be
+confirmed or changed when their callers are read.
 
 The source rebuilds identically but is **not fully relocatable**. Still numeric:
 

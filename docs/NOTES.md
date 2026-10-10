@@ -79,19 +79,12 @@ found; `gfx.py --png` writes grey levels.
 
 ### Pointer fields
 
-Entity fields `-$2900` and `-$2A00` (animation/script pointers; `-$2900` is copied into
-`-$2A00` at $1713E), `$FF8C7A` (text pointer, odd values) and `$FF9F2C` (word table) always hold
-ROM data addresses: hint `data_ptr`. `-$3600` is a velocity (8.8 fixed, negated with `neg.w`),
-not a pointer. `-$2700` is written both as words and longs with values like $D35A and $2000;
-undecided.
-
-Code region $200–$1D000 (118,272 bytes): 95,160 bytes traced as code (28,208 instructions,
-845 call targets), 2,344 bytes of jump tables and task tags, 20,768 bytes of embedded data (of which
-1,534 are the padding at $1C602).
-1,355 of the 1,361 `rts`-shaped words in the region are inside traced instructions.
-46 routines have no static reference (`orphan_` / `unreferenced` in the listing).
-
-The code is hand-written assembly: only 38 `link a6` frames in 28k instructions.
+`-$2900` (hurtbox list) and `-$2A00` (attack box list) hold ROM addresses of hitbox lists: a
+count byte, then the boxes. `HitboxOverlap` ($C3E) tests an attacker's `-$2A00` list against a
+target's `-$2900` list; `$1713E` copies `-$2900` into `-$2A00` so the body itself hurts. The
+six-byte blocks at $18BB8 and $1A3DE are one-box lists. `$FF8C7A` (text pointer, odd values) and
+`$FF9F2C` (word table) also always hold ROM data addresses. All four are in hint `data_ptr`.
+`-$3600` is a velocity and `-$2700` is undecided (see Entities).
 
 ## Kernel
 
@@ -114,9 +107,84 @@ The code is hand-written assembly: only 38 `link a6` frames in 28k instructions.
 
 ## Entities
 
-Structure-of-arrays in `$FFC000–$FFDFFF`: `a4` holds the entity offset (step 4) and fields are
-addressed as `$C000(a4)`, `$C800(a4)`, `$D400(a4)`, `$D800(a4)` and so on, one array per $100.
-Behaviour dispatch goes through `$13DA4` (9 word offsets) into 135 handler pointers at `$13DB6`.
+Structure-of-arrays in `$FFC000–$FFDFFF`: `a4` holds the entity offset (step 4, 64 entities, so
+`$0–$FC`) and each field is one array, addressed as `-$4000(a4)` = `$FFC000+a4` and so on. The
+routines in "Named routines" all take the entity in `a4` and a second one, when needed, in `a2`.
+
+| Field | Array | Meaning (from the routines that use it) |
+|---|---|---|
+| -$4000 | $C000 | flags: bit 7 active, bit 5 frozen (`FreezeEntities`), bit 0 exempt from `DespawnIfOffscreen`; bit 6 is set on spawn, meaning unknown |
+| -$3FFE | $C002 | bit 3 facing left (negates X in anim moves and `WalkForward`), bit 4 flips Y moves |
+| -$3FFD | $C003 | animation state bits; bit 6 blinking |
+| -$3F00 | $C100 | current sprite mapping (set by the animation script) |
+| -$3D00 / -$3CFF / -$3CFE | $C300 | animation set / group / number: three levels of word offsets into `anim_data` |
+| -$3C00 / -$3B00 | $C400 / $C500 | animation script pointer / loop point |
+| -$3A00 / -$39FE | $C600 / $C602 | animation timer / speed (`$100` = 1 per frame) |
+| -$3900 / -$38FF | $C700 | blink pattern / blink counter |
+| -$3800 / -$37FE | $C800 | X (pixels) / X fraction |
+| -$3700 / -$36FE | $C900 | Y / Y fraction |
+| -$3600 / -$35FE | $CA00 / $CA02 | X / Y velocity, 8.8 fixed |
+| -$3500 / -$34FE / -$34FD | $CB00 | box offset; width; height |
+| -$3400 / -$33FE | $CC00 / $CC02 | X / Y acceleration |
+| -$3300 / -$32FE | $CD00 / $CD02 | X / Y speed limit (also the walk speed) |
+| -$3100 | $CF00 | collision result, rebuilt each move: `CheckGrounded` tests bit 1 set with bit 3 clear; the turn-at-wall helpers ($4428) test bit 0 set with bit 6 clear |
+| -$2F00 | $D100 | physics mode: bit 0 clamp X, bit 1 clamp Y |
+| -$2E00 / -$2DFE | $D200 | previous X / Y |
+| -$2BFF / -$2BFD | $D400 | enemy state (dispatched by `EnemyDispatch` through $13B70 and $13DA4) / enemy type |
+| -$2AFD | $D503 | contact flags from `CheckBodyContact` / `CheckPlayerContact`: bit 7 hit, bit 2 touched, bit 0 side |
+| -$2A00 / -$2900 | $D600 / $D700 | attack / hurt box lists (see Pointer fields) |
+| -$2700 | $D900 | contact damage (copied into the other entity's `-$23FE` on contact) |
+| -$2600 | $DA00 | health |
+| -$21FF / -$21FE | $DE01 / $DE02 | hit pending / damage taken |
+
+Entity pointers in RAM: `$FF9EEE` is the player, `$FFA11C` the enemies' target (set from
+`$FF9EEE` at $137C8), `$FFA11A` the first enemy slot (`$40`; `FindFreeEntity` searches 16 from
+there). Effects live in slots `$E0–$FC` (`FindFreeEffect`).
+
+## Named routines
+
+Names live in the `labels` section of `analysis/layout.json`. Registers are inputs unless said.
+
+| Routine | Address | What it does |
+|---|---|---|
+| `LoadZ80Driver` / `ResetZ80` | $306 / $34A | upload `z80_driver` to Z80 RAM (length from bytes 6–7 of the driver) / pulse Z80 reset |
+| `QueueSound` | $366 | queue sound command `d0` in the Z80 ring at $1C30; `QueueSoundFF` ($364) queues $FF |
+| `WaitVBlank` | $3B8 | count frames (`$FF8002`, `$FF8A56`), wait for VBlank, run `VBlankWork` ($5262) |
+| `Yield` | $400 | save the return address in the task slot (`$FF8A4C` + $C) and return to the scheduler |
+| `YieldIfLate` | $40C | yield only when the raster is past line $D0 (time-sliced mode, bit 6 of `$FF8A5D`) |
+| `SpawnTask` | $444 | `a1` = descriptor (tag + code); first free user slot; returns slot number in `d0`; `FatalError` if full |
+| `SpawnTaskOnce` | $47A | as `SpawnTask` unless a task with the same tag runs; `d0` = 1 if it did |
+| `KillTasksByTag` | $4A2 | end every task whose tag matches `(a0)` (`KillTasksByTagD2`: tag in `d2`) |
+| `EndTask` | $4E6 | run the current task's exit handler (slot + 8), free its slot and memory blocks |
+| `SetVRAMWrite` | $5A0 | `d0` = VRAM address; writes the VDP write command |
+| `Random` | $5D8 | next value of the generator in `$FF8A52` (seed `$2A6D365A`), returned in `d0` |
+| `DisplayOn` / `DisplayOff` / `EnableVInt` | $618 / $62A / $64E | VDP register 1 mirror (`$FF8A5C`) |
+| `SetPlaneAAddr` ... `SetPlaneSize` | $716–$79C | VDP registers 2, 3, 4, 5, 13 and 16 from their RAM mirrors |
+| `SetAnim` / `SetAnimNow` | $7E8 / $7FC | set animation number `d0`; restart next frame / at once |
+| `UpdateAnim` | $80E | run the entity's animation script (commands $F0–$FF via the table at $890) |
+| `ClearEntity` | $A36 | zero an entity's state fields |
+| `ApplyVelocity` | $AB4 | add velocity to position (`ApplyVelX` $AB8, `ApplyVelY` $AD6) |
+| `Accel` | $B42 | apply acceleration with optional speed limit (`AccelX` $AF4, `AccelY` $B44) |
+| `FrictionX` / `FrictionY` | $B92 / $BAC | move velocity toward 0 by `d0` |
+| `Offscreen` | $BEE | `d0` = 0 if the entity is within the camera (`$FF9758`, `$FF975A`) plus margin |
+| `HitboxOverlap` | $C3E | test `a2`'s attack boxes against `a4`'s hurt boxes |
+| `CheckBodyContact` | $E64 | contact between `a2` and `a4`; sets `-$2AFD` and swaps contact damage |
+| `MoveWithCollision` | $2FD0 | move the entity and resolve it against the map |
+| `TileAttrAt` | $30DA | map attribute at (`d6`, `d7`), provisional |
+| `TestGameFlag` / `SetGameFlag` | $274C / $2752 | game progress bits at `$FF9992` (`d0` = flag number) |
+| `FindFreeEntity` | $12812 | free enemy slot in `a2`; N flag set when none |
+| `SpawnItem` | $1090C | spawn item `d0` (codes from $1000 go elsewhere) |
+| `EnemyMove` / `EnemyFallAndMove` | $46DA / $46D6 | standard enemy step: probe tiles, collide, move (with gravity) |
+| `CheckPlayerContact` | $4792 | sword hit or body contact with the player, then update the enemy health bar |
+| `DamageEnemy` | $4986 | play sound 31 and subtract the hit's damage from `-$2600` |
+| `EnemyDefeated` | $482C | count the kill and maybe drop an item (random, per enemy type, table $1C170) |
+| `DespawnIfOffscreen` | $48C4 | despawn and drop the caller's frame when off camera |
+| `EnemyCheckHit` | $43BC | if a hit is pending, switch to state 2 through `EnemyDispatch` and drop the caller's frame |
+| `FacePlayer`, `WalkForward`, `DistXToPlayer`, ... | $4492–$457A | small enemy AI helpers; see the labels |
+
+Several routines end a behaviour by dropping their caller's return address (`addq.w #4,a7`),
+like the continuations under Kernel. A C port must treat those as an early return from the
+caller.
 
 ## Hardware touched by the 68000
 
