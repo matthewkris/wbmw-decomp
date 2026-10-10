@@ -1,0 +1,4 @@
+# Nothing derived from the ROM is committed: bring your own dump.
+rom/
+work/
+__pycache__/

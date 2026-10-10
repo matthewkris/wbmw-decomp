@@ -1,0 +1,45 @@
+{
+ "entries": [
+  "E346",
+  "E374",
+  "E3C4",
+  "E3EC",
+  "E44C",
+  "E4CA",
+  "E5FC",
+  "E62E",
+  "E71C",
+  "E98A"
+ ],
+ "data_dst": [
+  "$8c7a.w",
+  "-$2700(a4)",
+  "-$2900(a4)",
+  "-$3600(a4)",
+  "$966e.w"
+ ],
+ "tables": [
+  {
+   "addr": "10A5E",
+   "base": "10A5A",
+   "count": 27,
+   "fmt": "w_rel"
+  },
+  {
+   "addr": "13DB6",
+   "count": 135,
+   "fmt": "l_abs"
+  },
+  {
+   "addr": "890",
+   "count": 16,
+   "fmt": "l_abs"
+  }
+ ],
+ "data_ranges": [
+  [
+   "E2FC",
+   "E346"
+  ]
+ ]
+}
