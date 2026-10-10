@@ -40,8 +40,9 @@ Done:
 - **Reference harness runs the game.** `harness/` (C, built with MSYS2 GCC) runs the original code
   on Musashi (`third_party/musashi`, MIT, 68000 only) against a reimplemented memory map, VDP,
   controller and serial EEPROM, headless, at about 7x real time. It boots through the SEGA logo,
-  title and menu into a new game, and dumps frames, RAM and VDP state per frame. See
-  `harness/README.md` for what it does and does not model.
+  title and menu into a new game, and dumps frames, RAM and VDP state per frame. `play.exe` is
+  the same machine in an SDL2 window with keyboard and pad input, so the owner can play builds
+  (no sound). See `harness/README.md` for what it does and does not model.
 - **Sprites decoded.** `tools/sprites.py` walks every animation and mapping, draws any enemy type
   with the graphics allocation the game uses, assembles Shion from his equipment, and renders
   rooms with their enemies at their spawn points (`--all-rooms`).

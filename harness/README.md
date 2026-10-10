@@ -15,7 +15,26 @@ or from PowerShell:
 
     $env:MSYSTEM="UCRT64"; $env:CHERE_INVOKING="1"; C:\msys64\usr\bin\bash.exe -lc "cd harness && make"
 
-The binary is `work/harness/harness.exe` (git-ignored, like everything in `work/`).
+This builds two programs in `work/harness/` (git-ignored, like everything in `work/`):
+`harness.exe`, headless, and `play.exe`, the same machine in a window. `play` needs SDL2
+(`pacman -S mingw-w64-ucrt-x86_64-SDL2`); the build copies `SDL2.dll` next to it.
+
+## Play
+
+    work/harness/play ROM [--scale N] [--save FILE]
+
+| Key | Pad | Mega Drive |
+|---|---|---|
+| arrows | D-pad / left stick | D-pad |
+| Z | X | A |
+| X | A | B |
+| C | B | C |
+| Enter | Start | Start |
+
+Esc quits, P pauses, Tab (held) runs as fast as possible, F12 writes a screenshot to the
+current directory, F5 resets. The save EEPROM is read from FILE at start and written back on
+exit (default `play.sav` in the current directory), so CONTINUE works across sessions. There is
+no sound.
 
 ## Run
 
@@ -29,6 +48,9 @@ The binary is `work/harness/harness.exe` (git-ignored, like everything in `work/
 * `--input FILE`: lines `FRAME BUTTONS`; from FRAME on, hold BUTTONS (any of `U D L R A B C S`,
   or `-` for none).
 * `--pc-trace FRAME`: print the PC, SP and the long at SP every 61 cycles of one frame.
+
+`core.c` (power-on, interrupts, the frame loop) is shared by both programs, so a frame in the
+window is the same frame the headless harness produces.
 
 It runs at about seven times real time. To start a game from power-on: Start at frame 480,
 Start again at 600 (the menu), then face buttons to page the intro text.

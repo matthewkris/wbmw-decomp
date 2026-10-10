@@ -1,10 +1,14 @@
-# Reference harness. Build with GCC (MSYS2 UCRT64 on the owner's machine) and GNU make.
+# Reference harness (headless) and play (live window). Build with GCC and GNU make; on the
+# owner's machine both come from MSYS2 UCRT64, along with SDL2 for the window.
 CC = gcc
 CFLAGS ?= -O2 -Wall -Wno-unused-function
 MUSASHI = ../third_party/musashi
 OUT = ../work/harness
+CORE = core.c bus.c vdp.c png.c
+CPU = $(OUT)/m68kcpu.o $(OUT)/m68kops.o $(OUT)/softfloat.o
+LDFLAGS = -static-libgcc
 
-all: $(OUT)/harness
+all: $(OUT)/harness $(OUT)/play
 
 $(OUT)/m68kmake: $(MUSASHI)/m68kmake.c
 	@mkdir -p $(OUT)
@@ -13,11 +17,19 @@ $(OUT)/m68kmake: $(MUSASHI)/m68kmake.c
 $(OUT)/m68kops.c: $(OUT)/m68kmake $(MUSASHI)/m68k_in.c
 	$(OUT)/m68kmake $(OUT) $(MUSASHI)/m68k_in.c
 
-$(OUT)/harness: main.c bus.c vdp.c png.c md.h $(OUT)/m68kops.c $(MUSASHI)/m68kcpu.c
-	$(CC) $(CFLAGS) -w -I$(MUSASHI) -I$(OUT) -c $(MUSASHI)/m68kcpu.c -o $(OUT)/m68kcpu.o
-	$(CC) $(CFLAGS) -w -I$(MUSASHI) -I$(OUT) -c $(OUT)/m68kops.c -o $(OUT)/m68kops.o
-	$(CC) $(CFLAGS) -I$(MUSASHI) -I$(OUT) -c $(MUSASHI)/softfloat/softfloat.c -o $(OUT)/softfloat.o -w
-	$(CC) $(CFLAGS) -I$(MUSASHI) main.c bus.c vdp.c png.c $(OUT)/m68kcpu.o $(OUT)/m68kops.o $(OUT)/softfloat.o -o $@ -lm
+$(OUT)/m68kcpu.o: $(MUSASHI)/m68kcpu.c $(MUSASHI)/m68kconf.h $(OUT)/m68kops.c
+	$(CC) $(CFLAGS) -w -I$(MUSASHI) -I$(OUT) -c $< -o $@
+$(OUT)/m68kops.o: $(OUT)/m68kops.c
+	$(CC) $(CFLAGS) -w -I$(MUSASHI) -I$(OUT) -c $< -o $@
+$(OUT)/softfloat.o: $(MUSASHI)/softfloat/softfloat.c
+	$(CC) $(CFLAGS) -w -I$(MUSASHI) -c $< -o $@
+
+$(OUT)/harness: main.c $(CORE) md.h $(CPU)
+	$(CC) $(CFLAGS) -I$(MUSASHI) main.c $(CORE) $(CPU) -o $@ $(LDFLAGS) -lm
+
+$(OUT)/play: play.c $(CORE) md.h $(CPU)
+	$(CC) $(CFLAGS) -I$(MUSASHI) $$(sdl2-config --cflags) play.c $(CORE) $(CPU) -o $@ $(LDFLAGS) $$(sdl2-config --libs) -lm
+	cp "$$(dirname $$(which sdl2-config))/SDL2.dll" $(OUT)/
 
 clean:
 	rm -rf $(OUT)

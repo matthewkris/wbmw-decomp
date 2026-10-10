@@ -1,4 +1,5 @@
 /* Memory map, I/O ports, controller and the serial EEPROM. */
+#include <stdio.h>
 #include <string.h>
 #include "md.h"
 
@@ -62,6 +63,25 @@ static void eeprom_write(unsigned v)
 }
 
 static unsigned eeprom_read(void) { return (e_drive ? e_out : e_sda) | e_scl << 1; }
+
+/* the 128 bytes of save data, kept in a file between sessions of the live window */
+int eeprom_load(const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) return -1;
+    size_t n = fread(eeprom, 1, sizeof eeprom, f);
+    fclose(f);
+    return n == sizeof eeprom ? 0 : -1;
+}
+
+int eeprom_save(const char *path)
+{
+    FILE *f = fopen(path, "wb");
+    if (!f) return -1;
+    size_t n = fwrite(eeprom, 1, sizeof eeprom, f);
+    fclose(f);
+    return n == sizeof eeprom ? 0 : -1;
+}
 
 void bus_reset(void)
 {
