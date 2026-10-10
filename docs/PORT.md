@@ -51,7 +51,7 @@ frame.
 
 ## Status
 
-22 routines, all with zero mismatches: shadow-checked calls in the two standard runs, plus
+24 routines, all with zero mismatches: shadow-checked calls in the two standard runs, plus
 20,000 fuzz cases each where noted.
 
 | Routine | Address | Gameplay calls | Fuzz | Coverage |
@@ -72,6 +72,9 @@ frame.
 | `DecodeGfxBlock` (all four formats) | $6BC4 | 168 | 10,000 (random real blocks) | all |
 | `StreamGfxBlocks` | $22F0 | 10 (each up to 64 decodes) | 300 random slot tables | all |
 | `CopyRawTiles` | $22A8 | 592 | 20,000 (raw-block tiles, clears) | all; the two hang loops for bad entries are reproduced, not exercised |
+
+| `BuildSprites` (the per-frame sprite table) | $53AA | 6,711 frames | 3,000 frames of random entities | all |
+| `AddEntitySprites` | $54C4 | inside `BuildSprites` | 20,000 (real mappings, random camera, window, budget) | all |
 
 Once `StreamGfxBlocks` is ported, `DecodeGfxBlock` is only ever reached inside it, so its gameplay
 checks now happen as part of `StreamGfxBlocks`'s (nested ported calls run as C inside an

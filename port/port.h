@@ -134,6 +134,12 @@ static inline uint32_t add_l(uint16_t *ccr, uint32_t s, uint32_t d)          /* 
     return r;
 }
 static inline uint16_t tst_l(uint16_t ccr, uint32_t v) { return cc_move_l(ccr, v); }
+static inline void cmp_l(uint16_t *ccr, uint32_t s, uint32_t d)              /* cmp.l / cmpa: X kept */
+{
+    uint32_t r = d - s;
+    int v = ((s ^ d) & (r ^ d) & 0x80000000u) != 0;
+    *ccr = (uint16_t)((*ccr & CC_X) | (r & 0x80000000u ? CC_N : 0) | (r ? 0 : CC_Z) | (v ? CC_V : 0) | (s > d ? CC_C : 0));
+}
 static inline void cmp_b(uint16_t *ccr, uint32_t src, uint32_t dst)         /* cmp.b / cmpi.b: X kept */
 {
     uint32_t s = src & 0xFF, d = dst & 0xFF, r = (d - s) & 0xFF;

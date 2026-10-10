@@ -134,7 +134,8 @@
   "00F6F8": "LoadSwordGfx",
   "00F742": "LoadShieldGfx",
   "00F75E": "shield_tiles",
-  "00F710": "sword_gfx_lists"
+  "00F710": "sword_gfx_lists",
+  "0053AA": "BuildSprites"
  },
  "vector_names": {
   "000200": "EntryPoint",

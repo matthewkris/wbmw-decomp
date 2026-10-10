@@ -8,6 +8,7 @@ void ApplyVelX(Cpu *), ApplyVelY(Cpu *), ApplyVelocity(Cpu *), FrictionX(Cpu *),
 void AccelX(Cpu *), AccelY(Cpu *), Accel(Cpu *), QueueSound(Cpu *), QueueSoundFF(Cpu *), SetGfxSlots(Cpu *);
 void SetAnim(Cpu *), ResetAnimTimer(Cpu *), SetAnimNow(Cpu *), UpdateAnim(Cpu *);
 void DecodeGfxBlock(Cpu *), StreamGfxBlocks(Cpu *), CopyRawTiles(Cpu *);
+void BuildSprites(Cpu *), AddEntitySprites(Cpu *);
 
 const PortRoutine port_routines[] = {
     {0x0005D8, 0x0005FE, "Random", Random},
@@ -32,5 +33,7 @@ const PortRoutine port_routines[] = {
     {0x006BC4, 0x006EA8, "DecodeGfxBlock", DecodeGfxBlock},
     {0x0022F0, 0x00234C, "StreamGfxBlocks", StreamGfxBlocks},
     {0x0022A8, 0x0022F0, "CopyRawTiles", CopyRawTiles},
+    {0x0053AA, 0x0054C4, "BuildSprites", BuildSprites},
+    {0x0054C4, 0x00557E, "AddEntitySprites", AddEntitySprites},
 };
 const int port_routine_count = sizeof port_routines / sizeof port_routines[0];

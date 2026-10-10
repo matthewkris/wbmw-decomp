@@ -232,6 +232,35 @@ static void anim_walk(void)
     fprintf(stderr, "fuzz: %d animations\n", anim_n);
 }
 
+/* the script address of animation k, and the item addresses in it */
+static uint32_t anim_script(int k)
+{
+    const uint8_t *t = anim_sga[k];
+    uint32_t l2 = ANIM_DATA + (uint32_t)aw(t[0]);
+    uint32_t l3 = ANIM_DATA + (uint32_t)(int16_t)bus_read16(l2 + t[1]);
+    return ANIM_DATA + (uint32_t)(int16_t)bus_read16(l3 + t[2]);
+}
+
+/* a mapping used by some frame of a random animation */
+static uint32_t random_mapping(void)
+{
+    anim_walk();
+    for (;;) {
+        uint32_t p = anim_script((int)(rnd() % (unsigned)anim_n)), maps[64]; int n = 0;
+        for (int i = 0; i < 64; i++) {
+            unsigned b = bus_read8(p);
+            if (b >= 0xF0) { unsigned k = b & 15; p += 1 + (k >= 10 && k <= 12 ? 2 : 0); if (k == 13 || k == 15) break; continue; }
+            maps[n++] = ANIM_DATA + (uint32_t)(int16_t)bus_read16(p + 1);
+            p += 3;
+            if (!b) break;
+        }
+        if (n) return maps[rnd() % (unsigned)n];
+    }
+}
+
+static void put_word(uint32_t a, uint32_t v) { ram[a & 0xFFFF] = (uint8_t)(v >> 8); ram[(a + 1) & 0xFFFF] = (uint8_t)v; }
+static void put_long(uint32_t a, uint32_t v) { put_word(a, v >> 16); put_word(a + 2, v); }
+
 int hybrid_fuzz(const char *name, long count)
 {
     int idx = -1;
@@ -278,6 +307,27 @@ int hybrid_fuzz(const char *name, long count)
                 ram[0x8E08 + 2 * i] = (uint8_t)(want >> 8); ram[0x8E09 + 2 * i] = (uint8_t)want;
                 ram[0x8E88 + 2 * i] = (uint8_t)(have >> 8); ram[0x8E89 + 2 * i] = (uint8_t)have;
             }
+        }
+        if (!strcmp(name, "AddEntitySprites") || !strcmp(name, "BuildSprites")) {
+            /* real mappings and animations; camera, window and budget around realistic values */
+            anim_walk();
+            for (uint32_t i = 0; i < 4; i++) put_word(0x8B34 + 2 * i, 0xFF00 + (rnd() & 0x1FF));
+            put_word(0x8B28, 0x60 + rnd() % 0x40); put_word(0x8B2A, 0x140 + rnd() % 0x40);
+            put_word(0x8B2E, 0x160 + rnd() % 0x40);
+            ram[0x8B30] = (uint8_t)(rnd() % 40); ram[0x8B31] = (uint8_t)(1 + rnd() % 64);
+            put_word(0x8AE4, rnd() % 3 ? 0 : rnd()); ram[0x8A77] = (uint8_t)rnd();
+            for (uint32_t e = 0; e < 0x100; e += 4) {
+                put_word(0xC200 + e, (rnd() % 2) * 4);                      /* camera index */
+                put_word(0xC800 + e, (uint32_t)(0x80 + rnd() % 0x180 - 0x100 + (rnd() & 0x1FF)));
+                put_word(0xC900 + e, (uint32_t)(0x80 + rnd() % 0x140 - 0x100 + (rnd() & 0x1FF)));
+                put_long(0xC100 + e, random_mapping());
+                ram[0xC303 + e] = (uint8_t)((rnd() % 16) * 2);                /* sprite bucket */
+                const uint8_t *t = anim_sga[rnd() % (unsigned)anim_n];
+                ram[0xC300 + e] = t[0]; ram[0xC301 + e] = t[1]; ram[0xC302 + e] = t[2];
+                uint32_t sc = anim_script((int)(t - anim_sga[0]) / 3);
+                put_long(0xC400 + e, sc); put_long(0xC500 + e, sc);
+            }
+            if (!strcmp(name, "AddEntitySprites")) m68k_set_reg(M68K_REG_A3, 0x00FF2800 + (rnd() % 64) * 8);
         }
         if (!strcmp(name, "DecodeGfxBlock")) {     /* a real block, into the game's decode buffer */
             m68k_set_reg(M68K_REG_D0, (rnd() << 16) | (rnd() % 768));
