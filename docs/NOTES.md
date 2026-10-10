@@ -77,6 +77,59 @@ found; `gfx.py --png` writes grey levels.
   area's background tiles (greens and browns). `tools/gfx.py --palette N` renders with record N,
   `--swatches` draws all 160.
 
+### Rooms
+
+Decoded by `tools/rooms.py` (`--list` parses all 170 rooms in 19 areas and decodes every map,
+`problems: 0`; `--all DIR` renders every room to PNG). All word offsets in these formats are
+used through `(aN,dN.w)` and are therefore **signed**; some rooms point at data before their
+area block.
+
+* **Area block** (`area00`–`area18`, `data_dir` slots 8–26): word offsets to room scripts,
+  indexed by the room number in `$FF9669`. `LoadRoom` ($9330, from $93C4) runs the script.
+* **Room script**: a command byte, its arguments, repeated until $FF; handlers in
+  `room_commands` ($9442). A pointer argument `P` is a flag byte, then a long (flag set) or a
+  signed word offset from the area block (`ReadRoomPointer`, $9500).
+
+  | Cmd | Args | Effect |
+  |---|---|---|
+  | 00 / 01 | kind, width, height, word, offset | map layer for plane A / B (`SetupLayer` $946C): width in chunks (256 px), height in chunks (192 px), map data at the offset |
+  | 10 / 11 | same with a long pointer | as 00 / 01 |
+  | 02 | P | `SetGfxSlots`: which graphics blocks fill VRAM |
+  | 03 | byte, word | palette record for line 2 (`$FF9670`) and a word to `$FF966C` |
+  | 0A | byte | palette record for line 3 (`$FF9671`) |
+  | 04 | P | graphics stream list for the `Mxcg` task ($23A6), probably animated tiles |
+  | 07 | byte, word, byte, byte | place an object ($11BF0): byte to `d5`, word to `d4`, then X and Y in 16 px units (+$F00) |
+  | 08 | P | enemy list (`$FFA11E`) |
+  | 05, 06, 09, 0B–0F, 12–14 | see `tools/rooms.py` | stored to RAM or passed to routines not yet read |
+
+  Palette lines 0 and 1 come from `$FF966E`/`$FF966F`, set to records 0 and 1 at $9378; the
+  renderer assumes those.
+* **Graphics slots** (`SetGfxSlots`, $234C): 64 words at `$FF8E08`, one graphics block (32 tiles)
+  per 1 KB of VRAM; `StreamGfxBlocks` ($22F0) decodes the changed ones into VRAM. List bytes:
+  $00–$7F hi + lo byte = block id for the next slot; $80–$BF select slot n; $C0 skip a slot;
+  $C1–$F7 n consecutive ids from a following word; $F8–$FE n+1 empty slots; $FF end. A base
+  list (`base_gfx_slots`, $96BC) is applied before every room.
+* **Blocks** are 16x16 pixels = four tile words (top left, top right, bottom left, bottom right).
+  A block word's bits 8–9 pick one of four tables, the low byte the block. Tables 0–2 are shared
+  by the whole game (`LoadSharedBlocks` $9F46, three lists from `data_dir` slot 1, into
+  `$FFE500`, `$FFEE00`, `$FFF700`); table 3 belongs to the room's map. Each table is 256 x 8
+  bytes, then 256 attribute bytes (collision type, read by `TileAttrAt`).
+* **Block list** (`UnpackBlocks`, $9F6A): word n, then n 4-bit codes (high nibble first), then
+  data. Code 0 leaves the block alone. Otherwise m = code xor $F: if m bit 3 is clear an
+  attribute byte comes first; then the first tile word; then by m & 7: 0 = three more words;
+  1 = +1, +$10, +$11 (a 2x2 run in the sheet); 2 = two bytes giving low-5-bit variants of the
+  first; 3 = three low bytes under the first word's high byte; 4–7 = three bytes, each low 5 bits
+  plus flip bits (bits 6–7 become 11–12) under the first word's other bits.
+* **Layer map** (`UnpackLayerMap`, $A068): signed word offset to the room's block list, signed
+  word offset to a chunk offset table, then (position, chunk) byte pairs until a negative byte.
+  Position = row * 8 + column on an 8x8 grid of chunks (`$FF968C` / `$FF96CC` in RAM); chunk is a
+  byte offset into the offset table.
+* **Chunk** (16 x 12 block words): a count byte c. If c is negative, `ExpandZeroRuns` ($A1C4)
+  first expands the rest (length byte, mask count byte, masks MSB first where 1 = zero, then the
+  literal bytes) and decoding restarts from the expanded buffer. Then c groups of (block word,
+  one bit per still-empty cell, LSB first) fill cells; the remaining cells take 10-bit values
+  from a packed stream (four per five bytes, MSB first).
+
 ### Pointer fields
 
 `-$2900` (hurtbox list) and `-$2A00` (attack box list) hold ROM addresses of hitbox lists: a
@@ -204,8 +257,9 @@ Sound: the 68000 never writes the YM2612 or PSG. `$366` queues one command byte 
 * Short data blocks stored to `-$2900`/`-$2A00` sit right before the code that uses them
   ($18BB8, $1A3DE); the tracer read two of them as code until the fields were hinted. What
   interprets that data is not yet known.
-* Which palette record goes with which tiles: decided per tile by the tilemaps (the palette
-  line bits), so a faithful render needs the map and sprite formats.
+* Room commands 05, 06, 09, 0B–0F and 12–14, the object and enemy lists, and parallax: the
+  room renderer draws a narrower background layer once, with no scrolling.
+* Sprite layouts (mappings at entity field `-$3F00`), to draw Shion and enemies.
 * Which tiles each sprite uses and in what layout (Genesis sprites are column-major).
 * Formats of the 27 directory blocks; several contain long pointer tables of their own
   ($211CA, $2246C–$224B8), which stay inside `incbin` ranges and are not relocatable yet.

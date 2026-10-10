@@ -35,6 +35,8 @@ Done:
 - **Graphics decoded.** `tools/gfx.py` decodes all 726 chunks of the graphics table (raw, a
   per-tile mask/bitplane format and Huffman-coded LZ77), verifies each against the chunk
   boundaries, and writes tile sheets as PNG (`make gfx`, output in `work/`).
+- **Rooms render.** `tools/rooms.py` parses all 170 room scripts, decodes their maps, block
+  tables and graphics slot lists, and renders any room (or `--all`) to PNG in real colours.
 - **Kernel named.** 109 routines and data labels in the `labels` section of
   `analysis/layout.json`: scheduler, sound queue, VDP setup, random, entity animation and physics,
   hitboxes, the enemy library. Documented in `docs/NOTES.md` under "Entities" (field map of the
@@ -47,8 +49,9 @@ Done:
 
 Not done, in the order I would do it:
 
-1. **Decode the directory blocks.** Each has its own format; several hold long pointer tables
-   (`$211CA`, `$2246C–$224B8`) that are still inside `incbin` ranges.
+1. **Decode the rest of the room data**: objects, enemy lists, the remaining room commands,
+   and sprite mappings, so rooms can be drawn with their contents. The other directory blocks
+   (`dir00`–`dir07`) still have unknown formats.
 2. **Disassemble the Z80 sound driver** (`$98000`, 6,775 bytes) and confirm whether
    `$99A77–$9F776` is its music data.
 3. **Build a reference harness**: the original 68000 code running under an interpreter core
@@ -59,14 +62,13 @@ Not done, in the order I would do it:
 
 ## The next step
 
-Decode the area blocks (`area00`–`area18`, read at `$93C4`): they hold the room maps, which
-say which tiles and palette lines make up each screen. `MapBlockAt` ($2542), `TileAttrAt`
-($30DA) and `DrawTileList` ($234C) are the readers to start from. The goal is a tool that renders
-a room to PNG from the owner's ROM, checked against the game by the owner.
+Two good directions; ask the owner which matters more.
 
-Keep naming as you go: every routine you understand gets a label in `analysis/layout.json` and,
-if others will call it, a row in "Named routines". Names marked provisional there should be
-confirmed or changed when their callers are read.
+- **Content:** sprite mappings (`-$3F00`, set by `UpdateAnim`) and the enemy and object lists in
+  room commands 07 and 08, so rendered rooms show Shion, enemies and items.
+- **The harness:** a 68000 interpreter core running the original code against a reimplemented
+  VDP, headless, dumping frames and RAM. Everything decoded so far gives it a reference: a
+  harness frame of a room can be compared against `rooms.py`'s render of the same room.
 
 The source rebuilds identically but is **not fully relocatable**. Still numeric:
 
