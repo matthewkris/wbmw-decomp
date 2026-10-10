@@ -1,5 +1,7 @@
 {
  "comment": "ROM layout outside the traced code: addresses and names only, no ROM bytes. Read by tools/mkasm.py. A blob runs to the next piece. A fill is checked to be one repeated byte. ptr32 is a table of long pointers; gfxtab is a table of longs whose low 24 bits point at a graphics chunk and whose top byte is a format flag ($FF = empty slot).",
+ "labels": {"00599C": "palette_table", "00135C": "LoadPalettes", "001370": "UnpackPalette",
+            "005370": "UploadCRAM", "0022A8": "CopyRawTiles", "006BC4": "DecodeGfxBlock"},
  "vector_names": {"000200": "EntryPoint", "0049FA": "BusError", "0049F8": "AddressError", "0049FE": "Exception",
                   "004B58": "UnusedInt", "004B5C": "VBlank", "004A02": "TrapHang"},
  "pieces": [

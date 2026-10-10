@@ -60,6 +60,23 @@ Decoded sheets show the font (Latin, digits, hiragana, katakana) in blocks 0–5
 after it, and background tilesets from block 96. Colours are unknown until the palettes are
 found; `gfx.py --png` writes grey levels.
 
+### Palettes
+
+* `palette_table` ($599C–$643B): 160 records of 17 bytes. A record holds colours 1–15 of one
+  palette line: a big-endian word of high blue bits (bit n for colour n+1), then 15 bytes
+  `BBGGGRRR`. `UnpackPalette` ($1370) turns each into the CRAM word `0000 BBB0 GGG0 RRR0`.
+  Colour 0 of each line is never loaded (transparent).
+* `LoadPalettes` ($135C) takes `a0` = four record numbers, one per line, and fills the target
+  palette at `$FF8B56` (64 words), starting at `$FF8B58` so colour 0 is skipped. 11 call sites.
+  The in-game default list is 0, 1, 2, 3 ($91BA); the title uses 5, 1, 2, 3 ($7018) and later
+  screens 94–100 ($72F0, $72F4). Area palettes come from `$FF966E`, filled from area data.
+* `$FF8BD6` is the palette on screen. Fades and `$55BA` move it toward `$FF8B56`;
+  `UploadCRAM` ($5370) copies it to CRAM when bit 7 of `$FF8C56` is set. Besides the boot clear at $4A16 it is the only
+  `move.l #$C0xxxxxx` CRAM command in the code; DMA to CRAM has not been ruled out. `$570E` applies per-entry palette animation scripts.
+* Checked by eye: line 0 colours Shion's sprites (blue, skin, silver armour) and line 2 the first
+  area's background tiles (greens and browns). `tools/gfx.py --palette N` renders with record N,
+  `--swatches` draws all 160.
+
 ### Pointer fields
 
 Entity fields `-$2900` and `-$2A00` (animation/script pointers; `-$2900` is copied into
@@ -119,7 +136,8 @@ Sound: the 68000 never writes the YM2612 or PSG. `$366` queues one command byte 
 * Short data blocks stored to `-$2900`/`-$2A00` sit right before the code that uses them
   ($18BB8, $1A3DE); the tracer read two of them as code until the fields were hinted. What
   interprets that data is not yet known.
-* Palettes: where they live and how they are loaded (needed for real colours).
+* Which palette record goes with which tiles: decided per tile by the tilemaps (the palette
+  line bits), so a faithful render needs the map and sprite formats.
 * Which tiles each sprite uses and in what layout (Genesis sprites are column-major).
 * Formats of the 27 directory blocks; several contain long pointer tables of their own
   ($211CA, $2246C–$224B8), which stay inside `incbin` ranges and are not relocatable yet.

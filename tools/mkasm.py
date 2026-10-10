@@ -82,6 +82,10 @@ for i, a in enumerate(seq):
             addr_imm[a] = v
 for a, v in addr_imm.items(): name(v, 'ptr' if kind[v] == 1 else 'dat')
 
+for a, n in LAY.get('labels', {}).items():                  # hand-given names win
+    assert H(a) in names, 'layout label %s is not at a generated label' % a
+    names[H(a)] = n
+
 # ---- data pieces from analysis/layout.json; tables add a blob piece at each target ----
 pieces = {}                   # addr -> dict(type, name, ...)
 for p in LAY['pieces']: pieces[H(p['addr'])] = dict(p)

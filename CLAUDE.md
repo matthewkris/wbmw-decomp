@@ -35,31 +35,34 @@ Done:
 - **Graphics decoded.** `tools/gfx.py` decodes all 726 chunks of the graphics table (raw, a
   per-tile mask/bitplane format and Huffman-coded LZ77), verifies each against the chunk
   boundaries, and writes tile sheets as PNG (`make gfx`, output in `work/`).
+- **Palettes decoded.** 160 packed palette records at `$599C`; `gfx.py --palette N` renders in
+  real colours and `--swatches` shows them all. Hand-given names (`palette_table`,
+  `LoadPalettes`, `DecodeGfxBlock`, ...) go in the `labels` section of `analysis/layout.json`.
 - A first survey of the engine: task scheduler, entity layout, hardware access, sound and save
   interfaces, data directory, graphics table and its formats. All in `docs/NOTES.md`.
 
 Not done, in the order I would do it:
 
-1. **Find the palettes** (CRAM writes through `$C00004` with the CRAM write command) so the
-   tile sheets come out in real colours, then work out sprite layouts.
-2. **Name the kernel.** Start with the most-called routines: `$7E8` (160 callers), `$400`
+1. **Name the kernel.** Start with the most-called routines: `$7E8` (160 callers), `$400`
    (yield, 123), `$366` (queue sound command, 98), `$5D8` (73), `$43BC` (61), `$48C4` (49).
    Keep names in a symbol file the tools read, not hard-coded in scripts.
-3. **Decode the directory blocks.** Each has its own format; several hold long pointer tables
+2. **Decode the directory blocks.** Each has its own format; several hold long pointer tables
    (`$211CA`, `$2246C–$224B8`) that are still inside `incbin` ranges.
-4. **Disassemble the Z80 sound driver** (`$98000`, 6,775 bytes) and confirm whether
+3. **Disassemble the Z80 sound driver** (`$98000`, 6,775 bytes) and confirm whether
    `$99A77–$9F776` is its music data.
-5. **Build a reference harness**: the original 68000 code running under an interpreter core
+4. **Build a reference harness**: the original 68000 code running under an interpreter core
    against a reimplemented hardware layer, able to run headless, dump frames as images, and dump
    RAM per frame. This is the oracle every later step is checked against.
-6. **Port subsystem by subsystem to C**, comparing RAM state frame by frame against the harness.
-7. **Replace the emulated hardware** with a native renderer and input layer.
+5. **Port subsystem by subsystem to C**, comparing RAM state frame by frame against the harness.
+6. **Replace the emulated hardware** with a native renderer and input layer.
 
 ## The next step
 
-Palettes. Find the code that writes CRAM (VDP control word with the CRAM write command, then 64
-colours through `$C00000`) and the tables it copies from, add them to `analysis/layout.json`,
-and let `tools/gfx.py` render with a chosen palette. After that, name the kernel routines.
+Name the kernel, starting with the most-called routines listed above, using the `labels`
+section of `analysis/layout.json`. Each name should come with a line in `docs/NOTES.md` saying
+what the routine takes and returns. Then decode the area blocks (`area00`–`area18`): they hold
+the room maps, which say which tiles and palette lines make up each screen, so they are what
+turns tile sheets into real screenshots.
 
 The source rebuilds identically but is **not fully relocatable**. Still numeric:
 

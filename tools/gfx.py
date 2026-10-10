@@ -1,6 +1,6 @@
 """Decode the graphics table at $41000 and dump the tiles.
 
-Usage: gfx.py ROM [--png out.png] [--blocks FIRST:LAST] [--scale N]
+Usage: gfx.py ROM [--png out.png] [--blocks FIRST:LAST] [--scale N] [--palette N] [--swatches out.png]
 
 Each of the 768 table entries covers 32 tiles (1,024 bytes of VRAM data). The top byte of the
 entry selects the format; the low 24 bits point at the data. The decoders below transcribe the
@@ -10,6 +10,7 @@ decode to exactly 1,024 bytes and to end exactly where the next chunk begins.
 import sys, struct, zlib, argparse
 
 TABLE, COUNT, BLOCK = 0x41000, 768, 1024
+PALETTES, NPAL = 0x599C, 160                  # packed palette records, read by $135C/$1370
 
 class Bits:
     """MSB-first bit reader with the 68000 code's refill behaviour ($6DB0, $6E4E)."""
@@ -126,8 +127,39 @@ def check(d):
     if extra: print('raw blocks followed by extra tiles:', len(extra), 'blocks,', sorted(set(extra.values())), 'tiles each')
     return blocks, bad
 
-def png(path, blocks, scale=1):
-    """one row of 32 tiles per block, 4-bit grey levels (the real palettes are not decoded yet)"""
+def palette(d, n):
+    """record n of the packed palette table, unpacked as $1370 does: 16 Genesis colour words.
+    Colour 0 is transparent and never loaded (returned as 0). A record is a word of high blue
+    bits, LSB first, then 15 bytes BBGGGRRR."""
+    a = PALETTES + 17 * n
+    hi = d[a] << 8 | d[a + 1]
+    out = [0]
+    for i in range(15):
+        b = d[a + 2 + i]
+        out.append((b & 7) << 1 | (b & 0x38) << 2 | (b & 0xC0) << 3 | (0x800 if hi >> i & 1 else 0))
+    return out
+
+def rgb(w):
+    """Genesis colour word 0000BBB0GGG0RRR0 to 8-bit RGB (linear steps)"""
+    return tuple(((w >> s) & 0xE) * 255 // 14 for s in (0, 4, 8))
+
+def write_png(path, W, H, rows, pal=None, depth=8):
+    """indexed PNG with palette pal, or 8-bit RGB when pal is None"""
+    def chunk(t, x): return struct.pack('>I', len(x)) + t + x + struct.pack('>I', zlib.crc32(t + x))
+    hdr = struct.pack('>IIBBBBB', W, H, depth, 3 if pal else 2, 0, 0, 0)
+    open(path, 'wb').write(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', hdr) + (chunk(b'PLTE', pal) if pal else b'')
+                           + chunk(b'IDAT', zlib.compress(b''.join(rows), 9)) + chunk(b'IEND', b''))
+    print('wrote', path, '%dx%d' % (W, H))
+
+def swatches(path, d, size=12):
+    """all palettes, one row of 16 colours each (RGB)"""
+    rows = []
+    for n in range(NPAL):
+        rows += [b'\0' + b''.join(bytes(rgb(w)) * size for w in palette(d, n))] * size
+    write_png(path, 16 * size, NPAL * size, rows)
+
+def png(path, blocks, scale=1, pal=None):
+    """one row of 32 tiles per block, in a palette record's colours or 4-bit grey levels"""
     W, H = 32 * 8 * scale, len(blocks) * 8 * scale
     rows = []
     for b in blocks:
@@ -137,18 +169,17 @@ def png(path, blocks, scale=1):
                 for c in b[t * 32 + y * 4: t * 32 + y * 4 + 4]: px += [c >> 4] * scale + [c & 15] * scale
             line = bytes(px[i] << 4 | px[i + 1] for i in range(0, len(px), 2))
             rows += [b'\0' + line] * scale
-    pal = b''.join(bytes([v * 17] * 3) for v in range(16))
-    def chunk(t, x): return struct.pack('>I', len(x)) + t + x + struct.pack('>I', zlib.crc32(t + x))
-    open(path, 'wb').write(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', W, H, 4, 3, 0, 0, 0))
-                           + chunk(b'PLTE', pal) + chunk(b'IDAT', zlib.compress(b''.join(rows), 9)) + chunk(b'IEND', b''))
-    print('wrote', path, '%dx%d' % (W, H))
+    colours = [rgb(w) for w in pal] if pal else [(v * 17,) * 3 for v in range(16)]
+    write_png(path, W, H, rows, b''.join(bytes(c) for c in colours), 4)
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(); ap.add_argument('rom'); ap.add_argument('--png'); ap.add_argument('--blocks'); ap.add_argument('--scale', type=int, default=1)
+    ap.add_argument('--palette', type=int); ap.add_argument('--swatches')
     A = ap.parse_args()
     d = open(A.rom, 'rb').read()
     blocks, bad = check(d)
     if A.png:
         lo, hi = map(int, A.blocks.split(':')) if A.blocks else (0, COUNT)
-        png(A.png, blocks[lo:hi], A.scale)
+        png(A.png, blocks[lo:hi], A.scale, palette(d, A.palette) if A.palette is not None else None)
+    if A.swatches: swatches(A.swatches, d)
     sys.exit(1 if bad else 0)
