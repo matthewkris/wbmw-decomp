@@ -51,7 +51,7 @@ frame.
 
 ## Status
 
-35 routines, all with zero mismatches: shadow-checked calls in the two standard runs, plus
+45 routines, all with zero mismatches: shadow-checked calls in the two standard runs, plus
 20,000 fuzz cases each where noted.
 
 | Routine | Address | Gameplay calls | Fuzz | Coverage |
@@ -81,6 +81,14 @@ frame.
 | `HitboxOverlap` (+ `Swap`), `BoxPairOverlap` | $C3E, $C36, $CA0 | 0 | 20,000 each | all |
 | `BodyVsHurtBoxes`, `BoxVsBody` | $D2C, $DB6 | 0 | 20,000 each | all |
 | `ResolveContact`, `ContactSide` | $E1A, $E4A | inside the above | 20,000 each | all |
+
+| `MapBlockAt`, `MapBlockAtRaw` | $2542, $2570 | 1,835 / 0 | 50,000 each (real and synthetic layers) | all |
+| `TileAttrAt`, `TileAttrAtPixel`, `TileTypeOf` | $30DA, $30D2, $30F4 | 23,154 / 34 / 15 | 20,000 to 40,000 each | all |
+| `ProbeTileAt`/`AtA3`/`Below`/`Above`/`Feet` | $3FAC, $3FB0, $3F58, $3F74, $3F92 | 13,316 together | 20,000 each | all |
+
+The map lookups are fuzzed from two states (the first room, and the attract demo outdoors) and
+half the time against a synthetic layer (random extents up to 8x8 chunks, random chunk map),
+because no room the standard runs visit is taller than one chunk.
 
 The hitbox routines are mostly reached from enemy code the standard runs barely exercise (no
 enemy fights in them), so fuzzing carries them: two entities close together with random box

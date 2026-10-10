@@ -12,6 +12,8 @@ void BuildSprites(Cpu *), AddEntitySprites(Cpu *);
 void HitboxOverlapSwap(Cpu *), HitboxOverlap(Cpu *), BoxPairOverlap(Cpu *), BodyVsHurtBoxes(Cpu *);
 void BodyVsAttackBoxesSwap(Cpu *), BodyVsAttackBoxes(Cpu *), BoxVsBody(Cpu *), ResolveContact(Cpu *);
 void ContactSide(Cpu *), CheckBodyContact(Cpu *), BodyOverlap(Cpu *);
+void MapBlockAt(Cpu *), MapBlockAtRaw(Cpu *), TileAttrAtPixel(Cpu *), TileAttrAt(Cpu *), TileTypeOf(Cpu *);
+void ProbeTileBelow(Cpu *), ProbeTileAbove(Cpu *), ProbeTileFeet(Cpu *), ProbeTileAt(Cpu *), ProbeTileAtA3(Cpu *);
 
 const PortRoutine port_routines[] = {
     {0x0005D8, 0x0005FE, "Random", Random},
@@ -49,5 +51,15 @@ const PortRoutine port_routines[] = {
     {0x000E4A, 0x000E64, "ContactSide", ContactSide},
     {0x000E64, 0x000E9A, "CheckBodyContact", CheckBodyContact},
     {0x000E9A, 0x000EE2, "BodyOverlap", BodyOverlap},
+    {0x002542, 0x002570, "MapBlockAt", MapBlockAt},
+    {0x002570, 0x0025CA, "MapBlockAtRaw", MapBlockAtRaw},
+    {0x0030D2, 0x0030DA, "TileAttrAtPixel", TileAttrAtPixel},
+    {0x0030DA, 0x0030F4, "TileAttrAt", TileAttrAt},
+    {0x0030F4, 0x003142, "TileTypeOf", TileTypeOf},
+    {0x003F58, 0x003F70, "ProbeTileBelow", ProbeTileBelow},
+    {0x003F74, 0x003F8E, "ProbeTileAbove", ProbeTileAbove},
+    {0x003F92, 0x003FAC, "ProbeTileFeet", ProbeTileFeet},
+    {0x003FAC, 0x003FB0, "ProbeTileAt", ProbeTileAt},
+    {0x003FB0, 0x003FC2, "ProbeTileAtA3", ProbeTileAtA3},
 };
 const int port_routine_count = sizeof port_routines / sizeof port_routines[0];

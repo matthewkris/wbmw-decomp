@@ -125,6 +125,18 @@ static inline uint32_t lsr_n(uint16_t *ccr, uint32_t v, unsigned n, unsigned bit
     *ccr = (uint16_t)(xf | (c ? CC_C : 0) | (r >> (bits - 1) & 1 ? CC_N : 0) | (r ? 0 : CC_Z));
     return r;
 }
+/* arithmetic shift left: like lsl, but V is set if the sign bit changes at any step */
+static inline uint32_t asl_n(uint16_t *ccr, uint32_t v, unsigned n, unsigned bits)
+{
+    uint64_t mask = (1ull << bits) - 1, x = v & mask;
+    int vflag;                                      /* the top n+1 bits are not all equal */
+    if (n == 0) vflag = 0;
+    else if (n >= bits) vflag = x != 0;
+    else { uint64_t top = x >> (bits - 1 - n), all = (1ull << (n + 1)) - 1; vflag = top != 0 && top != all; }
+    uint32_t r = lsl_n(ccr, v, n, bits);
+    *ccr = (uint16_t)((*ccr & ~CC_V) | (vflag ? CC_V : 0));
+    return r;
+}
 static inline uint32_t add_l(uint16_t *ccr, uint32_t s, uint32_t d)          /* add.l */
 {
     uint32_t r = s + d;

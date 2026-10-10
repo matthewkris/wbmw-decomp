@@ -357,6 +357,38 @@ int hybrid_fuzz(const char *name, long count)
                 for (uint32_t q = 0x4E00; q < 0x4E10; q++) ram[q] = (uint8_t)(rnd() % 64 - 32);
             }
         }
+        if (strstr(name, "MapBlock") || strstr(name, "Tile")) {
+            /* a position on (or just off) a real layer, sometimes as the player */
+            uint32_t layer = rnd() % 4 ? 0x9754 : 0x97D4;
+            if (rnd() % 2) {                        /* a synthetic layer: up to 8x8 chunks */
+                ram[layer] = (uint8_t)rnd();
+                put_word(layer + 0x44, rnd() % 128); put_word(layer + 0x46, (rnd() % 96) * 64);
+                uint32_t map = (uint32_t)(ram[layer + 0x22] << 8 | ram[layer + 0x23]) & 0xFFFF;
+                for (uint32_t i = 0; i < 64; i++) ram[(map + i) & 0xFFFF] = (uint8_t)(rnd() % 8 ? rnd() % 32 : 0xFF);
+            }
+            uint32_t cols = (uint32_t)(ram[layer + 0x44] << 8 | ram[layer + 0x45]) + 1;
+            uint32_t rows = (uint32_t)(ram[layer + 0x46] << 8 | ram[layer + 0x47]) / 64 + 1;
+            uint32_t col = rnd() % (cols + 8) - 4, row = rnd() % (rows + 8) - 4;
+            m68k_set_reg(M68K_REG_A3, 0xFFFF0000 | layer);
+            if (rnd() % 3 == 0) m68k_set_reg(M68K_REG_A4, (uint32_t)(int32_t)(int16_t)(ram[0x9EEE] << 8 | ram[0x9EEF]));
+            ram[0x9EF1] = (uint8_t)rnd();
+            if (!strcmp(name, "MapBlockAtRaw")) {
+                m68k_set_reg(M68K_REG_D2, (rnd() << 16) | (col % cols));
+                m68k_set_reg(M68K_REG_D3, (rnd() << 16) | ((row % rows) * 64));
+            } else if (!strcmp(name, "TileAttrAtPixel")) {
+                m68k_set_reg(M68K_REG_D6, (rnd() << 16) | ((0x1000 + col * 16 + rnd() % 16) & 0xFFFF));
+                m68k_set_reg(M68K_REG_D7, (rnd() << 16) | ((0x1000 + row * 16 + rnd() % 16) & 0xFFFF));
+            } else if (!strcmp(name, "TileTypeOf")) {
+                m68k_set_reg(M68K_REG_D1, rnd());
+            } else if (strstr(name, "Probe")) {
+                uint32_t e = m68k_get_reg(NULL, M68K_REG_A4);
+                put_word(0xC800 + e, 0x1000 + col * 16 + rnd() % 16);
+                put_word(0xC900 + e, 0x1000 + row * 16 + rnd() % 16);
+            } else {
+                m68k_set_reg(M68K_REG_D6, (rnd() << 16) | ((0x100 + col) & 0xFFFF));
+                m68k_set_reg(M68K_REG_D7, (rnd() << 16) | ((0x4000 + row * 64) & 0xFFFF));
+            }
+        }
         if (!strcmp(name, "DecodeGfxBlock")) {     /* a real block, into the game's decode buffer */
             m68k_set_reg(M68K_REG_D0, (rnd() << 16) | (rnd() % 768));
             m68k_set_reg(M68K_REG_A1, 0x00FF2D00);

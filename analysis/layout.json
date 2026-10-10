@@ -143,7 +143,12 @@
   "000DB6": "BoxVsBody",
   "000E1A": "ResolveContact",
   "000E4A": "ContactSide",
-  "000E9A": "BodyOverlap"
+  "000E9A": "BodyOverlap",
+  "002570": "MapBlockAtRaw",
+  "0030F4": "TileTypeOf",
+  "003F74": "ProbeTileAbove",
+  "003F92": "ProbeTileFeet",
+  "003FB0": "ProbeTileAtA3"
  },
  "vector_names": {
   "000200": "EntryPoint",
