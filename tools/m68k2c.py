@@ -421,6 +421,10 @@ with open(os.path.join(OUT, 'gen_registry.c'), 'w', newline='\n') as f:
     f.write('void rt_unknown(uint32_t from, uint32_t target)\n{\n'
             '    fprintf(stderr, "generated code at %06X: no translation for %06X\\n", (unsigned)from, (unsigned)target);\n'
             '    abort();\n}\n')
+# each routine's own instructions, for tools/coverage.py: a routine's address range can span
+# other routines (a tail jump back past a neighbour), which are not part of it
+with open(os.path.join(OUT, 'bodies.json'), 'w', newline='\n') as f:
+    json.dump({'g_%06X' % e: ['%06X' % a for a in sorted(fns[e].body)] for e in sorted(fns)}, f, indent=0)
 total = sum(len(f.body) for f in fns.values())
 print('translated %d routines, %d instructions (shared code counted per routine) into %s' % (len(fns), total, OUT))
 for u in UNSUPPORTED: print('  unsupported at %06X: %s %s (%s)' % u)

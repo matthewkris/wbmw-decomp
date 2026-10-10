@@ -90,6 +90,7 @@ runnable as early as possible and ask for specific checks.
 | Gameplay never reached most hitbox paths (no fights in the standard runs) nor any moving platform. | Coverage, not call counts, decides when a routine is checked; ask the owner for save states where scripts cannot reach. |
 | Random fields left collision half covered even from a state among platforms, and neither room with a state had a slope. | Generate *situations* (edges touching, small velocities), and synthesise missing level data in RAM (slope attributes) rather than hunting for a room. Have the generator report how often it built what it aimed for. |
 | Scene fuzzing hung the harness inside generated C: a garbage attribute sent a computed jump out of its table. | Fuzz with values the game's own data can produce; a hang in translated code cannot be caught, so a run that never ends should be suspected first of invalid input. |
+| Coverage by address range charged a translated routine with its neighbours' code: a tail jump stretched the range over three other routines. | Measure coverage against the exact instruction set the translator emitted for each routine, not an address range. |
 
 ## General versus game-specific
 

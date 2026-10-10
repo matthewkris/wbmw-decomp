@@ -289,6 +289,19 @@ static uint32_t type_at(uint32_t layer, uint32_t e, uint32_t x, uint32_t y)
  * a2 = 0, 4 .. 20: flags $FF9F8E, attribute $FF9F8F, X/Y $FF9FE2/4, velocity $FFA036/8, half
  * width/height $FFA08A/C) placed beside, above or below it. Fully random fields almost never
  * line edges up, which is what those paths test. */
+/* overwrite the attribute of the block at pixel (x, y) of layer a3: attributes live in RAM, 256
+ * bytes after each block table (docs/NOTES.md, Blocks), and the case's RAM is restored after */
+static void set_block_attr(uint32_t layer, uint32_t e, uint32_t x, uint32_t y, uint8_t attr)
+{
+    Cpu c = {0};
+    c.a[3] = 0xFFFF0000u | layer; c.a[4] = e; c.a[7] = m68k_get_reg(NULL, M68K_REG_SP);
+    c.d[6] = x & 0xFFFF; c.d[7] = y & 0xFFFF;
+    TileAttrAtPixel(&c);
+    uint32_t block = c.d[0] & 0xFFFF, t = layer + 0x10 + ((block >> 6) & 0xC);
+    uint32_t table = (uint32_t)get_sword(t) << 16 | (uint16_t)get_sword(t + 2);
+    if ((table & 0xFF0000) == 0xFF0000) ram[(table + 0x800 + (block & 0xFF)) & 0xFFFF] = attr;
+}
+
 static long scenes, on_slope, on_solid;          /* how often the scene found what it looked for */
 static void collision_scene(const char *name, uint32_t layer, uint32_t cols, uint32_t rows, uint32_t e)
 {
@@ -327,14 +340,8 @@ static void collision_scene(const char *name, uint32_t layer, uint32_t cols, uin
         uint8_t shape = slopes[rnd() % (unsigned)ns];
         for (int32_t dy = -16; dy <= 16; dy += 16) {
             if (dy && rnd() % 2) continue;
-            Cpu c = {0};
-            c.a[3] = 0xFFFF0000u | layer; c.a[4] = e; c.a[7] = m68k_get_reg(NULL, M68K_REG_SP);
-            c.d[6] = (uint32_t)x & 0xFFFF; c.d[7] = (uint32_t)(by + dy + 8) & 0xFFFF;
-            TileAttrAtPixel(&c);
-            uint32_t block = c.d[0] & 0xFFFF;
-            uint32_t table = (uint32_t)get_sword(layer + 0x10 + ((block >> 6) & 0xC)) << 16 | (uint16_t)get_sword(layer + 0x12 + ((block >> 6) & 0xC));
             uint8_t a = rnd() % 2 ? shape : slopes[rnd() % (unsigned)ns];
-            if ((table & 0xFF0000) == 0xFF0000) ram[(table + 0x800 + (block & 0xFF)) & 0xFFFF] = a;
+            set_block_attr(layer, e, (uint32_t)x, (uint32_t)(by + dy + 8), a);
             if (!dy && rnd() % 2) { Cpu t = {0}; t.a[4] = e; t.d[1] = a; TileTypeOf(&t); prev_type = t.d[2]; }
         }
         on_slope++;
@@ -371,6 +378,15 @@ static void collision_scene(const char *name, uint32_t layer, uint32_t cols, uin
     }
     put_word(0x9EE4, rnd() % 2 ? 0xFFFF : rnd() % 32); put_word(0x9EE6, rnd() % 32);
     /* the per-platform routines called directly: a2 and the edges their callers compute */
+    if (!strcmp(name, "g_0030CE")) {
+        /* a pixel at the feet, often as the player on a tile whose type the player's equipment
+         * overrides ($5xxx: attributes $09, $5E; $6xxx: $0A, $5F; none in the rooms with states) */
+        static const uint8_t over[] = {0x09, 0x5E, 0x0A, 0x5F};
+        uint32_t px = (uint32_t)x, py = (uint32_t)(y + (int32_t)hh);
+        if (rnd() % 2) set_block_attr(layer, e, px, py, over[rnd() % 4]);
+        m68k_set_reg(M68K_REG_D6, (rnd() << 16) | (px & 0xFFFF));
+        m68k_set_reg(M68K_REG_D7, (rnd() << 16) | (py & 0xFFFF));
+    }
     uint32_t a2 = (rnd() % 6) * 4;
     if (!strcmp(name, "g_003B74") || !strcmp(name, "g_003E00")) {
         m68k_set_reg(M68K_REG_A2, a2);

@@ -137,7 +137,7 @@ the gaps mostly collision with moving platforms, which no standard run reaches.
 The owner then made a save state among the floating platforms of area 1, room 2 (F2 in
 `play.exe`, kept as `work/platform.state`, not committed). From it: eight runs of 1,200 frames
 with random input (30,000 to 40,000 checked calls each) and 5,000 fuzz cases for each partly
-covered routine, all with zero mismatches. Coverage is now 13 of the 22 fully covered:
+covered routine, all with zero mismatches. Coverage rose to 13 of the 22 fully covered:
 
 | Routine | Before | With the platform state |
 |---|---|---|
@@ -176,7 +176,7 @@ It counts the scenes it built and how many stand on a slope or a solid block, so
 it finds neither shows up in the report.
 
 10,000 cases per routine from each of the two states (the platform state and the attract demo):
-zero mismatches. **20 of the 22 generated routines are now fully covered.** What is left:
+zero mismatches. **20 of the 22 generated routines were then fully covered** (counted by address range; see below). What was left:
 
 * `$3860` and `$3584`: `nop; bra *` at $3888, table entry 0 of `$3860`. It is a deliberate hang
   that no collision type reaches.
@@ -192,6 +192,35 @@ Two kinds of input are invalid for fuzzing, like the stored continuation before:
 * `$3694`, `$36D4` and `$370A` are not fuzzed on their own. They use `$3584`'s stack frame
   (`-$12(a6)`) and end with its `unlk a6`, so a direct call returns to garbage. They are
   checked inside `$3584`.
+
+#### The sibling movement routines ($2EDE, $2F34)
+
+`$2EDE` and `$2F34` are two variants of `MoveWithCollision`. They probe the tiles first
+(`$3F08`), use a different horizontal handler (`$32FE`) and the other floor entry (`$356E`),
+and skip the moving platforms; `$2F34` also calls `$3AB0`. Few entities use them: 8 and 10 calls
+in the standard runs. Adding them as roots (`analysis/translate.json`) brought in nine routines:
+`$26F0`, `$2EDE`, `$2F34`, `$30CE`, `$32FE`, `$356E`, `$39FA`, `$3AB0`, `$3F08`. That makes 31
+generated routines in all, translated with no unsupported instruction.
+
+Checks:
+
+* The two standard runs, plus eight random-input runs from the platform state (about 370,000
+  checked calls): zero mismatches.
+* 10,000 fuzz cases per generated routine from each of the two states: zero mismatches.
+* The self-test catches a corrupted `$2F34` on every case.
+
+**30 of the 31 generated routines are fully covered.** The one left is `$3860`'s deliberate
+hang. `$30CE` needed one more scene: the player on a tile type that their equipment overrides
+(`$5xxx` and `$6xxx`). No room with a state has such a tile, so the generator writes one of
+those attributes ($09, $5E, $0A, $5F) under the feet, as it does for slopes.
+
+**Coverage now counts a translated routine's own instructions.** `tools/m68k2c.py` writes them
+to `work/gen/bodies.json`, and `tools/coverage.py` reads that file. Before this, coverage
+counted every instruction in a routine's address range. `$2EDE` ends with a tail jump to `$3098`,
+so its range runs past `$2F34`, `$2F8E` and `$2FD0`, which are not part of it, and they showed
+up as never run. Under the new count, `$3584`'s exit at $38E0 (now run through `$356E`) and
+the hang (which belongs to `$3860`) no longer count against `$3584`. Hand-port ranges are
+exact and are still counted by range.
 
 ### Exactness first, cleanup later
 
