@@ -51,7 +51,7 @@ frame.
 
 ## Status
 
-19 routines, all with zero mismatches: shadow-checked calls in the two standard runs, plus
+20 routines, all with zero mismatches: shadow-checked calls in the two standard runs, plus
 20,000 fuzz cases each where noted.
 
 | Routine | Address | Gameplay calls | Fuzz | Coverage |
@@ -69,6 +69,7 @@ frame.
 | `SetGfxSlots` | $234C | 20 | 20,000 random lists | all |
 | `SetAnim`, `ResetAnimTimer`, `SetAnimNow` | $7E8, $7F4, $7FC | 84 / 1 / 17 | 20,000 each | all |
 | `UpdateAnim` (with its command handlers) | $80E | 19,217 | 50,000 (every animation, from any item of its script) | all |
+| `DecodeGfxBlock` (all four formats) | $6BC4 | 168 | 10,000 (random real blocks) | all |
 
 Unverified: the wait in `QueueSound` while the sound driver is busy ($386-$394). The harness
 does not run the Z80, so the busy flag is never set. The `$C0` (skip a slot) command of

@@ -264,6 +264,10 @@ int hybrid_fuzz(const char *name, long count)
             ram[p] = 0xFF;
             m68k_set_reg(M68K_REG_A0, 0xFFFF4E00);
         }
+        if (!strcmp(name, "DecodeGfxBlock")) {     /* a real block, into the game's decode buffer */
+            m68k_set_reg(M68K_REG_D0, (rnd() << 16) | (rnd() % 768));
+            m68k_set_reg(M68K_REG_A1, 0x00FF2D00);
+        }
         if (!strncmp(name, "UpdateAnim", 10) || !strcmp(name, "SetAnimNow")) {
             /* a valid animation for the chosen entity, its script started or part-way through */
             anim_walk();

@@ -5,7 +5,7 @@ CFLAGS ?= -O2 -Wall -Wno-unused-function
 MUSASHI = ../third_party/musashi
 OUT = ../work/harness
 CORE = core.c bus.c vdp.c png.c hybrid.c $(PORT)
-PORT = ../port/kernel.c ../port/entity.c ../port/anim.c ../port/registry.c
+PORT = ../port/kernel.c ../port/entity.c ../port/anim.c ../port/gfx.c ../port/registry.c
 CPU = $(OUT)/m68kcpu.o $(OUT)/m68kops.o $(OUT)/softfloat.o
 LDFLAGS = -static-libgcc
 

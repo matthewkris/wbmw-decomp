@@ -49,10 +49,10 @@ Done:
   the same machine in an SDL2 window with keyboard and pad input, so the owner can play builds
   (no sound). See `harness/README.md` for what it does and does not model.
 - **The port has started.** `port/` holds C routines that replace 68000 routines one at a time
-  (19 so far: `Random`, `SetVRAMWrite`, palettes, velocity, friction and acceleration, the sound
-  queue, `SetGfxSlots`, the animation interpreter). The harness runs them in place of the originals (`--port replace`) or
+  (20 so far: `Random`, `SetVRAMWrite`, palettes, velocity, friction and acceleration, the sound
+  queue, `SetGfxSlots`, the animation interpreter, graphics decompression). The harness runs them in place of the originals (`--port replace`) or
   checks every call against the original (`--port shadow`), measures which branches were checked
-  (`--coverage`) and drives the rest by differential fuzzing (`--fuzz`): zero mismatches, 18 of 19
+  (`--coverage`) and drives the rest by differential fuzzing (`--fuzz`): zero mismatches, 19 of 20
   fully covered. `docs/PORT.md` is the port's design document: how routines are accepted, why
   replace mode is not compared byte for byte, and the coroutine design for tasks.
 - **Sprites decoded.** `tools/sprites.py` walks every animation and mapping, draws any enemy type
@@ -83,7 +83,7 @@ Not done, in the order I would do it:
 ## The next step
 
 Keep porting leaf routines through shadow mode, choosing ones the standard runs call often and
-that the scheduler work will need: `DecodeGfxBlock`, `StreamGfxBlocks`,
+that the scheduler work will need: `StreamGfxBlocks`, `CopyRawTiles`,
 `AddEntitySprites`, the hitbox tests. Then build the
 coroutine library and move the scheduler, `Yield` and the frame loop together, as `docs/PORT.md`
 describes. The owner chose stackful coroutines for tasks (2026-10-10).

@@ -104,6 +104,36 @@ static inline uint16_t tst_b(uint16_t ccr, uint32_t v)
     return (uint16_t)((ccr & CC_X) | (v & 0x80 ? CC_N : 0) | ((v & 0xFF) ? 0 : CC_Z));
 }
 static inline uint32_t ext_w(uint32_t r) { return set_w(r, (uint32_t)(int32_t)(int8_t)(r & 0xFF)); }
+
+/* logical shifts of a byte, word or long (bits = 8, 16, 32) by n, with the 68000's flags:
+ * C and X get the last bit shifted out; a count of 0 clears C and leaves X; V is cleared */
+static inline uint32_t lsl_n(uint16_t *ccr, uint32_t v, unsigned n, unsigned bits)
+{
+    uint64_t mask = (1ull << bits) - 1, x = v & mask;
+    uint32_t r = n >= bits ? 0 : (uint32_t)((x << n) & mask);
+    uint16_t c = n == 0 ? 0 : n > bits ? 0 : (uint16_t)(x >> (bits - n) & 1);
+    uint16_t xf = n == 0 ? (*ccr & CC_X) : (c ? CC_X : 0);
+    *ccr = (uint16_t)(xf | (c ? CC_C : 0) | (r >> (bits - 1) & 1 ? CC_N : 0) | (r ? 0 : CC_Z));
+    return r;
+}
+static inline uint32_t lsr_n(uint16_t *ccr, uint32_t v, unsigned n, unsigned bits)
+{
+    uint64_t mask = (1ull << bits) - 1, x = v & mask;
+    uint32_t r = n >= bits ? 0 : (uint32_t)(x >> n);
+    uint16_t c = n == 0 ? 0 : n > bits ? 0 : (uint16_t)(x >> (n - 1) & 1);
+    uint16_t xf = n == 0 ? (*ccr & CC_X) : (c ? CC_X : 0);
+    *ccr = (uint16_t)(xf | (c ? CC_C : 0) | (r >> (bits - 1) & 1 ? CC_N : 0) | (r ? 0 : CC_Z));
+    return r;
+}
+static inline uint32_t add_l(uint16_t *ccr, uint32_t s, uint32_t d)          /* add.l */
+{
+    uint32_t r = s + d;
+    int c = r < s;
+    int v = ((s ^ r) & (d ^ r) & 0x80000000u) != 0;
+    *ccr = (uint16_t)((r & 0x80000000u ? CC_N : 0) | (r ? 0 : CC_Z) | (v ? CC_V : 0) | (c ? CC_C | CC_X : 0));
+    return r;
+}
+static inline uint16_t tst_l(uint16_t ccr, uint32_t v) { return cc_move_l(ccr, v); }
 static inline void cmp_b(uint16_t *ccr, uint32_t src, uint32_t dst)         /* cmp.b / cmpi.b: X kept */
 {
     uint32_t s = src & 0xFF, d = dst & 0xFF, r = (d - s) & 0xFF;
