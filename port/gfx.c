@@ -256,6 +256,90 @@ static void tiles(R *r)                                                      /* 
     r->cc = cc;
 }
 
+void DecodeGfxBlock(Cpu *c);
+void SetVRAMWrite(Cpu *c);
+
+/* rotate a word right by n (ror.w): C = the last bit rotated out (now bit 15), X kept, V clear */
+static uint32_t ror_w(uint16_t *ccr, uint32_t v, unsigned n)
+{
+    uint32_t x = v & 0xFFFF;
+    n &= 15;
+    uint32_t r = n ? ((x >> n) | (x << (16 - n))) & 0xFFFF : x;
+    *ccr = (uint16_t)((*ccr & CC_X) | cc_nz_w(r) | (n && (r & 0x8000) ? CC_C : 0));
+    return r;
+}
+
+/* StreamGfxBlocks ($22F0): for each of the 64 VRAM slots whose wanted block ($FF8E08 + 2n)
+ * differs from the loaded one (128 bytes on), decode it into $FF2D00 and copy the 1 KB to VRAM
+ * at n * $400. A stack frame (link a6,#-2) holds the slot counter; a0 is saved around the
+ * decode with move.w a0,-(a7). The stack writes are made in the original's order so the words
+ * it leaves below SP match. */
+void StreamGfxBlocks(Cpu *c)
+{
+    uint32_t sp0 = c->a[7], sp = sp0;
+    uint16_t cc = c->ccr;
+    sp -= 4; wr32(sp, c->a[6]); c->a[6] = sp; sp -= 2;                      /* link a6,#-2 */
+    c->a[0] = 0xFFFF8E08;
+    wr16(c->a[6] - 2, 0); cc = tst_w(cc, 0);
+    do {
+        c->d[0] = set_w(c->d[0], rd16(c->a[0])); c->a[0] += 2; cc = tst_w(cc, c->d[0]);   /* $22FE */
+        if (c->d[0] & 0x8000) goto next;
+        cmp_w(&cc, rd16(c->a[0] + 0x7E), c->d[0]);
+        if (cc & CC_Z) goto next;
+        wr16(c->a[0] + 0x7E, (uint16_t)c->d[0]); cc = tst_w(cc, c->d[0]);
+        sp -= 2; wr16(sp, (uint16_t)c->a[0]); cc = tst_w(cc, c->a[0]);     /* move.w a0,-(a7) */
+        c->a[1] = 0x00FF2D00;
+        sp -= 4; wr32(sp, 0x231A); c->a[7] = sp; c->ccr = cc;               /* jsr DecodeGfxBlock */
+        DecodeGfxBlock(c); cc = c->ccr; sp += 4;
+        c->a[0] = SEXT(rd16(sp)); sp += 2;                                  /* movea.w (a7)+,a0 */
+        c->d[0] = set_w(c->d[0], rd16(c->a[6] - 2)); cc = tst_w(cc, c->d[0]);
+        c->d[0] = set_w(c->d[0], ror_w(&cc, c->d[0], 6));                  /* slot * $400 */
+        sp -= 4; wr32(sp, 0x2326); c->a[7] = sp; c->ccr = cc;               /* jsr SetVRAMWrite */
+        SetVRAMWrite(c); cc = c->ccr; sp += 4;
+        c->a[1] = 0x00FF2D00; c->a[2] = 0x00C00000;
+        c->d[0] = set_w(c->d[0], 0xFF); cc = tst_w(cc, 0xFF);
+        do { uint32_t v = rd32(c->a[1]); c->a[1] += 4; wr32(c->a[2], v); cc = tst_l(cc, v); } while (DBRA(c->d[0]));
+next:
+        wr16(c->a[6] - 2, (uint16_t)add_w(&cc, 1, rd16(c->a[6] - 2)));     /* $233C */
+        cmp_w(&cc, 0x40, rd16(c->a[6] - 2));
+    } while (cc & CC_C);
+    sp = c->a[6]; c->a[6] = rd32(sp); sp += 4;                              /* unlk a6 */
+    c->a[7] = sp0; c->ccr = cc;
+}
+
+/* CopyRawTiles ($22A8): d0 = VRAM address, d1 = global tile number (0 = clear), d2 = longs.
+ * Copies d2 longs of raw tile data straight from a raw block of the graphics table, starting
+ * at tile d1, linearly through the ROM (so it may run into the 6 extra tiles after the block).
+ * d1 = 0 writes d2 + 1 zero longs instead. The original hangs on an entry that is empty or not
+ * raw ($22D0, $22D8); so does this. */
+void CopyRawTiles(Cpu *c)
+{
+    wr32(c->a[7] - 4, 0x22AC);                                             /* jsr SetVRAMWrite */
+    c->a[7] -= 4; SetVRAMWrite(c); c->a[7] += 4;
+    uint16_t cc = c->ccr;
+    c->a[1] = 0x00C00000;
+    c->d[0] = set_w(c->d[0], c->d[1]); cc = tst_w(cc, c->d[1]);
+    if (!(c->d[1] & 0xFFFF)) {
+        MOVEQ(c->d[0], 0);
+        do { wr32(c->a[1], 0); cc = tst_l(cc, 0); } while (DBRA(c->d[2]));
+        c->ccr = cc; return;
+    }
+    { uint32_t v = c->d[1] & 0xFFE0; c->d[1] = set_w(c->d[1], v); cc = tst_w(cc, v); }
+    c->d[1] = set_w(c->d[1], lsr_n(&cc, c->d[1], 3, 16));
+    c->a[0] = SEXT(c->d[1]) + GFX_TABLE;
+    c->d[1] = rd32(c->a[0]); cc = tst_l(cc, c->d[1]);
+    if (c->d[1] & 0x80000000u) for (;;) {}                                 /* bmi.w * */
+    if (!(c->d[1] & 0x01000000u)) for (;;) {}                              /* bclr #24; beq.w * */
+    c->d[1] &= ~0x01000000u; cc = (uint16_t)(cc & ~CC_Z);
+    c->a[0] = c->d[1];
+    { uint32_t v = c->d[0] & 0x1F; c->d[0] = set_w(c->d[0], v); cc = tst_w(cc, v); }
+    c->d[0] = set_w(c->d[0], lsl_n(&cc, c->d[0], 5, 16));
+    c->a[0] += SEXT(c->d[0]);
+    c->d[2] = set_w(c->d[2], sub_w(&cc, 1, c->d[2]));
+    do { uint32_t v = rd32(c->a[0]); c->a[0] += 4; wr32(c->a[1], v); cc = tst_l(cc, v); } while (DBRA(c->d[2]));
+    c->ccr = cc;
+}
+
 void DecodeGfxBlock(Cpu *c)
 {
     R r = { c->d[0], c->d[1], c->d[2], c->d[3], c->d[4], c->d[5], c->d[6], c->d[7],

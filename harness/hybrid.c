@@ -264,6 +264,21 @@ int hybrid_fuzz(const char *name, long count)
             ram[p] = 0xFF;
             m68k_set_reg(M68K_REG_A0, 0xFFFF4E00);
         }
+        if (!strcmp(name, "CopyRawTiles")) {       /* a tile of a raw block (or 0: clear), any count */
+            static const int raw[] = {35, 96, 97, 98, 99, 100, 101, 102, 103, 246, 256, 257, 258, 259, 260, 261, 262, 263, 368, 369};
+            uint32_t tile = rnd() % 8 ? (uint32_t)raw[rnd() % 20] * 32 + rnd() % 32 : 0;
+            m68k_set_reg(M68K_REG_D0, (rnd() << 16) | (rnd() & 0xFFFE));
+            m68k_set_reg(M68K_REG_D1, (rnd() << 16) | tile);
+            m68k_set_reg(M68K_REG_D2, (rnd() << 16) | (rnd() % 64 + 1));
+        }
+        if (!strcmp(name, "StreamGfxBlocks")) {    /* random wanted and loaded slot tables */
+            for (int i = 0; i < 64; i++) {
+                uint32_t want = rnd() % 4 ? rnd() % 768 : 0xFFFF;
+                uint32_t have = rnd() % 4 ? want : rnd() % 768;
+                ram[0x8E08 + 2 * i] = (uint8_t)(want >> 8); ram[0x8E09 + 2 * i] = (uint8_t)want;
+                ram[0x8E88 + 2 * i] = (uint8_t)(have >> 8); ram[0x8E89 + 2 * i] = (uint8_t)have;
+            }
+        }
         if (!strcmp(name, "DecodeGfxBlock")) {     /* a real block, into the game's decode buffer */
             m68k_set_reg(M68K_REG_D0, (rnd() << 16) | (rnd() % 768));
             m68k_set_reg(M68K_REG_A1, 0x00FF2D00);
@@ -293,12 +308,13 @@ int hybrid_fuzz(const char *name, long count)
         bus_write16(sp, 0x0000); bus_write16(sp + 2, 0x0200);   /* return to an address the check recognises */
         m68k_set_reg(M68K_REG_SP, sp);
         m68k_set_reg(M68K_REG_PC, port_routines[idx].addr);
-        m68k_execute(1000000);
-        if (shadow.open) { fprintf(stderr, "fuzz: %s did not return\n", name); break; }
+        long budget = 0;                            /* run until the check closes; a hang is reported */
+        do { m68k_execute(1000000); budget++; } while (shadow.open && budget < 500);
+        if (shadow.open) { fprintf(stderr, "fuzz: %s did not return within 500M cycles (case %ld)\n", name, k + 1); count = k; break; }
     }
     fuzzing = 0;
     md_restore(base, n); free(base);
-    fprintf(stderr, "fuzz %s: %ld cases, %ld mismatches\n", name, count, stats[idx].bad - before);
+    fprintf(stderr, "fuzz %s: %ld cases run, %ld mismatches\n", name, count, stats[idx].bad - before);
     return stats[idx].bad != before;
 }
 
