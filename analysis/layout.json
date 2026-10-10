@@ -1,0 +1,22 @@
+{
+ "comment": "ROM layout outside the traced code: addresses and names only, no ROM bytes. Read by tools/mkasm.py. A blob runs to the next piece. A fill is checked to be one repeated byte. ptr32 is a table of long pointers; gfxtab is a table of longs whose low 24 bits point at a graphics chunk and whose top byte is a format flag ($FF = empty slot).",
+ "vector_names": {"000200": "EntryPoint", "0049FA": "BusError", "0049F8": "AddressError", "0049FE": "Exception",
+                  "004B58": "UnusedInt", "004B5C": "VBlank", "004A02": "TrapHang"},
+ "pieces": [
+  {"addr": "01C602", "type": "fill", "name": "code_padding"},
+  {"addr": "01CC00", "type": "ptr32", "count": 27, "name": "data_dir",
+   "slot_names": ["dir00", "dir01", "dir02", "dir03", "dir04", "dir05", "dir06", "dir07",
+                  "area00", "area01", "area02", "area03", "area04", "area05", "area06", "area07",
+                  "area08", "area09", "area10", "area11", "area12", "area13", "area14", "area15",
+                  "area16", "area17", "area18"]},
+  {"addr": "040000", "type": "blob", "name": "unk_040000"},
+  {"addr": "0409FA", "type": "fill", "name": "pad_0409FA"},
+  {"addr": "041000", "type": "gfxtab", "count": 768, "name": "gfx_table"},
+  {"addr": "09622B", "type": "fill", "name": "pad_09622B"},
+  {"addr": "098000", "type": "blob", "name": "z80_driver"},
+  {"addr": "099A77", "type": "blob", "name": "unk_099A77"},
+  {"addr": "09F777", "type": "fill", "name": "pad_09F777"},
+  {"addr": "0A0000", "type": "blob", "name": "anim_data"},
+  {"addr": "0A4C77", "type": "fill", "name": "rom_padding"}
+ ]
+}

@@ -18,26 +18,35 @@ Done:
 
 - ROM identified and verified (details below).
 - A recursive-descent tracer (`tools/trace.py`) that separates code from data in the code region
-  `$200–$1D000`. It finds 95,166 bytes of code (28,210 instructions) in 845 routines, with zero
+  `$200–$1D000`. It finds 95,160 bytes of code (28,208 instructions) in 845 routines, with zero
   tracing conflicts.
 - **A byte-identical rebuild.** `tools/build.sh` (or `make`) traces the ROM, generates
   `work/src/wbmw.asm` with `tools/mkasm.py`, assembles it with vasm and checks the SHA-1. All
-  28,210 instructions are emitted as mnemonics with explicit sizes and labels; none fall back to
+  28,208 instructions are emitted as mnemonics with explicit sizes and labels; none fall back to
   raw words. Jump tables are `dc.w target-base` / `dc.l label`, task tags are `dc.b 'Kxxx'`.
+- **The whole ROM is laid out.** `analysis/layout.json` names every region outside the code:
+  vectors (`dc.l` handler labels), header fields, the data directory at `$1CC00` (`dc.l` to 27
+  labelled blocks `dir00`–`dir07`, `area00`–`area18`), the graphics table at `$41000` (`dc.l
+  gfx_xxxxxx+flag` to 726 labelled chunks), the Z80 driver, the animation data and every padding
+  run (`dcb.b`). Each block is an `incbin` range of the owner's ROM under its own label. Code
+  references into data are symbolic (`movea.l (data_dir+$10).l`, `adda.l #gfx_table`,
+  `movea.l #task_Ksmt_004CC4`), including `lea` of absolute addresses, `movea.l #imm`, pointers
+  stored to known data-pointer fields and table bases built with `addi.l`.
 - A first survey of the engine: task scheduler, entity layout, hardware access, sound and save
-  interfaces. All in `docs/NOTES.md`.
+  interfaces, data directory and graphics table. All in `docs/NOTES.md`.
 
 Not done, in the order I would do it:
 
-1. **Split the rest of the ROM** (`$1D000–$A4C76`) into named binary includes, starting from the
-   data directory at `$1CC00`, so the whole ROM rebuilds from source plus extracted blobs.
+1. **Identify the graphics compression** and write an extractor that dumps tiles to PNG. The
+   table at `$41000` and its loader at `$22A8`/`$6BC4` are found (see NOTES); the decoder is
+   what runs after `bclr #24` at `$22D4`. Formats `$01` and `$02` probably differ in compression.
 2. **Name the kernel.** Start with the most-called routines: `$7E8` (160 callers), `$400`
    (yield, 123), `$366` (queue sound command, 98), `$5D8` (73), `$43BC` (61), `$48C4` (49).
    Keep names in a symbol file the tools read, not hard-coded in scripts.
-3. **Identify the graphics compression** and write an extractor that dumps tiles to PNG. The
-   high-entropy data sits at `$40000–$97FFF`; the loaders have not been found yet. Nothing in the
-   code references that area directly, so follow the pointers in the `$1CC00` directory.
-4. **Disassemble the Z80 sound driver** (`$98000`, 6,775 bytes) and find its music data.
+3. **Decode the directory blocks.** Each has its own format; several hold long pointer tables
+   (`$211CA`, `$2246C–$224B8`) that are still inside `incbin` ranges.
+4. **Disassemble the Z80 sound driver** (`$98000`, 6,775 bytes) and confirm whether
+   `$99A77–$9F776` is its music data.
 5. **Build a reference harness**: the original 68000 code running under an interpreter core
    against a reimplemented hardware layer, able to run headless, dump frames as images, and dump
    RAM per frame. This is the oracle every later step is checked against.
@@ -46,24 +55,22 @@ Not done, in the order I would do it:
 
 ## The next step
 
-Split `$1D000–$A4C76`. Today `mkasm.py` pulls the vectors and header (`$0–$200`) and everything
-from `$1D000` on straight out of the ROM with `incbin`. Replace that with named pieces: the
-vector table as `dc.l` labels, the header as text fields, the `$1CC00` directory as `dc.l`
-pointers to labelled blobs, and each blob as an `incbin` range of the owner's ROM. The build must
-stay byte-identical after every change.
+The graphics decompressor. It gives the owner something to look at (tile sheets as PNG) and
+every later step that touches graphics needs it. Read the code from `$22A8` on, write the
+decoder in Python in `tools/`, and check it two ways: every chunk must decode to exactly
+32 tiles (1,024 bytes) or whatever the table implies, and must consume exactly its bytes up to
+the next chunk. Dump PNGs into `work/` only.
 
-The source is identical but **not yet relocatable**: inserting a byte would break it. What is
-still numeric, roughly in the order it matters:
+The source rebuilds identically but is **not fully relocatable**. Still numeric:
 
 - pointers inside the embedded data of the code region (20.7 KB of `dc.b`), including the
   descriptor lists spawned through `$5106`;
-- `move.l #imm` values that are ROM addresses but not labels (only those that hit a label are
-  symbolic; others may be constants, and telling them apart needs the data split);
-- `lea`/`move` of `.l` or `.w` absolute addresses into data outside the code region;
-- the vector table, which is inside the `$0–$200` `incbin`.
+- pointers inside the `incbin` blocks (directory blocks, animation data);
+- a few `move.l #imm` whose role is undecided (`-$2700` field: `$D35A`, `$D362`), and the
+  `addi.l #$418c` at `$3756`, which indexes off `a1` and is probably a RAM offset.
 
 Relocatability matters for modding and for proving the data/code split, not for the C port, so
-do it as the data split exposes each pointer rather than as a separate pass.
+do it as each data format is decoded rather than as a separate pass.
 
 How the rebuild works, and what to keep:
 
@@ -75,10 +82,16 @@ How the rebuild works, and what to keep:
 - `tools/checkasm.py` assembles with a listing and compares every line against the ROM. Any
   instruction that differs goes into a raw list (`--raw` to `mkasm.py`) and is emitted as `dc.w`
   with the mnemonic in a comment. It is the tool to run when a change breaks the hash.
-- The rebuild found two tracer errors, both fixed: Capstone prints undecodable words as `dc.w`
+- The rebuild found three tracer errors, all fixed: Capstone prints undecodable words as `dc.w`
   and `trace.py` accepted that as an instruction (it made `"PAUSE",0` at `$7F4E` look like a
-  task descriptor), and the `data_dst` hint only matched `a4`-based entity fields, so a data
-  pointer stored through `a2` at `$18B9E` was traced as code.
+  task descriptor); the `data_dst` hint only matched `a4`-based entity fields, so data stored
+  through `a2` at `$18B9E` was traced as code; and field `-$2A00` was not hinted, so the data at
+  `$1A3DE` was traced as code.
+- Two hints with different meanings: `data_dst` says "values stored here are never code
+  pointers" (the tracer uses it), `data_ptr` says "values stored here are always data addresses"
+  (the generator labels them). A velocity field belongs in the first, not the second.
+- `mkasm.py` labels an immediate only by rule (see the `addr_imm` pass). Do not label every
+  immediate that happens to equal an address: constants like `#$2000` collide with code labels.
 
 ## The ROM
 
