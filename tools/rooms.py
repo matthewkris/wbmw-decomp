@@ -166,11 +166,11 @@ def render(d, area, room, which='both'):
     for k in range(3): blocks(d, be32(d, tl + 4 * k) & 0xFFFFFF, shared[k])
     slots = [0xFFFF] * 64
     gfx_slots(d, 0x96BC, slots)
-    pals = [0, 1, 0, 0]
+    pals = [0, 1, 0, 0]; backdrop = 0
     layers = []
     for cmd, a in script:
         if cmd == 'gfx_slots': gfx_slots(d, a[0], slots)
-        elif cmd == 'palette': pals[2] = a[0]
+        elif cmd == 'palette': pals[2] = a[0]; backdrop = a[1]     # the word becomes colour 0 of line 0 ($8F2C)
         elif cmd == 'palette3': pals[3] = a[0]
         elif cmd == 'layer': layers.append(a)
     tiles = {}
@@ -181,7 +181,7 @@ def render(d, area, room, which='both'):
         return tiles[s][(n & 31) * 32:(n & 31) * 32 + 32]
     colours = [gfx.rgb(w) for p in pals for w in gfx.palette(d, p)]
     W = max(L['w'] for L in layers) * 256; H = max(L['h'] for L in layers) * 192
-    img = [[(0, 0, 0)] * W for _ in range(H)]
+    img = [[gfx.rgb(backdrop)] * W for _ in range(H)]
     for L in sorted(layers, key=lambda L: L['plane'] == 'A'):      # B behind A
         if which != 'both' and L['plane'].lower() != which: continue
         cmap, t3 = layer_map(d, L['src'])

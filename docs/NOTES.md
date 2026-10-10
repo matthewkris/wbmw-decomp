@@ -293,6 +293,19 @@ caller.
 Sound: the 68000 never writes the YM2612 or PSG. `$366` queues one command byte (d0) in a
 16-entry ring at Z80 `$1C30`, guarded by a busy flag at Z80 `$1C00`. 98 call sites.
 
+## Boot and menu (seen in the harness)
+
+* Power-on runs `Ksmt` (setup) and `Kseg` (SEGA logo, ~4 s), then `Ktmt`/`Kttl` (title), then on
+  Start `Ktm3`, then `Kmnu`. Without input the title falls through to `Kdym`, the attract demo,
+  which plays the opening room with the intro text box.
+* The menu (`Kmnu` at $71C2, `sub_7294`) reads the EEPROM through `sub_1C430` to decide whether
+  to offer CONTINUE. Its items are sprite entities 8, $C and $10. Start on NEW GAME runs `Kgmt`
+  and `Kgam`; the first room is area 0, room 0, inside Shion's house.
+* The visible sky is the backdrop: colour 0 of palette line 0, which `$8F2C` sets from the word
+  in room command 03.
+* Sprites are only built for entities with `-$4000` bits 7 and 6 set; bit 2 of `-$3FFD` hides an
+  entity for the blink off-phase. Entities are drawn in 16 buckets by `-$3CFD`.
+
 ## Open items
 
 * Short data blocks stored to `-$2900`/`-$2A00` sit right before the code that uses them
