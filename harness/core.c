@@ -10,10 +10,14 @@ extern unsigned int m68k_read_memory_32(unsigned int a);
 int md_trace;                         /* when set, sample the PC through the frame to stderr */
 static int vint_pending, hint_pending;
 
+static int irq_hold;                  /* set while the shadow check runs an original routine */
+
 static void update_irq(void)
 {
-    m68k_set_irq(vint_pending ? 6 : hint_pending ? 4 : 0);
+    m68k_set_irq(irq_hold ? 0 : vint_pending ? 6 : hint_pending ? 4 : 0);
 }
+
+void md_irq_hold(int on) { irq_hold = on; update_irq(); }
 
 int md_int_ack(int level)
 {
@@ -47,11 +51,28 @@ void md_power_on(void)
  * byte order: a state belongs to the machine that wrote it. */
 static const char STATE_MAGIC[8] = "WBMWST01";
 static int state_failed;
+static FILE *st_file;                 /* a state goes to a file or, for snapshots, to memory */
+static uint8_t *st_mem; static size_t st_pos, st_cap;
 
 void state_io(FILE *f, void *p, size_t n, int saving)
 {
-    size_t done = saving ? fwrite(p, 1, n, f) : fread(p, 1, n, f);
-    if (done != n) state_failed = 1;
+    (void)f;
+    if (st_file) {
+        size_t done = saving ? fwrite(p, 1, n, st_file) : fread(p, 1, n, st_file);
+        if (done != n) state_failed = 1;
+        return;
+    }
+    if (saving) {
+        if (st_pos + n > st_cap) {
+            st_cap = (st_pos + n) * 2;
+            st_mem = realloc(st_mem, st_cap);
+        }
+        memcpy(st_mem + st_pos, p, n);
+    } else {
+        if (st_pos + n > st_cap) { state_failed = 1; return; }
+        memcpy(p, st_mem + st_pos, n);
+    }
+    st_pos += n;
 }
 
 static const int cpu_regs[] = {
@@ -62,30 +83,53 @@ static const int cpu_regs[] = {
 };
 #define NREGS (int)(sizeof cpu_regs / sizeof cpu_regs[0])
 
-static int state_file(const char *path, int *frame, int saving)
+/* the machine, through state_io: CPU registers, pending interrupts, bus, VDP */
+static void machine_io(int saving)
 {
-    FILE *f = fopen(path, saving ? "wb" : "rb");
-    if (!f) { perror(path); return -1; }
-    state_failed = 0;
-    char magic[8]; memcpy(magic, STATE_MAGIC, 8);
-    state_io(f, magic, 8, saving);
-    if (!saving && memcmp(magic, STATE_MAGIC, 8)) { fprintf(stderr, "%s: not a save state\n", path); fclose(f); return -1; }
-    state_io(f, frame, sizeof *frame, saving);
     unsigned regs[NREGS];
     if (saving) for (int i = 0; i < NREGS; i++) regs[i] = m68k_get_reg(NULL, cpu_regs[i]);
-    state_io(f, regs, sizeof regs, saving);
+    state_io(NULL, regs, sizeof regs, saving);
     int irq[2] = {vint_pending, hint_pending};
-    state_io(f, irq, sizeof irq, saving);
-    bus_state_io(f, saving);
-    vdp_state_io(f, saving);
-    fclose(f);
-    if (state_failed) { fprintf(stderr, "%s: %s failed\n", path, saving ? "writing" : "reading"); return -1; }
-    if (!saving) {
+    state_io(NULL, irq, sizeof irq, saving);
+    bus_state_io(NULL, saving);
+    vdp_state_io(NULL, saving);
+    if (!saving && !state_failed) {
         for (int i = 0; i < NREGS; i++) m68k_set_reg(cpu_regs[i], regs[i]);
         vint_pending = irq[0]; hint_pending = irq[1];
         update_irq();
     }
+}
+
+static int state_file(const char *path, int *frame, int saving)
+{
+    FILE *f = fopen(path, saving ? "wb" : "rb");
+    if (!f) { perror(path); return -1; }
+    st_file = f; state_failed = 0;
+    char magic[8]; memcpy(magic, STATE_MAGIC, 8);
+    state_io(f, magic, 8, saving);
+    if (!saving && memcmp(magic, STATE_MAGIC, 8)) { fprintf(stderr, "%s: not a save state\n", path); fclose(f); st_file = NULL; return -1; }
+    state_io(f, frame, sizeof *frame, saving);
+    machine_io(saving);
+    fclose(f); st_file = NULL;
+    if (state_failed) { fprintf(stderr, "%s: %s failed\n", path, saving ? "writing" : "reading"); return -1; }
     return 0;
+}
+
+/* in-memory snapshots, for the shadow check: the whole machine, restored exactly */
+const uint8_t *md_snapshot(size_t *n)
+{
+    st_file = NULL; st_pos = 0; state_failed = 0;
+    machine_io(1);
+    *n = st_pos;
+    return st_mem;
+}
+
+void md_restore(const uint8_t *buf, size_t n)
+{
+    uint8_t *keep = st_mem; size_t keep_cap = st_cap;
+    st_mem = (uint8_t *)buf; st_cap = n; st_pos = 0; state_failed = 0; st_file = NULL;
+    machine_io(0);
+    st_mem = keep; st_cap = keep_cap;
 }
 
 int md_save_state(const char *path, int frame) { return state_file(path, &frame, 1); }

@@ -216,8 +216,9 @@ int md_int_ack(int level);
  * instruction.
  */
 #ifndef M68K_INSTRUCTION_HOOK
-#define M68K_INSTRUCTION_HOOK       M68K_OPT_OFF
-#define M68K_INSTRUCTION_CALLBACK(pc) your_instruction_hook_function(pc)
+#define M68K_INSTRUCTION_HOOK       M68K_OPT_SPECIFY_HANDLER
+#define M68K_INSTRUCTION_CALLBACK(pc) md_instr_hook(pc)
+int md_instr_hook(unsigned int pc);
 #endif
 
 

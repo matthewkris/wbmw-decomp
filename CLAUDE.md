@@ -48,6 +48,12 @@ Done:
   title and menu into a new game, and dumps frames, RAM and VDP state per frame. `play.exe` is
   the same machine in an SDL2 window with keyboard and pad input, so the owner can play builds
   (no sound). See `harness/README.md` for what it does and does not model.
+- **The port has started.** `port/` holds C routines that replace 68000 routines one at a time
+  (9 so far: `Random`, `SetVRAMWrite`, `LoadPalettes`/`UnpackPalette`, the velocity and friction
+  routines). The harness runs them in place of the originals (`--port replace`) or checks every
+  call against the original (`--port shadow`): 13,658 calls, 0 mismatches. `docs/PORT.md` is the
+  port's design document: how routines are accepted, why replace mode is not compared byte for
+  byte, and the proposed coroutine design for tasks.
 - **Sprites decoded.** `tools/sprites.py` walks every animation and mapping, draws any enemy type
   with the graphics allocation the game uses, assembles Shion from his equipment, and renders
   rooms with their enemies at their spawn points (`--all-rooms`).
@@ -75,20 +81,16 @@ Not done, in the order I would do it:
 
 ## The next step
 
-Start the port on top of the harness. The first subsystem should be one the harness can check
-exactly and that everything else depends on: the task scheduler plus `WaitVBlank`/`VBlankWork`
-and the VDP setup, with the rest of the game still running as 68000 code. That decides the
-coroutine question (see "Code runs after a yield" below) once, early. The mechanism: a C
-function replaces a 68000 routine by trapping its address in the harness (Musashi's
-instruction hook), runs against the same RAM, and the RAM dump after each frame must equal the
-pure-68000 run.
+Keep porting leaf routines through shadow mode, choosing ones the standard runs call often and
+that the scheduler work will need: the rest of the entity physics (`Accel`, `FrictionY` with a
+run that calls it), `UpdateAnim`, `SetGfxSlots`, `DecodeGfxBlock`, `QueueSound`. Then build the
+coroutine library and move the scheduler, `Yield` and the frame loop together, as `docs/PORT.md`
+proposes; confirm the coroutine choice with the owner before building it.
 
-The tools for it exist: save states (`--save-state-at`, `--load-state`) start a check anywhere,
-and `tools/cmpruns.py` compares two runs' dumps frame by frame and labels the first difference.
-
-Build: from an MSYS2 UCRT64 shell, `cd harness && make`. GCC 16.2 and GNU make 4.4 are in
-`C:\msys64` (UCRT64). Git Bash cannot run that GCC directly (it fails to find a temp dir);
-use the MSYS2 shell as the README shows.
+Every ported routine is accepted only with zero shadow mismatches over runs that call it.
+Write C string edits with the editor, never through a shell heredoc or a script run from the
+shell: the tool call adds a layer of escaping, and a backslash-n in C source has come out as a
+real line break five times.
 
 The source rebuilds identically but is **not fully relocatable**. Still numeric:
 

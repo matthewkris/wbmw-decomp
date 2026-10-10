@@ -39,6 +39,7 @@ void vdp_set_vint_pending(int on);
 extern uint8_t vdp_reg[32];
 extern uint8_t vram[0x10000];
 extern uint16_t cram[64], vsram[40];
+void vdp_latch(int v[4]);
 
 /* save states (state.c): every module writes or reads its own part */
 #include <stdio.h>
@@ -55,6 +56,15 @@ int eeprom_load(const char *path);
 int eeprom_save(const char *path);
 int md_save_state(const char *path, int frame);
 int md_load_state(const char *path, int *frame);
+const uint8_t *md_snapshot(size_t *n);          /* points into a buffer reused by the next call */
+void md_restore(const uint8_t *buf, size_t n);
+void md_irq_hold(int on);
+
+/* hybrid.c: ported routines running in place of the 68000 originals */
+enum { PORT_OFF, PORT_REPLACE, PORT_SHADOW };
+void hybrid_init(int mode);
+void hybrid_report(void);
+int md_instr_hook(unsigned int pc);
 
 /* png.c */
 int png_write_rgb(const char *path, const uint32_t *px, int w, int h, int stride);

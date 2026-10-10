@@ -33,6 +33,9 @@ void vdp_state_io(FILE *f, int saving)
     if (!saving) { pending = v[0]; code = v[1]; addr = (unsigned)v[2]; fill_pending = v[3]; vblank = v[4]; vint_pending = v[5]; }
 }
 
+/* the port latches, for comparing VDP state (the VBlank and interrupt flags move with time) */
+void vdp_latch(int v[4]) { v[0] = pending; v[1] = code; v[2] = (int)addr; v[3] = fill_pending; }
+
 int vdp_vint_enabled(void) { return vdp_reg[1] & 0x20; }
 int vdp_hint_enabled(void) { return vdp_reg[0] & 0x10; }
 int vdp_hint_counter_reload(void) { return vdp_reg[10]; }

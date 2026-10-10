@@ -1,4 +1,4 @@
-Upstream: https://github.com/kstenerud/Musashi commit 313ebf1bd9f4d0d93341eb5ce21fd8a119e9dbdd (2026-03-08). MIT licence: see readme.txt. Only m68kconf.h is changed for this project: 68000 only (010-040 and PMMU off), and the interrupt acknowledge callback is md_int_ack (harness/main.c).
+Upstream: https://github.com/kstenerud/Musashi commit 313ebf1bd9f4d0d93341eb5ce21fd8a119e9dbdd (2026-03-08). MIT licence: see readme.txt. Only m68kconf.h is changed for this project: 68000 only (010-040 and PMMU off), the interrupt acknowledge callback is md_int_ack (harness/core.c), and the instruction hook is md_instr_hook (harness/hybrid.c).
 
 softfloat/ (John R. Hauser, SoftFloat release 2) is bundled by Musashi for its FPU emulation, which a
 68000 never uses; it is compiled only because m68kcpu.c includes m68kfpu.c. Its own licence is in

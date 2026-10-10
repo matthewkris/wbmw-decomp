@@ -1,7 +1,7 @@
 /* Reference harness main loop.
  *
  *   harness ROM [--frames N] [--out DIR] [--png-every K] [--ram-every K] [--vdp-every K] [--input FILE]
- *               [--save-state-at F FILE] [--load-state FILE] [--pc-trace F] [--quiet]
+ *               [--save-state-at F FILE] [--load-state FILE] [--pc-trace F] [--port replace|shadow] [--quiet]
  *
  * Runs N NTSC frames (262 lines of 488 68000 cycles). Every K frames it writes DIR/frame_NNNNN.png
  * and/or DIR/ram_NNNNN.bin (the 64 KB of work RAM) and/or DIR/vdp_NNNNN.bin (VRAM 64 KB, CRAM 128 bytes,
@@ -9,7 +9,8 @@
  * "FRAME BUTTONS": from FRAME on, hold BUTTONS (any of U D L R A B C S, or - for none).
  * --save-state-at writes a save state after frame F. --load-state starts from a save state
  * instead of power-on; frame numbers (for --frames, the dumps and the input file) continue from
- * the frame it was saved at. */
+ * the frame it was saved at. --port runs the routines in port/ in place of the originals
+ * (replace) or checks every call of them against the originals (shadow); see hybrid.c. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -50,7 +51,7 @@ static uint8_t buttons_at(int frame)
 int main(int argc, char **argv)
 {
     const char *rom_path = NULL, *out = ".", *input = NULL, *save_path = NULL, *load_path = NULL;
-    int save_at = -1, first = 0;
+    int save_at = -1, first = 0, port = PORT_OFF;
     int frames = 600, png_every = 0, ram_every = 0, vdp_every = 0, quiet = 0;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atoi(argv[++i]);
@@ -62,6 +63,9 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--pc-trace") && i + 1 < argc) trace_frame = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--save-state-at") && i + 2 < argc) { save_at = atoi(argv[++i]); save_path = argv[++i]; }
         else if (!strcmp(argv[i], "--load-state") && i + 1 < argc) load_path = argv[++i];
+        else if (!strcmp(argv[i], "--port") && i + 1 < argc) {
+            i++; port = !strcmp(argv[i], "replace") ? PORT_REPLACE : !strcmp(argv[i], "shadow") ? PORT_SHADOW : PORT_OFF;
+        }
         else if (!strcmp(argv[i], "--quiet")) quiet = 1;
         else rom_path = argv[i];
     }
@@ -70,6 +74,7 @@ int main(int argc, char **argv)
     if (input) load_input(input);
     md_power_on();
     if (load_path && md_load_state(load_path, &first)) return 1;
+    hybrid_init(port);
 
     char path[1024];
     for (int fr = first + 1; fr <= frames; fr++) {
@@ -99,5 +104,6 @@ int main(int argc, char **argv)
             fprintf(stderr, "frame %d  pc %06X  frame counter %08X\n", fr, m68k_get_reg(NULL, M68K_REG_PC),
                     ram[0x8002] << 24 | ram[0x8003] << 16 | ram[0x8004] << 8 | ram[0x8005]);
     }
+    hybrid_report();
     return 0;
 }

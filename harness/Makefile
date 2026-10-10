@@ -4,7 +4,8 @@ CC = gcc
 CFLAGS ?= -O2 -Wall -Wno-unused-function
 MUSASHI = ../third_party/musashi
 OUT = ../work/harness
-CORE = core.c bus.c vdp.c png.c
+CORE = core.c bus.c vdp.c png.c hybrid.c $(PORT)
+PORT = ../port/kernel.c ../port/entity.c ../port/registry.c
 CPU = $(OUT)/m68kcpu.o $(OUT)/m68kops.o $(OUT)/softfloat.o
 LDFLAGS = -static-libgcc
 
@@ -19,15 +20,15 @@ $(OUT)/m68kops.c: $(OUT)/m68kmake $(MUSASHI)/m68k_in.c
 
 $(OUT)/m68kcpu.o: $(MUSASHI)/m68kcpu.c $(MUSASHI)/m68kconf.h $(OUT)/m68kops.c
 	$(CC) $(CFLAGS) -w -I$(MUSASHI) -I$(OUT) -c $< -o $@
-$(OUT)/m68kops.o: $(OUT)/m68kops.c
+$(OUT)/m68kops.o: $(OUT)/m68kops.c $(MUSASHI)/m68kconf.h
 	$(CC) $(CFLAGS) -w -I$(MUSASHI) -I$(OUT) -c $< -o $@
 $(OUT)/softfloat.o: $(MUSASHI)/softfloat/softfloat.c
 	$(CC) $(CFLAGS) -w -I$(MUSASHI) -c $< -o $@
 
-$(OUT)/harness: main.c $(CORE) md.h $(CPU)
+$(OUT)/harness: main.c $(CORE) md.h ../port/port.h $(CPU)
 	$(CC) $(CFLAGS) -I$(MUSASHI) main.c $(CORE) $(CPU) -o $@ $(LDFLAGS) -lm
 
-$(OUT)/play: play.c $(CORE) md.h $(CPU)
+$(OUT)/play: play.c $(CORE) md.h ../port/port.h $(CPU)
 	$(CC) $(CFLAGS) -I$(MUSASHI) $$(sdl2-config --cflags) play.c $(CORE) $(CPU) -o $@ $(LDFLAGS) $$(sdl2-config --libs) -lm
 	cp "$$(dirname $$(which sdl2-config))/SDL2.dll" $(OUT)/
 

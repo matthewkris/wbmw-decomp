@@ -40,7 +40,7 @@ no sound.
 
     work/harness/harness ROM [--frames N] [--out DIR] [--png-every K] [--ram-every K]
                              [--vdp-every K] [--input FILE] [--pc-trace FRAME] [--quiet]
-                             [--save-state-at F FILE] [--load-state FILE]
+                             [--save-state-at F FILE] [--load-state FILE] [--port replace|shadow]
 
 * `--png-every K`: `DIR/frame_NNNNN.png` every K frames.
 * `--ram-every K`: `DIR/ram_NNNNN.bin`, the 64 KB of work RAM (`$FF0000`–`$FFFFFF`).
@@ -73,6 +73,9 @@ frame`: pixel count and bounding box). `--all` also counts every later frame tha
 shows whether two runs re-converge. Exit status 1 when they differ. This is the check every
 port step goes through: the same input from the same state, one run all 68000, one with a
 routine replaced, RAM compared every frame.
+* `--port replace|shadow`: run the C routines in `port/` instead of the originals, or check every
+  call of them against the originals; see `docs/PORT.md`. `play.exe` takes `--port` too.
+
 `core.c` (power-on, interrupts, the frame loop) is shared by both programs, so a frame in the
 window is the same frame the headless harness produces.
 
