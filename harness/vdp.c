@@ -24,6 +24,15 @@ void vdp_reset(void)
     pending = code = 0; addr = 0; fill_pending = vblank = vint_pending = 0;
 }
 
+void vdp_state_io(FILE *f, int saving)
+{
+    state_io(f, vdp_reg, sizeof vdp_reg, saving); state_io(f, vram, sizeof vram, saving);
+    state_io(f, cram, sizeof cram, saving); state_io(f, vsram, sizeof vsram, saving);
+    int v[6] = {pending, code, (int)addr, fill_pending, vblank, vint_pending};
+    state_io(f, v, sizeof v, saving);
+    if (!saving) { pending = v[0]; code = v[1]; addr = (unsigned)v[2]; fill_pending = v[3]; vblank = v[4]; vint_pending = v[5]; }
+}
+
 int vdp_vint_enabled(void) { return vdp_reg[1] & 0x20; }
 int vdp_hint_enabled(void) { return vdp_reg[0] & 0x10; }
 int vdp_hint_counter_reload(void) { return vdp_reg[10]; }

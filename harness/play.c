@@ -2,10 +2,11 @@
  * at 60 frames a second, with keyboard and game controller input. No sound (the Z80 and the
  * sound chips are not emulated).
  *
- *   play ROM [--scale N] [--save FILE]
+ *   play ROM [--scale N] [--save FILE] [--state FILE]
  *
  * Keys: arrows = D-pad, Z = A, X = B, C = C, Enter = Start.
- *       Esc quits, P pauses, Tab (held) runs fast, F12 writes a screenshot, F5 resets.
+ *       Esc quits, P pauses, Tab (held) runs fast, F12 writes a screenshot, F5 resets,
+ *       F2 saves a save state to the state file (default play.state), F4 loads it.
  * Controller: D-pad or left stick, X = A, A = B, B = C, Start = Start.
  * The save EEPROM is loaded from and written back to FILE (default play.sav). */
 #include <stdio.h>
@@ -50,20 +51,21 @@ static uint8_t pad_down(SDL_GameController *gc)
 
 int main(int argc, char **argv)
 {
-    const char *rom_path = NULL, *save = "play.sav";
+    const char *rom_path = NULL, *save = "play.sav", *state = "play.state";
     int scale = 3;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--save") && i + 1 < argc) save = argv[++i];
+        else if (!strcmp(argv[i], "--state") && i + 1 < argc) state = argv[++i];
         else rom_path = argv[i];
     }
-    if (!rom_path) { fprintf(stderr, "usage: play ROM [--scale N] [--save FILE]\n"); return 2; }
+    if (!rom_path) { fprintf(stderr, "usage: play ROM [--scale N] [--save FILE] [--state FILE]\n"); return 2; }
     if (md_load_rom(rom_path)) return 1;
     md_power_on();
     if (eeprom_load(save) == 0) fprintf(stderr, "loaded save data from %s\n", save);
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0) { fprintf(stderr, "SDL: %s\n", SDL_GetError()); return 1; }
-    SDL_Window *win = SDL_CreateWindow("Wonder Boy in Monster World - harness  (arrows, Z/X/C, Enter; P pause, Tab fast, F12 shot)",
+    SDL_Window *win = SDL_CreateWindow("Wonder Boy in Monster World - harness  (arrows, Z/X/C, Enter; P pause, Tab fast, F2/F4 state, F12 shot)",
                                        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 320 * scale, 224 * scale,
                                        SDL_WINDOW_RESIZABLE);
     SDL_Renderer *ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
@@ -74,7 +76,7 @@ int main(int argc, char **argv)
 
     const double frame_s = 1.0 / 59.922;                     /* NTSC */
     Uint64 freq = SDL_GetPerformanceFrequency(), next = SDL_GetPerformanceCounter();
-    int running = 1, paused = 0, shots = 0;
+    int running = 1, paused = 0, shots = 0, frame = 0;
     while (running) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
@@ -85,7 +87,13 @@ int main(int argc, char **argv)
                 switch (e.key.keysym.sym) {
                 case SDLK_ESCAPE: running = 0; break;
                 case SDLK_p: paused = !paused; break;
-                case SDLK_F5: md_power_on(); eeprom_load(save); break;
+                case SDLK_F5: md_power_on(); eeprom_load(save); frame = 0; break;
+                case SDLK_F2:
+                    if (md_save_state(state, frame) == 0) fprintf(stderr, "saved state at frame %d to %s\n", frame, state);
+                    break;
+                case SDLK_F4:
+                    if (md_load_state(state, &frame) == 0) fprintf(stderr, "loaded state from %s (frame %d)\n", state, frame);
+                    break;
                 case SDLK_F12: {
                     char path[64];
                     snprintf(path, sizeof path, "shot_%ld_%d.png", (long)time(NULL), shots++);
@@ -100,7 +108,7 @@ int main(int argc, char **argv)
         int fast = k[SDL_SCANCODE_TAB];
         if (!paused) {
             pad_buttons = keys_down(k) | pad_down(gc);
-            md_run_frame();
+            md_run_frame(); frame++;
         }
         /* the game switches between 256 and 320 pixels wide; show the active width */
         SDL_UpdateTexture(tex, NULL, &frame_rgb[0][0], 320 * sizeof(uint32_t));

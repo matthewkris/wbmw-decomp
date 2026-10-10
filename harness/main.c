@@ -1,11 +1,15 @@
 /* Reference harness main loop.
  *
- *   harness ROM [--frames N] [--out DIR] [--png-every K] [--ram-every K] [--vdp-every K] [--input FILE] [--quiet]
+ *   harness ROM [--frames N] [--out DIR] [--png-every K] [--ram-every K] [--vdp-every K] [--input FILE]
+ *               [--save-state-at F FILE] [--load-state FILE] [--pc-trace F] [--quiet]
  *
  * Runs N NTSC frames (262 lines of 488 68000 cycles). Every K frames it writes DIR/frame_NNNNN.png
  * and/or DIR/ram_NNNNN.bin (the 64 KB of work RAM) and/or DIR/vdp_NNNNN.bin (VRAM 64 KB, CRAM 128 bytes,
  * VSRAM 80 bytes, registers 32 bytes; words big-endian). The input file holds lines
- * "FRAME BUTTONS": from FRAME on, hold BUTTONS (any of U D L R A B C S, or - for none). */
+ * "FRAME BUTTONS": from FRAME on, hold BUTTONS (any of U D L R A B C S, or - for none).
+ * --save-state-at writes a save state after frame F. --load-state starts from a save state
+ * instead of power-on; frame numbers (for --frames, the dumps and the input file) continue from
+ * the frame it was saved at. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -45,7 +49,8 @@ static uint8_t buttons_at(int frame)
 
 int main(int argc, char **argv)
 {
-    const char *rom_path = NULL, *out = ".", *input = NULL;
+    const char *rom_path = NULL, *out = ".", *input = NULL, *save_path = NULL, *load_path = NULL;
+    int save_at = -1, first = 0;
     int frames = 600, png_every = 0, ram_every = 0, vdp_every = 0, quiet = 0;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atoi(argv[++i]);
@@ -55,6 +60,8 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--vdp-every") && i + 1 < argc) vdp_every = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--input") && i + 1 < argc) input = argv[++i];
         else if (!strcmp(argv[i], "--pc-trace") && i + 1 < argc) trace_frame = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--save-state-at") && i + 2 < argc) { save_at = atoi(argv[++i]); save_path = argv[++i]; }
+        else if (!strcmp(argv[i], "--load-state") && i + 1 < argc) load_path = argv[++i];
         else if (!strcmp(argv[i], "--quiet")) quiet = 1;
         else rom_path = argv[i];
     }
@@ -62,11 +69,13 @@ int main(int argc, char **argv)
     if (md_load_rom(rom_path)) return 1;
     if (input) load_input(input);
     md_power_on();
+    if (load_path && md_load_state(load_path, &first)) return 1;
 
     char path[1024];
-    for (int fr = 1; fr <= frames; fr++) {
+    for (int fr = first + 1; fr <= frames; fr++) {
         pad_buttons = buttons_at(fr); md_trace = fr == trace_frame;
         md_run_frame();
+        if (fr == save_at && md_save_state(save_path, fr)) return 1;
         if (png_every && fr % png_every == 0) {
             snprintf(path, sizeof path, "%s/frame_%05d.png", out, fr);
             png_write_rgb(path, &frame_rgb[0][0], frame_width, ACTIVE_LINES, 320);

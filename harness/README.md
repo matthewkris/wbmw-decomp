@@ -32,7 +32,7 @@ This builds two programs in `work/harness/` (git-ignored, like everything in `wo
 | Enter | Start | Start |
 
 Esc quits, P pauses, Tab (held) runs as fast as possible, F12 writes a screenshot to the
-current directory, F5 resets. The save EEPROM is read from FILE at start and written back on
+current directory, F5 resets, F2 saves a save state and F4 loads it. The save EEPROM is read from FILE at start and written back on
 exit (default `play.sav` in the current directory), so CONTINUE works across sessions. There is
 no sound.
 
@@ -40,6 +40,7 @@ no sound.
 
     work/harness/harness ROM [--frames N] [--out DIR] [--png-every K] [--ram-every K]
                              [--vdp-every K] [--input FILE] [--pc-trace FRAME] [--quiet]
+                             [--save-state-at F FILE] [--load-state FILE]
 
 * `--png-every K`: `DIR/frame_NNNNN.png` every K frames.
 * `--ram-every K`: `DIR/ram_NNNNN.bin`, the 64 KB of work RAM (`$FF0000`–`$FFFFFF`).
@@ -48,7 +49,30 @@ no sound.
 * `--input FILE`: lines `FRAME BUTTONS`; from FRAME on, hold BUTTONS (any of `U D L R A B C S`,
   or `-` for none).
 * `--pc-trace FRAME`: print the PC, SP and the long at SP every 61 cycles of one frame.
+* `--save-state-at F FILE`: write a save state after frame F. `--load-state FILE`: start from a
+  save state instead of power-on; frame numbers (for `--frames`, the dumps and the input file)
+  carry on from the frame it was saved at.
 
+## Save states
+
+Taken between frames: the 68000 registers and pending interrupts, RAM, Z80 RAM, the EEPROM and
+its protocol state, the pad latch, and all VDP state. About 137 KB. Integers are stored in host
+byte order, so a state belongs to the machine that wrote it. Checked exact: a run loaded from a
+state saved at frame 2000 matches the straight run in RAM (every 10 frames), VDP state and
+screenshots to frame 4000. In the window, F2 saves and F4 loads (`--state FILE`, default
+`play.state`).
+
+## Comparing runs
+
+    python tools/cmpruns.py DIR_A DIR_B [--kind ram|vdp|frame] [--all] [--max N]
+
+Compares the dumps two runs share, frame by frame, and reports the first frame that differs:
+the differing bytes grouped into runs, each labelled with the entity field and slot or the named
+RAM area it falls in (`--kind vdp`: VRAM tile, CRAM line and colour, VSRAM, register; `--kind
+frame`: pixel count and bounding box). `--all` also counts every later frame that differs, which
+shows whether two runs re-converge. Exit status 1 when they differ. This is the check every
+port step goes through: the same input from the same state, one run all 68000, one with a
+routine replaced, RAM compared every frame.
 `core.c` (power-on, interrupts, the frame loop) is shared by both programs, so a frame in the
 window is the same frame the headless harness produces.
 

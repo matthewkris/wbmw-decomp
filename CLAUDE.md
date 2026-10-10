@@ -63,9 +63,8 @@ Not done, in the order I would do it:
    (`dir00`–`dir07`) still have unknown formats.
 2. **Disassemble the Z80 sound driver** (`$98000`, 6,775 bytes) and confirm whether
    `$99A77–$9F776` is its music data.
-3. **Harden the harness**: explain the remaining pixel differences in the first room, add
-   save states (so a test can start mid-game), a frame-diff tool, and input recordings that
-   reach each area.
+3. **Harden the harness**: explain the remaining pixel differences in the first room, and
+   record input scripts that reach each area (save states make that cheap).
 4. **Port subsystem by subsystem to C**, comparing RAM state frame by frame against the harness.
 5. **Replace the emulated hardware** with a native renderer and input layer.
 
@@ -79,8 +78,8 @@ function replaces a 68000 routine by trapping its address in the harness (Musash
 instruction hook), runs against the same RAM, and the RAM dump after each frame must equal the
 pure-68000 run.
 
-Before that, two small harness jobs: save states (CPU registers + RAM + VDP + EEPROM to a file)
-and a script that compares two runs' RAM dumps frame by frame and reports the first difference.
+The tools for it exist: save states (`--save-state-at`, `--load-state`) start a check anywhere,
+and `tools/cmpruns.py` compares two runs' dumps frame by frame and labels the first difference.
 
 Build: from an MSYS2 UCRT64 shell, `cd harness && make`. GCC 16.2 and GNU make 4.4 are in
 `C:\msys64` (UCRT64). Git Bash cannot run that GCC directly (it fails to find a temp dir);

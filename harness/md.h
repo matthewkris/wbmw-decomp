@@ -40,6 +40,12 @@ extern uint8_t vdp_reg[32];
 extern uint8_t vram[0x10000];
 extern uint16_t cram[64], vsram[40];
 
+/* save states (state.c): every module writes or reads its own part */
+#include <stdio.h>
+void state_io(FILE *f, void *p, size_t n, int saving);
+void bus_state_io(FILE *f, int saving);
+void vdp_state_io(FILE *f, int saving);
+
 /* core.c */
 extern int md_trace;
 int md_load_rom(const char *path);
@@ -47,6 +53,8 @@ void md_power_on(void);
 void md_run_frame(void);
 int eeprom_load(const char *path);
 int eeprom_save(const char *path);
+int md_save_state(const char *path, int frame);
+int md_load_state(const char *path, int *frame);
 
 /* png.c */
 int png_write_rgb(const char *path, const uint32_t *px, int w, int h, int stride);

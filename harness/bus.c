@@ -83,6 +83,18 @@ int eeprom_save(const char *path)
     return n == sizeof eeprom ? 0 : -1;
 }
 
+void bus_state_io(FILE *f, int saving)
+{
+    state_io(f, ram, sizeof ram, saving); state_io(f, zram, sizeof zram, saving);
+    state_io(f, eeprom, sizeof eeprom, saving);
+    int v[9] = {e_sda, e_scl, e_out, e_drive, e_state, e_bit, e_byte, e_addr, pad_data << 8 | pad_ctrl};
+    state_io(f, v, sizeof v, saving);
+    if (!saving) {
+        e_sda = v[0]; e_scl = v[1]; e_out = v[2]; e_drive = v[3]; e_state = v[4]; e_bit = v[5];
+        e_byte = v[6]; e_addr = v[7]; pad_data = (uint8_t)(v[8] >> 8); pad_ctrl = (uint8_t)v[8];
+    }
+}
+
 void bus_reset(void)
 {
     memset(ram, 0, sizeof ram); memset(zram, 0, sizeof zram);
