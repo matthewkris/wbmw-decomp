@@ -153,11 +153,45 @@ covered routine, all with zero mismatches. Coverage is now 13 of the 22 fully co
 | `$3C22` | partial | all |
 | `$3D06` | 3/78 | 50/78 |
 
-Fuzzing added nothing over the random runs: its generators randomise the entity, not the
-platform objects, so the paths left need specific situations (standing on a platform as it
-reverses, hitting one from below or the side, slopes). They are the open item for this
-subsystem: more owner states (riding each kind of platform, jumping into one from below) or a
-fuzz generator that places a platform next to the entity.
+Fuzzing added nothing over the random runs then: its generator randomised every entity field,
+so positions, sizes and velocities almost never lined edges up, and it never touched the
+platform records.
+
+**The collision scene generator** (`collision_scene` in `harness/hybrid.c`, used for three
+quarters of the fuzz cases of every generated routine) builds the situations instead:
+
+* the entity with a realistic size and a small velocity, its previous position just behind it,
+  its feet in a solid block or a slope found in the room (through the hand-ported
+  `TileAttrAtPixel`);
+* rooms without slopes, which are both rooms with states: the block under the feet, and
+  sometimes those above and below it, are made slopes by writing a slope attribute into the
+  room's block attribute table, which is in RAM;
+* all six moving-platform records (flags, attribute, position, velocity, half size) placed with
+  an edge touching the entity from the side, above or below, or near it; the platform it stands
+  on; sometimes two platforms with the same top;
+* for the per-platform routines fuzzed on their own (`$3B74`, `$3D06`, `$3E00`), `a2` and the
+  edges in `d4`-`d6` as their callers compute them.
+
+It counts the scenes it built and how many stand on a slope or a solid block, so a room where
+it finds neither shows up in the report.
+
+10,000 cases per routine from each of the two states (the platform state and the attract demo):
+zero mismatches. **20 of the 22 generated routines are now fully covered.** What is left:
+
+* `$3860` and `$3584`: `nop; bra *` at $3888, table entry 0 of `$3860`. It is a deliberate hang
+  that no collision type reaches.
+* `$3584`: `unlk a6; rts` at $38E0. It is reached only through the other entry `$356E` (which
+  sets `$FF9EE8` to -1). `$356E` is called by the sibling movement routines `$2EDE` and `$2F34`,
+  which are not translated yet. These instructions get covered when those routines become roots.
+
+Two kinds of input are invalid for fuzzing, like the stored continuation before:
+
+* Attribute bytes $80-$FF index past the type table at $3FC2 into code. Some of the garbage
+  they read looks like a slope and sends `$3860`'s jump out of the table, and the generated C
+  then stops at an unknown address. The game never uses them, so the generator does not either.
+* `$3694`, `$36D4` and `$370A` are not fuzzed on their own. They use `$3584`'s stack frame
+  (`-$12(a6)`) and end with its `unlk a6`, so a direct call returns to garbage. They are
+  checked inside `$3584`.
 
 ### Exactness first, cleanup later
 

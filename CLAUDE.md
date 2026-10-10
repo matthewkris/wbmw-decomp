@@ -86,11 +86,10 @@ The port now has two kinds of C: hand ports (`port/*.c`, 45 routines) and transl
 (`tools/m68k2c.py` into `work/gen`, roots in `analysis/translate.json`; the owner chose this as
 scaffolding, see `docs/PORT.md`). Next:
 
-1. Finish covering the moving-platform collision paths. The owner's state among the platforms of
-   area 1, room 2 is `work/platform.state` (random-input runs and fuzzing from it: 0 mismatches,
-   13 of 22 generated routines fully covered; the gaps are listed in `docs/PORT.md`). Next: a
-   fuzz generator that places a platform object next to the entity, or more owner states
-   (riding a platform as it turns, jumping into one from below).
+1. Movement with collision is checked: 0 mismatches, 20 of 22 generated routines fully covered
+   (gameplay, the owner's platform state `work/platform.state`, and the collision scene fuzz
+   generator; see `docs/PORT.md`). Its last gap is reached only through `$356E`, called by the
+   sibling movement routines `$2EDE` and `$2F34`, which are the natural next roots.
 2. Translate the rest of the game a subsystem at a time (add roots to `analysis/translate.json`),
    each accepted by the same rule. Fuzz input generators live in `harness/hybrid.c` and are
    game-specific; move them to a game file when the second game starts.

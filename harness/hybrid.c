@@ -270,6 +270,120 @@ static uint32_t random_mapping(void)
 
 static void put_word(uint32_t a, uint32_t v) { ram[a & 0xFFFF] = (uint8_t)(v >> 8); ram[(a + 1) & 0xFFFF] = (uint8_t)v; }
 static void put_long(uint32_t a, uint32_t v) { put_word(a, v >> 16); put_word(a + 2, v); }
+static int32_t get_sword(uint32_t a) { return (int16_t)(ram[a & 0xFFFF] << 8 | ram[(a + 1) & 0xFFFF]); }
+static int32_t small(int n) { return (int32_t)(rnd() % (unsigned)(2 * n + 1)) - n; }
+
+/* collision type of the block at pixel (x, y) of layer a3 as entity e sees it, via the hand port */
+void TileAttrAtPixel(Cpu *), TileTypeOf(Cpu *);
+static uint32_t type_at(uint32_t layer, uint32_t e, uint32_t x, uint32_t y)
+{
+    Cpu c = {0};
+    c.a[3] = 0xFFFF0000u | layer; c.a[4] = e; c.a[7] = m68k_get_reg(NULL, M68K_REG_SP);
+    c.d[6] = x & 0xFFFF; c.d[7] = y & 0xFFFF;
+    TileAttrAtPixel(&c);
+    return c.d[2] & 0xFFFF;
+}
+
+/* A scene for the movement-with-collision routines: entity e standing on or moving into a slope
+ * or solid block of the layer, with a small velocity, and the six moving platforms (records at
+ * a2 = 0, 4 .. 20: flags $FF9F8E, attribute $FF9F8F, X/Y $FF9FE2/4, velocity $FFA036/8, half
+ * width/height $FFA08A/C) placed beside, above or below it. Fully random fields almost never
+ * line edges up, which is what those paths test. */
+static long scenes, on_slope, on_solid;          /* how often the scene found what it looked for */
+static void collision_scene(const char *name, uint32_t layer, uint32_t cols, uint32_t rows, uint32_t e)
+{
+    uint32_t hw = 4 + rnd() % 12, hh = 4 + rnd() % 28;
+    ram[0xCB02 + e] = (uint8_t)hw; ram[0xCB03 + e] = (uint8_t)hh;
+    int32_t x = get_sword(0xC800 + e), y = get_sword(0xC900 + e);
+    uint32_t prev_type = rnd();
+    int want_slope = rnd() % 2; scenes++;
+    for (int t = 0; t < 400; t++) {                 /* the feet in a slope or solid block */
+        uint32_t bx = 0x1000 + (rnd() % cols) * 16, by = 0x1000 + (rnd() % rows) * 16;
+        uint32_t ty = type_at(layer, e, bx + 8, by + 8);
+        if (want_slope ? (ty & 0x108) == 0x108 : (ty & 8) != 0) {
+            x = (int32_t)(bx + rnd() % 16); y = (int32_t)(by + rnd() % 24) - 4 - (int32_t)hh;
+            if (rnd() % 2) prev_type = ty;
+            if (want_slope) on_slope++; else on_solid++;
+            break;
+        }
+    }
+    if (want_slope && rnd() % 2) {
+        /* rooms without slopes (most): make the block at the feet a slope, and its neighbours
+         * above and below sometimes too. Attributes live in RAM, 256 bytes after each block
+         * table (docs/NOTES.md, Blocks), and the case's RAM is restored afterwards. */
+        static uint8_t slopes[256]; static int ns = -1;
+        if (ns < 0) {
+            ns = 0;
+            /* attributes $80-$FF index past the type table into code: slope-like garbage that
+             * sends $3860's jump table out of range, never used by the game */
+            for (uint32_t a = 0; a < 0x80; a++) {
+                Cpu c = {0}; c.a[4] = 0xFFFF; c.d[1] = a; TileTypeOf(&c);
+                if ((c.d[2] & 0x108) == 0x108) slopes[ns++] = (uint8_t)a;
+            }
+        }
+        x = (int32_t)(0x1000 + (rnd() % cols) * 16 + rnd() % 16);
+        int32_t by = (int32_t)(0x1000 + (rnd() % rows) * 16);
+        y = by + (int32_t)(rnd() % 24) - 4 - (int32_t)hh;
+        uint8_t shape = slopes[rnd() % (unsigned)ns];
+        for (int32_t dy = -16; dy <= 16; dy += 16) {
+            if (dy && rnd() % 2) continue;
+            Cpu c = {0};
+            c.a[3] = 0xFFFF0000u | layer; c.a[4] = e; c.a[7] = m68k_get_reg(NULL, M68K_REG_SP);
+            c.d[6] = (uint32_t)x & 0xFFFF; c.d[7] = (uint32_t)(by + dy + 8) & 0xFFFF;
+            TileAttrAtPixel(&c);
+            uint32_t block = c.d[0] & 0xFFFF;
+            uint32_t table = (uint32_t)get_sword(layer + 0x10 + ((block >> 6) & 0xC)) << 16 | (uint16_t)get_sword(layer + 0x12 + ((block >> 6) & 0xC));
+            uint8_t a = rnd() % 2 ? shape : slopes[rnd() % (unsigned)ns];
+            if ((table & 0xFF0000) == 0xFF0000) ram[(table + 0x800 + (block & 0xFF)) & 0xFFFF] = a;
+            if (!dy && rnd() % 2) { Cpu t = {0}; t.a[4] = e; t.d[1] = a; TileTypeOf(&t); prev_type = t.d[2]; }
+        }
+        on_slope++;
+    }
+    put_word(0xC800 + e, (uint32_t)x); put_word(0xC900 + e, (uint32_t)y);
+    ram[0xCA00 + e] = (uint8_t)small(8); ram[0xCA02 + e] = (uint8_t)small(8);       /* velocity */
+    put_word(0xD200 + e, (uint32_t)(x - small(8))); put_word(0xD202 + e, (uint32_t)(y - small(8)));
+    put_word(0xD102 + e, prev_type);                /* the previous collision type */
+    for (uint32_t d = 0; d < 4; d += 2) put_word(0xD000 + e + d, rnd() % 3 ? 0 : (uint32_t)small(16));
+    ram[0x9F0B] = (uint8_t)rnd();
+    for (uint32_t p = 0; p < 24; p += 4) {
+        ram[0x9F8E + p] = (uint8_t)(rnd() % 3 ? 0x80 | rnd() : rnd() & 0x7F);
+        uint32_t attr = rnd() & 0x7F;
+        for (int t = 0; t < 32 && rnd() % 4; t++) {  /* mostly an attribute that blocks some side */
+            Cpu c = {0}; c.a[4] = e; c.d[1] = attr = rnd() & 0x7F; TileTypeOf(&c);
+            if (c.d[2] & 0xF) break;
+        }
+        ram[0x9F8F + p] = (uint8_t)attr;
+        uint32_t pw = 4 + rnd() % 28, ph = 4 + rnd() % 12;
+        int32_t px = x + small(16), py = y + small(16);
+        switch (rnd() % 3) {                         /* edges touching, or near */
+        case 0: px = x + (rnd() % 2 ? 1 : -1) * (int32_t)(hw + pw) + small(4); break;
+        case 1: py = y + (rnd() % 2 ? 1 : -1) * (int32_t)(hh + ph) + small(4); break;
+        }
+        put_word(0x9FE2 + p, (uint32_t)px); put_word(0x9FE4 + p, (uint32_t)py);
+        put_word(0xA036 + p, rnd() % 3 ? (uint32_t)small(4) : 0); put_word(0xA038 + p, rnd() % 3 ? (uint32_t)small(4) : 0);
+        put_word(0xA08A + p, pw); put_word(0xA08C + p, ph);
+    }
+    uint32_t on = (rnd() % 6) * 4;                   /* the platform the entity stands on */
+    put_word(0xD300 + e, on);
+    if (rnd() % 4 == 0) {                            /* another platform with the same top */
+        uint32_t p = (rnd() % 6) * 4;
+        put_word(0x9FE4 + p, (uint32_t)(get_sword(0x9FE4 + on) - get_sword(0xA08C + on) + get_sword(0xA08C + p)));
+    }
+    put_word(0x9EE4, rnd() % 2 ? 0xFFFF : rnd() % 32); put_word(0x9EE6, rnd() % 32);
+    /* the per-platform routines called directly: a2 and the edges their callers compute */
+    uint32_t a2 = (rnd() % 6) * 4;
+    if (!strcmp(name, "g_003B74") || !strcmp(name, "g_003E00")) {
+        m68k_set_reg(M68K_REG_A2, a2);
+        m68k_set_reg(M68K_REG_D4, (uint32_t)(x - get_sword(0xD200 + e)) & 0xFFFF);
+        m68k_set_reg(M68K_REG_D5, (uint32_t)(x + (int32_t)hw) & 0xFFFF);
+        m68k_set_reg(M68K_REG_D6, (uint32_t)(x - (int32_t)hw) & 0xFFFF);
+    } else if (!strcmp(name, "g_003D06")) {
+        m68k_set_reg(M68K_REG_A2, a2);
+        m68k_set_reg(M68K_REG_D4, (uint32_t)(y - get_sword(0xD202 + e)) & 0xFFFF);
+        m68k_set_reg(M68K_REG_D5, (uint32_t)(y + (int32_t)hh) & 0xFFFF);
+        m68k_set_reg(M68K_REG_D6, (uint32_t)(y - (int32_t)hh) & 0xFFFF);
+    }
+}
 
 int hybrid_fuzz(const char *name, long count)
 {
@@ -402,6 +516,7 @@ int hybrid_fuzz(const char *name, long count)
                 }
                 put_word(0xC800 + e, 0x1000 + col * 16 + rnd() % 16);
                 put_word(0xC900 + e, 0x1000 + row * 16 + rnd() % 16);
+                if (generated && rnd() % 4) collision_scene(name, layer, cols, rows, e);
             } else {
                 m68k_set_reg(M68K_REG_D6, (rnd() << 16) | ((0x100 + col) & 0xFFFF));
                 m68k_set_reg(M68K_REG_D7, (rnd() << 16) | ((0x4000 + row * 64) & 0xFFFF));
@@ -442,6 +557,7 @@ int hybrid_fuzz(const char *name, long count)
     }
     fuzzing = 0;
     md_restore(base, n); free(base);
+    if (scenes) fprintf(stderr, "fuzz: %ld collision scenes, %ld on a slope, %ld on a solid block\n", scenes, on_slope, on_solid);
     fprintf(stderr, "fuzz %s: %ld cases run, %ld mismatches\n", name, count, stats[idx].bad - before);
     return stats[idx].bad != before;
 }
