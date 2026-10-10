@@ -35,6 +35,7 @@ def decode(pc):
     it = next(md.disasm(d[pc:pc+12], pc, 1), None)
     if it is None: return None
     if '[' in it.op_str or '*' in it.op_str: return None
+    if it.mnemonic == 'dc.w': return None        # capstone's spelling of an undecodable word
     return it
 
 def ea_ext_words(mode, reg, size_imm):
@@ -229,7 +230,8 @@ if A.extra:
 
 SPAWN = {0x50D4, 0x50E2, 0x47A, 0x4A2, 0x444}
 SPAWN_LIST = {0x5106}
-DATA_DST = set(extra.get('data_dst', []))
+anyreg = lambda s: re.sub(r'\(a[0-7]\)', '(an)', s)    # entity fields are reached through any of a0-a4
+DATA_DST = set(anyreg(x) for x in extra.get('data_dst', []))
 def call_target(a):
     """absolute target if instruction at a is a direct call/jump, else None"""
     if a not in insn: return None
@@ -246,7 +248,7 @@ def discover():
         if t >= CODE_END: continue
         for pc, mn, how in list(lst):
             sz, _, ops = insn[pc]; dst = ops.split(', ')[-1]
-            if how == 'imm' and mn == 'move.l' and dst not in DATA_DST and not re.fullmatch(r'd\d', dst):
+            if how == 'imm' and mn == 'move.l' and anyreg(dst) not in DATA_DST and not re.fullmatch(r'd\d', dst):
                 if kind[t] == 0 and plausible(t): work.append((t, pc)); ptr_entries[t] = pc
             if mn in ('lea.l','movea.l') and dst in ('a0','a1'):
                 ct = call_target(pc+sz)

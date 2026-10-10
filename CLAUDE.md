@@ -18,52 +18,67 @@ Done:
 
 - ROM identified and verified (details below).
 - A recursive-descent tracer (`tools/trace.py`) that separates code from data in the code region
-  `$200–$1D000`. It finds 95,174 bytes of code in 845 routines, with zero tracing conflicts.
-- A labelled listing generator (`tools/listing.py`). The listing's bytes match the ROM exactly
-  over the code region, but it is in Capstone's syntax and no assembler will accept it.
+  `$200–$1D000`. It finds 95,166 bytes of code (28,210 instructions) in 845 routines, with zero
+  tracing conflicts.
+- **A byte-identical rebuild.** `tools/build.sh` (or `make`) traces the ROM, generates
+  `work/src/wbmw.asm` with `tools/mkasm.py`, assembles it with vasm and checks the SHA-1. All
+  28,210 instructions are emitted as mnemonics with explicit sizes and labels; none fall back to
+  raw words. Jump tables are `dc.w target-base` / `dc.l label`, task tags are `dc.b 'Kxxx'`.
 - A first survey of the engine: task scheduler, entity layout, hardware access, sound and save
   interfaces. All in `docs/NOTES.md`.
 
 Not done, in the order I would do it:
 
-1. **Reassemblable source with a byte-identical rebuild.** See "The next step" below.
-2. **Split the rest of the ROM** (`$1D000–$A4C76`) into named binary includes, starting from the
+1. **Split the rest of the ROM** (`$1D000–$A4C76`) into named binary includes, starting from the
    data directory at `$1CC00`, so the whole ROM rebuilds from source plus extracted blobs.
-3. **Name the kernel.** Start with the most-called routines: `$7E8` (160 callers), `$400`
+2. **Name the kernel.** Start with the most-called routines: `$7E8` (160 callers), `$400`
    (yield, 123), `$366` (queue sound command, 98), `$5D8` (73), `$43BC` (61), `$48C4` (49).
    Keep names in a symbol file the tools read, not hard-coded in scripts.
-4. **Identify the graphics compression** and write an extractor that dumps tiles to PNG. The
+3. **Identify the graphics compression** and write an extractor that dumps tiles to PNG. The
    high-entropy data sits at `$40000–$97FFF`; the loaders have not been found yet. Nothing in the
    code references that area directly, so follow the pointers in the `$1CC00` directory.
-5. **Disassemble the Z80 sound driver** (`$98000`, 6,775 bytes) and find its music data.
-6. **Build a reference harness**: the original 68000 code running under an interpreter core
+4. **Disassemble the Z80 sound driver** (`$98000`, 6,775 bytes) and find its music data.
+5. **Build a reference harness**: the original 68000 code running under an interpreter core
    against a reimplemented hardware layer, able to run headless, dump frames as images, and dump
    RAM per frame. This is the oracle every later step is checked against.
-7. **Port subsystem by subsystem to C**, comparing RAM state frame by frame against the harness.
-8. **Replace the emulated hardware** with a native renderer and input layer.
+6. **Port subsystem by subsystem to C**, comparing RAM state frame by frame against the harness.
+7. **Replace the emulated hardware** with a native renderer and input layer.
 
 ## The next step
 
-Turn the listing into source an assembler accepts, and prove it by rebuilding the ROM and
-comparing SHA-1. Nothing after this is trustworthy until it passes, because a byte-identical
-rebuild is the only proof the disassembly misread nothing.
+Split `$1D000–$A4C76`. Today `mkasm.py` pulls the vectors and header (`$0–$200`) and everything
+from `$1D000` on straight out of the ROM with `incbin`. Replace that with named pieces: the
+vector table as `dc.l` labels, the header as text fields, the `$1CC00` directory as `dc.l`
+pointers to labelled blobs, and each blob as an `incbin` range of the owner's ROM. The build must
+stay byte-identical after every change.
 
-Things that make this harder than it sounds:
+The source is identical but **not yet relocatable**: inserting a byte would break it. What is
+still numeric, roughly in the order it matters:
 
-- **Encoding choices.** The 68000 has several encodings for the same operation: short versus
-  long absolute addresses, 8-bit versus 16-bit branches, `add` versus `addi`/`adda`/`addq`,
-  `move` versus `moveq`, a zero displacement versus none. An assembler left to choose will pick
-  differently from the original in places. Emit explicit sizes everywhere, and for any
-  instruction that still does not round-trip, fall back to emitting its raw words with the
-  mnemonic in a comment. Track how many fall back and drive that number down.
-- **Labels.** Every branch target, call target, table entry and data reference must become a
-  symbol, including the word-offset jump tables (emit them as `dc.w target-base`). The map in
-  `work/map.json` already records all of these: `calls`, `jumps`, `auto_tables`, `tables`,
-  `bra_tables`, `descriptors`, `refs`.
-- **Assembler choice is open.** None was installed where the survey ran. `vasm` (Motorola
-  syntax) and `clownassembler` are the usual choices for Genesis disassemblies. Pick one, record
-  the choice and version here, and write a `Makefile` whose default target builds the ROM and
-  fails if the hash differs.
+- pointers inside the embedded data of the code region (20.7 KB of `dc.b`), including the
+  descriptor lists spawned through `$5106`;
+- `move.l #imm` values that are ROM addresses but not labels (only those that hit a label are
+  symbolic; others may be constants, and telling them apart needs the data split);
+- `lea`/`move` of `.l` or `.w` absolute addresses into data outside the code region;
+- the vector table, which is inside the `$0–$200` `incbin`.
+
+Relocatability matters for modding and for proving the data/code split, not for the C port, so
+do it as the data split exposes each pointer rather than as a separate pass.
+
+How the rebuild works, and what to keep:
+
+- vasm is run with `-no-opt`, so every size the source states is the size it gets. Capstone's
+  text is the input; `mkasm.py` fixes its quirks: bit operations (`btst` etc.) are sized by the
+  destination (`.b` on memory, `.l` on `Dn`), not as Capstone prints them; `move usp` comes out
+  unsized; short absolute RAM addresses must be written sign-extended (`($ffff8a49).w`); `moveq`
+  immediates must be signed.
+- `tools/checkasm.py` assembles with a listing and compares every line against the ROM. Any
+  instruction that differs goes into a raw list (`--raw` to `mkasm.py`) and is emitted as `dc.w`
+  with the mnemonic in a comment. It is the tool to run when a change breaks the hash.
+- The rebuild found two tracer errors, both fixed: Capstone prints undecodable words as `dc.w`
+  and `trace.py` accepted that as an instruction (it made `"PAUSE",0` at `$7F4E` look like a
+  task descriptor), and the `data_dst` hint only matched `a4`-based entity fields, so a data
+  pointer stored through `a2` at `$18B9E` was traced as code.
 
 ## The ROM
 
@@ -90,7 +105,13 @@ Things that make this harder than it sounds:
     pip install capstone
     tools/fixpoint.sh "rom/Wonder Boy in Monster World (USA, Europe).md"
 
-That writes `work/map.json` and `work/code_000200_01D000.lst`. Other scripts:
+That writes `work/map.json` and `work/code_000200_01D000.lst`. On Windows, where only
+`python.exe` exists, run it as `PYTHON=python tools/fixpoint.sh ...` from Git Bash.
+
+Owner's machine (Windows 11): Python 3.12.10 and capstone 5.0.7 in
+`%LOCALAPPDATA%\Programs\Python\Python312`. Assembler: vasm 2.0f (`vasmm68k_mot`, motorola
+syntax module 3.19f, official Win64 binary) in `%LOCALAPPDATA%\Programs\vasm`. Neither is on
+PATH, so prepend both before running tools. Other scripts:
 
 - `tools/header.py ROM` prints vectors and header fields and checks the checksum.
 - `tools/dis.py ROM ADDR [COUNT]` does a quick linear disassembly from a hex address.

@@ -25,8 +25,8 @@ Status: first survey. Addresses are ROM offsets unless they start with `$FF`.
 | $098000–$099A76 | Z80 sound driver, 6,775 bytes, copied to Z80 RAM at boot by $306 |
 | $0A0000–$0A4C76 | animation tables (three levels of word offsets), read by the interpreter at $7FC/$870 |
 
-Code region $200–$1D000 (118,272 bytes): 95,174 bytes traced as code (28,213 instructions,
-845 call targets), 2,348 bytes of jump tables and task tags, 20,750 bytes of embedded data.
+Code region $200–$1D000 (118,272 bytes): 95,166 bytes traced as code (28,210 instructions,
+845 call targets), 2,344 bytes of jump tables and task tags, 20,762 bytes of embedded data.
 1,355 of the 1,361 `rts`-shaped words in the region are inside traced instructions.
 46 routines have no static reference (`orphan_` / `unreferenced` in the listing).
 
@@ -42,7 +42,8 @@ The code is hand-written assembly: only 38 `link a6` frames in 28k instructions.
 * `$400` is yield: it pops its own return address into slot+$C and returns to the scheduler,
   so code after `jsr $400` runs on the next pass. 123 call sites.
 * Task descriptors are a 4-byte ASCII tag followed by code. Tags found: Ksmt Kseg Kttl Ktt2 Ktmt
-  Ktm2 Ktm3 Kmnu Kdym Kgmt Kgam Kcol Kedm Keds Mxcg PAUS. Spawned by $50D4/$50E2 (system task),
+  Ktm2 Ktm3 Kmnu Kdym Kgmt Kgam Kcol Kedm Keds Mxcg. (`PAUS` at $7F4E, listed here before, is the
+  string `"PAUSE",0` passed to $7870, not a task.) Spawned by $50D4/$50E2 (system task),
   $5106 (list of descriptors), $444/$47A (pool), killed by tag with $4A2/$4A4.
 * The scheduler at $4C00 can time-slice against the VDP HV counter (`$C00008`, cut-off $D0xx)
   when bit 6 of `$FF8A5D` is set. A port has to replace that with a fixed budget.
@@ -70,7 +71,8 @@ Sound: the 68000 never writes the YM2612 or PSG. `$366` queues one command byte 
 
 ## Open items
 
-* Byte-identical reassembly of the listing (needs an assembler in the loop).
+* The data at $18BB8 (6 bytes) is stored to entity field `-$2900` at $18B9E;
+  what reads that field is not yet known.
 * Graphics compression format and the loaders that use the $1CC00 directory.
 * The 46 unreferenced routines and 6 stray `rts` words ($3E4A $8934 $9C5C $1005A $100F0 $14B7C).
 * Contents of the 20.7 KB of data embedded in the code region.

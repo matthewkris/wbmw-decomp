@@ -10,4 +10,9 @@ SHA-1 `87a968f773c7e807e647c0737132457b06b78276`.
     tools/fixpoint.sh "rom/Wonder Boy in Monster World (USA, Europe).md"
 
 That writes `work/map.json` (code/data map) and `work/code_000200_01D000.lst` (listing).
+To rebuild the ROM from generated source (needs vasm's `vasmm68k_mot` on PATH) and check it is
+byte-identical:
+
+    make                # or: sh tools/build.sh
+
 See `docs/NOTES.md` for what is known so far.
