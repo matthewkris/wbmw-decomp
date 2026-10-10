@@ -15,6 +15,11 @@ or from PowerShell:
 
     $env:MSYSTEM="UCRT64"; $env:CHERE_INVOKING="1"; C:\msys64\usr\bin\bash.exe -lc "cd harness && make"
 
+The build also translates the routines listed in `analysis/translate.json` (and everything they
+call) into `work/gen/` with `tools/m68k2c.py`, which needs Python and `work/map.json` (from
+`tools/build.sh`). From the MSYS2 shell, pass Python's path:
+`make PYTHON=/c/Users/matth/AppData/Local/Programs/Python/Python312/python.exe`.
+
 This builds two programs in `work/harness/` (git-ignored, like everything in `work/`):
 `harness.exe`, headless, and `play.exe`, the same machine in a window. `play` needs SDL2
 (`pacman -S mingw-w64-ucrt-x86_64-SDL2`); the build copies `SDL2.dll` next to it.

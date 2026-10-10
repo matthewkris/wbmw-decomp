@@ -105,6 +105,39 @@ does not run the Z80, so the busy flag is never set. The `$C0` (skip a slot) com
 
 ## Decisions
 
+### A translator as scaffolding (decided 2026-10-10)
+
+After about 1,100 instructions transcribed by hand, the owner chose to generate the exact C
+mechanically instead: `tools/m68k2c.py` turns any 68000 routine (and everything it reaches)
+into C with the same registers, condition codes and stack effects, built on a small runtime
+of 68000 semantics (`port/m68k_rt.h`). The generated C is checked exactly like hand ports
+(shadow mode, coverage, fuzzing). It is a static recompilation and therefore **scaffolding
+only**: it gets the whole game running as C quickly, and the end product is still hand-written
+idiomatic C, produced by rewriting the translated routines subsystem by subsystem, each rewrite
+guarded by the shadow checks against the original. Generated C is derived from the ROM's code,
+so like the disassembly it is generated into `work/` at build time and never committed; the
+translator and runtime are committed and are game-independent (any 68000 game). The hand ports
+already in `port/` stay; the translator calls them where they exist.
+
+How the translator handles what plain translation cannot:
+* calls push the real return address and `rts` pops it into `c->ret`; a caller continues only if
+  that is its own return address, else it returns too, so routines that drop their caller's
+  frame (and later `Yield`) need no special cases;
+* computed jumps resolve through the map's jump tables, and a `jmp (aN)` just after
+  `movea.l VAR,aN` is a stored continuation: its targets are the code addresses the game stores
+  into VAR, which become their own entry points (`$38E4`, stored in `$FF9EE8`);
+* anything else goes through `rt_dispatch` and stops the harness with the addresses if unknown.
+
+First use, `MoveWithCollision` ($2FD0): 22 routines, 849 instructions, generated with no
+unsupported instruction. Zero mismatches in the two standard runs (about 16,000 checked calls of
+the generated routines) and in 5,000 fuzz cases per routine from two states; the self-test
+catches a corrupted generated routine on every call. Coverage: 12 of the 22 fully covered. The
+uncovered paths are mostly collision with moving platforms (`$3B74`, `$3D06`, parts of `$341C`,
+`$3584`, `$3C22`, and `MoveWithCollision`'s on-a-platform branch): they need platform objects
+(room command `$14`), which no standard run has. A save state in a room with moving platforms
+(the owner can make one with F2 in `play.exe`) is the way to cover them. `$3860`'s table entry 0
+is a deliberate hang (`nop; bra *`) and stays uncovered.
+
 ### Exactness first, cleanup later
 
 Ported routines reproduce side effects the game may not depend on (a scratch register, an

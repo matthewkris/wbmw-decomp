@@ -1,10 +1,13 @@
 # Reference harness (headless) and play (live window). Build with GCC and GNU make; on the
 # owner's machine both come from MSYS2 UCRT64, along with SDL2 for the window.
 CC = gcc
-CFLAGS ?= -O2 -Wall -Wno-unused-function
+CFLAGS ?= -O2 -Wall -Wno-unused-function -Wno-unused-label -Wno-unused-variable
 MUSASHI = ../third_party/musashi
 OUT = ../work/harness
-CORE = core.c bus.c vdp.c png.c hybrid.c $(PORT)
+CORE = core.c bus.c vdp.c png.c hybrid.c $(PORT) $(GEN)
+GEN = ../work/gen/gen.c ../work/gen/gen_registry.c
+PYTHON ?= python
+ROM ?= ../rom/Wonder Boy in Monster World (USA, Europe).md
 PORT = ../port/kernel.c ../port/entity.c ../port/anim.c ../port/gfx.c ../port/sprites.c ../port/hitbox.c ../port/map.c ../port/registry.c
 CPU = $(OUT)/m68kcpu.o $(OUT)/m68kops.o $(OUT)/softfloat.o
 LDFLAGS = -static-libgcc
@@ -25,11 +28,15 @@ $(OUT)/m68kops.o: $(OUT)/m68kops.c $(MUSASHI)/m68kconf.h
 $(OUT)/softfloat.o: $(MUSASHI)/softfloat/softfloat.c
 	$(CC) $(CFLAGS) -w -I$(MUSASHI) -c $< -o $@
 
+# the translated routines (tools/m68k2c.py): roots from analysis/translate.json; needs work/map.json
+$(GEN): ../tools/m68k2c.py ../analysis/translate.json ../port/registry.c ../work/map.json
+	$(PYTHON) -I ../tools/m68k2c.py "$(ROM)" ../work/map.json ../work/gen $$($(PYTHON) -I -c "import json; print(' '.join(json.load(open('../analysis/translate.json'))['roots']))")
+
 $(OUT)/harness: main.c $(CORE) md.h ../port/port.h $(CPU)
-	$(CC) $(CFLAGS) -I$(MUSASHI) main.c $(CORE) $(CPU) -o $@ $(LDFLAGS) -lm
+	$(CC) $(CFLAGS) -I$(MUSASHI) -I../port main.c $(CORE) $(CPU) -o $@ $(LDFLAGS) -lm
 
 $(OUT)/play: play.c $(CORE) md.h ../port/port.h $(CPU)
-	$(CC) $(CFLAGS) -I$(MUSASHI) $$(sdl2-config --cflags) play.c $(CORE) $(CPU) -o $@ $(LDFLAGS) $$(sdl2-config --libs) -lm
+	$(CC) $(CFLAGS) -I$(MUSASHI) -I../port $$(sdl2-config --cflags) play.c $(CORE) $(CPU) -o $@ $(LDFLAGS) $$(sdl2-config --libs) -lm
 	cp "$$(dirname $$(which sdl2-config))/SDL2.dll" $(OUT)/
 
 clean:

@@ -23,11 +23,19 @@ uint16_t rd16(uint32_t a) { return (uint16_t)bus_read16(a); }
 void wr8(uint32_t a, uint8_t v) { bus_write8(a, v); }
 void wr16(uint32_t a, uint16_t v) { bus_write16(a, v); }
 
+/* every routine the harness can run in C: hand ports (port/registry.c), then the generated ones
+ * (work/gen, tools/m68k2c.py). A generated routine does its own rts; a hand port does not. */
+extern const PortRoutine gen_routines[];
+extern const int gen_routine_count;
+static int NR;
+static const PortRoutine *R(int i) { return i < port_routine_count ? &port_routines[i] : &gen_routines[i - port_routine_count]; }
+static int pops(int i) { return i >= port_routine_count; }
+
 static int mode;
 static int break_idx = -1;            /* self-test: corrupt this routine's result (WBMW_PORT_BREAK=name) */
 static int16_t *slot_of;              /* routine index for each even ROM address, -1 if none */
 #define SLOTS 0x20000
-static struct { long calls, bad; } stats[256];
+static struct { long calls, bad; } stats[1024];
 
 static void get_cpu(Cpu *c)
 {
@@ -82,7 +90,7 @@ static void diff_bytes(const char *what, const uint8_t *a, const uint8_t *b, siz
 
 static void check(void)
 {
-    const PortRoutine *p = &port_routines[shadow.idx];
+    const PortRoutine *p = R(shadow.idx);
     capture(got);                                   /* the original's result */
     Cpu *a = &got->cpu, *b = &want->cpu;
     int bad = memcmp(a->d, b->d, sizeof a->d) || memcmp(a->a, b->a, sizeof a->a) || a->ccr != b->ccr
@@ -114,10 +122,11 @@ static void check(void)
 static void run_port(int idx)
 {
     Cpu c; get_cpu(&c);
-    port_routines[idx].fn(&c);
+    R(idx)->fn(&c);
     if (idx == break_idx) c.ccr ^= CC_X;            /* one flag, the subtlest thing to get wrong */
-    uint32_t ret = rd32(c.a[7]);                    /* the original's rts */
-    c.a[7] += 4;
+    uint32_t ret;
+    if (pops(idx)) ret = c.ret;                     /* generated: it did the rts (maybe elsewhere) */
+    else { ret = rd32(c.a[7]); c.a[7] += 4; }       /* hand port: the original's rts */
     set_cpu(&c);
     m68k_set_reg(M68K_REG_PC, ret);
 }
@@ -161,10 +170,11 @@ void hybrid_init(int m)
     if (mode == PORT_OFF) return;
     slot_of = malloc(SLOTS * sizeof *slot_of);
     for (int i = 0; i < SLOTS; i++) slot_of[i] = -1;
-    for (int i = 0; i < port_routine_count; i++) slot_of[port_routines[i].addr] = (int16_t)i;
+    NR = port_routine_count + gen_routine_count;
+    for (int i = NR - 1; i >= 0; i--) slot_of[R(i)->addr] = (int16_t)i;   /* a hand port wins over a translation */
     const char *brk = getenv("WBMW_PORT_BREAK");
-    for (int i = 0; brk && i < port_routine_count; i++)
-        if (!strcmp(brk, port_routines[i].name)) { break_idx = i; fprintf(stderr, "self-test: corrupting %s\n", brk); }
+    for (int i = 0; brk && i < NR; i++)
+        if (!strcmp(brk, R(i)->name)) { break_idx = i; fprintf(stderr, "self-test: corrupting %s\n", brk); }
     want = malloc(sizeof *want); got = malloc(sizeof *got);
     if (cov_path && mode == PORT_SHADOW) visited = calloc(SLOTS, 1);
 }
@@ -264,7 +274,7 @@ static void put_long(uint32_t a, uint32_t v) { put_word(a, v >> 16); put_word(a 
 int hybrid_fuzz(const char *name, long count)
 {
     int idx = -1;
-    for (int i = 0; i < port_routine_count; i++) if (!strcmp(port_routines[i].name, name)) idx = i;
+    for (int i = 0; i < NR; i++) if (!strcmp(R(i)->name, name)) idx = i;
     if (idx < 0 || mode != PORT_SHADOW) { fprintf(stderr, "fuzz: %s is not a ported routine (or not in shadow mode)\n", name); return -1; }
     size_t n; const uint8_t *s = md_snapshot(&n);
     uint8_t *base = malloc(n); memcpy(base, s, n);
@@ -357,7 +367,8 @@ int hybrid_fuzz(const char *name, long count)
                 for (uint32_t q = 0x4E00; q < 0x4E10; q++) ram[q] = (uint8_t)(rnd() % 64 - 32);
             }
         }
-        if (strstr(name, "MapBlock") || strstr(name, "Tile")) {
+        int generated = !strncmp(name, "g_", 2);
+        if (strstr(name, "MapBlock") || strstr(name, "Tile") || generated) {
             /* a position on (or just off) a real layer, sometimes as the player */
             uint32_t layer = rnd() % 4 ? 0x9754 : 0x97D4;
             if (rnd() % 2) {                        /* a synthetic layer: up to 8x8 chunks */
@@ -380,8 +391,15 @@ int hybrid_fuzz(const char *name, long count)
                 m68k_set_reg(M68K_REG_D7, (rnd() << 16) | ((0x1000 + row * 16 + rnd() % 16) & 0xFFFF));
             } else if (!strcmp(name, "TileTypeOf")) {
                 m68k_set_reg(M68K_REG_D1, rnd());
-            } else if (strstr(name, "Probe")) {
+            } else if (strstr(name, "Probe") || generated) {     /* an entity on the layer, moving */
                 uint32_t e = m68k_get_reg(NULL, M68K_REG_A4);
+                if (generated) {
+                    ram[0x966B] = (uint8_t)rnd();                /* area flags the collision code tests */
+                    put_long(0x9EE8, rnd() % 2 ? 0xFFFFFFFF : 0x38E4);  /* the stored continuation */
+                    /* $3860 jumps through an 11-entry table by the collision type's high nibble;
+                     * entry 0 is a deliberate hang (nop; bra *), never reached in the game */
+                    m68k_set_reg(M68K_REG_D2, (rnd() << 16) | ((1 + rnd() % 10) << 4) | (rnd() & 0xF00F));
+                }
                 put_word(0xC800 + e, 0x1000 + col * 16 + rnd() % 16);
                 put_word(0xC900 + e, 0x1000 + row * 16 + rnd() % 16);
             } else {
@@ -417,7 +435,7 @@ int hybrid_fuzz(const char *name, long count)
         uint32_t sp = m68k_get_reg(NULL, M68K_REG_SP) - 4;
         bus_write16(sp, 0x0000); bus_write16(sp + 2, 0x0200);   /* return to an address the check recognises */
         m68k_set_reg(M68K_REG_SP, sp);
-        m68k_set_reg(M68K_REG_PC, port_routines[idx].addr);
+        m68k_set_reg(M68K_REG_PC, R(idx)->addr);
         long budget = 0;                            /* run until the check closes; a hang is reported */
         do { m68k_execute(1000000); budget++; } while (shadow.open && budget < 500);
         if (shadow.open) { fprintf(stderr, "fuzz: %s did not return within 500M cycles (case %ld)\n", name, k + 1); count = k; break; }
@@ -433,8 +451,8 @@ void hybrid_report(void)
     if (mode == PORT_OFF) return;
     fprintf(stderr, "%s mode:\n", mode == PORT_SHADOW ? "shadow" : "replace");
     long total = 0, bad = 0;
-    for (int i = 0; i < port_routine_count; i++) {
-        fprintf(stderr, "  %-16s $%06X  calls %8ld", port_routines[i].name, (unsigned)port_routines[i].addr, stats[i].calls);
+    for (int i = 0; i < NR; i++) {
+        fprintf(stderr, "  %-16s $%06X  calls %8ld", R(i)->name, (unsigned)R(i)->addr, stats[i].calls);
         if (mode == PORT_SHADOW) fprintf(stderr, "  mismatches %ld", stats[i].bad);
         fprintf(stderr, "\n");
         total += stats[i].calls; bad += stats[i].bad;
@@ -443,8 +461,8 @@ void hybrid_report(void)
     if (visited) {                      /* one line per routine: name start end, then executed PCs */
         FILE *f = fopen(cov_path, "w");
         if (!f) { perror(cov_path); return; }
-        for (int i = 0; i < port_routine_count; i++) {
-            const PortRoutine *p = &port_routines[i];
+        for (int i = 0; i < NR; i++) {
+            const PortRoutine *p = R(i);
             fprintf(f, "%s %06X %06X", p->name, (unsigned)p->addr, (unsigned)p->end);
             for (uint32_t a = p->addr; a < p->end; a++) if (visited[a]) fprintf(f, " %06X", (unsigned)a);
             fprintf(f, "\n");

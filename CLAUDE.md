@@ -82,11 +82,19 @@ Not done, in the order I would do it:
 
 ## The next step
 
-Keep porting leaf routines through shadow mode, choosing ones the standard runs call often and
-that the scheduler work will need: the rest of `MoveWithCollision` (`tools/reach.py` lists its
-routines: wall, floor, ceiling and slope handlers, two tile-type jump tables at $3870 and $38DE). Then build the coroutine library and move the scheduler,
-`Yield` and the frame loop together, as `docs/PORT.md` describes. The owner chose stackful
-coroutines for tasks (2026-10-10).
+The port now has two kinds of C: hand ports (`port/*.c`, 45 routines) and translated routines
+(`tools/m68k2c.py` into `work/gen`, roots in `analysis/translate.json`; the owner chose this as
+scaffolding, see `docs/PORT.md`). Next:
+
+1. Cover the moving-platform collision paths: ask the owner for a save state (F2 in `play.exe`)
+   in a room with moving platforms, then run the standard checks from it with `--load-state`.
+2. Translate the rest of the game a subsystem at a time (add roots to `analysis/translate.json`),
+   each accepted by the same rule. Fuzz input generators live in `harness/hybrid.c` and are
+   game-specific; move them to a game file when the second game starts.
+3. Build the coroutine library and move the scheduler, `Yield` and the frame loop to C. The
+   translator's return-address convention already handles `Yield` popping its caller's frame;
+   resuming a task at a saved address needs entry points at those addresses (the stored
+   continuation rule finds them).
 
 Every ported routine is accepted only with zero shadow mismatches and every instruction of the
 original covered (gameplay runs plus fuzzing); see "How a ported routine is accepted" in

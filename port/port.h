@@ -16,6 +16,7 @@
 typedef struct {
     uint32_t d[8], a[8];      /* a[7] is the active stack pointer */
     uint16_t ccr;             /* condition codes: X N Z V C in bits 4..0 */
+    uint32_t ret;             /* generated code: where the last rts went (m68k_rt.h) */
 } Cpu;
 
 enum { CC_C = 1, CC_V = 2, CC_Z = 4, CC_N = 8, CC_X = 16 };
