@@ -37,6 +37,9 @@ Done:
   boundaries, and writes tile sheets as PNG (`make gfx`, output in `work/`).
 - **Rooms render.** `tools/rooms.py` parses all 170 room scripts, decodes their maps, block
   tables and graphics slot lists, and renders any room (or `--all`) to PNG in real colours.
+- **Sprites decoded.** `tools/sprites.py` walks every animation and mapping, draws any enemy type
+  with the graphics allocation the game uses, assembles Shion from his equipment, and renders
+  rooms with their enemies at their spawn points (`--all-rooms`).
 - **Kernel named.** 109 routines and data labels in the `labels` section of
   `analysis/layout.json`: scheduler, sound queue, VDP setup, random, entity animation and physics,
   hitboxes, the enemy library. Documented in `docs/NOTES.md` under "Entities" (field map of the
@@ -49,8 +52,8 @@ Done:
 
 Not done, in the order I would do it:
 
-1. **Decode the rest of the room data**: objects, enemy lists, the remaining room commands,
-   and sprite mappings, so rooms can be drawn with their contents. The other directory blocks
+1. **Decode the rest of the room data**: objects (room command 07: doors, chests, signs), the
+   remaining room commands and spawner layouts, enemy category 2. The other directory blocks
    (`dir00`–`dir07`) still have unknown formats.
 2. **Disassemble the Z80 sound driver** (`$98000`, 6,775 bytes) and confirm whether
    `$99A77–$9F776` is its music data.
@@ -62,13 +65,15 @@ Not done, in the order I would do it:
 
 ## The next step
 
-Two good directions; ask the owner which matters more.
+The reference harness: a 68000 interpreter core running the original code against a
+reimplemented VDP, headless, dumping frames and RAM. It is the oracle every port step is
+checked against, and the decoders give it references: a harness frame of a room can be compared
+with `rooms.py` / `sprites.py` renders of the same room. Pick the 68000 core with the owner
+(writing one is a contained job; an existing MIT-licensed core is faster), and keep the
+hardware layer in C so it carries into the port.
 
-- **Content:** sprite mappings (`-$3F00`, set by `UpdateAnim`) and the enemy and object lists in
-  room commands 07 and 08, so rendered rooms show Shion, enemies and items.
-- **The harness:** a 68000 interpreter core running the original code against a reimplemented
-  VDP, headless, dumping frames and RAM. Everything decoded so far gives it a reference: a
-  harness frame of a room can be compared against `rooms.py`'s render of the same room.
+Room objects (command 07) are the other open thread; they are smaller and can be done first if
+the owner wants complete screenshots.
 
 The source rebuilds identically but is **not fully relocatable**. Still numeric:
 

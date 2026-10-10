@@ -122,7 +122,19 @@
   "009F64": "UnpackRoomBlocks",
   "00A068": "UnpackLayerMap",
   "00A1C4": "ExpandZeroRuns",
-  "0025CA": "chunk_offsets"
+  "0025CA": "chunk_offsets",
+  "0054C4": "AddEntitySprites",
+  "012848": "SpawnRoomEnemies",
+  "012640": "LoadEnemyGfxLists",
+  "0125C4": "AllocEnemyGfx",
+  "0125A6": "EnemyGfxRecord",
+  "0126AA": "EnemyAnimRecord",
+  "01BC0E": "enemy_types",
+  "00F698": "LoadPlayerBodyGfx",
+  "00F6F8": "LoadSwordGfx",
+  "00F742": "LoadShieldGfx",
+  "00F75E": "shield_tiles",
+  "00F710": "sword_gfx_lists"
  },
  "vector_names": {
   "000200": "EntryPoint",

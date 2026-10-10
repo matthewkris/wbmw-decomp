@@ -130,6 +130,47 @@ area block.
   one bit per still-empty cell, LSB first) fill cells; the remaining cells take 10-bit values
   from a packed stream (four per five bytes, MSB first).
 
+### Sprites
+
+Decoded by `tools/sprites.py` (`--list` walks all 774 animations, 1,546 frames, `problems: 0`;
+`--enemy TYPE`, `--player`, `--room-png` and `--all-rooms DIR` render them).
+
+* **Animation tree** (`anim_data`, $A0000): three levels of signed word offsets, all relative to
+  `anim_data`, each indexed by a byte offset (so indices are even): set (`-$3D00`), group
+  (`-$3CFF`), animation (`-$3CFE`, the `d0` of `SetAnim`). The tables at each level are packed
+  back to back. 12 sets: $00 is Shion (3 groups, 48 animations), $0A and $10 hold most enemies.
+* **Animation script** (`UpdateAnim`, from $878): a frame is a duration byte below $F0 and a signed
+  word offset from `anim_data` to a mapping (duration 0 = hold); commands $F0–$F7 do nothing,
+  $F8/$F9 set flags, $FA dx dy moves the entity, $FB and $FC (two bytes each) set the box, $FD
+  stops, $FE marks the loop point, $FF loops to it (or to the start).
+* **Mapping** (read by `AddEntitySprites`, $54C4): 5-byte pieces until a negative byte: VDP sprite
+  size (bits 2–3 width − 1, bits 0–1 height − 1, in tiles), tile word, signed X and Y offsets.
+  The tile word is XORed with the entity's flip bits and the entity's tile base (`-$3DFE`) is
+  added unless bit 3 of `-$3FFD` is set. When flipped, an offset becomes −offset − size. Tiles in
+  a piece run down columns, as the VDP lays them out.
+* **Enemy types** (`enemy_types`, $1BC0E): a type word's high byte is a byte offset into a table of
+  category offsets; record n = (low byte) / 2 is 5 bytes: flag, word offset (from $1BC0E) of a
+  graphics list (word count, then graphics block ids), animation set, animation group
+  (`EnemyGfxRecord` $125A6, `EnemyAnimRecord` $126AA). Category 2 is laid out differently and
+  is not decoded.
+* **Enemy graphics** (`AllocEnemyGfx`, $125C4): for each type in a room's list, its graphics
+  blocks go into VRAM slots counting down from 48 (an identical list already loaded is reused),
+  and the type's tile base, (first slot) × 32, is kept in a table at `$FFA122` and copied into
+  each spawned enemy's `-$3DFE`.
+* **Enemy list** (room command 08, `SpawnRoomEnemies` $12848): type words until a negative word
+  (`LoadEnemyGfxLists` $12640), then a spawn script. A byte below $10 is a spawner with its own
+  arguments (handlers at $128AC), most ending in a type word and X, Y (origin $1000, in pixels,
+  at the entity's feet); $F8–$FE are modifiers (skip if a game flag is set or clear, set values,
+  jump); $FF ends. 503 spawns in the game; 497 use a type from their room's list, the other 6
+  are spawner 4 with category-4 types (rooms 9-2, 9-3, 15-1), whose graphics must come from
+  elsewhere.
+* **Shion** is assembled from equipment: body graphics into slots 8–11 (`LoadPlayerBodyGfx`
+  $F698: list $F6E0, or $F6E8 / $F6F0 depending on flags in `$FF966B` and `$FF9EF1`) and slot 12
+  ($F6DC or $F6D8), the sword into slot 13 (`LoadSwordGfx` $F6F8, `sword_gfx_lists` $F710 by
+  `$FF95CE`), and the shield as 32 raw tiles copied to tile $5C (`LoadShieldGfx` $F742, tile number
+  from `shield_tiles` $F75E by `$FF95D0`, copied by `CopyRawTiles` linearly through the ROM).
+  His tile base is 0.
+
 ### Pointer fields
 
 `-$2900` (hurtbox list) and `-$2A00` (attack box list) hold ROM addresses of hitbox lists: a
@@ -259,7 +300,9 @@ Sound: the 68000 never writes the YM2612 or PSG. `$366` queues one command byte 
   interprets that data is not yet known.
 * Room commands 05, 06, 09, 0B–0F and 12–14, the object and enemy lists, and parallax: the
   room renderer draws a narrower background layer once, with no scrolling.
-* Sprite layouts (mappings at entity field `-$3F00`), to draw Shion and enemies.
+* Enemy category 2, the spawner types that have their own layouts (6, $0A, $0D, $0E), and
+  where the graphics for the six unlisted spawns come from.
+* Objects from room command 07 (doors, chests, signs) are not drawn yet.
 * Which tiles each sprite uses and in what layout (Genesis sprites are column-major).
 * Formats of the 27 directory blocks; several contain long pointer tables of their own
   ($211CA, $2246C–$224B8), which stay inside `incbin` ranges and are not relocatable yet.
