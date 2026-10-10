@@ -42,11 +42,23 @@ the source they are `dir00`–`dir07` and `area00`–`area18`.
 ### Graphics table ($41000)
 
 768 longs indexed by tile number / 32, so each entry covers a block of 32 tiles (1 KB of VRAM).
-Read at $22C8 (`(tile & $FFE0) >> 3`) and $6BC4. The low 24 bits point at a chunk; the top byte
-is a format flag: $02 (695 entries), $01 (20), $00 (11), $FF = empty (42). The loader at $22D0
-hangs (`bmi *`) on a negative entry, and `bclr #24` strips the flag before use, so $01 and $00
-are probably compressed and raw (to confirm when the decompressor is identified). Several
-entries share a chunk.
+The low 24 bits point at a chunk; the top byte is the format. All 726 chunks are decoded by
+`tools/gfx.py`, which checks that each one produces exactly 1,024 bytes and ends exactly where
+the next chunk starts (`problems: 0`).
+
+| Flag | Count | Decoder | Format |
+|---|---|---|---|
+| $FF | 42 | $6BD2 | empty slot: 1 KB of zeros |
+| $01 | 20 | $6BE6, $22DC | raw tiles. Each is followed by 6 more raw tiles (192 bytes): $22A8 copies a caller-given tile count from inside the chunk ($6F58: `(x & $7F00) >> 5`, up to 127) |
+| $00 | 11 | $6BFC | 32 tiles, each with a control byte. 0: 32 raw bytes. 1–127: that many (value byte, 32-bit position mask) fills, MSB = byte 0, then literal bytes for every position no mask covered. $80+: four bitplanes; a second byte gives two bits per plane, LSB first (fill $00/$FF; solid or masked), a masked plane has a row-mask byte (LSB = row 0) and one byte per set row, low 4 bits of the control byte turn on XOR delta down the rows for each plane; then planar to 4bpp with plane 0 as the low bit ($6D1C–$6D9B tables) |
+| $02 | 695 | $6D9C | LZ77 with a Huffman code. MSB-first bit stream; the first bit is skipped (the root is always a node). Tree in preorder: 1 = node, 0 = leaf; a leaf value is 0 + 8 bits (byte) or 1 + 5 bits ($100 + n). Built in RAM at `$FF8F0A` (nodes are word pointers, leaves positive). Symbols < $100 are literals; $100–$11E are match lengths 3–33 followed by a distance symbol (distance = value + 1); $11F is an escape followed by a leaf-coded value. Output is exactly 1,024 bytes |
+
+$22A8 (raw path) hangs on anything but a $01 entry; $6BC4 handles all four and is called from
+$22F0, which streams up to 64 blocks listed at `$FF8E08` through `$FF2D00` to VRAM.
+
+Decoded sheets show the font (Latin, digits, hiragana, katakana) in blocks 0–5, sprite tiles
+after it, and background tilesets from block 96. Colours are unknown until the palettes are
+found; `gfx.py --png` writes grey levels.
 
 ### Pointer fields
 
@@ -107,7 +119,8 @@ Sound: the 68000 never writes the YM2612 or PSG. `$366` queues one command byte 
 * Short data blocks stored to `-$2900`/`-$2A00` sit right before the code that uses them
   ($18BB8, $1A3DE); the tracer read two of them as code until the fields were hinted. What
   interprets that data is not yet known.
-* Graphics compression: formats $01/$02 of the table at $41000; the decoder follows $22DC.
+* Palettes: where they live and how they are loaded (needed for real colours).
+* Which tiles each sprite uses and in what layout (Genesis sprites are column-major).
 * Formats of the 27 directory blocks; several contain long pointer tables of their own
   ($211CA, $2246C–$224B8), which stay inside `incbin` ranges and are not relocatable yet.
 * $40000–$409F9 and $99A77–$9F776: nothing found that references them.

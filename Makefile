@@ -2,9 +2,12 @@
 # Override the tools with PYTHON=... VASM=... and the ROM path with ROM=...
 ROM ?= rom/Wonder Boy in Monster World (USA, Europe).md
 
-.PHONY: all clean
+.PHONY: all gfx clean
 all:
 	sh tools/build.sh "$(ROM)"
+
+gfx:
+	$${PYTHON:-python3} -I tools/gfx.py "$(ROM)" --png work/gfx_all.png
 
 clean:
 	rm -rf work

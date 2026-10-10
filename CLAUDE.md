@@ -32,14 +32,16 @@ Done:
   references into data are symbolic (`movea.l (data_dir+$10).l`, `adda.l #gfx_table`,
   `movea.l #task_Ksmt_004CC4`), including `lea` of absolute addresses, `movea.l #imm`, pointers
   stored to known data-pointer fields and table bases built with `addi.l`.
+- **Graphics decoded.** `tools/gfx.py` decodes all 726 chunks of the graphics table (raw, a
+  per-tile mask/bitplane format and Huffman-coded LZ77), verifies each against the chunk
+  boundaries, and writes tile sheets as PNG (`make gfx`, output in `work/`).
 - A first survey of the engine: task scheduler, entity layout, hardware access, sound and save
-  interfaces, data directory and graphics table. All in `docs/NOTES.md`.
+  interfaces, data directory, graphics table and its formats. All in `docs/NOTES.md`.
 
 Not done, in the order I would do it:
 
-1. **Identify the graphics compression** and write an extractor that dumps tiles to PNG. The
-   table at `$41000` and its loader at `$22A8`/`$6BC4` are found (see NOTES); the decoder is
-   what runs after `bclr #24` at `$22D4`. Formats `$01` and `$02` probably differ in compression.
+1. **Find the palettes** (CRAM writes through `$C00004` with the CRAM write command) so the
+   tile sheets come out in real colours, then work out sprite layouts.
 2. **Name the kernel.** Start with the most-called routines: `$7E8` (160 callers), `$400`
    (yield, 123), `$366` (queue sound command, 98), `$5D8` (73), `$43BC` (61), `$48C4` (49).
    Keep names in a symbol file the tools read, not hard-coded in scripts.
@@ -55,11 +57,9 @@ Not done, in the order I would do it:
 
 ## The next step
 
-The graphics decompressor. It gives the owner something to look at (tile sheets as PNG) and
-every later step that touches graphics needs it. Read the code from `$22A8` on, write the
-decoder in Python in `tools/`, and check it two ways: every chunk must decode to exactly
-32 tiles (1,024 bytes) or whatever the table implies, and must consume exactly its bytes up to
-the next chunk. Dump PNGs into `work/` only.
+Palettes. Find the code that writes CRAM (VDP control word with the CRAM write command, then 64
+colours through `$C00000`) and the tables it copies from, add them to `analysis/layout.json`,
+and let `tools/gfx.py` render with a chosen palette. After that, name the kernel routines.
 
 The source rebuilds identically but is **not fully relocatable**. Still numeric:
 
