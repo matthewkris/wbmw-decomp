@@ -235,6 +235,20 @@ Entity pointers in RAM: `$FF9EEE` is the player, `$FFA11C` the enemies' target (
 `$FF9EEE` at $137C8), `$FFA11A` the first enemy slot (`$40`; `FindFreeEntity` searches 16 from
 there). Effects live in slots `$E0–$FC` (`FindFreeEffect`).
 
+## Collision (from porting it)
+
+* `MoveWithCollision` ($2FD0) moves an entity by its velocity against layer A, one axis at a
+  time, through the wall, floor, ceiling and slope handlers at $303A-$3E10. It saves the previous
+  collision result (`-$3100` into `-$2EFF`) and rebuilds it.
+* Collision types come from the block attribute byte through the two-level table at $3FC2.
+  Types $5xxx and $6xxx are overridden for the player only, by bits 5 and 4 of `$FF9EF1`
+  (probably equipment that lets Shion pass some tiles).
+* $3860 picks a velocity combination by the type's high nibble through the table at $3872; entry
+  0 is a deliberate hang (`nop; bra *`).
+* A stored continuation: `$FF9EE8` holds either -1 or $38E4, and $38DE jumps there.
+* Moving platforms are objects in the array around `$FFA000` (fields at `-$601C`, `-$5FC8`,
+  `-$5F74` from `a2`), set up by room command $14; $3B74 and $3D06 collide entities with them.
+
 ## Named routines
 
 Names live in the `labels` section of `analysis/layout.json`. Registers are inputs unless said.
@@ -264,7 +278,10 @@ Names live in the `labels` section of `analysis/layout.json`. Registers are inpu
 | `HitboxOverlap` | $C3E | test `a2`'s attack boxes against `a4`'s hurt boxes |
 | `CheckBodyContact` | $E64 | contact between `a2` and `a4`; sets `-$2AFD` and swaps contact damage |
 | `MoveWithCollision` | $2FD0 | move the entity and resolve it against the map |
-| `TileAttrAt` | $30DA | map attribute at (`d6`, `d7`), provisional |
+| `MapBlockAt` / `MapBlockAtRaw` | $2542 / $2570 | block word at `d6` = column + $100, `d7` = row * 64 + $4000 in layer `a3` (clamped / not); 0 for an empty chunk |
+| `TileAttrAt` / `TileAttrAtPixel` | $30DA / $30D2 | collision type `d2` of the block there (from pixel X/Y with the $1000 origin) |
+| `TileTypeOf` | $30F4 | attribute byte `d1` to collision type `d2` through the table at $3FC2; player-only overrides by `$FF9EF1` |
+| `ProbeTileAt`/`Below`/`Above`/`Feet` | $3FAC/$3F58/$3F74/$3F92 | collision type at the entity's centre / feet / head / just above the feet, into `$FF9EE2`/`9EDE`/`9EDC`/`9EE0` |
 | `TestGameFlag` / `SetGameFlag` | $274C / $2752 | game progress bits at `$FF9992` (`d0` = flag number) |
 | `FindFreeEntity` | $12812 | free enemy slot in `a2`; N flag set when none |
 | `SpawnItem` | $1090C | spawn item `d0` (codes from $1000 go elsewhere) |

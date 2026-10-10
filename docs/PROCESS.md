@@ -21,10 +21,20 @@ major milestone.
 | 6 | Name the code | `labels` in `layout.json`, NOTES tables | still byte-identical; names read right in context |
 | 7 | Reference harness | `harness/` on Musashi | boots into the game; matches the decoders' renders |
 | 8 | Playable window, save states, run diff | `play.exe`, `--save-state-at`, `cmpruns.py` | a run from a state equals the straight run |
-| 9 | Port routine by routine | `port/`, `harness/hybrid.c` | shadow check on every call, full coverage, differential fuzzing |
+| 9 | Port routine by routine, by hand | `port/` (45 routines) | shadow check on every call, full coverage, differential fuzzing |
+| 10 | Translate the rest mechanically, as scaffolding | `tools/m68k2c.py`, `port/m68k_rt.h`, `work/gen` | the same checks as hand ports |
+| 11 | Rewrite into idiomatic C, subsystem by subsystem | not started | the same checks, against the original |
 
 Each stage made the next one cheaper or checkable. Stage 3 is what made stage 2 trustworthy;
-stage 7 is what made stage 5 trustworthy; stage 8 is what will make stage 9 trustworthy.
+stage 7 is what made stage 5 trustworthy; stage 8 is what made stages 9 and 10 trustworthy.
+
+Hand transcription (stage 9) proved the method and the harness tooling on 45 routines, about
+1,100 instructions, but at that pace the whole game (28,000 instructions) was too long. The
+owner then chose mechanical translation as scaffolding (stage 10): the first subsystem
+translated, movement with collision (849 instructions), matched the original on the first run.
+Understanding now comes in stage 11, rewriting translated code into idiomatic C. For the next
+game, consider starting stage 10 right after the harness, and hand-porting only to prove the
+checks.
 
 ## What made it work
 
@@ -73,7 +83,11 @@ runnable as early as possible and ask for specific checks.
 | Saving a frame every 120 frames made a blinking sprite look permanently missing. | Do not sample at a period that could alias with the game's (even intervals, blink rates). |
 | The EEPROM model counted the falling edge after START as a data bit, so it never acknowledged and the menu hung forever. | Model the protocol the game drives, step by step from its code; the game will hang, not degrade, if the device is wrong. |
 | The "in game" frames of the first harness run were the attract demo. | Check which mode the game is in (running tasks, RAM state) before drawing conclusions from a frame. |
-| A shell heredoc turned `\n` in C strings into real newlines twice. | Edit C source with the editor, not with scripted string replacement. |
+| A shell heredoc turned `\n` in C strings into real newlines (five times in all). | Edit C source with the editor, not with scripted string replacement run from the shell. |
+| A fuzz run of a long routine stopped after one case at the cycle cap, and still reported the full count. | Report what actually ran; run each case to completion with a cap that is reported as a hang. |
+| Coverage counted the first instruction of every routine as never run (the check opened after it). | Validate a new measuring tool on a case with a known answer before trusting its gaps. |
+| Fuzzing a stored continuation on its own, and a jump table entry that is a deliberate `bra *` hang, produced garbage and a hang in both versions. | Fuzz inputs must be inputs the routine can really receive; continuations are checked through their callers. |
+| Gameplay never reached most hitbox paths (no fights in the standard runs) nor any moving platform. | Coverage, not call counts, decides when a routine is checked; ask the owner for save states where scripts cannot reach. |
 
 ## General versus game-specific
 
@@ -89,6 +103,10 @@ What is reusable as it stands, what is reusable after changes, and what belongs 
 * `tools/mkasm.py` and `tools/checkasm.py`: the Capstone-to-vasm translation, the per-line
   byte check and the raw fallback are general 68000.
 * `tools/cmpruns.py`: general, except its RAM name table, which is this game's.
+* `tools/m68k2c.py` and `port/m68k_rt.h` (the translator and its runtime), `tools/coverage.py`,
+  `tools/reach.py`, and the shadow/coverage/fuzz machinery in `harness/hybrid.c`: general for
+  any 68000 game. The fuzz input generators in `hybrid.c` are this game's and should move to a
+  game file when a second game starts.
 * `tools/gfx.py`'s PNG writing and palette conversion; `tools/header.py`.
 
 **General for any 68000 game, after removing hard-coded values:**

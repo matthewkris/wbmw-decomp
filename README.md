@@ -15,4 +15,6 @@ byte-identical:
 
     make                # or: sh tools/build.sh
 
-See `docs/NOTES.md` for what is known so far.
+See `docs/NOTES.md` for what is known so far, `docs/PORT.md` for the C port (hand-written routines,
+the translator, and how every routine is checked against the original), `harness/README.md` for
+the reference harness and the playable window, and `docs/PROCESS.md` for the process as a whole.
