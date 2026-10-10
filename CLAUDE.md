@@ -86,11 +86,11 @@ The port now has two kinds of C: hand ports (`port/*.c`, 45 routines) and transl
 (`tools/m68k2c.py` into `work/gen`, roots in `analysis/translate.json`; the owner chose this as
 scaffolding, see `docs/PORT.md`). Next:
 
-1. Movement with collision is checked, including the sibling variants `$2EDE` and `$2F34`:
-   31 generated routines, 0 mismatches, all fully covered except `$3860`'s deliberate hang
-   (gameplay, the owner's platform state `work/platform.state`, and the collision scene fuzz
-   generator; see `docs/PORT.md`). The rest of that family are the natural next roots:
-   `$2E38`, `$2E9E`, `$2ED4` and `$2F8E`.
+1. Movement with collision is translated and checked: the whole family of seven entry points
+   `$2E38`-`$2FD0` (`$2E38` is probably the player's, once a frame). 39 generated routines,
+   0 mismatches, all fully covered except `$3860`'s deliberate hang (gameplay, the owner's
+   platform state `work/platform.state`, and the collision scene fuzz generator; see
+   `docs/PORT.md`). `$2E9E`, `$2ED4` and `$2F8E` are covered by fuzzing only.
 2. Translate the rest of the game a subsystem at a time (add roots to `analysis/translate.json`),
    each accepted by the same rule. Fuzz input generators live in `harness/hybrid.c` and are
    game-specific; move them to a game file when the second game starts.

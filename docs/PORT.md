@@ -193,6 +193,30 @@ Two kinds of input are invalid for fuzzing, like the stored continuation before:
   (`-$12(a6)`) and end with its `unlk a6`, so a direct call returns to garbage. They are
   checked inside `$3584`.
 
+#### The rest of the movement family ($2E38, $2E9E, $2ED4, $2F8E)
+
+The family is seven entry points, `$2E38`-`$2FD0`. Each loads layer A, applies the velocity, saves the
+previous collision result, and runs its own mix of horizontal, vertical, slope and platform
+handlers. With the last four as roots there are 39 generated routines (1,626 instructions), with
+no unsupported instruction. Eight of them are new: `$2E38`, `$2E9E`, `$2ED4`, `$2F8E`, and
+`$3142`, `$3310`, `$3948`, `$3A4C`, which are variants of the horizontal and vertical handlers.
+
+* `$2E38` runs exactly once a frame in gameplay: 1,200 calls in each 1,200-frame run. It is
+  almost certainly the player's movement. It checks moving platforms, and it also stores the
+  attribute byte when the player is on a slope.
+* `$2E9E`, `$2ED4` and `$2F8E` never ran in the standard or platform-state runs. Fuzzing alone
+  covers them, so a save state where an entity uses one would be a welcome extra check.
+
+Checks:
+
+* The ten gameplay runs: zero mismatches.
+* 10,000 fuzz cases per new routine from each of the two states: zero mismatches.
+* The self-test catches a corrupted `$2E38` and `$2F8E` on every case.
+
+**38 of the 39 generated routines are fully covered**, and the one left is `$3860`'s deliberate
+hang. The whole movement-with-collision subsystem (`$2E38`-`$3E1E` and what it calls) is
+now translated and checked.
+
 #### The sibling movement routines ($2EDE, $2F34)
 
 `$2EDE` and `$2F34` are two variants of `MoveWithCollision`. They probe the tiles first

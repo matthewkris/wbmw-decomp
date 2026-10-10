@@ -1,4 +1,4 @@
 {
  "comment": "Roots for tools/m68k2c.py: each is translated with everything it calls that is not hand-ported. Addresses only.",
- "roots": ["002FD0", "002EDE", "002F34"]
+ "roots": ["002E38", "002E9E", "002ED4", "002EDE", "002F34", "002F8E", "002FD0"]
 }
