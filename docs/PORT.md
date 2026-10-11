@@ -376,6 +376,38 @@ Results:
   `play.exe --port shadow --coverage FILE` records which code each session checked, and
   `tools/coverage.py` merges the sessions.
 
+#### Computed jump targets, found statically
+
+A native build has no original code to fall back to, so every address the game can jump to
+through a register must be a translated entry. The tracer leaves 53 indirect jump sites
+unresolved. Until now the harness discovered their targets at run time (`"seen"`: 32
+addresses). The translator now finds them all from the code and data, and `"seen"` is empty:
+
+* **Continuations** (43 sites). A routine that pops its caller's return address into memory
+  (`move.l (a7)+,<memory>`) is "returned to" later through a jump. This covers the stack at
+  `$FF9C14` (23 sites) and the variables `$FF9630`-`$9654`, `$9F1E`, `$A3BE` and `$8CD6`. The
+  instruction after every call to such a routine, direct or through a jump table, becomes an
+  entry: 81 continuation points, by the same rule as `Yield`'s resume points.
+* **Code addresses stored as constants** (`move.l #code,X`). These are a task's exit handler and
+  continuations such as `$9EE8`, `$9F22` and `$998E`. All of them are entries now, including
+  ones the tracer did not record (`Mxcg`'s exit handler `$6BAE`).
+* **`lea` before the jump.** `lea X,aN; jsr (aN)` goes to X (`$19E0E`). A jump that indexes from
+  X goes to the entries of the hint table based at X: the two-level behaviour tables at
+  `$10A5A`.
+* **Hints are code.** Every `"entries"` and `"tables"` address in `analysis/hints.json` is code
+  reached only through computed jumps, so all of it is translated. That includes the enemy
+  behaviour table at `$13DB6` (135 entries), which brings in enemies no run has met yet.
+* **One tracer gap.** `jmp $A166(pc,d4.w)` has four cases, not the three the tracer counted.
+  `$A16C` is now a hint entry, and the rebuild is still byte-identical.
+
+Result: 1,429 generated routines, 132 resume points, 81 continuation points. Without `"seen"`,
+the standard runs, the owner's states (castle, before the death, after the boss, the inn) and
+the run that first found `$E5FC` all pass with zero mismatches, and none leaves generated code.
+Translated or hand-ported code now covers 27,526 of the 28,267 traced instructions (97.4%). The
+741 left are reset and start-up (`$200`-`$316`, `$4A06`-`$4B02`), the frame loop and scheduler
+(`$4BBC`-`$4C6E`), the per-frame work behind the frame wait (`$3B8` → `$5262`), exception
+handlers, and a few routines only start-up calls (`$9F46`). That is the native build's part.
+
 #### The inn crash (found by the owner, 2026-10-10)
 
 Saving at an inn froze `play.exe`. The owner saved a state at the innkeeper's question

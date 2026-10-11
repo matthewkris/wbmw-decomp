@@ -55,6 +55,28 @@ for t, (n, site) in m['bra_tables'].items():
         op = d[q] << 8 | d[q + 1]
         q += 2 if op & 0xFF else 4
 
+# indirect jumps through an address loaded by `lea` shortly before: `lea X,aN; jsr (aN)` goes to
+# X, and a jump that indexes from X goes to the entries of the hint table based at X
+# (analysis/hints.json "tables", e.g. the two-level behaviour tables at $10A5A)
+HINT_BASES = {}
+for t in json.load(open(os.path.join(os.path.dirname(MAP), '..', 'analysis', 'hints.json'))).get('tables', []):
+    tg = m['tables'].get('%06X' % int(t['addr'], 16))
+    if tg: HINT_BASES.setdefault(int(t.get('base', t['addr']), 16), set()).update(tg)
+_ORDER = sorted(INS); _AT = {a: i for i, a in enumerate(_ORDER)}
+for site in m['unresolved']:
+    if site not in _AT or SITE_TARGETS.get(site): continue
+    reg = re.fullmatch(r'\((a[0-7])\)', INS[site][2])
+    for back in range(1, 12):
+        i = _AT[site] - back
+        if i < 0: break
+        sz, mn, ops = INS[_ORDER[i]]
+        mm = re.fullmatch(r'\$([0-9a-f]+)(?:\.[wl]|\(pc\)), (a[0-7])', ops) if mn == 'lea.l' else None
+        if not mm: continue
+        x = int(mm.group(1), 16)
+        if back == 1 and reg and mm.group(2) == reg.group(1) and x in INS: SITE_TARGETS[site] = {x}
+        elif x in HINT_BASES: SITE_TARGETS[site] = set(HINT_BASES[x])
+        break
+
 # continuations kept in RAM: `move.l #code,VAR` somewhere, `movea.l VAR,aN; jmp (aN)` elsewhere.
 # STORES[VAR] = the code addresses ever stored there, the possible targets of such a jump.
 STORES = {}
@@ -66,6 +88,10 @@ for ptr, site in m['ptr_entries'].items():
 STORED_BY = {}
 for ptr, site in m['ptr_entries'].items():
     if int(ptr, 16) in INS: STORED_BY.setdefault(int(ptr, 16), set()).add(site)
+for a, (sz, mn, ops) in INS.items():                   # `move.l #code,X` the tracer did not record
+    mm = re.match(r'#\$([0-9a-f]+), ', ops) if mn in ('move.l', 'movea.l') else None
+    if mm and int(mm.group(1), 16) in INS and int(mm.group(1), 16) >= 0x200:
+        STORED_BY.setdefault(int(mm.group(1), 16), set()).add(a)
 
 def continuation_targets(a):
     """targets of `jmp (aN)` at a when aN was just loaded from a RAM variable"""
@@ -199,7 +225,7 @@ class Fn:
                 if base in ('jsr', 'bsr'):
                     tgt = self.static_target(ops) if base == 'jsr' else int(t.group(1), 16)
                     if tgt is not None: self.calls.add(tgt); self.sites.append((a, tgt, a + sz))
-                    for x in SITE_TARGETS.get(a, ()): self.calls.add(x)
+                    for x in SITE_TARGETS.get(a, ()): self.calls.add(x); self.sites.append((a, x, a + sz))
                 elif base.startswith('db') or (base[0] == 'b' and base[1:] in CONDS):
                     tgt = int(t.group(1), 16); work.append(tgt); self.targets.add(tgt)
                     if base in ('bra',): break
@@ -434,10 +460,30 @@ def yields(e, seen=()):
     _yields[e] = r
     return r
 
+_saves = {}
+def saves(e, seen=()):
+    """e pops its caller's return address into memory (`move.l (a7)+,<memory>`, directly or by a
+    jump to such code): a continuation the game jumps to later, so the instruction after every
+    call to e is an entry. This is how `$9C14`, `$9630`-`$9654`, `$9F1E` and `$A3BE` are filled."""
+    if e not in INS or e in EXITS: return False
+    if e in _saves: return _saves[e]
+    if e in seen: return False
+    f = fn_of(e)
+    r = any(INS[a][1] == 'move.l' and re.fullmatch(r'\(a7\)\+, (?![da][0-7]$).+', INS[a][2]) for a in f.body) \
+        or any(saves(t, seen + (e,)) for t in f.tails)
+    _saves[e] = r
+    return r
+
 # ---- the closure of the roots, minus hand ports, plus resume points ----
 UNSUPPORTED = []
-fns, todo = {}, list(ROOTS)
+# the tracer's hints name code reached only through computed jumps (analysis/hints.json "entries"
+# and "tables"): all of it may be jumped to, so all of it is translated
+HINTS = json.load(open(os.path.join(os.path.dirname(MAP), '..', 'analysis', 'hints.json')))
+HINT_ROOTS = [int(e, 16) for e in HINTS.get('entries', [])] + sorted(set().union(*HINT_BASES.values()) if HINT_BASES else set())
+HINT_ROOTS += [x for t in HINTS.get('tables', []) for x in m['tables'].get('%06X' % int(t['addr'], 16), [])]
+fns, todo = {}, list(ROOTS) + [x for x in HINT_ROOTS if x in INS]
 RESUME = set()
+CONTINUE = set()
 while todo:
     e = todo.pop()
     if e in fns or e in HAND or e in EXITS or e in DEFER: continue
@@ -446,6 +492,7 @@ while todo:
     todo += [x for x in f.calls if x not in fns and x not in HAND and x not in EXITS]
     for site, tgt, ret in f.sites:
         if yields(tgt): RESUME.add(ret); todo.append(ret)
+        elif saves(tgt): CONTINUE.add(ret); todo.append(ret)
     # code addresses it stores (a task's exit handler, a continuation): called through a pointer later
     todo += [p for p, s in STORED_BY.items() if s & f.body]
 
@@ -487,4 +534,5 @@ with open(os.path.join(OUT, 'bodies.json'), 'w', newline='\n') as f:
 total = sum(len(f.body) for f in fns.values())
 print('translated %d routines, %d instructions (shared code counted per routine) into %s' % (len(fns), total, OUT))
 if RESUME: print('  %d task resume points' % len(RESUME))
+if CONTINUE: print('  %d continuation points (returns saved in RAM)' % len(CONTINUE))
 for u in UNSUPPORTED: print('  unsupported at %06X: %s %s (%s)' % u)
