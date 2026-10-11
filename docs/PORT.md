@@ -276,7 +276,11 @@ check now works this way:
   register read before it is written is a `CONTRACT` violation naming the routine, the
   register and the reading instruction; one overwritten first is dead and only counted
   ("dead registers left different" in the report). Regenerate `work/usedef.bin` whenever
-  the map changes.
+  the map changes. Data registers are watched in three parts (bits 0-7, 8-15 and 16-31): a
+  `move.b` into a register whose upper part differs writes the low byte and reads nothing, so
+  it is not a violation; the upper part stays watched. (Watching whole registers flagged
+  exactly that in `g_00901C`, at a `move.b (a0)+,d4` that the rest of the routine only uses as
+  a byte.)
 
 Static liveness alone was not enough: past indirect jumps it has to assume every register is
 live. Watching at run time decides it for the paths the game actually takes, which is what the
@@ -294,6 +298,55 @@ eight `platform.state` runs) and the castle and after-boss states; 50,000 fuzz c
 covered (97 and 159). The self-test (`WBMW_PORT_BREAK=PlatformsVertical`) is caught 100 out of
 100 times. Fuzzing found the one difference reading missed: the original tests the riding
 flag with `tst.w`, a word read, not a byte.
+
+#### The rest of movement (2026-10-11)
+
+All of movement with collision is now ordinary C in `port/movement.c` (about 1,100 68000
+instructions): the seven entry points, the steps they are built from, the conveyors and the
+water currents. The map lookups (`MapBlockAt`, the tile types) are shared with the rest of the
+game and stay in `port/map.c`; movement calls them.
+
+| Entry | Address | Used by | Made of |
+|---|---|---|---|
+| `MovePlayer` | $2E38 | the player | platforms, walls on both sides, slope walking, ceiling, floor with slopes |
+| `MoveFlat` | $2E9E | 1 caller | walls and floor at the centre |
+| `MoveOnSlopes` | $2EDE ($2ED4 without conveyors) | 8 callers | walls at the centre, slopes |
+| `MoveOnSlopesWithCeiling` | $2F34 | 1 caller | the same, and the ceiling at the centre |
+| `MoveWithPlatforms` | $2F8E | 8 callers | platforms, walls ahead, floor and ceiling under the whole box |
+| `MoveWithPlatformsAndSlopes` | $2FD0 | 3 callers | like the player, without conveyors |
+
+The steps (`WallsBothSides`, `SlopeWalk`, `FloorWithSlopes`, `CeilingSpan`, ...) are registered
+as well. The game reaches them only through the entry points, so from C, but registering them
+gives each its own fuzz target and coverage range.
+
+Things the original does that the C keeps, written out:
+
+* **The last map cell.** The player's caller stores d6/d7 after `MovePlayer` ($DD6A) as the
+  last cell stood on ($107FC copies it into a list at $FF9F34). They are the last cell any
+  scan looked at, moved on by one when a scan steps past its last cell; `MovePlayer`'s contract
+  includes d6 and d7, and the C keeps that cell (`cell` in movement.c). The upper half of d6
+  is 0 after the long scans and the caller's own on the early slope path, as in the original.
+* **A continuation.** `$3584` stores `$38E4` at `$FF9EE8` and later jumps through it, inside its
+  own stack frame, to go on to the plain floor check (`$356E` stores -1 instead). The C writes
+  the same value and makes it an ordinary call.
+* **A hang.** The slope table jumps for slope 0 to `nop; bra *` ($3888), and past slope 10 out of
+  the table. No tile the game uses gets there; the C stops with a message instead of looping.
+
+Each entry point leaves plane A's layer in a3, as the original does; nothing else.
+
+Fuzzing caught one thing reading missed: on a hit, `$322E` stores the register it has just
+tested the wall's type with (`andi.w #$102,d2; subq.w #2,d2`), so it stores 0, not the type.
+The C stores 0 too, with a comment. Fuzzing the movement routines uses plane A's layer only,
+since that is the one they use; `Currents` has its own input generator (water-current tiles,
+speeds near the limit).
+
+Results: 0 mismatches and 0 contract violations over the standard runs (the movement code runs
+inside `g_00901C`, the gameplay frame, whose memory is compared exactly every frame) and over
+3,000 frames of scripted walking and jumping from five owner states (castle, after-boss,
+after-boss2, beforedeath, ocarina). 20,000 fuzz cases for each of the 23 new routines from each
+of `platform.state`, `demo1500.state` and `castle.state`, 0 mismatches. Every instruction of
+the originals is covered except the endless loop at $3888. The self-test (`WBMW_PORT_BREAK`)
+is caught 100 out of 100 times for `MovePlayer` and `FloorWithSlopes`.
 
 ### Tasks and `Yield`: stackless now, coroutines for the rewrite (revised 2026-10-10)
 
