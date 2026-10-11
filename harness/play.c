@@ -55,7 +55,7 @@ static uint8_t pad_down(SDL_GameController *gc)
 int main(int argc, char **argv)
 {
     const char *rom_path = NULL, *save = "play.sav", *state = "play.state", *cov = NULL;
-    int scale = 3, port = PORT_OFF, load = 0;
+    int scale = 0, port = PORT_OFF, load = 0;      /* scale 0: fit the screen */
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--save") && i + 1 < argc) save = argv[++i];
@@ -75,8 +75,15 @@ int main(int argc, char **argv)
     if (eeprom_load(save) == 0) fprintf(stderr, "loaded save data from %s\n", save);
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0) { fprintf(stderr, "SDL: %s\n", SDL_GetError()); return 1; }
+    /* the game is 256 pixels wide almost everywhere (a few screens are 320): size the window for
+     * 256, at the largest whole scale up to 3 that fits the screen, unless --scale says */
+    if (scale <= 0) {
+        SDL_Rect r; scale = 3;
+        if (SDL_GetDisplayUsableBounds(0, &r) == 0)
+            while (scale > 1 && (224 * scale > r.h * 9 / 10 || 256 * scale > r.w * 9 / 10)) scale--;
+    }
     SDL_Window *win = SDL_CreateWindow("Wonder Boy in Monster World - harness  (arrows, Z/X/C, Enter; P pause, Tab fast, F2/F4 state, F12 shot)",
-                                       SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 320 * scale, 224 * scale,
+                                       SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 256 * scale, 224 * scale,
                                        SDL_WINDOW_RESIZABLE);
     SDL_Renderer *ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
     if (!win || !ren) { fprintf(stderr, "SDL: %s\n", SDL_GetError()); return 1; }

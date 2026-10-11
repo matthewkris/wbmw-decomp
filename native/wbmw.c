@@ -63,7 +63,7 @@ static const PortRoutine *entry(uint32_t a)
 }
 
 /* ---- frames: drawing, showing, input, the interrupt ---- */
-static int frame, frames_max, png_every, headless, scale = 3;
+static int frame, frames_max, png_every, headless, scale;            /* scale 0: fit the screen */
 static const char *out_dir = ".", *save_path = "wbmw.sav";
 static struct { int frame; uint8_t buttons; } *script; static int script_n;
 
@@ -97,10 +97,17 @@ static Uint64 next_tick;
 static void window_open(void)
 {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0) { fprintf(stderr, "SDL: %s\n", SDL_GetError()); exit(1); }
+    /* the game is 256 pixels wide almost everywhere (a few screens are 320): size the window for
+     * 256, at the largest whole scale up to 3 that fits the screen */
+    if (scale <= 0) {
+        SDL_Rect r; scale = 3;
+        if (SDL_GetDisplayUsableBounds(0, &r) == 0)
+            while (scale > 1 && (224 * scale > r.h * 9 / 10 || 256 * scale > r.w * 9 / 10)) scale--;
+    }
     win = SDL_CreateWindow("Wonder Boy in Monster World (native)  (arrows, Z/X/C, Enter; Esc quits)",
-                           SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 320 * scale, 224 * scale, SDL_WINDOW_RESIZABLE);
+                           SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 256 * scale, 224 * scale, SDL_WINDOW_RESIZABLE);
     ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-    SDL_RenderSetLogicalSize(ren, 320, 224);
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
     tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, 320, 224);
     next_tick = SDL_GetPerformanceCounter();
 }
@@ -138,7 +145,9 @@ static void window_frame(void)
     }
     pad_buttons = b;
     SDL_UpdateTexture(tex, NULL, &frame_rgb[0][0], 320 * 4);
-    SDL_RenderClear(ren); SDL_RenderCopy(ren, tex, NULL, NULL); SDL_RenderPresent(ren);
+    SDL_Rect src = {0, 0, frame_width, ACTIVE_LINES};              /* only the width the game uses */
+    SDL_RenderSetLogicalSize(ren, frame_width, ACTIVE_LINES);
+    SDL_RenderClear(ren); SDL_RenderCopy(ren, tex, &src, NULL); SDL_RenderPresent(ren);
     Uint64 freq = SDL_GetPerformanceFrequency();
     next_tick += (Uint64)(freq / 59.922);
     Uint64 now = SDL_GetPerformanceCounter();

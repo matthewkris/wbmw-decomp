@@ -19,6 +19,8 @@ This makes `work/native/wbmw.exe` (and copies `SDL2.dll` next to it).
     work/native/wbmw ROM [--scale N] [--save FILE]
 
 plays in a window: arrows, Z = A, X = B, C = C, Enter = Start, Esc quits; a controller works too.
+The window is sized for the game's 256-pixel width at the largest scale up to 3 that fits the
+screen (`--scale N` to choose); it can be resized, and the picture keeps its proportions.
 The save EEPROM is read from FILE at start and written at exit (default `wbmw.sav`).
 
     work/native/wbmw ROM --frames N [--png-every K] [--out DIR] [--input FILE]
