@@ -614,6 +614,228 @@ static void state_vine(Ent e)
     let_go(e);                                      /* the bottom of the vine */
 }
 
+/* ---- the rest of the player's frame ---- */
+
+#define HIT_STATE(e)  ((e) - 0x2AFD)   /* byte: being hit (bit 7), knocked back (4), stunned (6) */
+#define HURT_BOXES(e) ((e) - 0x2900)   /* long: the player's own hit-box list (shield, body) */
+#define ANIM_RATE(e)  ((e) - 0x39FE)
+#define COLL_TYPE(e)  ((e) - 0x30FE)   /* what it stands on (movement.c) */
+#define MODE(e)       ((e) - 0x2F00)   /* bit 7: in the water (for the splash) */
+#define PREV_HELD     0xFFFF9F0Cu
+#define INPUT_MODE    0xFFFF9F05u   /* 0 controller, 2 walking right on its own, 4 none and still,
+                                     * 6 a routine at $9F22, 8 none */
+#define INPUT_FN      0xFFFF9F22u
+#define PAD           0xFFFF8A7Au   /* the controller, as the frame read it */
+#define ATTACK_DELAY  0xFFFF9F08u
+#define BLINK_TIME    0xFFFF9F0Au   /* after a hit: frames left blinking */
+#define ACCEL_BASE    0xFFFF9EFAu   /* the acceleration, drag and speed this frame starts from */
+#define DRAG_BASE     0xFFFF9EFCu
+#define SHIELD        0xFFFF95D0u
+#define FALL_FLAGS    0xFFFF9F03u   /* GROUND; bit 6: the knocked-back hit-box list */
+#define T_SLOPE       0x0100
+#define T_ICE         0x0200
+
+/* $5D8: the game's random number generator */
+static uint32_t random32(void)
+{
+    Cpu t = *cpu;
+    call_68k(&t, 0x5D8);
+    return t.d[0];
+}
+
+/* $10910: an effect (or item) of type `kind` at x, y; returns the entity the spawner left in a0
+ * (when no slot is free, the last one it looked at) */
+static Ent spawn_effect(Ent e, uint16_t kind, int16_t x, int16_t y)
+{
+    Cpu t = *cpu;
+    t.a[4] = e; t.d[0] = kind; t.d[1] = (uint16_t)x; t.d[2] = (uint16_t)y;
+    call_68k(&t, 0x10910);
+    return t.a[0];
+}
+
+static void call_with_d0(Ent e, uint32_t addr, uint16_t d0)
+{
+    Cpu t = *cpu;
+    t.a[4] = e; t.d[0] = d0;
+    call_68k(&t, addr);
+}
+
+/* $E1A6: the start of the player's frame: no attack or hit boxes yet, this frame's speeds,
+ * the ground flag from the last move, and the timers counted down */
+static void start_frame(Ent e)
+{
+    wr8(HIT_STATE(e), 0);
+    wr32(ATTACK_BOX(e), 0);
+    wr32(HURT_BOXES(e), 0);
+    wrw(ACCEL, rdw(ACCEL_BASE));
+    wrw(SWIM_DRAG(e), rdw(DRAG_BASE));
+    wr32(SPEED(e), rd32(SWIM_SPEED));
+    wrw(ANIM_RATE(e), 0x100);
+    wr8(ANIM, rd8(ANIM) & 0xBA);
+    clr8(GROUND, 1);
+    clr8(FLAGS(e), F_DUCKING | F_IN_AIR);
+    clr8(CTRL, 0x10);
+    wr8(POSE, 0);
+    if ((rd8(COLL(e)) & 0x0A) == 2) set8(GROUND, 1);
+    if (rd8(DUCK_DELAY)) wr8(DUCK_DELAY, (uint8_t)(rd8(DUCK_DELAY) - 1));
+    if (rd8(CLIMB_DELAY)) wr8(CLIMB_DELAY, (uint8_t)(rd8(CLIMB_DELAY) - 1));
+    if (rd8(ATTACK_DELAY)) wr8(ATTACK_DELAY, (uint8_t)(rd8(ATTACK_DELAY) - 1));
+    clr8(FACING(e), 0x40);
+    if (rd8(BLINK_TIME)) {
+        wr8(BLINK_TIME, (uint8_t)(rd8(BLINK_TIME) - 1));
+        set8(FACING(e), 0x40);
+    }
+}
+
+/* $DE6A: the buttons for this frame, from the controller or a script; an item used with up or
+ * down keeps that direction to itself while it is held. PRESSED: newly down this frame. */
+static void read_input(Ent e)
+{
+    wr8(PREV_HELD, held());
+    switch (rd8(INPUT_MODE)) {
+    case 0: wr8(HELD, rd8(PAD)); break;
+    case 2:                                         /* walking right on its own, to x = $1140 */
+        wr8(HELD, 8);
+        if ((uint16_t)rdw(X(e)) >= 0x1140) {
+            wrw(X(e), 0x1140);
+            wrw(VEL_X(e), 0);
+            wr8(HELD, 0); wr8(PREV_HELD, 0); wr8(PRESSED, 0);
+        }
+        break;
+    case 4: stop(e); wr8(HELD, 0); wr8(PRESSED, 0); break;
+    case 6: { Cpu t = *cpu; t.a[4] = e; call_68k(&t, rd32(INPUT_FN)); break; }
+    case 8: wr8(HELD, 0); break;
+    default:
+        fprintf(stderr, "player: input mode %d is outside the original's table ($DED8)\n", rd8(INPUT_MODE));
+        exit(3);
+    }
+    if (rd8(CTRL) & 0x60) {
+        uint8_t keep = 0;
+        if (rd8(CTRL) & 0x40) { clr8(CTRL, 0x40); if (held() & 2) { set8(CTRL, 0x40); keep |= 2; } }
+        if (rd8(CTRL) & 0x20) { clr8(CTRL, 0x20); if (held() & 1) { set8(CTRL, 0x20); keep |= 1; } }
+        wr8(HELD, held() & (uint8_t)~keep);
+    }
+    wr8(PRESSED, (uint8_t)((held() ^ rd8(PREV_HELD)) & held()));
+}
+
+/* $DFA0: a bounce tile ($9xxx) under the feet springs the player up */
+static void bounce(Ent e)
+{
+    if ((rd16(TILE_BELOW) & 0xF000) != 0x9000) return;
+    launch(e, -0x680);
+    spawn_effect(e, 0x200, (int16_t)((rdw(X(e)) & 0xFFF0) + 8),
+                 (int16_t)((rd8(HALF_H(e)) + rdw(Y(e))) & 0xFFF0));
+    queue_sound(0x33);
+}
+
+/* $EF4E: acceleration (unless a handler did its own) and friction. On ice the acceleration is
+ * a quarter, the top speed doubles and there is no friction; on an icy slope it also slides. */
+static void accelerate(Ent e)
+{
+    uint8_t ctrl = rd8(CTRL);
+    clr8(CTRL, 2);
+    if (!(ctrl & 2)) call_with_d0(e, 0xB44, 0);     /* AccelY: gravity */
+    clr8(CTRL, 1);
+    if (ctrl & 1) return;
+    int16_t a = rdw(ACCEL);
+    uint16_t ground = rd16(COLL_TYPE(e));
+    if (!on_ground()) a >>= 1;
+    else if (ground & T_ICE) {
+        a >>= 2;
+        wrw(SPEED(e), 2 * rdw(SWIM_SPEED));
+        if (ground & T_SLOPE) {
+            if (!(rd8(ANIM) & 1)) a = 0;
+            else if (rd8(ANIM) & 2) a = (int16_t)-a;
+            int8_t slide = (int8_t)rd8(0x3E32 + ((ground & 0xF0) >> 4));   /* $3E20: by the slope */
+            wrw(ACCEL_X(e), a + slide);
+            call_with_d0(e, 0xAF4, 0);              /* AccelX */
+            return;
+        }
+    }
+    if (!(rd8(FLAGS(e)) & F_ATTACKING) && (rd8(ANIM) & 1)) {   /* moving */
+        wrw(ACCEL_X(e), rd8(ANIM) & 2 ? -a : a);
+        call_with_d0(e, 0xAF4, 0);                  /* AccelX */
+        return;
+    }
+    if (!(ground & T_ICE)) call_with_d0(e, 0xB92, (uint16_t)a);   /* FrictionX */
+}
+
+/* $DD7C: entering the water (or a $5xxx tile) splashes at the surface; leaving it too */
+static void splash(Ent e)
+{
+    if (rd8(AREA_FLAGS) & 1) return;                /* an area all under water */
+    uint16_t here = rd16(TILE_HERE);
+    int16_t y;
+    if (here == WATER || here == 0x5000) {
+        if (rd8(MODE(e)) & 0x80) return;
+        set8(MODE(e), 0x80);
+        queue_sound(0x47);
+        y = rdw(Y(e));
+    } else {
+        uint16_t below = rd16(TILE_BELOW);
+        if (below == WATER || below == 0x5000) return;
+        if (!(rd8(MODE(e)) & 0x80)) return;
+        clr8(MODE(e), 0x80);
+        y = (int16_t)(rd8(HALF_H(e)) + rdw(Y(e)));
+    }
+    spawn_effect(e, 0x202, rdw(X(e)), (int16_t)((y - 8) & 0xFFF0));
+}
+
+/* $DDDE: under water, a bubble every 120 frames (sooner while moving fast); hurt, a burst */
+static void bubbles(Ent e)
+{
+    if (!(rd8(AREA_FLAGS) & 1)) return;
+    int16_t v = rdw(VEL_X(e));
+    int steps = 1;
+    if (v) {
+        steps++;
+        if ((uint16_t)(v < 0 ? -v : v) >= (uint16_t)rdw(SPEED(e))) steps++;
+    }
+    wr8(BUBBLES(e), (uint8_t)(rd8(BUBBLES(e)) - steps));
+    if ((int8_t)rd8(BUBBLES(e)) >= 0) return;
+    wr8(BUBBLES(e), 0x78);
+    int16_t dx = 0;
+    uint16_t kind = 0x204;
+    if (rd8(FLAGS(e)) & F_HURT) {                   /* scattered, sometimes the other kind */
+        uint32_t r = random32();
+        dx = (int16_t)(((r >> 16) & 3) + (r & 7));
+        if (!(r & 2)) {
+            kind = 0x210;
+            if (r & 8) dx = (int16_t)-dx;
+        }
+    }
+    Ent b = spawn_effect(e, kind, (int16_t)(rdw(X(e)) + dx), (int16_t)(rdw(Y(e)) - (rd8(HALF_H(e)) >> 2)));
+    int16_t vy = rdw(VEL_Y(e));
+    if (vy < 0) wrw(VEL_Y(b), (vy >> 2) - 0x80);    /* rising with the player */
+}
+
+/* $EFE2: the player's own hit boxes for this frame: knocked back, or by pose, form, sword and
+ * shield */
+static void hurt_boxes(Ent e)
+{
+    if (rd8(FALL_FLAGS) & 0x40) {
+        wr32(HURT_BOXES(e), rd8(FORM) == 2 ? 0x1158A : 0x11584);
+        return;
+    }
+    if (rd8(FLAGS(e)) & F_ATTACKING) return;
+    uint8_t pose = rd8(POSE);
+    if (pose & 0x80) return;
+    if (pose == 0) {                                /* standing: the shield */
+        if (rd8(FORM) == 2) { wr32(HURT_BOXES(e), 0xF4DE); return; }
+        if (0x70 >> (rd8(SWORD) & 31) & 1) return;
+        uint8_t shield = rd8(SHIELD);
+        if (shield & 0x80) return;
+        wr32(HURT_BOXES(e), 0xF4BE + (uint32_t)(int32_t)rdw(0xF4BE + 2 * shield));
+    } else if (pose == 2) {                         /* the up attack */
+        int8_t i = (int8_t)rd8(0xF04C + rd8(SWORD));
+        if (i < 0) return;
+        wr32(HURT_BOXES(e), 0xF4E4 + (uint32_t)(int32_t)rdw(0xF4E4 + i));
+    } else {
+        fprintf(stderr, "player: pose %d is outside the original's table ($F008)\n", pose);
+        exit(3);
+    }
+}
+
 /* $E2C6: the handler for the player's state */
 static void player_state(Ent e)
 {
@@ -637,8 +859,11 @@ static void player_state(Ent e)
     }
 }
 
-void PlayerState(Cpu *c)
-{
-    cpu = c;
-    player_state(c->a[4]);
-}
+void PlayerState(Cpu *c)      { cpu = c; player_state(c->a[4]); }
+void PlayerStartFrame(Cpu *c) { cpu = c; start_frame(c->a[4]); }
+void PlayerInput(Cpu *c)      { cpu = c; read_input(c->a[4]); }
+void PlayerBounce(Cpu *c)     { cpu = c; bounce(c->a[4]); }
+void PlayerAccel(Cpu *c)      { cpu = c; accelerate(c->a[4]); }
+void PlayerSplash(Cpu *c)     { cpu = c; splash(c->a[4]); }
+void PlayerBubbles(Cpu *c)    { cpu = c; bubbles(c->a[4]); }
+void PlayerHurtBoxes(Cpu *c)  { cpu = c; hurt_boxes(c->a[4]); }
