@@ -14,8 +14,9 @@ YMO = $(OUT)/ym2612.o $(OUT)/ymfm_opn.o $(OUT)/ymfm_adpcm.o $(OUT)/ymfm_ssg.o
 
 all: $(OUT)/wbmw
 
-# the whole game, translated from the reset vector (analysis/native.json)
-$(GEN): ../tools/m68k2c.py ../analysis/native.json ../port/registry.c ../work/map.json ../analysis/hints.json
+# the whole game, translated from the reset vector (analysis/native.json); work/cycles.bin comes
+# from the harness build (make in harness/)
+$(GEN): ../tools/m68k2c.py ../analysis/native.json ../port/registry.c ../work/map.json ../analysis/hints.json ../work/cycles.bin
 	$(PYTHON) -I ../tools/m68k2c.py "$(ROM)" ../work/map.json ../work/gen_native ../analysis/native.json
 
 $(OUT)/gen.o: ../work/gen_native/gen.c ../port/m68k_rt.h ../port/port.h

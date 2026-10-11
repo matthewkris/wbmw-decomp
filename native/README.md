@@ -16,7 +16,7 @@ This makes `work/native/wbmw.exe` (and copies `SDL2.dll` next to it).
 
 ## Run
 
-    work/native/wbmw ROM [--scale N] [--save FILE] [--fullscreen] [--integer-scale] [--fps] [--mute]
+    work/native/wbmw ROM [--scale N] [--save FILE] [--fullscreen] [--integer-scale] [--fps] [--mute] [--timing]
 
 plays in a window: arrows, Z = A, X = B, C = C, Enter = Start, Esc quits; a controller works too.
 The window is sized for the game's 256-pixel width at the largest scale up to 3 that fits the
@@ -41,6 +41,14 @@ input script format, for comparison with `work/harness/harness`.
 
 Both this program and the harness take `--frame-log FILE`, `--input-game FILE` and `--dump-at N
 DIR` (`harness/framelog.c`); `tools/framecmp.py` compares two frame logs by game frame.
+
+## Exact timing (`--timing`)
+
+By default the game's code takes no time: it never slows down, and the raster always reads
+line 0. With `--timing` the native build counts the 68000 cycles the original would spend and
+runs scanlines, interrupts and sound exactly as the harness runs them on Musashi. It is then
+identical to the original frame for frame, slowdowns and sound included (`docs/PORT.md`,
+"Exact timing"). Both modes use the same program.
 
 ## How time works
 

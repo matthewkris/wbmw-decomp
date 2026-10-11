@@ -198,6 +198,32 @@ void rt_leave(Cpu *c, uint32_t from, uint32_t target);
  * analysis/native.json "poll"); the host runs a frame and the interrupt there */
 void rt_poll(Cpu *c, uint32_t at);
 
+/* native build, optional timing (analysis/native.json "cycles"): each instruction charges its
+ * 68000 cycles to the current slice. When the slice is used up, or the status register changed
+ * (the interrupt mask), the host's rt_slice advances time (scanlines, sound, the VBlank
+ * interrupt) and returns; `next` is where execution goes on, for an interrupt's return address. */
+extern int32_t rt_budget;
+extern int rt_irq_check;
+void rt_slice(Cpu *c, uint32_t next);
+void rt_set_sr(Cpu *c, uint16_t sr);
+#define RT_CYC(n, next) do { rt_budget -= (int32_t)(n); if (rt_budget <= 0 || rt_irq_check) rt_slice(c, (next)); } while (0)
+
+/* MULU / MULS timing on the 68000, as Musashi counts it: 2 cycles per one bit of the source,
+ * or per change between neighbouring bits of the sign-extended source */
+static inline int rt_mulu_cyc(uint32_t s)
+{
+    int n = 0;
+    for (uint32_t y = s & 0xFFFF; y; y >>= 1) if (y & 1) n += 2;
+    return n;
+}
+static inline int rt_muls_cyc(uint32_t s)
+{
+    int n = 0; uint32_t f = 0;
+    for (uint32_t y = (uint32_t)(int32_t)(int16_t)(s & 0xFFFF); y; y >>= 1)
+        if ((y & 1) != f) { n += 2; f = 1 - f; }
+    return n;
+}
+
 /* watchdog: every branch target in generated code passes here. Translated code takes no
  * emulated time, so a loop that waits for time or an interrupt never ends; after rt_limit passes
  * in one call the host's rt_stuck reports the recent branch targets (a ring of 16). */

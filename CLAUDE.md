@@ -108,8 +108,9 @@ F2 overwrites the same file each time.
    time shift from the original's dropped frames is accounted for, with sound (`docs/PORT.md`,
    "Sound"). Compared by game frame (`--frame-log`, `tools/framecmp.py`), its picture and game
    state match the original; only raster-timed scheduling differs (three bytes; `docs/PORT.md`,
-   "Comparing by game frame"). Next for it: save states; optionally 68000 cycle counting in the
-   generated code, for exact timing and the original's slowdowns. The sound driver itself is still Z80 code run by an emulator; translating it is a
+   "Comparing by game frame"). With `--timing` (optional) it counts the 68000's cycles and is
+   identical to the original in every byte and every frame, sound included ("Exact timing").
+   Next for it: save states. The sound driver itself is still Z80 code run by an emulator; translating it is a
    later, separate project.
 3. Then the idiomatic rewrite, subsystem by subsystem, checked against the original the same
    way; that is where the coroutine library belongs. Fuzz input generators live in

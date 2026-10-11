@@ -16,7 +16,12 @@ YMFM = ../third_party/ymfm
 YMO = $(OUT)/ym2612.o $(OUT)/ymfm_opn.o $(OUT)/ymfm_adpcm.o $(OUT)/ymfm_ssg.o
 LDFLAGS = -static-libgcc
 
-all: $(OUT)/harness $(OUT)/play
+all: $(OUT)/harness $(OUT)/play ../work/cycles.bin
+
+# Musashi's 68000 cycle table, for the native build's optional timing (tools/m68k2c.py)
+../work/cycles.bin: cycles_dump.c $(CPU)
+	$(CC) -O1 -I$(MUSASHI) -I$(OUT) cycles_dump.c $(CPU) -o $(OUT)/cycles_dump -lm
+	$(OUT)/cycles_dump $@
 
 $(OUT)/m68kmake: $(MUSASHI)/m68kmake.c
 	@mkdir -p $(OUT)

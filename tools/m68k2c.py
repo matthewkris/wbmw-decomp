@@ -16,6 +16,15 @@ CONFIG (analysis/translate.json) gives the game's facts, as hex address strings:
           reset stack, so the C stack does not grow).
   poll    (native build) instructions in loops that wait for an interrupt: generated code calls
           rt_poll(c, address) there first, and the host runs a frame and the interrupt.
+  cycles  (native build) a file of 65,536 bytes: the 68000 cycles of each opcode, as Musashi
+          charges them (harness/cycles_dump.c). Each instruction then ends with
+          RT_CYC(cycles, next pc), placed where Musashi charges it: after the instruction's
+          effects, before any jump, call or return. The dynamic costs follow Musashi's 68000
+          rules: Bcc not taken (.b -2, .w +2), DBcc (branch -2, expiry +2), Scc true to a
+          register (+2), MOVEM (+4 a word register, +8 a long), shifts and rotates (+2 a bit
+          counted), MULU/MULS (+2 per one, or per change, in the source).
+  hand_ports  false: translate routines even where port/ has a hand port (the native build's
+          timing needs every instruction counted).
   seen    entries found only at run time: targets of computed jumps the tracer could not
           resolve, from the harness's "left generated code" report. Translated like roots.
 
@@ -41,6 +50,7 @@ DEFER = {int(a, 16) for a in CONFIG.get('defer', [])}
 RESTART = {int(a, 16) for a in CONFIG.get('restart', [])}
 EXITS |= RESTART
 POLL = {int(a, 16) for a in CONFIG.get('poll', [])}
+CYC = open(os.path.join(os.path.dirname(MAP), '..', CONFIG['cycles']), 'rb').read() if 'cycles' in CONFIG else None
 d = open(ROM, 'rb').read()
 m = json.load(open(MAP))
 INS = {int(a, 16): v for a, v in m['insn'].items()}
@@ -51,6 +61,8 @@ HAND = {}
 for line in open(os.path.join(os.path.dirname(__file__), '..', 'port', 'registry.c')):
     mm = re.search(r'\{0x([0-9A-Fa-f]+), 0x([0-9A-Fa-f]+), "(\w+)", (\w+)\}', line)
     if mm: HAND[int(mm.group(1), 16)] = mm.group(4)
+
+if CONFIG.get('hand_ports', True) is False: HAND = {}
 
 # indirect sites with known targets: auto tables, hint tables and bra tables
 SITE_TARGETS = {}
@@ -100,6 +112,21 @@ for a, (sz, mn, ops) in INS.items():                   # `move.l #code,X` the tr
     mm = re.match(r'#\$([0-9a-f]+), ', ops) if mn in ('move.l', 'movea.l') else None
     if mm and int(mm.group(1), 16) in INS and int(mm.group(1), 16) >= 0x200:
         STORED_BY.setdefault(int(mm.group(1), 16), set()).add(a)
+
+def push_rts(a):
+    """`move.l X,-(a7); rts` jumps to X; with `pea R` before it, X returns to R (a computed call,
+    as in the animation interpreter at $88E). Returns (is_it, R or None, X's table targets)."""
+    prev = [p for p in (a - 2, a - 4, a - 6) if p in INS and p + INS[p][0] == a]
+    if not prev or INS[prev[0]][1] != 'move.l' or not INS[prev[0]][2].endswith('-(a7)'): return False, None, set()
+    p1 = prev[0]; ret = None
+    pp = [p for p in (p1 - 2, p1 - 4, p1 - 6) if p in INS and p + INS[p][0] == p1]
+    if pp and INS[pp[0]][1] == 'pea.l':
+        mm = re.fullmatch(r'\$([0-9a-f]+)(?:\(pc\)|\.[wl])?', INS[pp[0]][2])
+        if mm: ret = int(mm.group(1), 16)
+    targets = set()
+    mm = re.match(r'\$([0-9a-f]+)\(pc', INS[p1][2])
+    if mm: targets = set(m['tables'].get('%06X' % int(mm.group(1), 16), []))
+    return True, ret, targets
 
 def continuation_targets(a):
     """targets of `jmp (aN)` at a when aN was just loaded from a RAM variable"""
@@ -219,7 +246,13 @@ class Fn:
                 sz, mn, ops = INS[a]
                 base = mn.split('.')[0]
                 t = re.search(r'\$([0-9a-f]+)$', ops)
-                if base in ('rts', 'rte'): break
+                if base == 'rts':
+                    pr, ret, tg = push_rts(a)
+                    if pr:
+                        self.calls |= tg
+                        if ret is not None: work.append(ret); self.targets.add(ret)
+                    break
+                if base == 'rte': break
                 if base == 'jmp':
                     tgt = self.static_target(ops)
                     if tgt in EXITS: break
@@ -247,22 +280,32 @@ class Fn:
         if mm.group(2) == '.w' and v & 0x8000: return None      # into RAM
         return v
 
-def call_stmt(tgt, ret):
-    """a call to a known routine: push, call, continue only if it came back here"""
-    if tgt in EXITS: return ['rt_push(c, 0x%Xu); c->ret = 0x%Xu; return;' % (ret, tgt)]
-    if tgt not in HAND and tgt not in fns:                   # not translated: dispatch at run time
-        return ['rt_push(c, 0x%Xu); if (!rt_dispatch(c, 0x%Xu)) rt_leave(c, 0x%Xu, 0x%Xu); if (c->ret != 0x%Xu) return;'
-                % (ret, tgt, ret, tgt, ret)]
-    if tgt in HAND:
-        return ['rt_push(c, 0x%Xu); %s(c); rt_rts(c);' % (ret, HAND[tgt])]
-    return ['rt_push(c, 0x%Xu); g_%06X(c); if (c->ret != 0x%Xu) return;' % (ret, tgt, ret)]
+def opword(a): return d[a] << 8 | d[a + 1]
 
-def tail_stmt(tgt):
-    if tgt in EXITS: return ['c->ret = 0x%Xu; return;' % tgt]
+def cyc(a, nxt, extra=None):
+    """the cycle charge for the instruction at a (empty without a cycle table)"""
+    if CYC is None: return ''
+    n = CYC[opword(a)]
+    return 'RT_CYC(%d%s, %s);' % (n, (' + (%s)' % extra) if extra else '', nxt)
+
+def hx(v): return '0x%Xu' % v
+
+def call_stmt(tgt, ret, cy=''):
+    """a call to a known routine: push, call, continue only if it came back here"""
+    if tgt in EXITS: return ['rt_push(c, 0x%Xu); %s c->ret = 0x%Xu; return;' % (ret, cy, tgt)]
+    if tgt not in HAND and tgt not in fns:                   # not translated: dispatch at run time
+        return ['rt_push(c, 0x%Xu); %s if (!rt_dispatch(c, 0x%Xu)) rt_leave(c, 0x%Xu, 0x%Xu); if (c->ret != 0x%Xu) return;'
+                % (ret, cy, tgt, ret, tgt, ret)]
+    if tgt in HAND:
+        return ['rt_push(c, 0x%Xu); %s %s(c); rt_rts(c);' % (ret, cy, HAND[tgt])]
+    return ['rt_push(c, 0x%Xu); %s g_%06X(c); if (c->ret != 0x%Xu) return;' % (ret, cy, tgt, ret)]
+
+def tail_stmt(tgt, cy=''):
+    if tgt in EXITS: return ['%s c->ret = 0x%Xu; return;' % (cy, tgt)]
     if tgt not in HAND and tgt not in fns:
-        return ['if (!rt_dispatch(c, 0x%Xu)) rt_leave(c, 0, 0x%Xu); return;' % (tgt, tgt)]
-    if tgt in HAND: return ['%s(c); rt_rts(c); return;' % HAND[tgt]]
-    return ['g_%06X(c); return;' % tgt]
+        return ['%s if (!rt_dispatch(c, 0x%Xu)) rt_leave(c, 0, 0x%Xu); return;' % (cy, tgt, tgt)]
+    if tgt in HAND: return ['%s %s(c); rt_rts(c); return;' % (cy, HAND[tgt])]
+    return ['%s g_%06X(c); return;' % (cy, tgt)]
 
 def translate(fn):
     out = []
@@ -275,7 +318,10 @@ def translate(fn):
         if a in labels: out.append('L_%06X: RT_AT(0x%06X);' % (a, a))
         try:
             # an exit inside a routine (a loop that waits for an interrupt): hand it to the 68000
-            body = ['c->ret = 0x%Xu; return; /* exit */' % a] if a in EXITS and a != fn.entry else insn(fn, a, nxt, mn, ops)
+            if a in EXITS and a != fn.entry: body = ['c->ret = 0x%Xu; return; /* exit */' % a]
+            else:
+                body = insn(fn, a, nxt, mn, ops)
+                if CYC is not None and not controls(mn): body = plain_cycles(a, nxt, mn, ops, body)
         except Unsupported as e:
             body = ['rt_unknown(0x%Xu, 0); /* unsupported: %s */' % (a, e)]
             UNSUPPORTED.append((a, mn, ops, str(e)))
@@ -284,36 +330,82 @@ def translate(fn):
     out.append('    rt_unknown(0x%Xu, 0xFFFFFFFFu);  /* never reached: every path ends in rts or a jump */' % fn.entry)
     return out
 
+CONTROL = {'rts', 'rte', 'bra', 'bsr', 'jmp', 'jsr'}
+def controls(mn):
+    base = mn.split('.')[0]
+    return base in CONTROL or base.startswith('db') or (base[0] == 'b' and base[1:] in CONDS
+                                                         and base not in ('bset', 'bclr', 'bchg', 'btst'))
+
+def plain_cycles(a, nxt, mn, ops, body):
+    """the charge for an instruction without control flow, with Musashi's dynamic extras"""
+    base = mn.split('.')[0]; parts = split_ops(ops) if ops else []
+    pre, extra = [], None
+    if base in ('asl', 'asr', 'lsl', 'lsr', 'rol', 'ror', 'roxl', 'roxr') and len(parts) == 2:
+        if parts[0].startswith('#'): extra = '%d' % (2 * hexv(parts[0][1:]))
+        else:                                          # the count, read before the shift changes it
+            k, n = reg(parts[0]); pre = ['unsigned cnt_ = c->d[%d] & 63;' % n]; extra = '2 * cnt_'
+    elif base == 'movem':
+        regs = [p for p in (parts[0] if re.fullmatch(r'[da][0-7]([-/][da][0-7])*', parts[0].replace(' ', '')) else parts[1]).replace(' ', '').split('/')]
+        count = 0
+        for r in regs:
+            if '-' in r: x, y = r.split('-'); count += reg(y)[1] - reg(x)[1] + 1
+            else: count += 1
+        extra = '%d' % (count * (8 if mn.endswith('.l') else 4))
+    elif base in ('mulu', 'muls'):
+        extra = 'rt_%s_cyc(s)' % base
+    elif base[0] == 's' and base[1:] in CONDS and re.fullmatch(r'd[0-7]', parts[0]):
+        extra = '(rt_cond(c, %d) ? 2 : 0)' % CONDS[base[1:]]
+    return pre + body + [cyc(a, hx(nxt), extra)]
+
 def insn(fn, a, nxt, mn, ops):
     parts = split_ops(ops) if ops else []
     base, _, suf = mn.partition('.')
     sz = SIZE.get(suf, 4)
     L = []
     if base in ('nop',): return ['/* nop */']
-    if base == 'rts': return ['rt_rts(c); return;']
-    if base == 'rte':                                 # pop SR (only the condition codes are kept) and PC
+    if base == 'rts':
+        pr, ret, tg = push_rts(a)
+        if pr:                                     # a computed call (or jump) through the stack
+            L = ['uint32_t t_a = rd32(c->a[7]); c->a[7] += 4;', cyc(a, 't_a'),
+                 'if (!rt_dispatch(c, t_a)) rt_leave(c, 0x%Xu, t_a);' % a]
+            L.append('if (c->ret != 0x%Xu) return; goto L_%06X;' % (ret, ret) if ret is not None else 'return;')
+            return L
+        return ['rt_rts(c); %s return;' % cyc(a, 'c->ret')]
+    if base == 'rte':
+        if CYC is not None:                           # SR (with the interrupt mask) and PC; the host checks interrupts
+            return ['{ uint16_t sr_ = rd16(c->a[7]); c->ret = rd32(c->a[7] + 2); c->a[7] += 6; rt_set_sr(c, sr_); } %s return;'
+                    % cyc(a, 'c->ret')]
         return ['c->ccr = (uint16_t)(rd16(c->a[7]) & 0x1F); c->ret = rd32(c->a[7] + 2); c->a[7] += 6; return;']
-    if base == 'bra': return ['goto L_%06X;' % int(ops[1:], 16)]
-    if base == 'bsr': return call_stmt(int(ops[1:], 16), nxt)
+    if base == 'bra': t = int(ops[1:], 16); return ['%s goto L_%06X;' % (cyc(a, hx(t)), t)]
+    if base == 'bsr': t = int(ops[1:], 16); return call_stmt(t, nxt, cyc(a, hx(t)))
     if base[0] == 'b' and base[1:] in CONDS and base not in ('bset', 'bclr', 'bchg', 'btst'):
-        return ['if (rt_cond(c, %d)) goto L_%06X;' % (CONDS[base[1:]], int(ops[1:], 16))]
+        t = int(ops[1:], 16)
+        if CYC is None: return ['if (rt_cond(c, %d)) goto L_%06X;' % (CONDS[base[1:]], t)]
+        return ['if (rt_cond(c, %d)) { %s goto L_%06X; } %s'
+                % (CONDS[base[1:]], cyc(a, hx(t)), t, cyc(a, hx(nxt), '-2' if suf == 'b' else '2'))]
     if base.startswith('db'):
         cond = CONDS['f' if base == 'dbra' else base[2:]]
-        k, n = reg(parts[0])
-        return ['if (!rt_cond(c, %d)) { uint32_t w = (c->d[%d] - 1) & 0xFFFF; rt_wr(&c->d[%d], 2, w); if (w != 0xFFFF) goto L_%06X; }'
-                % (cond, n, n, int(parts[1][1:], 16))]
+        k, n = reg(parts[0]); t = int(parts[1][1:], 16)
+        if CYC is None:
+            return ['if (!rt_cond(c, %d)) { uint32_t w = (c->d[%d] - 1) & 0xFFFF; rt_wr(&c->d[%d], 2, w); if (w != 0xFFFF) goto L_%06X; }'
+                    % (cond, n, n, t)]
+        return ['if (!rt_cond(c, %d)) { uint32_t w = (c->d[%d] - 1) & 0xFFFF; rt_wr(&c->d[%d], 2, w); '
+                'if (w != 0xFFFF) { %s goto L_%06X; } %s } else { %s }'
+                % (cond, n, n, cyc(a, hx(t), '-2'), t, cyc(a, hx(nxt), '2'), cyc(a, hx(nxt)))]
     if base in ('jmp', 'jsr'):
         tgt = Fn.static_target(ops)
         if tgt is not None:
-            if base == 'jsr': return call_stmt(tgt, nxt)
-            if tgt in fn.targets and tgt not in CALLS: return ['goto L_%06X;' % tgt]
-            return tail_stmt(tgt)
+            if base == 'jsr': return call_stmt(tgt, nxt, cyc(a, hx(tgt)))
+            if tgt in fn.targets and tgt not in CALLS: return ['%s goto L_%06X;' % (cyc(a, hx(tgt)), tgt)]
+            return tail_stmt(tgt, cyc(a, hx(tgt)))
         ea = EA(parts[0], 4, a)
         if ea.kind != 'mem': raise Unsupported('jump operand')
         address(ea, 't', L)
         if base == 'jsr':
-            L.append('rt_push(c, 0x%Xu); if (!rt_dispatch(c, t_a)) rt_leave(c, 0x%Xu, t_a); if (c->ret != 0x%Xu) return;' % (nxt, a, nxt))
+            L.append('rt_push(c, 0x%Xu); %s if (!rt_dispatch(c, t_a)) rt_leave(c, 0x%Xu, t_a); if (c->ret != 0x%Xu) return;'
+                     % (nxt, cyc(a, 't_a'), a, nxt))
             return L
+        if CYC is not None: L.append(cyc(a, 't_a'))
         local = sorted(x for x in SITE_TARGETS.get(a, ()) if x in fn.body)
         L.append('switch (t_a) {' + ''.join(' case 0x%Xu: goto L_%06X;' % (x, x) for x in local) + ' }')
         L.append('if (!rt_dispatch(c, t_a)) rt_leave(c, 0x%Xu, t_a); return;' % a)
@@ -353,6 +445,7 @@ def insn(fn, a, nxt, mn, ops):
         if base == 'move' and suf == '':
             raise Unsupported('move to/from usp, sr or ccr')
         if parts[1] == 'sr' and parts[0].startswith('#'):          # the interrupt mask is the host's business
+            if CYC is not None: return ['rt_set_sr(c, 0x%Xu);' % (hexv(parts[0][1:]) & 0xFFFF)]
             return ['c->ccr = 0x%Xu;' % (hexv(parts[0][1:]) & 0x1F)]
         if any(p in ('sr', 'ccr', 'usp') for p in parts): raise Unsupported('special register')
         src, dst = EA(parts[0], sz, a), EA(parts[1], sz, a)

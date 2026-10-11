@@ -414,6 +414,40 @@ Results:
   timing. And comparison by game frame rather than real frame (the game's counter at
   `$FF8002`), so long runs can be compared exactly despite the time shift.
 
+#### Exact timing, optional (`--timing`, 2026-10-11)
+
+With `--timing` the native build counts the 68000 cycles the original would spend, and runs
+time exactly as the harness runs it on Musashi. Without it, nothing changes: the code takes no
+time, and the game never slows down. The owner asked for it to be optional.
+
+* **Cycle counts.** `harness/cycles_dump.c` writes Musashi's own table of cycles for every opcode
+  (`work/cycles.bin`). The translator reads it (`analysis/native.json` `"cycles"`) and ends every
+  instruction with `RT_CYC(cycles, next pc)`, where Musashi charges it: after the effects, before
+  any jump, call or return. The dynamic costs follow Musashi's 68000 rules: Bcc not taken (.b
+  -2, .w +2), DBcc (branch -2, expiry +2), Scc true to a register (+2), MOVEM (+4 a word
+  register, +8 a long), shifts and rotates (+2 a bit counted), MULU/MULS (+2 per one, or per
+  change, in the source).
+* **Every routine translated.** Hand ports take no time, so the native build now translates
+  every routine (`"hand_ports": false`); they were proven equivalent anyway. That exposed one
+  more idiom, a computed call through the stack (`pea R; move.l X,-(a7); rts` in the animation
+  interpreter at `$88E`), which the translator now turns into a call of X that comes back at R.
+  QueueSound's retry is a poll point (`$386`), so untimed code still lets sound time pass there.
+* **The host.** `native/wbmw.c` reproduces the harness's loop. A scanline is 8 slices of 61
+  cycles; an instruction's cycles are charged after it; a slice ends at the first instruction
+  boundary at or past zero, and the overshoot is dropped (as `m68k_execute` does). Interrupts
+  are taken at a slice's start, or just after an instruction that set the status register: the
+  frame is pushed, the cost is 44 cycles, and the translated handler runs from its vector, with
+  the interrupt mask tracked (`rt_set_sr`). The raster the game reads is the line and the
+  slice's starting cycle. Lines render and play their sound at their end, and VBlank is at line
+  224. Reset uses 40 of the first slice's cycles.
+
+Result: **identical to the original**. Through the new-game script, every one of 3,864 game
+frames is identical in RAM, VRAM, CRAM and VSRAM, with the same 3,864 game frames from 4,000 real
+frames (the original's slowdowns, reproduced). The attract demo, which went its own way without
+timing, is identical in all 3,781 game frames and in every sampled picture, frame for frame. Its
+sound is identical sample for sample. The cost is about 285 frames a second headless, against
+about 400 without timing; both are well above 60.
+
 #### Comparing by game frame (2026-10-11)
 
 The native build never drops frames and the original does, so comparing them frame by real
@@ -444,11 +478,9 @@ Results, from power-on through the new-game script (3,864 game frames in both):
   and it runs a different set of task passes per frame. In the attract demo the same timing
   makes the recorded demo play out differently.
 
-So the native build's game logic matches the original. What it lacks is the original's timing,
-and that shows only through raster-dependent scheduling (and the dropped frames). To match
-exactly, the native build would have to count the 68000 cycles the original would spend and
-derive the raster position from them. The translator could add each instruction's cycle count,
-which would also reproduce the original's slowdowns.
+So the native build's game logic matches the original; what it lacks without `--timing` is the
+original's timing, which shows only through raster-dependent scheduling and the dropped frames.
+With `--timing` (above) it matches exactly.
 
 #### Sound (2026-10-11)
 

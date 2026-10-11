@@ -12,7 +12,7 @@
  * ($4B5C), as the hardware would. Restart points ($4BF8: reset the stack and re-enter the frame
  * loop) unwind the C stack to the host, which calls them again from the top.
  *
- *   wbmw ROM [--scale N] [--save FILE] [--fullscreen] [--integer-scale] [--fps]   play in a window
+ *   wbmw ROM [--scale N] [--save FILE] [--fullscreen] [--integer-scale] [--fps] [--timing]   play in a window
  *   wbmw ROM --frames N [--png-every K] [--out DIR] [--input FILE] [--wav FILE]   headless, for comparison
  *            [--frame-log FILE] [--input-game FILE] [--dump-at N DIR]          by game frame (harness/framelog.c)
  *
@@ -211,17 +211,11 @@ static void window_frame(void)
 }
 #endif
 
-/* Called by the generated code where the game waits for VBlank. If the interrupt has not come
- * yet, this is the end of the frame: draw it, show it, and deliver the interrupt. */
-void rt_poll(Cpu *c, uint32_t at)
+/* A frame is complete (drawn): write it out or show it, and keep the frame count. */
+static void frame_done(void)
 {
-    framelog_at(at);                                /* --frame-log, --input-game, --dump-at */
-    if (ram[0x8006] & 1) return;                    /* the interrupt already came this frame */
-    rt_steps = 0;
-    for (int line = 0; line < ACTIVE_LINES; line++) { vdp_line = line; vdp_render_line(line); }
-    vdp_line = 0;                                   /* the game's own time runs at line 0 */
-    for (int line = 0; line < LINES_PER_FRAME; line++) sound_run_line(line == ACTIVE_LINES);   /* a frame of sound */
     frame++;
+    rt_steps = 0;                                   /* the watchdog counts within a frame */
     if (headless) {
         if (png_every && frame % png_every == 0) {
             char path[1024]; snprintf(path, sizeof path, "%s/frame_%05d.png", out_dir, frame);
@@ -234,12 +228,114 @@ void rt_poll(Cpu *c, uint32_t at)
 #ifndef WBMW_HEADLESS_ONLY
     else { window_frame(); audio_frame(mute); }
 #endif
+}
+
+/* ---- timing (--timing): the 68000's cycles, as the harness runs them on Musashi ----
+ * The harness runs each scanline as 8 slices of 61 cycles (core.c). An instruction's cycles are
+ * charged after it runs; a slice ends at the first instruction boundary at or past zero, and the
+ * overshoot is dropped. Interrupts are taken at the start of a slice, or just after an
+ * instruction that changed the status register. The game reads the raster as (line, start of
+ * the slice). Lines render and play their sound at their end; VBlank comes at line 224. This
+ * reproduces that loop around the translated code, so time, and everything that reads it, runs
+ * as in the harness. Without --timing the code takes no time (the poll points end each frame). */
+static int timing;
+int32_t rt_budget = 0x3FFFFFFF;
+int rt_irq_check;
+static int line, slice, hcount, sr_mask = 7, vint_pending, hint_pending;
+#define SLICE 61
+
+void rt_set_sr(Cpu *c, uint16_t sr)
+{
+    c->ccr = (uint16_t)(sr & 0x1F);
+    sr_mask = (sr >> 8) & 7;
+    rt_irq_check = 1;                               /* Musashi checks for an interrupt at once */
+}
+
+/* the level of an interrupt that would be taken now, or 0 */
+static int irq_level(void)
+{
+    int level = vint_pending ? 6 : hint_pending ? 4 : 0;
+    return level > sr_mask ? level : 0;
+}
+
+/* take it: acknowledge, push the 68000's frame (SR, then PC), raise the mask, 44 cycles */
+static int take_irq(Cpu *c, uint32_t next)
+{
+    int level = irq_level();
+    if (!level) return 0;
+    if (level == 6) { vint_pending = 0; vdp_set_vint_pending(0); } else hint_pending = 0;
+    c->a[7] -= 6;
+    wr16(c->a[7], (uint16_t)(0x2000 | sr_mask << 8 | c->ccr)); wr32(c->a[7] + 2, next);
+    sr_mask = level;
+    rt_budget -= 44;
+    return level;
+}
+
+static void start_line(void)
+{
+    vdp_line = line;
+    if (line == ACTIVE_LINES) {
+        vdp_set_vblank(1); vdp_set_vint_pending(1);
+        if (vdp_vint_enabled()) vint_pending = 1;
+    }
+    if (line == 0) { vdp_set_vblank(0); hcount = vdp_hint_counter_reload(); }
+}
+
+static void end_line(void)
+{
+    if (line < ACTIVE_LINES) {
+        vdp_render_line(line);
+        if (--hcount < 0) { hcount = vdp_hint_counter_reload(); if (vdp_hint_enabled()) hint_pending = 1; }
+    } else hcount = vdp_hint_counter_reload();
+    sound_run_line(line == ACTIVE_LINES);
+}
+
+void rt_slice(Cpu *c, uint32_t next)
+{
+    if (!timing) { rt_irq_check = 0; rt_budget = 0x3FFFFFFF; return; }
+    int level = 0;
+    if (rt_irq_check) { rt_irq_check = 0; level = take_irq(c, next); }
+    while (rt_budget <= 0) {                        /* the slice is used up: on to the next */
+        if (++slice == 8) {
+            end_line(); slice = 0;
+            if (++line == LINES_PER_FRAME) { line = 0; frame_done(); }
+            start_line();
+        }
+        vdp_line_cycle = slice * SLICE;
+        rt_budget = SLICE;
+        if (!level) level = take_irq(c, next);
+    }
+    if (level) {                                    /* run the handler from its vector */
+        static const PortRoutine *handler[8];
+        uint32_t v = rd32((uint32_t)(24 + level) * 4) & 0xFFFFFF;
+        if (!handler[level] && !(handler[level] = entry(v))) { fprintf(stderr, "wbmw: no handler at %06X\n", (unsigned)v); exit(4); }
+        uint32_t ret = c->ret;
+        handler[level]->fn(c);                      /* ends in rte: SR (with the mask) and PC popped */
+        c->ret = ret;
+    }
+}
+
+/* Called by the generated code at a poll point. Without timing, a wait for VBlank ($3DC, $C262)
+ * is the end of the frame: draw it, show it and deliver the interrupt; $386 is QueueSound waiting
+ * on the Z80, where sound time is let pass. With timing, time passes by itself. */
+void rt_poll(Cpu *c, uint32_t at)
+{
+    framelog_at(at);                                /* --frame-log, --input-game, --dump-at */
+    if (timing) return;
+    if (at == 0x386) { sound_idle(); return; }
+    if (ram[0x8006] & 1) return;                    /* the interrupt already came this frame */
+    for (int l = 0; l < ACTIVE_LINES; l++) { vdp_line = l; vdp_render_line(l); }
+    vdp_line = 0;                                   /* the game's own time runs at line 0 */
+    for (int l = 0; l < LINES_PER_FRAME; l++) sound_run_line(l == ACTIVE_LINES);   /* a frame of sound */
+    frame_done();
     if (!vdp_vint_enabled()) return;                /* the game turned the interrupt off */
     c->a[7] -= 6;                                   /* the 68000's interrupt frame: SR, then PC */
-    wr16(c->a[7], (uint16_t)(0x2000 | c->ccr)); wr32(c->a[7] + 2, at);
+    wr16(c->a[7], (uint16_t)(0x2000 | sr_mask << 8 | c->ccr)); wr32(c->a[7] + 2, at);
     static const PortRoutine *isr;
     if (!isr && !(isr = entry(0x4B5C))) { fprintf(stderr, "wbmw: no VBlank handler\n"); exit(4); }
+    uint32_t ret = c->ret;
     isr->fn(c);                                     /* ends in rte: SR and PC popped */
+    c->ret = ret;
 }
 
 int main(int argc, char **argv)
@@ -255,6 +351,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--input-game") && i + 1 < argc) { if (framelog_input(argv[++i])) return 1; }
         else if (!strcmp(argv[i], "--dump-at") && i + 2 < argc) { long n = atol(argv[++i]); framelog_dump_at(n, argv[++i]); }
         else if (!strcmp(argv[i], "--mute")) mute = 1;
+        else if (!strcmp(argv[i], "--timing")) timing = 1;
         else if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--save") && i + 1 < argc) save_path = argv[++i];
 #ifndef WBMW_HEADLESS_ONLY
@@ -265,8 +362,9 @@ int main(int argc, char **argv)
         else rom_path = argv[i];
     }
     if (!rom_path) {
-        fprintf(stderr, "usage: wbmw ROM [--scale N] [--save FILE] [--fullscreen] [--integer-scale] [--fps]\n"
-                        "       wbmw ROM --frames N [--png-every K] [--out DIR] [--input FILE]\n");
+        fprintf(stderr, "usage: wbmw ROM [--scale N] [--save FILE] [--fullscreen] [--integer-scale] [--fps] [--mute] [--timing]\n"
+                        "       wbmw ROM --frames N [--png-every K] [--out DIR] [--input FILE] [--wav FILE] [--timing]\n"
+                        "                [--frame-log FILE] [--input-game FILE] [--dump-at N DIR]\n");
         return 2;
     }
     FILE *f = fopen(rom_path, "rb");
@@ -291,6 +389,9 @@ int main(int argc, char **argv)
     Cpu c; memset(&c, 0, sizeof c);
     c.a[7] = rd32(0); c.ccr = 0;
     uint32_t pc = rd32(4) & 0xFFFFFF;
+    if (timing) {                                   /* reset takes 40 of the first slice's 61 cycles */
+        line = 0; slice = 0; start_line(); vdp_line_cycle = 0; rt_budget = SLICE - 40;
+    }
     for (;;) {                                       /* restart points come back here */
         const PortRoutine *r = entry(pc);
         if (!r) { fprintf(stderr, "wbmw: cannot start at %06X\n", (unsigned)pc); return 4; }
