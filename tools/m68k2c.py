@@ -312,14 +312,15 @@ def call_stmt(tgt, ret, cy=''):
         return ['rt_push(c, 0x%Xu); %s if (!rt_dispatch(c, 0x%Xu)) rt_leave(c, 0x%Xu, 0x%Xu); if (c->ret != 0x%Xu) return;'
                 % (ret, cy, tgt, ret, tgt, ret)]
     if tgt in HAND:
-        return ['rt_push(c, 0x%Xu); %s %s(c); rt_rts(c);' % (ret, cy, HAND[tgt])]
+        return ['rt_push(c, 0x%Xu); %s c->ret = 0; %s(c); rt_after_hand(c); if (c->ret != 0x%Xu) return;'
+                % (ret, cy, HAND[tgt], ret)]
     return ['rt_push(c, 0x%Xu); %s g_%06X(c); if (c->ret != 0x%Xu) return;' % (ret, cy, tgt, ret)]
 
 def tail_stmt(tgt, cy=''):
     if tgt in EXITS: return ['%s c->ret = 0x%Xu; return;' % (cy, tgt)]
     if tgt not in HAND and tgt not in fns:
         return ['%s if (!rt_dispatch(c, 0x%Xu)) rt_leave(c, 0, 0x%Xu); return;' % (cy, tgt, tgt)]
-    if tgt in HAND: return ['%s %s(c); rt_rts(c); return;' % (cy, HAND[tgt])]
+    if tgt in HAND: return ['%s c->ret = 0; %s(c); rt_after_hand(c); return;' % (cy, HAND[tgt])]
     return ['%s g_%06X(c); return;' % (cy, tgt)]
 
 def translate(fn):
@@ -645,7 +646,7 @@ with open(os.path.join(OUT, 'gen_registry.c'), 'w', newline='\n') as f:
     for e in sorted(fns):
         if e not in RESTART: f.write('    case 0x%06X: g_%06X(c); return 1;\n' % (e, e))
     for e in sorted(EXITS): f.write('    case 0x%06X: c->ret = 0x%06X; return 1;   /* exit */\n' % (e, e))
-    for e in sorted(HAND): f.write('    case 0x%06X: %s(c); rt_rts(c); return 1;\n' % (e, HAND[e]))
+    for e in sorted(HAND): f.write('    case 0x%06X: c->ret = 0; %s(c); rt_after_hand(c); return 1;\n' % (e, HAND[e]))
     f.write('    }\n    return 0;\n}\n\n')
     f.write('void rt_unknown(uint32_t from, uint32_t target)\n{\n'
             '    fprintf(stderr, "generated code at %06X: no translation for %06X\\n", (unsigned)from, (unsigned)target);\n'

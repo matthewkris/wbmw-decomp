@@ -194,6 +194,15 @@ void rt_unknown(uint32_t from, uint32_t target);
  * back to the 68000 at `target` (c->ret = target; the generated callers unwind); a native build,
  * where everything is translated, stops. */
 void rt_leave(Cpu *c, uint32_t from, uint32_t target);
+/* After a hand port (called with c->ret = 0): it returned, so do the original's rts; or it set
+ * c->ret to carry on in the original's code there (with the stack as it left it), as the original
+ * does when it jumps away instead of returning (port/world.h, port_continue_at). */
+static inline void rt_after_hand(Cpu *c)
+{
+    if (!c->ret) { rt_rts(c); return; }
+    uint32_t t = c->ret;
+    if (!rt_dispatch(c, t)) rt_leave(c, 0, t);
+}
 /* native build: generated code calls this at a poll point (a loop waiting for an interrupt,
  * analysis/native.json "poll"); the host runs a frame and the interrupt there */
 void rt_poll(Cpu *c, uint32_t at);

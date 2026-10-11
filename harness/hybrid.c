@@ -291,6 +291,7 @@ static void run_port(int idx)
 {
     Cpu c; get_cpu(&c);
     rt_steps = 0;
+    c.ret = 0;
     R(idx)->fn(&c);
     if (idx == break_idx) c.a[7] ^= 2;              /* the stack pointer: compared in every check */
     if (idx == watch_break_idx)                     /* every register outside the contract */
@@ -300,6 +301,7 @@ static void run_port(int idx)
         }
     uint32_t ret;
     if (pops(idx)) ret = c.ret;                     /* generated: it did the rts (maybe elsewhere) */
+    else if (c.ret) ret = c.ret;                    /* hand port that carries on in the original there (world.h) */
     else { ret = rd32(c.a[7]); c.a[7] += 4; }       /* hand port: the original's rts */
     set_cpu(&c);
     m68k_set_reg(M68K_REG_PC, ret);
@@ -853,6 +855,20 @@ int hybrid_fuzz(const char *name, long count)
             ram[0xC600 + e] = (uint8_t)(rnd() % 2 ? 0 : rnd());                  /* -$3A00 */
             static const uint8_t anims[] = {0, 2, 4, 6, 8, 0xA, 0xE, 0x10, 0x12, 0x14, 0x18, 0x1A};
             ram[0xC302 + e] = anims[rnd() % 12];                                  /* -$3CFE */
+            /* batch 3: a pickup's kind, being hit, harm from outside, health near the end (so
+             * the revival item and death are reached), the tile above */
+            if (!strcmp(name, "PlayerGold")) m68k_set_reg(M68K_REG_D0, (rnd() % 12) * 2);
+            static const uint8_t hits[] = {0, 0x80, 0x81, 0x10, 0x40, 0x50, 0x90};
+            ram[0xD503 + e] = rnd() % 4 ? hits[rnd() % 7] : (uint8_t)rnd();        /* -$2AFD */
+            ram[0x9854] = (uint8_t)(rnd() % 3 ? rnd() & 3 : 0);
+            put_word(0x9856, rnd() % 0x100);
+            put_word(0xDA00 + e, rnd() % 2 ? 0x40 + rnd() % 0x100 : rnd() % 0x800);   /* health, -$2600 */
+            put_word(0x9F00, 0x200 + (rnd() % 8) * 0x100);
+            put_word(0xDC02 + e, rnd() % 0x200);                                 /* the hit's damage */
+            put_word(0x9EDC, tiles[rnd() % 10]);
+            ram[0x95D1] = (uint8_t)(rnd() % 4);
+            ram[0x959D] = (uint8_t)(rnd() % 2 ? 0 : 1 + rnd() % 3);              /* revival items ($23E4: item $2A) */
+            put_long(0x962C, rnd() % 3 ? rnd() % 1000000 : 999999 - rnd() % 300);   /* gold, near the cap */
             if (rnd() % 2) {                        /* at a ladder or vine: painted into the map */
                 static uint8_t ladders[16]; static int nl = -1;  /* attributes of type $4xxx */
                 if (nl < 0) {

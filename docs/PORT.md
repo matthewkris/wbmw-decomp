@@ -443,6 +443,35 @@ stops with a message on state 9, where the original would jump into the followin
 Results: 0 mismatches over the standard runs and the five owner states, 20,000 fuzz cases per
 routine per state (three states), every instruction covered, self-test caught 100 of 100.
 
+#### The player's frame, batch 3: damage and pickups (2026-10-11)
+
+| Routine | Address | |
+|---|---|---|
+| `PlayerDamage` | $DFDE | being hit (`-$2AFD`: bit 7 hurts: knocked back, the hurt state, the hit's damage after armour `$4964`; bits 4 and 6 push back only), then the surroundings: a hot area without the armour for it, a $Dxxx tile, harm signalled in `$FF9854`, $3xxx tiles at the feet, body or head; then the health. At 0 the revival item (`$2A`, its count at `$FF959D`) refills half the hearts, or the player dies |
+| `PlayerGold` | $F1EC | gold: a random amount by kind, the total kept to 999,999, the message and the display |
+| `PlayerItem` | $F256 | an item ($26) |
+| `PlayerHeart` | $F262 | $80 health, up to the maximum |
+
+The pickups are three of the targets of $F1B0's jump table; $F1B0 itself and the full heal
+($F282) stay generated for now.
+
+**Leaving instead of returning.** The revival refill ($F288) and death ($E22E) do not return:
+they reset the stack and yield. Readable C cannot yield yet, so it hands over: `port_continue_at`
+(`port/world.h`) sets `c->ret` to the address, with any return address the original would have
+on the stack there (`$DFE0` when reached from inside $E04E). Generated code now calls hand ports
+as `c->ret = 0; H(c); rt_after_hand(c)` (`port/m68k_rt.h`): a zero `ret` means the routine
+returned (do its rts); otherwise dispatch there, and carry on only if control comes back. The
+harness does the same for hand ports the 68000 reaches, and a shadow check then closes where the
+C left (PC and stack pointer). `analysis/hints.json` names the targets ($E22E, $F288) and two
+routines the C calls that were reached only by branching into them ($11170, $114C0).
+
+Results: 0 mismatches over the standard runs and the five owner states, 20,000 fuzz cases per
+routine per state (three states; the generator sets health near zero, the revival item present
+or not, gold near the cap, the hit and harm flags), every reachable instruction covered (two
+unreferenced `rts` are not), self-test caught. With the stack pointer deliberately broken, a
+case that hands over can never meet the original at that point, so a broken run stops after
+reporting it.
+
 ### Tasks and `Yield`: stackless now, coroutines for the rewrite (revised 2026-10-10)
 
 The first decision (2026-10-10) was stackful coroutines: each task on its own C stack, `Yield()`
