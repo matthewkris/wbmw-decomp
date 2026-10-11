@@ -69,6 +69,7 @@ void hybrid_report(void);
 void yield_survey_report(void);         /* WBMW_YIELD_SURVEY=1: where Yield returns */
 void hybrid_coverage(const char *path);
 int hybrid_fuzz(const char *name, long count);
+int hybrid_call(const char *name);      /* run one ported routine once, registers kept */
 int md_instr_hook(unsigned int pc);
 
 /* png.c */

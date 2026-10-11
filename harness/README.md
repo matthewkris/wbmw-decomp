@@ -78,6 +78,10 @@ In shadow mode, a check that never reaches the point where the C version ended i
 and HV counter values the C version read are replayed to the original, because C runs in no
 emulated time (`docs/PORT.md`, Tasks).
 
+`--call NAME` runs one ported or translated routine once, right after loading a state and
+before the first frame, and puts the registers back. With `--save-state-at` it edits states:
+after patching the health in a state file, `--call g_008AA2` redraws the hearts.
+
 If translated code loops 100 million branches in one call (waiting for time or an interrupt,
 which it never gets), the harness prints `STUCK` with the recent branch targets and exits with
 status 3, instead of hanging.

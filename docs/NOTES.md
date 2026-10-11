@@ -217,6 +217,11 @@ six-byte blocks at $18BB8 and $1A3DE are one-box lists. `$FF8C7A` (text pointer,
   sets a flag bit per tune number (through `$2758`) and shows "You play beautifully." ($2BA9); a
   wrong note "The melody isn't quite right." ($2BE5); no note in time "But I can't play very
   well." ($2BC4). The same check is a text-script command (`$19D2`).
+* Health: `$FFDA00` (the player's entity field) is the current health, high byte whole hearts,
+  low byte a fraction (`$40` shows as a part heart); `$FF9F00` is the maximum, same format. There
+  is no other copy. `$8AA2` redraws the hearts from it; the game calls it after damage, healing
+  and a new heart, so editing the health alone leaves the display stale (`harness --call
+  g_008AA2` redraws it). New game and continue set health to the maximum at `$8E64`.
 * Sleeping at an inn: after the yes, `Kgam` waits 300 frames by polling bit 0 of `$FF8006` (set
   by VBlank) at `$C262`, then restarts the gameplay task at `$8EB4`. `$3B8` and `$C262` are the
   only readers of that flag.

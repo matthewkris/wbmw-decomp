@@ -490,6 +490,27 @@ static void collision_scene(const char *name, uint32_t layer, uint32_t cols, uin
     }
 }
 
+/* --call NAME: run one ported or translated routine once on the machine as it is (a debugging
+ * and state-editing aid, e.g. g_008AA2 redraws the hearts after editing the health). The
+ * registers are put back afterwards, so the interrupted 68000 code carries on unaware; memory
+ * changes stay. Works in any port mode. */
+int hybrid_call(const char *name)
+{
+    int n = port_routine_count + gen_routine_count;
+    for (int i = 0; i < n; i++) {
+        const PortRoutine *r = i < port_routine_count ? &port_routines[i] : &gen_routines[i - port_routine_count];
+        if (strcmp(r->name, name)) continue;
+        Cpu saved, c; get_cpu(&saved); c = saved;
+        c.a[7] -= 4; wr32(c.a[7], 0);              /* a return address for a generated routine's rts */
+        r->fn(&c);
+        set_cpu(&saved);
+        fprintf(stderr, "called %s ($%06X)\n", name, (unsigned)r->addr);
+        return 0;
+    }
+    fprintf(stderr, "--call: no routine named %s\n", name);
+    return -1;
+}
+
 int hybrid_fuzz(const char *name, long count)
 {
     int idx = -1;
