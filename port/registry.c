@@ -17,6 +17,7 @@ void PlayerState(Cpu *), PlayerStartFrame(Cpu *), PlayerInput(Cpu *), PlayerBoun
      PlayerAnimate(Cpu *), PlayerSword(Cpu *), PlayerSpecial(Cpu *),
      PlayerDamage(Cpu *), PlayerGold(Cpu *), PlayerItem(Cpu *), PlayerHeart(Cpu *), PlayerUpdate(Cpu *);
 void TaskCallSystem(Cpu *), TaskCallUser(Cpu *);
+void Hearts(Cpu *), SpawnItem(Cpu *), SpawnItemAt(Cpu *), PlayerSwordTip(Cpu *);   /* hud.c, effects.c, player.c */
 void MagicStart(Cpu *), MagicFrame(Cpu *), MagicShieldHit(Cpu *),   /* magic.c */
      QuakeShaking(Cpu *), QuakeRocks(Cpu *), QuakeSettling(Cpu *), QuakeEnding(Cpu *), ThunderFlashes(Cpu *);   /* task.c: task passes on coroutines */
 void PlatformsSideways(Cpu *), PlatformsVertical(Cpu *);   /* movement.c: ordinary C, with contracts */
@@ -116,6 +117,10 @@ const PortRoutine port_routines[] = {
     {0x00F1EC, 0x00F256, "PlayerGold", PlayerGold, CT_SP},       /* pickups: reached from $F1B0's table */
     {0x00F256, 0x00F262, "PlayerItem", PlayerItem, CT_SP},
     {0x00F262, 0x00F282, "PlayerHeart", PlayerHeart, CT_SP},
+    {0x008AA2, 0x008B62, "Hearts", Hearts, CT_SP | CT_A0 << 4},   /* hud.c: leaves a4 the player */
+    {0x01090C, 0x010910, "SpawnItem", SpawnItem},                 /* effects.c: every register as the original */
+    {0x010910, 0x010A1E, "SpawnItemAt", SpawnItemAt},
+    {0x00EE70, 0x00EF12, "PlayerSwordTip", PlayerSwordTip, CT_SP},
     {0x011170, 0x01141A, "MagicStart", MagicStart, CT_SP},       /* magic.c; a potion may carry on at $F288 */
     {0x01141A, 0x0114C0, "MagicFrame", MagicFrame, CT_SP},       /* may carry on at $11590 or $11780 off a pass */
     {0x0114C0, 0x011568, "MagicShieldHit", MagicShieldHit, CT_SP},

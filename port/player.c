@@ -87,6 +87,8 @@ enum { S_HURT, S_STAND, S_WALK, S_AIR, S_WATER, S_DUCK, S_UP_ATTACK, S_LADDER, S
 #define LADDER        0x4000          /* collision types: a ladder; with bit 3 its top */
 #define WATER         0x7000
 
+void hearts(void);                    /* hud.c: the hearts drawn again ($8AA2) */
+static void sword_tip(Ent e, uint32_t list);
 static Cpu *cpu;                      /* the call into C: a real stack for calls into the 68000 */
 
 static uint8_t held(void)    { return rd8(HELD); }
@@ -434,9 +436,7 @@ static void state_up_attack(Ent e)
         }
         set8(CTRL, 0x10);
         wr32(ATTACK_BOX(e), 0xF400);
-        Cpu t = *cpu;
-        t.a[4] = e; t.a[0] = 0xE9F2 + 2 * rd8(ATTACK_STEP(e));
-        call_68k(&t, 0xEE70);
+        sword_tip(e, 0xE9F2 + 2 * rd8(ATTACK_STEP(e)));
     }
     wr8(ATTACK_TIME, (uint8_t)(rd8(ATTACK_TIME) - 1));
     if (rd8(ATTACK_TIME)) return;
@@ -645,14 +645,57 @@ static uint32_t random32(void)
     return t.d[0];
 }
 
-/* $10910: an effect (or item) of type `kind` at x, y; returns the entity the spawner left in a0
- * (when no slot is free, the last one it looked at) */
+/* $10910 (effects.c): an effect (or item) of type `kind` at x, y; returns the entity the
+ * spawner left in a0 (when no slot is free, $C0) */
+void SpawnItem(Cpu *), SpawnItemAt(Cpu *);
 static Ent spawn_effect(Ent e, uint16_t kind, int16_t x, int16_t y)
 {
     Cpu t = *cpu;
     t.a[4] = e; t.d[0] = kind; t.d[1] = (uint16_t)x; t.d[2] = (uint16_t)y;
-    call_68k(&t, 0x10910);
+    SpawnItemAt(&t);
     return t.a[0];
+}
+
+/* the x of a point beside the player, mirrored when it faces left */
+static int16_t beside(Ent e, uint8_t dx)
+{
+    if (rd8(e - 0x3FFE) & 8) dx = (uint8_t)-(uint8_t)(dx + 1);
+    return (int16_t)((int8_t)dx + rdw(X(e)));
+}
+
+/* $EE70: the sword's tip, the first point of the list (x, y from the player; $80: none). A
+ * breakable block there (its collision byte 2, $26F0) is broken ($B2BA). With the power spell
+ * on (FALL_FLAGS bit 5), the swing's script ($9F2C, at step $9F2A) leaves sparkles ($216) at
+ * the points of its next step. */
+static void sword_tip(Ent e, uint32_t list)
+{
+    uint8_t dx = rd8(list);
+    if (dx != 0x80) {
+        int16_t x = beside(e, dx), y = (int16_t)((int8_t)rd8(list + 1) + rdw(Y(e)));
+        Cpu t = *cpu;
+        t.a[4] = e; t.a[3] = 0xFFFF9754u; t.a[0] = list + 2;
+        t.d[6] = (t.d[6] & 0xFFFF0000u) | (uint16_t)((uint16_t)x >> 4);
+        t.d[7] = (t.d[7] & 0xFFFF0000u) | (uint16_t)(((uint16_t)y & 0xFFF0) << 2);
+        call_68k(&t, 0x26F0);                       /* the block's collision byte */
+        if ((uint8_t)t.d[1] == 2) call_68k(&t, 0xB2BA);
+    }
+    if (!(rd8(FALL_FLAGS) & 0x20)) return;
+    int16_t step = rdw(ATTACK_STEP_N);
+    if (step < 0) return;
+    uint32_t script = rd32(ATTACK_SCRIPT);
+    int16_t off;
+    while (!(off = rdw(script + (uint32_t)(int32_t)(int16_t)(2 * step)))) {
+        step = rdw(script + (uint32_t)(int32_t)(int16_t)(2 * step) + 2);   /* a jump in the script */
+        if (step < 0) { wr8(ATTACK_STEP_N, 0xFF); return; }                 /* its end */
+        wrw(ATTACK_STEP_N, step);
+    }
+    wrw(ATTACK_STEP_N, rdw(ATTACK_STEP_N) + 1);
+    for (uint32_t p = script + (uint32_t)(int32_t)off; (dx = rd8(p)) != 0x80; p += 2) {
+        Cpu t = *cpu;
+        t.a[4] = e; t.d[0] = 0x216;
+        t.d[1] = (uint16_t)beside(e, dx); t.d[2] = (uint16_t)((int8_t)rd8(p + 1) + rdw(Y(e)));
+        SpawnItem(&t);
+    }
 }
 
 static void call_with_d0(Ent e, uint32_t addr, uint16_t d0)
@@ -931,9 +974,7 @@ static void swing_points(Ent e)
     list += (uint32_t)(int32_t)rdw(list + 2 * step);
     wr32(ATTACK_BOX(e), list + 2);
     wrw(HIT_POWER(e), rdw(POWER(e)));
-    Cpu t = *cpu;
-    t.a[4] = e; t.a[0] = list;
-    call_68k(&t, 0xEE70);
+    sword_tip(e, list);
 }
 
 /* $EDE0: the trail the swing leaves (a script of effects), by form, ducking and sword */
@@ -1030,8 +1071,7 @@ static void pick_heart(Cpu *c)
     uint16_t h = (uint16_t)(rdw(HEALTH(e)) + 0x80);
     if (h > rd16(MAX_HEALTH)) h = rd16(MAX_HEALTH);
     wrw(HEALTH(e), h);
-    Cpu t = *c;
-    call_68k(&t, 0x8AA2);
+    hearts();
 }
 
 /* $E188: thrown up a little, unless still blinking from the last hit */
@@ -1120,7 +1160,7 @@ static int dying(Cpu *c, Ent e)
         task_end_pass(c, 0);                        /* the pass ends; the next starts at the frame */
     }
     set_anim(e, 8);
-    with_player(c, e, 0x8AA2);
+    hearts();
     for (;;) {
         task_wait_frame(c, 0xE298);
         cpu = c;
@@ -1145,7 +1185,7 @@ static void refill(Cpu *c, Ent e)
         uint16_t h = (uint16_t)(rd16(HEALTH(e)) + add);
         if (h >= rd16(MAX_HEALTH)) { h = rd16(MAX_HEALTH); wrw(REFILL, 0); }
         wrw(HEALTH(e), h);
-        with_player(c, e, 0x8AA2);
+        hearts();
     }
     with_player(c, e, 0xA8E);                       /* unfreeze */
     queue_sound(0x3E);
@@ -1167,7 +1207,7 @@ static int lose_health(Cpu *c, int16_t amount, int nested)
     Ent e = c->a[4];
     wrw(HEALTH(e), rdw(HEALTH(e)) - amount);
     if (rdw(HEALTH(e)) >= 0x40) {
-        Cpu t = *c; call_68k(&t, 0x8AA2);           /* the hearts */
+        hearts();
         return 0;
     }
     wrw(HEALTH(e), 0);
@@ -1175,7 +1215,7 @@ static int lose_health(Cpu *c, int16_t amount, int nested)
     call_68k(&t, 0x23E4);                           /* has the item? (Z clear if so) */
     if (!(t.ccr & CC_Z)) {
         t = *c; t.d[0] = REVIVAL; call_68k(&t, 0x24DC);   /* used up */
-        t = *c; call_68k(&t, 0x8AA2);
+        hearts();
         wrw(REFILL, (uint16_t)(((uint16_t)(rd16(MAX_HEALTH) + 0x100) >> 1) & 0xFF00));   /* half */
         wr8(HIT_STATE(e), 0);
         if (on_pass) { refill(c, e); return 0; }
@@ -1333,6 +1373,7 @@ void PlayerBubbles(Cpu *c)    { cpu = c; bubbles(c->a[4]); }
 void PlayerHurtBoxes(Cpu *c)  { cpu = c; hurt_boxes(c->a[4]); }
 void PlayerAnimate(Cpu *c)    { cpu = c; animate(c->a[4]); }
 void PlayerSword(Cpu *c)      { cpu = c; sword(c->a[4]); }
+void PlayerSwordTip(Cpu *c)   { cpu = c; sword_tip(c->a[4], c->a[0]); }
 void PlayerSpecial(Cpu *c)    { cpu = c; special(c->a[4]); }   /* may carry on at $F288 */
 void PlayerDamage(Cpu *c)     { cpu = c; on_pass = 0; damage(c); }
 void PlayerUpdate(Cpu *c)     { cpu = c; on_pass = 1; update(c); on_pass = 0; }
