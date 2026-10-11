@@ -123,6 +123,9 @@ F2 overwrites the same file each time.
    `harness/hybrid.c` and are game-specific; move them to a game file when the second game
    starts.
 
+Features the owner wants later (settings menu on pause, exit confirmation, wide screen) are
+listed in `docs/IDEAS.md`; add new requests there.
+
 Every ported routine is accepted only with zero shadow mismatches and every instruction of the
 original covered (gameplay runs plus fuzzing); see "How a ported routine is accepted" in
 `docs/PORT.md`.
