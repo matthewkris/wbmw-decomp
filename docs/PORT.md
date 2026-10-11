@@ -407,6 +407,27 @@ carrying a vine next to it, and picks the item routines from those the game stor
 the standard runs and the five owner states, 60,000 fuzz cases (three states), every
 instruction covered; the self-test is caught 100 out of 100 times.
 
+#### The player's frame, batch 1 (2026-10-11)
+
+Six more of the routines the player's update ($DD08) runs, in `port/player.c`:
+
+| Routine | Address | |
+|---|---|---|
+| `PlayerStartFrame` | $E1A6 | clears the attack and hit boxes, loads the speed settings, counts the timers down |
+| `PlayerInput` | $DE6A | the buttons from the controller or a script (input mode `$FF9F05`: 0 pad, 2 walk right to x = $1140, 4 still, 6 a routine at `$FF9F22`, 8 none); an item used with up or down keeps that direction while held; `PRESSED` = newly down |
+| `PlayerBounce` | $DFA0 | a $9xxx tile under the feet springs the player up (velocity -$680, sound $33, a spark) |
+| `PlayerAccel` | $EF4E | gravity, acceleration and friction. The ground's type is tested a byte at a time (`btst #n,-$30FE(a4)` reads the type's high byte): bit 9 is ice (a quarter of the acceleration, double top speed, no friction), and on icy slopes (bit 8 too) the slope's push from the table at $3E32 is added |
+| `PlayerSplash` | $DD7C | entering or leaving water (or a $5000 tile) splashes at the surface (sound $47) |
+| `PlayerBubbles` | $DDDE | under water, a bubble every 120 frames, sooner while moving; hurt, scattered. It writes the bubble's speed into whatever entity the spawner returned, even when no slot was free: the C does too |
+| `PlayerHurtBoxes` | $EFE2 | the player's own hit-box list for the pose: knocked back, standing (by shield), the up attack (by sword) |
+
+They call the code not yet rewritten (`AccelX`/`AccelY`/`FrictionX`, `Random`, the effect spawner
+$10910, `QueueSound`, the input routines) through `call_68k`. The `PlayerState` fuzz generator
+now covers them all (named `Player*`): input modes and their routines ($DB36, $D352, $D87E),
+pad bits, ground types with ice and icy slopes, poses and shields, bounce and water tiles.
+Results: 0 mismatches over the standard runs and the five owner states, 20,000 fuzz cases per
+routine per state (three states), every instruction covered, self-test caught 100 of 100.
+
 ### Tasks and `Yield`: stackless now, coroutines for the rewrite (revised 2026-10-10)
 
 The first decision (2026-10-10) was stackful coroutines: each task on its own C stack, `Yield()`

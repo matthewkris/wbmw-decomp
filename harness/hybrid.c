@@ -804,7 +804,7 @@ int hybrid_fuzz(const char *name, long count)
                 m68k_set_reg(M68K_REG_D7, (rnd() << 16) | ((0x4000 + row * 64) & 0xFFFF));
             }
         }
-        if (!strcmp(name, "PlayerState")) {
+        if (!strncmp(name, "Player", 6)) {
             /* the player, in a valid state and form, with random buttons and ground; often at a
              * ladder or vine of the map, or by a platform carrying a vine */
             uint32_t e = (uint32_t)(int32_t)(int16_t)(ram[0x9EEE] << 8 | ram[0x9EEF]);
@@ -822,8 +822,8 @@ int hybrid_fuzz(const char *name, long count)
             for (uint32_t a = 0x9F07; a <= 0x9F09; a++) ram[a] = (uint8_t)(rnd() % 3 ? 0 : rnd() % 8);
             ram[0x9F0E] = (uint8_t)(rnd() % 4); ram[0x9F12] = (uint8_t)(rnd() % 40);
             put_word(0x9EF2, (uint32_t)(-0x300 + small(0x100))); put_word(0x9EF4, (uint32_t)(rnd() % 5));
-            static const uint16_t tiles[] = {0, 0x4000, 0x4008, 0x7000, 0x8000, 0xA000, 0x1008, 0x3000};
-            put_word(0x9EDE, tiles[rnd() % 8]); put_word(0x9EE0, tiles[rnd() % 8]); put_word(0x9EE2, tiles[rnd() % 8]);
+            static const uint16_t tiles[] = {0, 0x4000, 0x4008, 0x7000, 0x8000, 0xA000, 0x1008, 0x3000, 0x9008, 0x5000};
+            put_word(0x9EDE, tiles[rnd() % 10]); put_word(0x9EE0, tiles[rnd() % 10]); put_word(0x9EE2, tiles[rnd() % 10]);
             ram[0x95CE] = (uint8_t)(rnd() % 8);
             static const uint32_t items[] = {0xA5AA, 0xA60A, 0xA68E, 0xA898, 0xA8A6, 0xA8D8, 0xA902, 0xADAC, 0x1822A};   /* the item routines the game stores */
             ram[0x9980] = (uint8_t)(rnd() % 2); ram[0x9981] = (uint8_t)(rnd() % 2);
@@ -832,6 +832,19 @@ int hybrid_fuzz(const char *name, long count)
             put_long(0x9F2C, scripts[rnd() % 5]); put_word(0x9F2A, rnd() % 3 ? rnd() % 4 : 0xFFFF);
             ram[0xD400 + e] = (uint8_t)(rnd() % 4);                     /* the attack step, -$2C00 */
             if (rnd() % 2) { ram[0xD800 + e] = 0; ram[0xD801 + e] = (uint8_t)(rnd() % 10); }   /* near a rung's end */
+            /* the rest of the player's frame: input modes and scripts, the pad, what it stands on
+             * (ice, icy slopes), poses, shields, the timers */
+            static const uint8_t modes[] = {0, 0, 2, 4, 6, 8};
+            static const uint32_t scripts_in[] = {0xDB36, 0xD352, 0xD87E};
+            ram[0x9F05] = modes[rnd() % 6]; put_long(0x9F22, scripts_in[rnd() % 3]);
+            ram[0x8A7A] = (uint8_t)rnd(); ram[0x9F0C] = (uint8_t)rnd();
+            static const uint16_t grounds[] = {0, 0x0208, 0x0308, 0x0318, 0x0368, 0x0119, 0x1008, 0x9008};
+            put_word(0xCF02 + e, rnd() % 4 ? grounds[rnd() % 8] : rnd());
+            static const uint8_t poses[] = {0, 0, 2, 0x80, 0x82};
+            ram[0x9F0F] = poses[rnd() % 5];
+            ram[0x95D0] = (uint8_t)(rnd() % 4 ? rnd() % 6 : 0x80 | rnd());
+            ram[0x9F0A] = (uint8_t)(rnd() % 3 ? 0 : rnd() % 4);
+            if (rnd() % 4 == 0) put_word(0xC800 + e, 0x1140 + small(4));          /* the walk's end */
             if (rnd() % 2) {                        /* at a ladder or vine: painted into the map */
                 static uint8_t ladders[16]; static int nl = -1;  /* attributes of type $4xxx */
                 if (nl < 0) {
