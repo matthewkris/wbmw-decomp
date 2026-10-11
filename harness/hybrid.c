@@ -825,9 +825,9 @@ int hybrid_fuzz(const char *name, long count)
             static const uint16_t tiles[] = {0, 0x4000, 0x4008, 0x7000, 0x8000, 0xA000, 0x1008, 0x3000};
             put_word(0x9EDE, tiles[rnd() % 8]); put_word(0x9EE0, tiles[rnd() % 8]); put_word(0x9EE2, tiles[rnd() % 8]);
             ram[0x95CE] = (uint8_t)(rnd() % 8);
-            static const uint32_t items[] = {0xA5AA, 0xA60A, 0xA68E, 0xA898, 0xA8D8, 0xA902, 0xADAC, 0x1822A};   /* the item routines the game stores ($A8A6 only from dead code) */
+            static const uint32_t items[] = {0xA5AA, 0xA60A, 0xA68E, 0xA898, 0xA8A6, 0xA8D8, 0xA902, 0xADAC, 0x1822A};   /* the item routines the game stores */
             ram[0x9980] = (uint8_t)(rnd() % 2); ram[0x9981] = (uint8_t)(rnd() % 2);
-            put_long(0x998A, items[rnd() % 8]); put_long(0x998E, items[rnd() % 8]);
+            put_long(0x998A, items[rnd() % 9]); put_long(0x998E, items[rnd() % 9]);
             static const uint32_t scripts[] = {0xF5C8, 0xF594, 0xF530, 0xF4F6, 0xF55E};
             put_long(0x9F2C, scripts[rnd() % 5]); put_word(0x9F2A, rnd() % 3 ? rnd() % 4 : 0xFFFF);
             ram[0xD400 + e] = (uint8_t)(rnd() % 4);                     /* the attack step, -$2C00 */
