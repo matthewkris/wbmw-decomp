@@ -902,6 +902,61 @@ int hybrid_fuzz(const char *name, long count)
                 ram[0xD101 + e] |= (uint8_t)(rnd() % 2 ? 0x20 : 0);  /* PREV_COLL: on it */
             }
         }
+        if (!strncmp(name, "Magic", 5)) {
+            /* magic (port/magic.c): a kind and its state, enemies round the player, the magic's
+             * own entities part-way through; where the original resets the stack to the task's
+             * base ($FF9662) and yields, that base is this case's return address */
+            uint32_t e = (uint32_t)(int32_t)(int16_t)(ram[0x9EEE] << 8 | ram[0x9EEF]);
+            m68k_set_reg(M68K_REG_A4, e);
+            put_long(0x9662, m68k_get_reg(NULL, M68K_REG_SP) - 4);
+            int start = !strcmp(name, "MagicStart");
+            static const uint8_t frames[] = {0, 1, 2, 3, 4, 5, 6, 7, 0, 2, 3, 4, 0, 2};
+            uint8_t kind = start ? (uint8_t)(rnd() % 13 | (rnd() % 8 ? 0 : 0x80)) : frames[rnd() % 14];   /* 13-127: off the table */
+            if (start) m68k_set_reg(M68K_REG_D0, (rnd() << 16) | kind);
+            ram[0x9F7A] = start ? (uint8_t)(rnd() % 4 ? 0 : 0x80) : (uint8_t)(rnd() % 8 ? 0x80 | (rnd() & 1) : rnd() & 1);
+            ram[0x9F7B] = start ? (uint8_t)rnd() : (uint8_t)(kind | (rnd() % 3 ? 0x80 : 0));
+            ram[0x9F06] = (uint8_t)(rnd() % 3 ? rnd() & ~4u : rnd());
+            put_word(0x9F16, rnd() % 4 ? rnd() % 0x2001 : rnd() % 3 ? rnd() % 16 : rnd());   /* the meter */
+            put_word(0x9962, rnd() % 2 ? 0 : rnd() % 16);
+            ram[0x9EF1] = (uint8_t)rnd(); ram[0x9659] = (uint8_t)rnd(); ram[0x9668] = (uint8_t)(rnd() % 5);
+            ram[0x9F04] = (uint8_t)(rnd() % 3);
+            ram[0x959E] = (uint8_t)(rnd() % 3 ? rnd() % 4 : rnd());               /* the potion */
+            for (uint32_t k2 = 0; k2 < 13; k2++) ram[0x95B8 + k2] = (uint8_t)(rnd() % 4 ? 1 + rnd() % 5 : rnd());
+            put_word(0x9F00, 0x200 + (rnd() % 16) * 0x100);
+            put_word(0xDA00 + e, rnd() % 3 ? rnd() % 0x1000 : (uint32_t)get_sword(0x9F00) & 0xFFFF);   /* the player's health */
+            ram[0x9F13] = (uint8_t)(rnd() % 2 ? rnd() : 0);
+            ram[0x9F7C] = (uint8_t)(rnd() % 3 ? rnd() % 8 : rnd()); ram[0x9F7D] = (uint8_t)(rnd() % 3 ? rnd() % 8 : rnd());
+            put_word(0x965A, rnd());
+            put_word(0xA11A, 0x40 + (rnd() % 4) * 4);
+            int32_t px = get_sword(0xC800 + e), py = get_sword(0xC900 + e);
+            for (uint32_t a = 0x40; a < 0x80; a += 4) {                         /* enemies */
+                ram[0xC000 + a] = (uint8_t)(rnd() % 3 ? 0xC1 | (rnd() & 0x3E) : rnd());
+                ram[0xD402 + a] = (uint8_t)(rnd() % 3 ? 0 : rnd() % 4);
+                put_word(0xDA00 + a, rnd() % 4 ? rnd() % 0x400 : rnd() % 2 ? 0 : rnd());
+                put_word(0xC800 + a, (uint32_t)(px + small(0x80))); put_word(0xC900 + a, (uint32_t)(py + small(0x60)));
+                put_word(0xDD00 + a, rnd()); ram[0xCF00 + a] = (uint8_t)rnd(); ram[0xC002 + a] = (uint8_t)rnd();
+                ram[0xCB00 + a] = (uint8_t)(rnd() % 24); ram[0xCB01 + a] = (uint8_t)(rnd() % 24);
+                ram[0xCB03 + a] = (uint8_t)(rnd() % 32);
+            }
+            put_word(0xDD02 + e, 0x40 + (rnd() % 16) * 4);                      /* who hit the player */
+            for (uint32_t s = 0xC0; s < 0xE0; s += 4) {                         /* the magic's entities */
+                uint32_t type = (rnd() % 4) * 2;
+                static const uint16_t sets[4] = {0x1400, 0x1406, 0x1402, 0x1408};
+                ram[0xC000 + s] = (uint8_t)(rnd() % 3 ? 0x80 | (rnd() & 0x41) : rnd() & 0x41);
+                put_word(0xD402 + s, type);
+                ram[0xD401 + s] = (uint8_t)((rnd() % 3) * 2 | (rnd() % 2 ? 0x80 : 0));
+                put_word(0xC300 + s, type == 4 && ram[0x9F04] == 2 ? 0x1404 : sets[type / 2]);
+                ram[0xC302 + s] = (uint8_t)(type == 4 ? (rnd() % 8) * 2 : (rnd() % 2) * 2);
+                ram[0xD800 + s] = (uint8_t)(type == 6 ? rnd() % 4 : rnd() % 3 ? rnd() % 6 : rnd());   /* the bolt: 3 steps */
+                ram[0xD801 + s] = (uint8_t)(rnd() % 3 ? 1 + rnd() % 3 : rnd());
+                ram[0xD802 + s] = (uint8_t)rnd(); ram[0xD803 + s] = (uint8_t)rnd();
+                put_word(0xD302 + s, rnd() % 3 ? 0x40 + (rnd() % 16) * 4 : 0xFFFF);
+                ram[0xC600 + s] = (uint8_t)(rnd() % 2 ? 0 : rnd());
+                put_word(0xC800 + s, (uint32_t)(px + small(0x40))); put_word(0xC900 + s, (uint32_t)(py + small(0x40)));
+                put_word(0xCA00 + s, rnd()); put_word(0xCA02 + s, rnd());
+                ram[0xCB00 + s] = (uint8_t)(rnd() % 16); ram[0xCB01 + s] = (uint8_t)(rnd() % 16);
+            }
+        }
         if (!strcmp(name, "Currents")) {            /* in water with a current, near the speed limit */
             ram[0x966B] = (uint8_t)(rnd() | (rnd() % 4 ? 1 : 0));
             put_word(0x9EE2, rnd() % 4 ? 0xB000 | (rnd() & 0xFFF) : rnd());

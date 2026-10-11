@@ -546,6 +546,59 @@ scenes above, 900 frames each, 0 mismatches: the fall and GAME OVER, and the hea
 to half. In replace mode the death scene matches the original frame for frame until the title
 screen, which the C version reaches a little earlier (the known time shift).
 
+#### Magic (2026-10-11)
+
+`port/magic.c` holds the special actions, $11170-$11BA3: A + left/right starts one ($11170,
+13 kinds), and a spell in progress (`$FF9F7A` bit 7) runs each frame after the player's update
+($1141A). What the kinds are:
+
+| Kind | Start | Each frame |
+|---|---|---|
+| 0 fire spirits | $11338: seven flames from the free magic slots (needs an enemy) | $11822: the spirits home in, hit, burst |
+| 1 quake | $11316 | $11590: the world freezes, the screen shakes, a rock falls on each enemy on the ground |
+| 2 thunder | $112E8 (needs an enemy) | $11740: a bolt crosses the screen; then three white flashes and every enemy is hit |
+| 3 power | $111E2: `$FF9F03` bit 5 | $11454: until the meter ($FF9F16, $2000, -8 a frame) is empty |
+| 4, 6, 7 shield | $1129E: `$FF9F03` bit 6 | $11474: the meter runs down; a hit on the player throws back sparks ($114C0), each costing meter |
+| 5 | $111CE: `$FF9962` = $B | |
+| 8-11 potions (items 43-46) | $1125C: the hearts refill by $100, $300, $500 or fully ($F288) | |
+| 12 | $11204: `$FF9962` = $A and player animation set $140A, in areas 2-3 | |
+
+Magic damage is a quarter of the player's maximum health (fire spirits: 1/32), divided by 4
+per step of the enemy's resistance to that magic (two bits of the enemy's -$2300 word; 3 is
+immune). Each use costs one of the spell's count at `$FF95B8 + kind` (the HUD's number).
+
+The quake and the thunder's flashes take over the gameplay task: the original resets the stack to
+the task's base, freezes the world and yields, then each pass of the task runs one frame of the
+spell (the resume addresses $115BC, $115DE, $11626, $1163E; $11792) until it restarts the loop at
+$8FFC. In C each is a loop with `task_wait_frame`, and each resume address is a registered entry
+too (`QuakeShaking` .. `ThunderFlashes`), so that a pass starting there with no loop waiting
+(a state loaded mid-spell) runs the same C from that point. Off a task pass (fuzzing) the frame
+hands over to the original's code with `port_continue_at` ($11590, $11780, and $F288 for a
+potion); `task_on_pass(c)` (port/task.h) tells which.
+
+Quirks of the original kept as they are:
+
+* A fire spirit whose enemy is gone looks for the next nearest, but steers that frame at entity
+  $80, where the search loop stopped, not at the enemy it found.
+* Casting fire spirits with fewer than seven free magic slots uses up the spell and does nothing.
+* "Is there an enemy?" ($11B4A, $11B76) answers with the flags of the first enemy's health, so an
+  enemy whose health has bit 15 set counts as none.
+* A shield spark's 8-frame free period is cleared again at once by `ClearEntity`, so every spark
+  costs meter.
+
+How it was checked: the standard runs; every kind cast (A + left/right, `--input`) from five
+owner states with the spell's count poked in (`--poke FF9F10=kk --poke FF95B8+k=05`), longer
+runs for the power and shield meters, the potions with `--poke FF959E=03` (the potion slot:
+`$23E4` has item 43+n when n <= that byte); and 20,000 fuzz cases each of `MagicStart`,
+`MagicFrame` and `MagicShieldHit` from three states (`harness/hybrid.c`, "Magic"), where the
+task's stack base ($FF9662) is set to the case's return address so the original's stack reset
+returns there too. The parts only reachable several frames into the quake (no free slot for a
+rock, the last enemy of the scan, the screen settling from below) were set up mid-spell with
+`--poke-at`. Results: 0 mismatches everywhere, every instruction of $11170-$11BA3 run; a
+corrupted result (`WBMW_PORT_BREAK`) is caught in every case. In replace mode, with the input
+given by game frame (`--input-game`), the spirits, quake, thunder and shield runs from
+`castle.state` match the original in RAM, VRAM and colours in every game frame.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

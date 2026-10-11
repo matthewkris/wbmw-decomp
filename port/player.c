@@ -967,15 +967,18 @@ static void sword(Ent e)
     clr8(SPRITE(e), 1);
 }
 
-/* $EF12: A + left or right starts the special action set for that side ($11170) */
-static void special(Ent e)
+/* $EF12: A + left or right starts the special action set for that side (magic.c, $11170).
+ * Returns 1 if it handed over to the original's code (a potion, off a task pass). */
+int magic_start(Cpu *c, uint8_t kind);
+static int special(Ent e)
 {
-    if ((rd8(AREA_FLAGS) & 0x80) || !(held() & 0x40) || (rd8(FLAGS(e)) & 0xE0)) return;
+    if ((rd8(AREA_FLAGS) & 0x80) || !(held() & 0x40) || (rd8(FLAGS(e)) & 0xE0)) return 0;
     uint8_t which;
     if (pressed() & 4) which = rd8(SPECIAL_LEFT);
     else if (pressed() & 8) which = rd8(SPECIAL_RIGHT);
-    else return;
-    call_with_d0(e, 0x11170, which);
+    else return 0;
+    cpu->a[4] = e;
+    return magic_start(cpu, which);
 }
 
 /* ---- batch 3: pickups and damage ---- */
@@ -1149,6 +1152,11 @@ static void refill(Cpu *c, Ent e)
     task_end_pass(c, 0x8FFC);
 }
 
+/* the refill for a potion (magic.c), on the player's task pass */
+void player_refill(Cpu *c) { cpu = c; refill(c, c->a[4]); }
+
+void magic_shield_hit(Cpu *c);
+
 /* $E0A4: lose health. Below $40: saved by the revival item (the hearts refill to half, $F288),
  * or dead ($E22E); both reset the stack and yield. In the player's update they run here (on the
  * task's pass); called on their own (fuzzing) they carry on in the original's code. Returns 1
@@ -1197,7 +1205,7 @@ static int being_hit(Cpu *c)
         return lose_health(c, (int16_t)t.d[0], 1);
     }
     if (hit & 0x10) {
-        if (rd8(FALL_FLAGS) & 0x40) { Cpu t = *c; call_68k(&t, 0x114C0); return 0; }
+        if (rd8(FALL_FLAGS) & 0x40) { Cpu t = *c; magic_shield_hit(&t); return 0; }   /* the shield */
         queue_sound(0x30);
     } else if (hit & 0x40) queue_sound(0x46);
     else return 0;
@@ -1276,7 +1284,7 @@ static void update(Cpu *c)
     pickups(c);
     bounce(e);
     player_state(e);
-    special(e);
+    if (special(e)) return;
     sword(e);
     hurt_boxes(e);
     accelerate(e);
@@ -1325,7 +1333,7 @@ void PlayerBubbles(Cpu *c)    { cpu = c; bubbles(c->a[4]); }
 void PlayerHurtBoxes(Cpu *c)  { cpu = c; hurt_boxes(c->a[4]); }
 void PlayerAnimate(Cpu *c)    { cpu = c; animate(c->a[4]); }
 void PlayerSword(Cpu *c)      { cpu = c; sword(c->a[4]); }
-void PlayerSpecial(Cpu *c)    { cpu = c; special(c->a[4]); }
+void PlayerSpecial(Cpu *c)    { cpu = c; special(c->a[4]); }   /* may carry on at $F288 */
 void PlayerDamage(Cpu *c)     { cpu = c; on_pass = 0; damage(c); }
 void PlayerUpdate(Cpu *c)     { cpu = c; on_pass = 1; update(c); on_pass = 0; }
 void PlayerGold(Cpu *c)       { cpu = c; pick_gold(c); }

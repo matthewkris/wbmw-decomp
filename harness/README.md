@@ -80,7 +80,10 @@ and HV counter values the C version read are replayed to the original, because C
 emulated time (`docs/PORT.md`, Tasks).
 
 `--poke ADDR=HEX` writes the bytes HEX into work RAM at ADDR (e.g. `FF9F00=0200`, a word) right
-after loading a state, to set up a scene; it can be given several times.
+after loading a state, to set up a scene; it can be given several times. `--poke-at F
+ADDR=HEX` writes them just before frame F runs, to set up a scene part-way (the magic's quake
+was checked with all eight magic slots filled mid-spell this way). At most 32 pokes in all; a
+long HEX string writes many bytes with one.
 
 `--call NAME` runs one ported or translated routine once, right after loading a state and
 before the first frame, and puts the registers back. With `--save-state-at` it edits states:
