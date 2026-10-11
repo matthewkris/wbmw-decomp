@@ -47,7 +47,8 @@ checked; `tools/coverage.py work/map.json FILE ...` merges sessions.
 | Enter | Start | Start |
 
 Esc quits, P pauses, Tab (held) runs as fast as possible, F12 writes a screenshot to the
-current directory, F5 resets, F2 saves a save state and F4 loads it. The save EEPROM is read from FILE at start and written back on
+current directory, F5 resets, F2 saves a save state and F4 loads it. F11 or Alt+Enter switches
+full screen (`--fullscreen` starts in it). The save EEPROM is read from FILE at start and written back on
 exit (default `play.sav` in the current directory), so CONTINUE works across sessions. There is
 sound (the Z80 and both sound chips; `--mute` to turn it off).
 

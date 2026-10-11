@@ -1,15 +1,19 @@
 /* Live window for the reference harness: the same machine as `harness`, shown in an SDL2 window
  * at 60 frames a second, with keyboard and game controller input, and sound (harness/sound.c).
  *
- *   play ROM [--scale N] [--save FILE] [--state FILE] [--load] [--port replace|shadow] [--coverage FILE]
+ *   play ROM [--scale N] [--fullscreen] [--save FILE] [--state FILE] [--load] [--port replace|shadow] [--coverage FILE]
  *
  * --load starts from the state file (as if F4 were pressed at once). The state carries the save
  * EEPROM too, so it replaces what --save loaded; --save still names where it is written at exit.
  *
  * --mute plays without sound.
  *
+ * --fullscreen starts in full screen (borderless, at the desktop's size); F11 or Alt+Enter
+ * switches. The picture keeps its proportions, with black bars at the sides.
+ *
  * Keys: arrows = D-pad, Z = A, X = B, C = C, Enter = Start.
  *       Esc quits, P pauses, Tab (held) runs fast, F12 writes a screenshot, F5 resets,
+ *       F11 or Alt+Enter switches full screen,
  *       F2 saves a save state to the state file (default play.state), F4 loads it.
  * Controller: D-pad or left stick, X = A, A = B, B = C, Start = Start.
  * The save EEPROM is loaded from and written back to FILE (default play.sav). */
@@ -32,7 +36,7 @@ static uint8_t keys_down(const Uint8 *k)
     if (k[SDL_SCANCODE_Z]) m |= B_A;
     if (k[SDL_SCANCODE_X]) m |= B_B;
     if (k[SDL_SCANCODE_C]) m |= B_C;
-    if (k[SDL_SCANCODE_RETURN]) m |= B_START;
+    if (k[SDL_SCANCODE_RETURN] && !(SDL_GetModState() & KMOD_ALT)) m |= B_START;   /* Alt+Enter is full screen */
     return m;
 }
 
@@ -53,10 +57,16 @@ static uint8_t pad_down(SDL_GameController *gc)
     return m;
 }
 
+static void set_fullscreen(SDL_Window *win, int on)
+{
+    SDL_SetWindowFullscreen(win, on ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);    /* borderless, at the desktop's size */
+    SDL_ShowCursor(on ? SDL_DISABLE : SDL_ENABLE);
+}
+
 int main(int argc, char **argv)
 {
     const char *rom_path = NULL, *save = "play.sav", *state = "play.state", *cov = NULL;
-    int scale = 0, port = PORT_OFF, load = 0, mute = 0;    /* scale 0: fit the screen */
+    int scale = 0, port = PORT_OFF, load = 0, mute = 0, fullscreen = 0;    /* scale 0: fit the screen */
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--save") && i + 1 < argc) save = argv[++i];
@@ -64,12 +74,13 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--coverage") && i + 1 < argc) cov = argv[++i];
         else if (!strcmp(argv[i], "--load")) load = 1;
         else if (!strcmp(argv[i], "--mute")) mute = 1;
+        else if (!strcmp(argv[i], "--fullscreen")) fullscreen = 1;
         else if (!strcmp(argv[i], "--port") && i + 1 < argc) {
             i++; port = !strcmp(argv[i], "replace") ? PORT_REPLACE : !strcmp(argv[i], "shadow") ? PORT_SHADOW : PORT_OFF;
         }
         else rom_path = argv[i];
     }
-    if (!rom_path) { fprintf(stderr, "usage: play ROM [--scale N] [--save FILE] [--state FILE] [--load] [--port replace|shadow] [--coverage FILE]\n"); return 2; }
+    if (!rom_path) { fprintf(stderr, "usage: play ROM [--scale N] [--fullscreen] [--save FILE] [--state FILE] [--load] [--port replace|shadow] [--coverage FILE]\n"); return 2; }
     if (md_load_rom(rom_path)) return 1;
     md_power_on();
     if (cov) hybrid_coverage(cov);                  /* written at exit, with the report */
@@ -84,12 +95,13 @@ int main(int argc, char **argv)
         if (SDL_GetDisplayUsableBounds(0, &r) == 0)
             while (scale > 1 && (224 * scale > r.h * 9 / 10 || 256 * scale > r.w * 9 / 10)) scale--;
     }
-    SDL_Window *win = SDL_CreateWindow("Wonder Boy in Monster World - harness  (arrows, Z/X/C, Enter; P pause, Tab fast, F2/F4 state, F12 shot)",
+    SDL_Window *win = SDL_CreateWindow("Wonder Boy in Monster World - harness  (arrows, Z/X/C, Enter; P pause, Tab fast, F2/F4 state, F11 full screen, F12 shot)",
                                        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 256 * scale, 224 * scale,
                                        SDL_WINDOW_RESIZABLE);
     SDL_Renderer *ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
     if (!win || !ren) { fprintf(stderr, "SDL: %s\n", SDL_GetError()); return 1; }
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
+    if (fullscreen) set_fullscreen(win, 1);
     SDL_Texture *tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, 320, 224);
     SDL_GameController *gc = NULL;
     audio_open();
@@ -108,8 +120,11 @@ int main(int argc, char **argv)
             else if (e.type == SDL_CONTROLLERDEVICEADDED && !gc) gc = SDL_GameControllerOpen(e.cdevice.which);
             else if (e.type == SDL_CONTROLLERDEVICEREMOVED && gc) { SDL_GameControllerClose(gc); gc = NULL; }
             else if (e.type == SDL_KEYDOWN && !e.key.repeat) {
+                if (e.key.keysym.sym == SDLK_RETURN && (e.key.keysym.mod & KMOD_ALT))
+                    set_fullscreen(win, fullscreen = !fullscreen);
                 switch (e.key.keysym.sym) {
                 case SDLK_ESCAPE: running = 0; break;
+                case SDLK_F11: set_fullscreen(win, fullscreen = !fullscreen); break;
                 case SDLK_p: paused = !paused; break;
                 case SDLK_F5: md_power_on(); eeprom_load(save); frame = 0; break;
                 case SDLK_F2:
