@@ -40,6 +40,28 @@ Today Escape and closing the window quit at once, losing anything not saved. Ins
 if a state was saved recently. Command-line runs used for testing (`--frames`, `--dump-at` and
 the like) must still exit without asking.
 
+### Enemy health and damage numbers (asked 2026-10-11)
+
+* **Enemy HP in the HUD:** when an enemy is fought (the last one hit, or the nearest), show its
+  remaining health in the status bar at the top.
+* **Damage numbers:** when an enemy is hit, show the damage dealt just above it, rising and
+  fading over a second or so.
+
+What it involves:
+
+* Finding, in the original, where each enemy's health is kept (an entity field) and the code
+  that subtracts damage when an attack lands. The hit-box code is already ported
+  (`port/hitbox.c`), which is the place to start looking; the damage step is probably just
+  after it.
+* Drawing it as a host overlay, like the FPS counter: the host reads the health field and
+  watches it drop, and draws the numbers over the picture, using the camera position to place
+  them above the enemy. The game itself is not changed, so the comparisons with the original
+  keep working. An option in the settings menu turns it on and off (off by default, to keep
+  the original look).
+* Space in the HUD: the status bar's free area is used by the game for item names and
+  messages, so the HP display either takes a small spot of its own (e.g. beside the gold) or
+  is drawn as a small bar near the enemy instead. Decide by trying both.
+
 ### Wide screen (asked 2026-10-10)
 
 Possible, but a project of its own. The game is written for a 256-pixel view: scenery is copied
