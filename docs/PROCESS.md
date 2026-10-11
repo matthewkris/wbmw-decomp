@@ -91,6 +91,11 @@ runnable as early as possible and ask for specific checks.
 | Random fields left collision half covered even from a state among platforms, and neither room with a state had a slope. | Generate *situations* (edges touching, small velocities), and synthesise missing level data in RAM (slope attributes) rather than hunting for a room. Have the generator report how often it built what it aimed for. |
 | Scene fuzzing hung the harness inside generated C: a garbage attribute sent a computed jump out of its table. | Fuzz with values the game's own data can produce; a hang in translated code cannot be caught, so a run that never ends should be suspected first of invalid input. |
 | Coverage by address range charged a translated routine with its neighbours' code: a tail jump stretched the range over three other routines. | Measure coverage against the exact instruction set the translator emitted for each routine, not an address range. |
+| The coroutine design was chosen before measuring how tasks yield; a one-hour survey showed every task yields from its top level, so tasks are stackless and needed no coroutines to translate. | Measure the runtime property a design depends on before building it, and record the evidence with the decision. |
+| Generated code took the wrong path: it was laid out by address and the entry was not the lowest one. Invisible until a routine jumped backwards. | Emit an explicit jump to the entry; test a translator on code shapes beyond the first subsystem. |
+| Translated code read an earlier raster position than the original (it runs in no emulated time), and took a different branch. | Treat timing reads (VDP status, HV counter) as inputs: record what the port read, replay it to the original during the check. |
+| A translated wait-for-VBlank loop spun forever: only an interrupt ends it, and translated code takes no time. | Waits on interrupts or time are boundaries (exits) where translated code hands control back to the machine. |
+| Following stored code pointers pulled in the whole game at once. | Let the translator leave to the original code for anything untranslated (always correct in the harness), and defer big subsystems explicitly, to keep each step's checks fine-grained. |
 
 ## General versus game-specific
 

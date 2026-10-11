@@ -31,6 +31,28 @@ static int NR;
 static const PortRoutine *R(int i) { return i < port_routine_count ? &port_routines[i] : &gen_routines[i - port_routine_count]; }
 static int pops(int i) { return i >= port_routine_count; }
 
+/* generated code reached code that is not translated: continue in the 68000 there. The original
+ * code is always in the ROM, so this is always correct; the report lists where it happened. */
+static struct { uint32_t from, to; long n; } leaves[64]; static int nleaves;
+void rt_leave(Cpu *c, uint32_t from, uint32_t target)
+{
+    c->ret = target;
+    int i = 0;
+    while (i < nleaves && (leaves[i].from != from || leaves[i].to != target)) i++;
+    if (i == nleaves && nleaves < 64) { leaves[i].from = from; leaves[i].to = target; nleaves++; }
+    if (i < nleaves) leaves[i].n++;
+}
+
+/* exits (analysis/translate.json): the generated code stops there, e.g. where a task resets the
+ * stack and re-enters the frame loop, so a check also ends when the original reaches one */
+extern const uint32_t gen_exits[];
+extern const int gen_exit_count;
+static int is_exit(uint32_t pc)
+{
+    for (int i = 0; i < gen_exit_count; i++) if (gen_exits[i] == pc) return 1;
+    return 0;
+}
+
 static int mode;
 static int break_idx = -1;            /* self-test: corrupt this routine's result (WBMW_PORT_BREAK=name) */
 static int16_t *slot_of;              /* routine index for each even ROM address, -1 if none */
@@ -71,7 +93,7 @@ static void capture(Result *r)
 static Result *want, *got;
 static int fuzzing;
 static uint8_t *snap; static size_t snap_n;
-static struct { int open, idx; uint32_t ret, sp; long call; } shadow;
+static struct { int open, idx; uint32_t ret, sp; long call, steps; } shadow;
 static int reports;
 
 static void diff_bytes(const char *what, const uint8_t *a, const uint8_t *b, size_t n, uint32_t base)
@@ -115,6 +137,7 @@ static void check(void)
         }
     }
     shadow.open = 0;
+    bus_timing(TIMING_OFF);
     md_irq_hold(0);
     if (fuzzing) m68k_end_timeslice();              /* one fuzz case per execute */
 }
@@ -135,12 +158,41 @@ static void run_port(int idx)
 static uint8_t *visited; static const char *cov_path;
 void hybrid_coverage(const char *path) { cov_path = path; }
 
+/* Yield survey (WBMW_YIELD_SURVEY=1, any mode): for every call of Yield, where the task resumes
+ * and where Yield's rts goes. If that is always a scheduler (here $4BD8, system slots, and
+ * $4C8A, user slots), no task yields from inside a nested call: a task's state between passes
+ * is its resume address and RAM, nothing on the stack (docs/PORT.md, Tasks). Game-specific:
+ * Yield is at $400. */
+#define YIELD_ADDR 0x400
+static long sv_n[0x20000]; static uint32_t sv_to[0x20000]; static int sv_on = -1;
+void yield_survey_report(void)
+{
+    if (sv_on != 1) return;
+    for (int i = 0; i < 0x20000; i++)
+        if (sv_n[i]) fprintf(stderr, "yield: resume %06X, returns to %06X, %ld times\n", i, sv_to[i], sv_n[i]);
+}
 int md_instr_hook(unsigned int pc)
 {
+    if (sv_on < 0) sv_on = getenv("WBMW_YIELD_SURVEY") != NULL;
+    if (sv_on && pc == YIELD_ADDR) {
+        uint32_t sp = m68k_get_reg(NULL, M68K_REG_SP);
+        uint32_t at = bus_read16(sp) << 16 | bus_read16(sp + 2), to = bus_read16(sp + 4) << 16 | bus_read16(sp + 6);
+        if (at < 0x20000) { sv_n[at]++; sv_to[at] = to; }
+    }
     if (mode == PORT_OFF) return 0;
     if (shadow.open) {
         if (visited && pc < SLOTS) visited[pc] = 1;
-        if (pc == shadow.ret && m68k_get_reg(NULL, M68K_REG_SP) == shadow.sp) check();
+        if (++shadow.steps > 50000000) {           /* the original never got where the port ended */
+            stats[shadow.idx].bad++;
+            fprintf(stderr, "UNFINISHED %s ($%06X) call %ld: the original did not reach the port's end, pc %06X\n",
+                    R(shadow.idx)->name, (unsigned)R(shadow.idx)->addr, shadow.call, (unsigned)want->pc);
+            shadow.open = 0; bus_timing(TIMING_OFF); md_irq_hold(0);
+            return 0;
+        }
+        /* the check ends where the original returns to its caller, or where the C version
+         * ended up if that is elsewhere (Yield returns to the scheduler), or at an exit */
+        uint32_t sp = m68k_get_reg(NULL, M68K_REG_SP);
+        if ((pc == shadow.ret && sp == shadow.sp) || (pc == want->pc && sp == want->cpu.a[7]) || is_exit(pc)) check();
         return 0;
     }
     if (pc >= SLOTS || slot_of[pc] < 0) return 0;
@@ -156,11 +208,13 @@ int md_instr_hook(unsigned int pc)
     snap = realloc(snap, snap_n); memcpy(snap, s, snap_n);
     if (visited) visited[pc] = 1;                   /* the entry instruction runs inside the check */
     md_irq_hold(1);                                 /* before the restore, so no interrupt is taken here */
+    bus_timing(TIMING_RECORD);                      /* the raster as the port saw it ... */
     run_port(idx);
     capture(want);
+    bus_timing(TIMING_REPLAY);                      /* ... is what the original sees */
     md_restore(snap, snap_n);
     m68k_set_reg(M68K_REG_PC, pc);
-    shadow.open = 1;
+    shadow.open = 1; shadow.steps = 0;
     return 0;
 }
 
@@ -589,6 +643,9 @@ void hybrid_report(void)
         fprintf(stderr, "\n");
         total += stats[i].calls; bad += stats[i].bad;
     }
+    for (int i = 0; i < nleaves; i++)
+        fprintf(stderr, "  left generated code at %06X for 68000 code at %06X, %ld times\n",
+                (unsigned)leaves[i].from, (unsigned)leaves[i].to, leaves[i].n);
     if (mode == PORT_SHADOW) fprintf(stderr, "  all: %ld calls checked, %ld mismatches\n", total, bad);
     if (visited) {                      /* one line per routine: name start end, then executed PCs */
         FILE *f = fopen(cov_path, "w");

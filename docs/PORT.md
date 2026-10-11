@@ -253,24 +253,84 @@ unused flag, a stack residue), because the shadow check can only prove equivalen
 is left out. Once the callers of a routine are also C, the side effects nobody reads can be
 dropped. Doing it in that order keeps every step checkable.
 
-### Tasks and `Yield`: stackful coroutines (decided 2026-10-10, not yet built)
+### Tasks and `Yield`: stackless now, coroutines for the rewrite (revised 2026-10-10)
 
-The owner chose coroutines over state machines.
+The first decision (2026-10-10) was stackful coroutines: each task on its own C stack, `Yield()`
+a call that switches to the scheduler. Before building it, a survey of the original settled the
+question the design depended on. `WBMW_YIELD_SURVEY=1` (see `harness/README.md`) logs, for every
+call of `Yield`, where the task resumes and where `Yield`'s `rts` goes. Over the new-game and
+demo runs and four platform runs, all 43 resume points seen return straight to a scheduler:
+`$4BD8` (system slots, 42 of them) or `$4C8A` (user slots). No task yields from inside a nested
+call. So the original tasks are **stackless**: between passes a task is its resume address (slot
++$C) and RAM, and each pass starts with only the scheduler's return address on the stack.
 
-The game is cooperative tasks: `Yield` ($400) saves its return address in the task slot and
-returns to the scheduler, and several subsystems keep continuation addresses in RAM. The
-proposal for the C port is **stackful coroutines**: each task gets its own C stack, `Yield()` is
-a call that switches back to the scheduler and returns when the task next runs, and saved
-continuations become coroutine resume points. That lets task code be translated almost line by
-line, keeps the control flow of the original, and is a small, game-independent library (a
-coroutine switch is a few dozen lines per platform, or an existing one such as minicoro), so it
-carries over to other games built the same way. The alternative, rewriting each task as a state
-machine, changes the shape of every task and makes each one harder to check against the
-original.
+With that, the owner chose **stackless now, coroutines later**:
 
-The hybrid harness cannot run a C task under a 68000 scheduler without nesting execution, so
-the scheduler, `Yield` and the tasks it runs move together, with the task bodies still calling
-68000 routines through a "call into 68000" helper until they are ported.
+* Tasks are translated like any other code. The instruction after each call of `Yield` (or of a
+  routine that jumps to it, such as `YieldIfLate`) is a resume point and becomes an entry. The
+  translated `Yield` pops the resume address into the slot and returns to the scheduler, as the
+  original does, and the generated callers unwind (the return-address convention).
+* Each task pass is a call from the scheduler (`jsr (a0)` at $4C88 or $4BD6), so the existing
+  shadow check compares every pass exactly, with no new machinery.
+* The scheduler and the frame loop (`$4BBC`-`$4C00`) move to C last, once everything they call
+  is C.
+* The coroutine library belongs to the idiomatic rewrite, where `while (1) { ...; yield(); }`
+  reads better than resume points. It has not been built.
+
+#### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
+
+* **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
+  jump or branch (`YieldIfLate` branches to it; three routines tail-jump to it).
+* **Exits**: addresses where generated code stops and hands control back to the machine, with
+  `c->ret` = the address:
+  * `$3B8`: wait for the next frame. Only interrupts end that wait, and generated code takes no
+    emulated time. Called by `$62A` (display off) during game-state changes.
+  * `$4BF8`: reset the stack and re-enter the frame loop. This is how a new system task starts.
+  * `$4A06`: restart.
+  * `$4CB4`: hang, when no task slot is free.
+* **Stored code pointers become entries**: a task's exit handler (`move.l #$569C,8(a0)`) is
+  called later by `EndTask` through the slot.
+* **`defer`**: entries deliberately left untranslated. This step defers `Kgam` ($8EB4), the
+  gameplay task: about 900 routines and most of the game. Without the deferral, the demo task
+  pulls it in by starting it.
+* **Leaving to the 68000**: a call or jump to code with no translation goes through
+  `rt_dispatch`, then `rt_leave`, which the host provides. The harness continues in the original
+  68000 code at that address. That is always correct, because the ROM's code is always there.
+  The report lists where it happened. A native build will stop there instead.
+* **A translator bug** that only tasks exposed. Code is emitted in address order, and a routine
+  whose body includes code below its entry (`Kseg` tail-jumps to `$4CA8`) started executing at
+  the lowest address. Generated functions now begin with a `goto` to the entry when the entry is
+  not the lowest address.
+
+#### What checking tasks needed (`harness/hybrid.c`, `harness/bus.c`)
+
+* **A check ends where the C version ended.** Besides returning to the caller, a check also
+  closes when the original reaches the C version's final PC with the same stack pointer (`Yield`
+  returns to the scheduler, not its caller), or an exit. A check that never closes is reported as
+  `UNFINISHED` after 50 million instructions instead of hanging the run.
+* **Timing inputs are replayed.** C runs in no emulated time, so it reads an earlier raster
+  position from the VDP than the original does. `Mxcg` calls `YieldIfLate` and read line $6A
+  against the original's $6B. During a check, the bus records the VDP status and HV counter
+  values the port read and gives the original the same values in the same order. The reads still
+  happen, for their side effects.
+
+#### Results
+
+Translated: all 15 tasks except `Kgam` (`Ksmt`, `Ktmt`, `Ktm2`, `Ktm3`, two `Kmnu`, `Kdym`,
+`Kedm`, `Keds`, `Kgmt`, `Kcol`, `Mxcg`, `Kseg`, `Kttl`, `Ktt2`) with the movement family: 273
+generated routines, 8,065 instructions, 40 resume points, no unsupported instruction.
+
+* The ten standard runs: **zero mismatches**, about 280,000 checked calls. They include
+  thousands of task passes: boot, the Sega logo, the title, menus, game mode (`Kgmt`, 3,333
+  passes), `Kcol` (3,712), the demo task (2,119) and the animated tiles (`Mxcg`, 2,115).
+* Replace mode (the C runs the tasks) plays the new-game script. Its frames match the original's
+  exactly at frames 2,000, 3,000 and 4,000. At frame 1,000 the intro text is a few characters
+  ahead, because the time-sliced text printer gets more done per frame when the C takes no time.
+* **Coverage is not complete** for the task layer. 4,423 of 8,065 generated instructions ran
+  inside checks, and 78 routines never ran. Most of it is screens the standard runs never reach:
+  the ending (`Kedm`: 12 of 327 instructions, and most of `$1AB28`-`$1C4xx`), parts of the menus
+  and the continue screen. Fuzzing cannot stand in for these; they need save states (the
+  ending, game over and continue, each menu option). Until then these routines stay unaccepted.
 
 ### Platform layer
 

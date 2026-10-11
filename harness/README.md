@@ -59,6 +59,23 @@ no sound.
   save state instead of power-on; frame numbers (for `--frames`, the dumps and the input file)
   carry on from the frame it was saved at.
 
+With `--port`, the report at the end lists every routine's calls (and mismatches in shadow mode).
+It also lists each place where generated code reached code with no translation and handed
+control back to the 68000 ("left generated code at X for 68000 code at Y").
+
+In shadow mode, a check that never reaches the point where the C version ended is reported as
+`UNFINISHED` after 50 million instructions, and the run goes on. During a check, the VDP status
+and HV counter values the C version read are replayed to the original, because C runs in no
+emulated time (`docs/PORT.md`, Tasks).
+
+Environment variables:
+
+* `WBMW_PORT_BREAK=NAME`: self-test. Corrupts one flag of that routine's result, so every
+  checked call of it must be reported.
+* `WBMW_YIELD_SURVEY=1` (any mode): at the end, list every task resume point and where `Yield`
+  returned to. If every line names a scheduler ($4BD8 or $4C8A), tasks only yield from their
+  top level.
+
 ## Save states
 
 Taken between frames: the 68000 registers and pending interrupts, RAM, Z80 RAM, the EEPROM and

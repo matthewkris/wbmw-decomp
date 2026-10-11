@@ -54,7 +54,7 @@ Done:
   checks every call against the original (`--port shadow`), measures which branches were checked
   (`--coverage`) and drives the rest by differential fuzzing (`--fuzz`): zero mismatches, 44 of 45
   fully covered. `docs/PORT.md` is the port's design document: how routines are accepted, why
-  replace mode is not compared byte for byte, and the coroutine design for tasks.
+  replace mode is not compared byte for byte, and how tasks are ported (stackless, see below).
 - **Sprites decoded.** `tools/sprites.py` walks every animation and mapping, draws any enemy type
   with the graphics allocation the game uses, assembles Shion from his equipment, and renders
   rooms with their enemies at their spawn points (`--all-rooms`).
@@ -86,18 +86,19 @@ The port now has two kinds of C: hand ports (`port/*.c`, 45 routines) and transl
 (`tools/m68k2c.py` into `work/gen`, roots in `analysis/translate.json`; the owner chose this as
 scaffolding, see `docs/PORT.md`). Next:
 
-1. Movement with collision is translated and checked: the whole family of seven entry points
-   `$2E38`-`$2FD0` (`$2E38` is probably the player's, once a frame). 39 generated routines,
-   0 mismatches, all fully covered except `$3860`'s deliberate hang (gameplay, the owner's
-   platform state `work/platform.state`, and the collision scene fuzz generator; see
-   `docs/PORT.md`). `$2E9E`, `$2ED4` and `$2F8E` are covered by fuzzing only.
-2. Translate the rest of the game a subsystem at a time (add roots to `analysis/translate.json`),
-   each accepted by the same rule. Fuzz input generators live in `harness/hybrid.c` and are
-   game-specific; move them to a game file when the second game starts.
-3. Build the coroutine library and move the scheduler, `Yield` and the frame loop to C. The
-   translator's return-address convention already handles `Yield` popping its caller's frame;
-   resuming a task at a saved address needs entry points at those addresses (the stored
-   continuation rule finds them).
+Done so far: movement with collision (39 routines, fully covered but for a deliberate hang),
+and every task except `Kgam` (273 generated routines in all, 0 mismatches over the standard
+runs; tasks are stackless, see `docs/PORT.md`, "Tasks and Yield"). Next:
+
+1. Cover the task layer: 78 translated routines never ran in the standard runs, mostly the
+   ending (`Kedm`), menus and continue screens. Ask the owner for save states there (F2 in
+   `play.exe`), then run the standard checks from them.
+2. Translate `Kgam` ($8EB4), the gameplay task (about 900 routines): remove it from `defer` in
+   `analysis/translate.json`. Expect coarse checks (one per task pass); check finer by deferring
+   parts of it while diagnosing.
+3. Then the scheduler and frame loop (`$4BBC`-`$4C00`), last, once everything they call is C;
+   then the platform layer for a native build. Fuzz input generators live in `harness/hybrid.c`
+   and are game-specific; move them to a game file when the second game starts.
 
 Every ported routine is accepted only with zero shadow mismatches and every instruction of the
 original covered (gameplay runs plus fuzzing); see "How a ported routine is accepted" in
@@ -192,9 +193,9 @@ lists entry points found by heuristic with no static reference.
   `$FFC000–$FFDFFF`.
 - **Code runs after a yield.** `jsr $400` pops its own return address into the task slot and
   returns to the scheduler. The instructions after it execute on a later pass, with registers
-  not preserved except what the task reloads. This is the central design problem for the C port:
-  each task needs either a real coroutine or a rewrite as a state machine. Decide this once,
-  early, and apply it uniformly.
+  not preserved except what the task reloads. Every task yields from its top level (measured
+  with `WBMW_YIELD_SURVEY=1`), so tasks are stackless: a resume address and RAM. The translator
+  makes each resume point an entry; coroutines wait for the idiomatic rewrite (`docs/PORT.md`).
 - **Continuations are stored in RAM.** Several subsystems save a popped return address and jump
   to it later (`$FF9630–$FF9654`, a stack at `$FF9C14`, `$FF9F1E/22`, `$FFA3BE`). The tracer
   treats these as resolved because the saved address is always the fall-through of a call it

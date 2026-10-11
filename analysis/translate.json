@@ -1,4 +1,9 @@
 {
- "comment": "Roots for tools/m68k2c.py: each is translated with everything it calls that is not hand-ported. Addresses only.",
- "roots": ["002E38", "002E9E", "002ED4", "002EDE", "002F34", "002F8E", "002FD0"]
+ "comment": "Config for tools/m68k2c.py (see its docstring). roots: routines translated with everything they call that is not hand-ported; the task roots are the code after each task descriptor's tag (docs/NOTES.md). yield: Yield ($400). exits: $3B8 (wait for the next frame: emulated time has to pass), $4BF8 (reset the stack, re-enter the frame loop), $4A06 (restart), $4CB4 (hang: no free task slot). defer: Kgam, the gameplay task (about 900 routines), left to its own step. Addresses only.",
+ "roots": ["002E38", "002E9E", "002ED4", "002EDE", "002F34", "002F8E", "002FD0",
+           "004CC8", "004D18", "004D56", "004D68", "004DA8", "004DE2", "004F58", "004FCC",
+           "005080", "00560C", "006EAC", "006F8A", "007042", "00715C", "0071C6"],
+ "yield": "000400",
+ "exits": ["0003B8", "004BF8", "004A06", "004CB4"],
+ "defer": ["008EB4"]
 }

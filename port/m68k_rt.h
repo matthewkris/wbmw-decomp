@@ -190,5 +190,9 @@ static inline void rt_rts(Cpu *c) { c->ret = rd32(c->a[7]); c->a[7] += 4; }
  * and the hand ports); returns 0 if the address is not a known entry */
 int rt_dispatch(Cpu *c, uint32_t target);
 void rt_unknown(uint32_t from, uint32_t target);
+/* a call or jump to code with no translation: provided by the host. The harness hands control
+ * back to the 68000 at `target` (c->ret = target; the generated callers unwind); a native build,
+ * where everything is translated, stops. */
+void rt_leave(Cpu *c, uint32_t from, uint32_t target);
 
 #endif

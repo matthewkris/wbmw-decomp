@@ -1,6 +1,20 @@
 """Translate 68000 routines into C with exact registers, condition codes and stack effects.
 
-Usage: m68k2c.py ROM work/map.json OUTDIR ADDR [ADDR ...]
+Usage: m68k2c.py ROM work/map.json OUTDIR CONFIG.json
+
+CONFIG (analysis/translate.json) gives the game's facts, as hex address strings:
+  roots   routines to translate, each with everything it calls
+  yield   the routine that suspends a task: it pops its caller's return address into the task
+          slot and returns to the scheduler. The instruction after every call to it (or to a
+          routine that jumps to it) is where the task resumes, so it becomes an entry point.
+  exits   addresses where generated code stops instead of continuing: code that resets the
+          stack and re-enters the frame loop, waits for the next frame, or hangs. Reaching one
+          ends the call with c->ret = that address.
+  defer   entries deliberately not translated yet (with what only they reach).
+
+A call or jump to code that is not translated goes through rt_dispatch at run time; if that
+has no translation either, rt_leave (provided by the host) decides: the harness hands control
+back to the 68000 there (the original code is always present), a native build stops.
 
 Each root and every routine it calls (that is not already hand-ported in port/registry.c) gets
 one C function g_XXXXXX(Cpu *c) in OUTDIR/gen.c, built on port/m68k_rt.h; OUTDIR/gen_registry.c
@@ -12,7 +26,11 @@ output is derived from the ROM's code and is never committed. Game-independent.
 import sys, os, re, json
 
 ROM, MAP, OUT = sys.argv[1], sys.argv[2], sys.argv[3]
-ROOTS = [int(a, 16) for a in sys.argv[4:]]
+CONFIG = json.load(open(sys.argv[4]))
+ROOTS = [int(a, 16) for a in CONFIG['roots']]
+YIELD = int(CONFIG['yield'], 16) if 'yield' in CONFIG else None
+EXITS = {int(a, 16) for a in CONFIG.get('exits', [])}
+DEFER = {int(a, 16) for a in CONFIG.get('defer', [])}
 d = open(ROM, 'rb').read()
 m = json.load(open(MAP))
 INS = {int(a, 16): v for a, v in m['insn'].items()}
@@ -41,6 +59,11 @@ STORES = {}
 for ptr, site in m['ptr_entries'].items():
     mm = re.fullmatch(r'#\$[0-9a-f]+, (.+)', INS.get(site, (0, '', ''))[2])
     if mm: STORES.setdefault(mm.group(1).replace(' ', ''), set()).add(int(ptr, 16))
+
+# every code address the program stores as a pointer, with the instructions that store it
+STORED_BY = {}
+for ptr, site in m['ptr_entries'].items():
+    if int(ptr, 16) in INS: STORED_BY.setdefault(int(ptr, 16), set()).add(site)
 
 def continuation_targets(a):
     """targets of `jmp (aN)` at a when aN was just loaded from a RAM variable"""
@@ -149,6 +172,8 @@ class Fn:
     def __init__(self, entry):
         self.entry = entry
         self.body = set(); self.targets = {entry}; self.calls = set()
+        self.tails = set()                    # static jumps to other routines (tail calls)
+        self.sites = []                       # static calls: (site, target, return address)
         work = [entry]
         while work:
             a = work.pop()
@@ -160,8 +185,9 @@ class Fn:
                 if base in ('rts', 'rte'): break
                 if base == 'jmp':
                     tgt = self.static_target(ops)
+                    if tgt in EXITS: break
                     if tgt is not None and tgt not in CALLS: work.append(tgt); self.targets.add(tgt)
-                    elif tgt is not None: self.calls.add(tgt)
+                    elif tgt is not None: self.calls.add(tgt); self.tails.add(tgt)
                     for x in SITE_TARGETS.get(a, ()):
                         if x in CALLS: self.calls.add(x)
                         else: work.append(x); self.targets.add(x)
@@ -169,7 +195,7 @@ class Fn:
                     break
                 if base in ('jsr', 'bsr'):
                     tgt = self.static_target(ops) if base == 'jsr' else int(t.group(1), 16)
-                    if tgt is not None: self.calls.add(tgt)
+                    if tgt is not None: self.calls.add(tgt); self.sites.append((a, tgt, a + sz))
                     for x in SITE_TARGETS.get(a, ()): self.calls.add(x)
                 elif base.startswith('db') or (base[0] == 'b' and base[1:] in CONDS):
                     tgt = int(t.group(1), 16); work.append(tgt); self.targets.add(tgt)
@@ -186,22 +212,26 @@ class Fn:
 
 def call_stmt(tgt, ret):
     """a call to a known routine: push, call, continue only if it came back here"""
+    if tgt in EXITS: return ['rt_push(c, 0x%Xu); c->ret = 0x%Xu; return;' % (ret, tgt)]
     if tgt not in HAND and tgt not in fns:                   # not translated: dispatch at run time
-        return ['rt_push(c, 0x%Xu); if (!rt_dispatch(c, 0x%Xu)) rt_unknown(0x%Xu, 0x%Xu); if (c->ret != 0x%Xu) return;'
+        return ['rt_push(c, 0x%Xu); if (!rt_dispatch(c, 0x%Xu)) rt_leave(c, 0x%Xu, 0x%Xu); if (c->ret != 0x%Xu) return;'
                 % (ret, tgt, ret, tgt, ret)]
     if tgt in HAND:
         return ['rt_push(c, 0x%Xu); %s(c); rt_rts(c);' % (ret, HAND[tgt])]
     return ['rt_push(c, 0x%Xu); g_%06X(c); if (c->ret != 0x%Xu) return;' % (ret, tgt, ret)]
 
 def tail_stmt(tgt):
+    if tgt in EXITS: return ['c->ret = 0x%Xu; return;' % tgt]
     if tgt not in HAND and tgt not in fns:
-        return ['if (!rt_dispatch(c, 0x%Xu)) rt_unknown(0, 0x%Xu); return;' % (tgt, tgt)]
+        return ['if (!rt_dispatch(c, 0x%Xu)) rt_leave(c, 0, 0x%Xu); return;' % (tgt, tgt)]
     if tgt in HAND: return ['%s(c); rt_rts(c); return;' % HAND[tgt]]
     return ['g_%06X(c); return;' % tgt]
 
 def translate(fn):
     out = []
     labels = fn.targets
+    if fn.entry != min(fn.body):              # code laid out by address: start at the entry
+        out.append('    goto L_%06X;' % fn.entry)
     for a in sorted(fn.body):
         sz_b, mn, ops = INS[a]
         nxt = a + sz_b
@@ -242,11 +272,11 @@ def insn(fn, a, nxt, mn, ops):
         if ea.kind != 'mem': raise Unsupported('jump operand')
         address(ea, 't', L)
         if base == 'jsr':
-            L.append('rt_push(c, 0x%Xu); if (!rt_dispatch(c, t_a)) rt_unknown(0x%Xu, t_a); if (c->ret != 0x%Xu) return;' % (nxt, a, nxt))
+            L.append('rt_push(c, 0x%Xu); if (!rt_dispatch(c, t_a)) rt_leave(c, 0x%Xu, t_a); if (c->ret != 0x%Xu) return;' % (nxt, a, nxt))
             return L
         local = sorted(x for x in SITE_TARGETS.get(a, ()) if x in fn.body)
         L.append('switch (t_a) {' + ''.join(' case 0x%Xu: goto L_%06X;' % (x, x) for x in local) + ' }')
-        L.append('if (!rt_dispatch(c, t_a)) rt_unknown(0x%Xu, t_a); return;' % a)
+        L.append('if (!rt_dispatch(c, t_a)) rt_leave(c, 0x%Xu, t_a); return;' % a)
         return L
     if base == 'moveq':
         v = hexv(parts[0][1:]) & 0xFF
@@ -384,15 +414,36 @@ def movem(parts, sz, a):
         L.append('c->a[%s] = base + %d;' % (an, n * sz))
     return L
 
-# ---- the closure of the roots, minus hand ports ----
+# ---- routines that suspend the task that called them ----
+_fn_cache, _yields = {}, {}
+def fn_of(e):
+    if e not in _fn_cache: _fn_cache[e] = Fn(e)
+    return _fn_cache[e]
+
+def yields(e, seen=()):
+    """e is the yield routine, or reaches it by a jump or branch (not a call)"""
+    if YIELD is None or e not in INS or e in EXITS: return False
+    if e in _yields: return _yields[e]
+    if e in seen: return False
+    f = fn_of(e)
+    r = e == YIELD or YIELD in f.body or any(yields(t, seen + (e,)) for t in f.tails)
+    _yields[e] = r
+    return r
+
+# ---- the closure of the roots, minus hand ports, plus resume points ----
 UNSUPPORTED = []
 fns, todo = {}, list(ROOTS)
+RESUME = set()
 while todo:
     e = todo.pop()
-    if e in fns or e in HAND: continue
+    if e in fns or e in HAND or e in EXITS or e in DEFER: continue
     if e not in INS: print('warning: %06X is not traced code' % e); continue
-    f = Fn(e); fns[e] = f
-    todo += [x for x in f.calls if x not in fns and x not in HAND]
+    f = fn_of(e); fns[e] = f
+    todo += [x for x in f.calls if x not in fns and x not in HAND and x not in EXITS]
+    for site, tgt, ret in f.sites:
+        if yields(tgt): RESUME.add(ret); todo.append(ret)
+    # code addresses it stores (a task's exit handler, a continuation): called through a pointer later
+    todo += [p for p, s in STORED_BY.items() if s & f.body]
 
 os.makedirs(OUT, exist_ok=True)
 with open(os.path.join(OUT, 'gen.c'), 'w', newline='\n') as f:
@@ -414,8 +465,12 @@ with open(os.path.join(OUT, 'gen_registry.c'), 'w', newline='\n') as f:
         end = max(fns[e].body) + INS[max(fns[e].body)][0]
         f.write('    {0x%06X, 0x%06X, "g_%06X", g_%06X},\n' % (e, end, e, e))
     f.write('};\nconst int gen_routine_count = %d;\n\n' % len(fns))
+    f.write('/* where generated code stops (translate.json "exits"): a check also ends there */\n')
+    f.write('const uint32_t gen_exits[] = {%s0};\nconst int gen_exit_count = %d;\n\n'
+            % (''.join('0x%06X, ' % e for e in sorted(EXITS)), len(EXITS)))
     f.write('int rt_dispatch(Cpu *c, uint32_t t)\n{\n    switch (t & 0xFFFFFF) {\n')
     for e in sorted(fns): f.write('    case 0x%06X: g_%06X(c); return 1;\n' % (e, e))
+    for e in sorted(EXITS): f.write('    case 0x%06X: c->ret = 0x%06X; return 1;   /* exit */\n' % (e, e))
     for e in sorted(HAND): f.write('    case 0x%06X: %s(c); rt_rts(c); return 1;\n' % (e, HAND[e]))
     f.write('    }\n    return 0;\n}\n\n')
     f.write('void rt_unknown(uint32_t from, uint32_t target)\n{\n'
@@ -427,4 +482,5 @@ with open(os.path.join(OUT, 'bodies.json'), 'w', newline='\n') as f:
     json.dump({'g_%06X' % e: ['%06X' % a for a in sorted(fns[e].body)] for e in sorted(fns)}, f, indent=0)
 total = sum(len(f.body) for f in fns.values())
 print('translated %d routines, %d instructions (shared code counted per routine) into %s' % (len(fns), total, OUT))
+if RESUME: print('  %d task resume points' % len(RESUME))
 for u in UNSUPPORTED: print('  unsupported at %06X: %s %s (%s)' % u)

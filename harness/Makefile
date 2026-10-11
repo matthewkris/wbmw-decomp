@@ -28,9 +28,9 @@ $(OUT)/m68kops.o: $(OUT)/m68kops.c $(MUSASHI)/m68kconf.h
 $(OUT)/softfloat.o: $(MUSASHI)/softfloat/softfloat.c
 	$(CC) $(CFLAGS) -w -I$(MUSASHI) -c $< -o $@
 
-# the translated routines (tools/m68k2c.py): roots from analysis/translate.json; needs work/map.json
+# the translated routines (tools/m68k2c.py): roots, yield and exits from analysis/translate.json; needs work/map.json
 $(GEN): ../tools/m68k2c.py ../analysis/translate.json ../port/registry.c ../work/map.json
-	$(PYTHON) -I ../tools/m68k2c.py "$(ROM)" ../work/map.json ../work/gen $$($(PYTHON) -I -c "import json; print(' '.join(json.load(open('../analysis/translate.json'))['roots']))")
+	$(PYTHON) -I ../tools/m68k2c.py "$(ROM)" ../work/map.json ../work/gen ../analysis/translate.json
 
 $(OUT)/harness: main.c $(CORE) md.h ../port/port.h $(CPU)
 	$(CC) $(CFLAGS) -I$(MUSASHI) -I../port main.c $(CORE) $(CPU) -o $@ $(LDFLAGS) -lm

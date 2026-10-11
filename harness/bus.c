@@ -124,6 +124,19 @@ unsigned int bus_read8(unsigned int a)
     return 0;
 }
 
+/* Timing inputs. Ported code runs in no emulated time, so a VDP status or HV counter read in it
+ * sees an earlier raster position than the original's read does. For a shadow check the harness
+ * records what the port read and replays the same values, in order, to the original (the reads
+ * still happen, for their side effects). Past the end of the record, live values. */
+static int timing_mode; static uint16_t timing_log[4096]; static int timing_n, timing_pos;
+void bus_timing(int mode) { timing_mode = mode; if (mode == TIMING_RECORD) timing_n = 0; timing_pos = 0; }
+static uint16_t timing(uint16_t live)
+{
+    if (timing_mode == TIMING_RECORD && timing_n < 4096) timing_log[timing_n++] = live;
+    else if (timing_mode == TIMING_REPLAY && timing_pos < timing_n) return timing_log[timing_pos++];
+    return live;
+}
+
 unsigned int bus_read16(unsigned int a)
 {
     a &= 0xFFFFFE;
@@ -132,8 +145,8 @@ unsigned int bus_read16(unsigned int a)
     if (a >= 0xC00000 && a < 0xC00020) {
         switch (a & 0x1C) {
         case 0x00: return vdp_read_data();
-        case 0x04: return vdp_read_status();
-        case 0x08: case 0x0C: return vdp_read_hv();
+        case 0x04: return timing(vdp_read_status());
+        case 0x08: case 0x0C: return timing(vdp_read_hv());
         }
         return 0;
     }

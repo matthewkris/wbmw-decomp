@@ -19,6 +19,8 @@ extern uint8_t pad_buttons;           /* active-high: up down left right B C A s
 void bus_reset(void);
 unsigned int bus_read8(unsigned int a);
 unsigned int bus_read16(unsigned int a);
+enum { TIMING_OFF, TIMING_RECORD, TIMING_REPLAY };
+void bus_timing(int mode);              /* record a port's VDP status/HV reads, replay them to the original */
 void bus_write8(unsigned int a, unsigned int v);
 void bus_write16(unsigned int a, unsigned int v);
 
@@ -64,6 +66,7 @@ void md_irq_hold(int on);
 enum { PORT_OFF, PORT_REPLACE, PORT_SHADOW };
 void hybrid_init(int mode);
 void hybrid_report(void);
+void yield_survey_report(void);         /* WBMW_YIELD_SURVEY=1: where Yield returns */
 void hybrid_coverage(const char *path);
 int hybrid_fuzz(const char *name, long count);
 int md_instr_hook(unsigned int pc);

@@ -110,6 +110,6 @@ int main(int argc, char **argv)
                     ram[0x8002] << 24 | ram[0x8003] << 16 | ram[0x8004] << 8 | ram[0x8005]);
     }
     int fuzz_bad = fuzz_name ? hybrid_fuzz(fuzz_name, fuzz_count) : 0;
-    hybrid_report();
+    yield_survey_report(); hybrid_report();
     return fuzz_bad ? 1 : 0;
 }
