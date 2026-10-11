@@ -814,7 +814,7 @@ int hybrid_fuzz(const char *name, long count)
             uint32_t rows = (uint32_t)(ram[layer + 0x46] << 8 | ram[layer + 0x47]) / 64 + 1;
             collision_scene(name, layer, cols, rows, e & 0xFF);
             ram[0x966B] = (uint8_t)rnd(); ram[0x9EF1] = (uint8_t)rnd();
-            ram[0xCE01 + e] = (uint8_t)(rnd() % 10);                    /* the state, -$31FF */
+            ram[0xCE01 + e] = (uint8_t)(rnd() % (strcmp(name, "PlayerAnimate") ? 10 : 9));   /* the state, -$31FF ($F080 has 9) */
             ram[0x9F04] = (uint8_t)(rnd() % 3);                         /* the form */
             ram[0x9F0B] = (uint8_t)rnd();
             ram[0x9F0D] = (uint8_t)(rnd() & (rnd() % 2 ? ram[0x9F0B] : 0xFF));
@@ -845,6 +845,14 @@ int hybrid_fuzz(const char *name, long count)
             ram[0x95D0] = (uint8_t)(rnd() % 4 ? rnd() % 6 : 0x80 | rnd());
             ram[0x9F0A] = (uint8_t)(rnd() % 3 ? 0 : rnd() % 4);
             if (rnd() % 4 == 0) put_word(0xC800 + e, 0x1140 + small(4));          /* the walk's end */
+            /* batch 2: the special actions for A + left/right (13, or none), the animation
+             * playing and whether it runs on, the sprite flags */
+            ram[0x9F10] = (uint8_t)(rnd() % 4 ? rnd() % 13 : 0x80 | rnd());
+            ram[0x9F11] = (uint8_t)(rnd() % 4 ? rnd() % 13 : 0x80 | rnd());
+            ram[0x9F7A] = (uint8_t)(rnd() % 4 ? 0 : 0x80);
+            ram[0xC600 + e] = (uint8_t)(rnd() % 2 ? 0 : rnd());                  /* -$3A00 */
+            static const uint8_t anims[] = {0, 2, 4, 6, 8, 0xA, 0xE, 0x10, 0x12, 0x14, 0x18, 0x1A};
+            ram[0xC302 + e] = anims[rnd() % 12];                                  /* -$3CFE */
             if (rnd() % 2) {                        /* at a ladder or vine: painted into the map */
                 static uint8_t ladders[16]; static int nl = -1;  /* attributes of type $4xxx */
                 if (nl < 0) {

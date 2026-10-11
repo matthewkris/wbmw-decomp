@@ -836,6 +836,146 @@ static void hurt_boxes(Ent e)
     }
 }
 
+/* ---- batch 2: the animation, the sword, A + left/right ---- */
+
+#define SPRITE(e)     ((e) - 0x3FFE)   /* byte: bit 3 the sprite faces left; bit 0 see swing() */
+#define ANIM_ID(e)    ((e) - 0x3CFE)   /* byte: the animation playing */
+#define ANIM_BUSY(e)  ((e) - 0x3A00)   /* byte: non-zero while an animation runs on */
+#define POWER(e)      ((e) - 0x2700)   /* word: the sword's strength */
+#define HIT_POWER(e)  ((e) - 0x2400)   /* word: this swing's */
+#define SPECIAL_LEFT  0xFFFF9F10u   /* the special action for A + left, and A + right (likely magic) */
+#define SPECIAL_RIGHT 0xFFFF9F11u
+
+static void set_anim(Ent e, int id) { call_with_d0(e, 0x7E8, (uint16_t)id); }   /* SetAnim */
+
+/* $F12C: on a vine the climbing animation steps as it climbs: every 8 pixels, two frames */
+static int vine_frame(Ent e)
+{
+    uint8_t frame = rd8(CLIMB_W(e));
+    if (!(rd8(ANIM) & 0x10)) {
+        int8_t climb = (int8_t)rd8(CLIMB(e));
+        if (rd8(ANIM) & 8) {                        /* going up */
+            if (climb > 0) return -1;
+            wr8(CLIMB(e), 8);
+            frame = (uint8_t)(frame - 1);
+            if ((int8_t)frame < 0) frame = 1;
+        } else {
+            if ((uint8_t)climb < 8) return -1;
+            wr8(CLIMB(e), 0);
+            frame = (uint8_t)(frame + 1);
+            if (frame > 1) frame = 0;
+        }
+        wr8(CLIMB_W(e), frame);
+    }
+    return rd8(0xF186 + frame);                     /* $10 or $18 */
+}
+
+/* $F064: the animation for the state (unless a handler chose one), and the sprite's facing */
+static void animate(Ent e)
+{
+    uint8_t ctrl = rd8(CTRL);
+    clr8(CTRL, 8);
+    if (ctrl & 8) return;
+    int atk = rd8(FLAGS(e)) & F_ATTACKING, id, facing = 1;
+    switch (rd8(STATE(e))) {
+    case S_HURT:   id = 8; break;
+    case S_STAND:  id = atk ? 6 : 0; break;
+    case S_WALK:
+        if (atk) { id = 6; break; }
+        id = 0;
+        if (!on_ground()) break;
+        if (rd16(COLL_TYPE(e)) & T_ICE) {           /* on ice: the legs run faster when slipping */
+            int16_t v = rdw(VEL_X(e));
+            int left = rd8(ANIM) & 2;
+            if (v == 0 || (v > 0) == !!left || (uint16_t)(v < 0 ? -v : v) < (uint16_t)rdw(SPEED(e)))
+                wrw(ANIM_RATE(e), 0x200);
+        }
+        id = 2;
+        break;
+    case S_AIR:    id = atk ? 6 : 4; break;
+    case S_WATER:  id = atk ? 6 : 0xE; break;
+    case S_DUCK:   id = atk ? 0xA : 0x12; break;
+    case S_UP_ATTACK: id = 0x1A; break;
+    case S_LADDER: id = 0x14; facing = 0; break;
+    case S_VINE:   id = vine_frame(e); if (id < 0) return; facing = 0; break;
+    default:
+        fprintf(stderr, "player: state %d is outside the original's animation table ($F080)\n", rd8(STATE(e)));
+        exit(3);
+    }
+    if (facing) {
+        clr8(SPRITE(e), 8);
+        if (rd8(ANIM) & 2) set8(SPRITE(e), 8);
+    }
+    uint8_t anim = rd8(ANIM);
+    clr8(ANIM, 0x10);
+    if ((anim & 0x10) || id != rd8(ANIM_ID(e))) set_anim(e, id);   /* changed state: restart it */
+}
+
+/* $EE14: during a swing, the sword's hit points for this step of it ($EE70), and the swing's
+ * strength. Which points: by form, by sword, ducking or not. */
+static void swing_points(Ent e)
+{
+    set8(POSE, 0x80);
+    uint32_t list; unsigned steps;
+    if (rd8(FORM) == 2) { list = 0xF48C; steps = 5; }
+    else {
+        uint8_t sword = rd8(SWORD);
+        if (rd8(FLAGS(e)) & F_DUCKING) { list = 0xF406; steps = 2; }
+        else { steps = rd8(0xF2F4 + sword); list = 0xF2FC; }
+        list += (uint32_t)(int32_t)rdw(list + 2 * sword);
+    }
+    uint8_t step = rd8(ATTACK_STEP(e));
+    if (step >= steps) return;
+    list += (uint32_t)(int32_t)rdw(list + 2 * step);
+    wr32(ATTACK_BOX(e), list + 2);
+    wrw(HIT_POWER(e), rdw(POWER(e)));
+    Cpu t = *cpu;
+    t.a[4] = e; t.a[0] = list;
+    call_68k(&t, 0xEE70);
+}
+
+/* $EDE0: the trail the swing leaves (a script of effects), by form, ducking and sword */
+static void swing_trail(Ent e)
+{
+    uint32_t script;
+    if (rd8(FORM) == 2) script = 0xF594;
+    else if (rd8(FLAGS(e)) & F_DUCKING) script = 0xF530;
+    else script = rd8(SWORD) < 4 ? 0xF4F6 : 0xF55E;
+    wr32(ATTACK_SCRIPT, script);
+    wrw(ATTACK_STEP_N, 0);
+}
+
+/* $ED5C: B swings the sword (not with A, hurt, on $8xxx/$Axxx tiles, or too soon after the last
+ * swing); while the swing's animation runs, its hit points; then a short delay */
+static void sword(Ent e)
+{
+    if (rd8(FLAGS(e)) & F_ATTACKING) {
+        clr8(FLAGS(e), F_ATTACKING);
+        if (!rd8(ANIM_BUSY(e))) { wr8(ATTACK_DELAY, 4); return; }   /* the swing is over */
+        set8(FLAGS(e), F_ATTACKING);
+        if (!(rd8(SPRITE(e)) & 1)) swing_points(e);
+        return;
+    }
+    if (!(pressed() & 0x10) || (held() & 0x40) || (rd8(FLAGS(e)) & F_HURT) || on_8_or_a()
+        || rd8(ATTACK_DELAY) || (rd8(CTRL) & 0x10)) return;
+    swing_trail(e);
+    queue_sound(0x20);
+    set8(FLAGS(e), F_ATTACKING);
+    set8(ANIM, 0x10);
+    clr8(SPRITE(e), 1);
+}
+
+/* $EF12: A + left or right starts the special action set for that side ($11170) */
+static void special(Ent e)
+{
+    if ((rd8(AREA_FLAGS) & 0x80) || !(held() & 0x40) || (rd8(FLAGS(e)) & 0xE0)) return;
+    uint8_t which;
+    if (pressed() & 4) which = rd8(SPECIAL_LEFT);
+    else if (pressed() & 8) which = rd8(SPECIAL_RIGHT);
+    else return;
+    call_with_d0(e, 0x11170, which);
+}
+
 /* $E2C6: the handler for the player's state */
 static void player_state(Ent e)
 {
@@ -867,3 +1007,6 @@ void PlayerAccel(Cpu *c)      { cpu = c; accelerate(c->a[4]); }
 void PlayerSplash(Cpu *c)     { cpu = c; splash(c->a[4]); }
 void PlayerBubbles(Cpu *c)    { cpu = c; bubbles(c->a[4]); }
 void PlayerHurtBoxes(Cpu *c)  { cpu = c; hurt_boxes(c->a[4]); }
+void PlayerAnimate(Cpu *c)    { cpu = c; animate(c->a[4]); }
+void PlayerSword(Cpu *c)      { cpu = c; sword(c->a[4]); }
+void PlayerSpecial(Cpu *c)    { cpu = c; special(c->a[4]); }
