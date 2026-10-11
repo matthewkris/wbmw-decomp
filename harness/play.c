@@ -2,7 +2,10 @@
  * at 60 frames a second, with keyboard and game controller input. No sound (the Z80 and the
  * sound chips are not emulated).
  *
- *   play ROM [--scale N] [--save FILE] [--state FILE] [--port replace|shadow] [--coverage FILE]
+ *   play ROM [--scale N] [--save FILE] [--state FILE] [--load] [--port replace|shadow] [--coverage FILE]
+ *
+ * --load starts from the state file (as if F4 were pressed at once). The state carries the save
+ * EEPROM too, so it replaces what --save loaded; --save still names where it is written at exit.
  *
  * Keys: arrows = D-pad, Z = A, X = B, C = C, Enter = Start.
  *       Esc quits, P pauses, Tab (held) runs fast, F12 writes a screenshot, F5 resets,
@@ -52,18 +55,19 @@ static uint8_t pad_down(SDL_GameController *gc)
 int main(int argc, char **argv)
 {
     const char *rom_path = NULL, *save = "play.sav", *state = "play.state", *cov = NULL;
-    int scale = 3, port = PORT_OFF;
+    int scale = 3, port = PORT_OFF, load = 0;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--save") && i + 1 < argc) save = argv[++i];
         else if (!strcmp(argv[i], "--state") && i + 1 < argc) state = argv[++i];
         else if (!strcmp(argv[i], "--coverage") && i + 1 < argc) cov = argv[++i];
+        else if (!strcmp(argv[i], "--load")) load = 1;
         else if (!strcmp(argv[i], "--port") && i + 1 < argc) {
             i++; port = !strcmp(argv[i], "replace") ? PORT_REPLACE : !strcmp(argv[i], "shadow") ? PORT_SHADOW : PORT_OFF;
         }
         else rom_path = argv[i];
     }
-    if (!rom_path) { fprintf(stderr, "usage: play ROM [--scale N] [--save FILE] [--state FILE] [--port replace|shadow] [--coverage FILE]\n"); return 2; }
+    if (!rom_path) { fprintf(stderr, "usage: play ROM [--scale N] [--save FILE] [--state FILE] [--load] [--port replace|shadow] [--coverage FILE]\n"); return 2; }
     if (md_load_rom(rom_path)) return 1;
     md_power_on();
     if (cov) hybrid_coverage(cov);                  /* written at exit, with the report */
@@ -83,6 +87,10 @@ int main(int argc, char **argv)
     const double frame_s = 1.0 / 59.922;                     /* NTSC */
     Uint64 freq = SDL_GetPerformanceFrequency(), next = SDL_GetPerformanceCounter();
     int running = 1, paused = 0, shots = 0, frame = 0;
+    if (load) {                                     /* --load: start where the state file left off */
+        if (md_load_state(state, &frame) != 0) { fprintf(stderr, "could not load state from %s\n", state); return 1; }
+        fprintf(stderr, "loaded state from %s (frame %d)\n", state, frame);
+    }
     while (running) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {

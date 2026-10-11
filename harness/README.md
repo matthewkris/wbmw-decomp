@@ -26,8 +26,12 @@ This builds two programs in `work/harness/` (git-ignored, like everything in `wo
 
 ## Play
 
-    work/harness/play ROM [--scale N] [--save FILE] [--state FILE] [--port replace|shadow]
+    work/harness/play ROM [--scale N] [--save FILE] [--state FILE] [--load] [--port replace|shadow]
                           [--coverage FILE]
+
+`--load` starts from the state file instead of power-on, as if F4 were pressed at once (the
+state carries the save EEPROM too). F2 then saves back into the same file, so copy a state you
+want to keep to its own name first.
 
 `--port replace` plays with the translated C running the game; `--port shadow` plays the
 original while checking every translated call against it (mismatches print to the console, and

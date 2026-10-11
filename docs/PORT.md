@@ -395,6 +395,13 @@ it spun forever. Only `$3B8` and `$C262` read that flag anywhere in the ROM.
   most recent branch targets and stops. It named `$C262` on the first run, and turns any future
   hang of this kind into a report instead of a frozen window.
 
+A later session of the owner's (`--coverage`, ending in a castle, kept as `work/castle.state`,
+frame 29,683) raised coverage from 37% to 44% of the translated instructions. Six
+random-input shadow runs from the castle state: zero mismatches, no fallback to the 68000. In
+replace mode the frames match the original except a wall torch whose flame is one animation
+step apart: the animated tiles come from `Mxcg`, the raster-timed task, so it is the same timing
+difference as the intro text.
+
 From the inn state with yes answered, shadow mode reports zero mismatches. Replace mode matches
 the original's frames until the morning text, where the C is one letter ahead (the same timing
 difference as the intro).
