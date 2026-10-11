@@ -35,6 +35,7 @@ static int int_line;                  /* VBlank interrupt to the Z80 */
 static uint32_t bank;                 /* 9 bits: bits 15-23 of the 68000 address of the window */
 static uint32_t acc;                  /* time to the next YM sample */
 static int held;                      /* the harness holds sound still during a shadow check */
+static int owed, owed_vint;           /* scanlines skipped while held, run when released */
 
 /* ---- SN76489: three square waves and a noise channel, 16 internal clocks per step ---- */
 static struct {
@@ -184,7 +185,17 @@ void sound_set_reset(int on)
     if (!on && reset_line) pins = z80_reset(&z80);
     reset_line = on;
 }
-void sound_hold(int on) { held = on; }
+/* A check holds sound still while the original routine runs, so that the Z80 changes nothing the
+ * check compares. That time still passes in the game, so the sound catches up on release: without
+ * it, every check made the music fall behind (9% slower with the movement checks). */
+void sound_hold(int on)
+{
+    held = on;
+    if (on) return;
+    int n = owed, vint = owed_vint;
+    owed = owed_vint = 0;
+    for (int i = 0; i < n; i++) sound_run_line(vint && i == 0);
+}
 void sound_psg_write(uint8_t d) { psg_write(d); }
 
 /* The 68000 is waiting on the Z80 (QueueSound found the driver busy): let 64 Z80 cycles pass, even
@@ -201,7 +212,7 @@ void sound_idle(void)
 /* one scanline of sound; vint: the VBlank interrupt is raised on this line */
 void sound_run_line(int vint)
 {
-    if (held) return;
+    if (held) { owed++; owed_vint |= vint; return; }
     int_line = vint;
     for (int i = 0; i < Z80_CYCLES_PER_LINE; i++) {
         if (!busreq && !reset_line) z80_cycle();
