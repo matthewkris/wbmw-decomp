@@ -71,7 +71,7 @@ static int mode;
 static int break_idx = -1;            /* self-test: corrupt this routine's result (WBMW_PORT_BREAK=name) */
 static int16_t *slot_of;              /* routine index for each even ROM address, -1 if none */
 #define SLOTS 0x20000
-static struct Stat { long calls, bad; } *stats;    /* one per routine, sized in hybrid_init */
+static struct Stat { long calls, bad, dead; } *stats;   /* dead: left registers different, never read */    /* one per routine, sized in hybrid_init */
 
 static void get_cpu(Cpu *c)
 {
@@ -124,11 +124,65 @@ static void diff_bytes(const char *what, const uint8_t *a, const uint8_t *b, siz
     }
 }
 
+/* Contracts (port.h): for an ordinary C rewrite, the registers outside its contract may differ
+ * from the original's, provided the game never reads them before writing them. After such a
+ * check, the registers that differ are watched instruction by instruction (work/usedef.bin, from
+ * tools/liveness.py: what each instruction reads and writes); reading one is a violation. */
+static uint32_t *usedef;                  /* reads, writes for each instruction address / 2 */
+static uint32_t watch;                    /* registers and flags that differ from the original's */
+static int watch_of[18];                  /* the routine that left each one different */
+static long violations;
+
+static uint32_t reg_diff(const Cpu *a, const Cpu *b)
+{
+    uint32_t m = 0;
+    for (int i = 0; i < 8; i++) { if (a->d[i] != b->d[i]) m |= 1u << i; if (a->a[i] != b->a[i]) m |= 1u << (8 + i); }
+    if ((a->ccr ^ b->ccr) & 0x0F) m |= CT_NZVC;
+    if ((a->ccr ^ b->ccr) & 0x10) m |= CT_X;
+    return m;
+}
+
+static void watch_step(unsigned pc)
+{
+    if (!watch || !usedef || pc >= 0x20000) return;
+    uint32_t reads = usedef[(pc >> 1) * 2], writes = usedef[(pc >> 1) * 2 + 1];
+    if (reads & watch) {
+        int bitn = 0; while (!((reads & watch) >> bitn & 1)) bitn++;
+        int who = watch_of[bitn];
+        stats[who].bad++; violations++;
+        if (reports++ < 20) {
+            static const char *names[18] = {"d0","d1","d2","d3","d4","d5","d6","d7","a0","a1","a2","a3","a4","a5","a6","a7","NZVC","X"};
+            fprintf(stderr, "CONTRACT %s ($%06X): left %s different from the original's, and the game reads it at %06X\n",
+                    R(who)->name, (unsigned)R(who)->addr, names[bitn], pc);
+        }
+        watch = 0;
+        return;
+    }
+    watch &= ~writes;
+}
+
 static void check(void)
 {
     const PortRoutine *p = R(shadow.idx);
     capture(got);                                   /* the original's result */
     Cpu *a = &got->cpu, *b = &want->cpu;
+    /* What must match: memory, the PC and the stack pointer, and the registers a contract names.
+     * The stack below the final stack pointer is dead. Other registers and flags that differ are
+     * watched (watch_step): a difference the game never reads cannot change what it does. Every
+     * check works this way; a translated routine that calls ordinary C inherits its leftovers. */
+    uint32_t contract = p->contract | CT_SP;
+    uint32_t sp = a->a[7] & 0xFFFF;
+    if ((a->a[7] & 0xFF0000) == 0xFF0000)
+        for (uint32_t i = 0; i < sp && i < 0x1000; i++) got->ram[i] = want->ram[i];
+    uint32_t diff = reg_diff(a, b) & ~contract;
+    if (diff) {
+        stats[shadow.idx].dead++;
+        for (int i = 0; i < 18; i++) if (diff >> i & 1) watch_of[i] = shadow.idx;
+        if (!fuzzing) watch |= diff;               /* a fuzz case has no caller afterwards: nothing to watch */
+    }
+    for (int i = 0; i < 8; i++) { if (!(contract >> i & 1)) a->d[i] = b->d[i]; if (!(contract >> (8 + i) & 1)) a->a[i] = b->a[i]; }
+    if (!(contract & CT_NZVC)) a->ccr = (uint16_t)((a->ccr & ~0x0F) | (b->ccr & 0x0F));
+    if (!(contract & CT_X)) a->ccr = (uint16_t)((a->ccr & ~0x10) | (b->ccr & 0x10));
     int bad = memcmp(a->d, b->d, sizeof a->d) || memcmp(a->a, b->a, sizeof a->a) || a->ccr != b->ccr
            || got->pc != want->pc || memcmp(got->ram, want->ram, sizeof got->ram)
            || memcmp(got->zram, want->zram, sizeof got->zram) || memcmp(got->vram, want->vram, sizeof got->vram)
@@ -161,7 +215,7 @@ static void run_port(int idx)
     Cpu c; get_cpu(&c);
     rt_steps = 0;
     R(idx)->fn(&c);
-    if (idx == break_idx) c.ccr ^= CC_X;            /* one flag, the subtlest thing to get wrong */
+    if (idx == break_idx) c.a[7] ^= 2;              /* the stack pointer: compared in every check */
     uint32_t ret;
     if (pops(idx)) ret = c.ret;                     /* generated: it did the rts (maybe elsewhere) */
     else { ret = rd32(c.a[7]); c.a[7] += 4; }       /* hand port: the original's rts */
@@ -209,6 +263,7 @@ int md_instr_hook(unsigned int pc)
 {
     if (tr_n) trace_at(pc);
     framelog_at(pc);
+    if (watch) watch_step(pc);                     /* registers a C rewrite left different: still dead? */
     if (sv_on < 0) sv_on = getenv("WBMW_YIELD_SURVEY") != NULL;
     if (sv_on && pc == YIELD_ADDR) {
         uint32_t sp = m68k_get_reg(NULL, M68K_REG_SP);
@@ -218,6 +273,10 @@ int md_instr_hook(unsigned int pc)
     if (mode == PORT_OFF) return 0;
     if (shadow.open) {
         if (visited && pc < SLOTS) visited[pc] = 1;
+        /* the sound is held during a check; QueueSound retrying on a busy driver would wait for
+         * ever. Each retry lets 64 Z80 cycles pass, as the port's port_idle does on its side, so
+         * both see the same Z80. (Game-specific: $38E follows the bus release in QueueSound's retry.) */
+        if (pc == 0x38E) sound_idle();
         if (++shadow.steps > 50000000) {           /* the original never got where the port ended */
             stats[shadow.idx].bad++;
             fprintf(stderr, "UNFINISHED %s ($%06X) call %ld: the original did not reach the port's end, pc %06X\n",
@@ -270,6 +329,9 @@ void hybrid_init(int m)
         if (!strcmp(brk, R(i)->name)) { break_idx = i; fprintf(stderr, "self-test: corrupting %s\n", brk); }
     want = malloc(sizeof *want); got = malloc(sizeof *got);
     if (cov_path && mode == PORT_SHADOW) visited = calloc(SLOTS, 1);
+    FILE *ud = fopen("work/usedef.bin", "rb");     /* for contracts; from tools/liveness.py --usedef */
+    if (!ud) ud = fopen("../work/usedef.bin", "rb");
+    if (ud) { usedef = malloc(0x10000 * 8); if (fread(usedef, 8, 0x10000, ud) != 0x10000) { free(usedef); usedef = NULL; } fclose(ud); }
 }
 
 /* Differential fuzzing: call one ported routine directly, many times, from the current machine
@@ -611,7 +673,8 @@ int hybrid_fuzz(const char *name, long count)
                 for (uint32_t q = 0x4E00; q < 0x4E10; q++) ram[q] = (uint8_t)(rnd() % 64 - 32);
             }
         }
-        int generated = !strncmp(name, "g_", 2);
+        int generated = !strncmp(name, "g_", 2)
+                     || (R(idx)->contract && R(idx)->addr >= 0x2E38 && R(idx)->addr < 0x3E20);   /* movement.c */
         if (strstr(name, "MapBlock") || strstr(name, "Tile") || generated) {
             /* a position on (or just off) a real layer, sometimes as the player */
             uint32_t layer = rnd() % 4 ? 0x9754 : 0x97D4;
@@ -685,7 +748,7 @@ int hybrid_fuzz(const char *name, long count)
         do { m68k_execute(1000000); budget++; } while (shadow.open && budget < 500);
         if (shadow.open) { fprintf(stderr, "fuzz: %s did not return within 500M cycles (case %ld)\n", name, k + 1); count = k; break; }
     }
-    fuzzing = 0;
+    fuzzing = 0; watch = 0;                         /* no caller after a fuzz case: nothing to watch */
     md_restore(base, n); free(base);
     if (scenes) fprintf(stderr, "fuzz: %ld collision scenes, %ld on a slope, %ld on a solid block\n", scenes, on_slope, on_solid);
     fprintf(stderr, "fuzz %s: %ld cases run, %ld mismatches\n", name, count, stats[idx].bad - before);
@@ -700,6 +763,7 @@ void hybrid_report(void)
     for (int i = 0; i < NR; i++) {
         fprintf(stderr, "  %-16s $%06X  calls %8ld", R(i)->name, (unsigned)R(i)->addr, stats[i].calls);
         if (mode == PORT_SHADOW) fprintf(stderr, "  mismatches %ld", stats[i].bad);
+        if (mode == PORT_SHADOW && stats[i].dead) fprintf(stderr, "  (dead registers left different: %ld)", stats[i].dead);
         fprintf(stderr, "\n");
         total += stats[i].calls; bad += stats[i].bad;
     }

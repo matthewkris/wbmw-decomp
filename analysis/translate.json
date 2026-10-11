@@ -1,6 +1,22 @@
 {
- "comment": "Config for tools/m68k2c.py (see its docstring). roots: routines translated with everything they call that is not hand-ported; the task roots are the code after each task descriptor's tag (docs/NOTES.md). yield: Yield ($400). exits: $3B8 (wait for the next frame: emulated time has to pass), $C262 (inside Kgam: wait 300 frames on the VBlank flag, after sleeping at an inn), $4BF8 (reset the stack, re-enter the frame loop), $4A06 (restart), $4CB4 (hang: no free task slot). defer: entries deliberately left untranslated (none now). Addresses only. seen (optional): targets of computed jumps found only at run time (the harness report), translated like roots; none are needed now, the translator finds them all statically.",
+ "comment": "Config for tools/m68k2c.py (see its docstring). roots: routines translated with everything they call that is not hand-ported; the task roots are the code after each task descriptor's tag (docs/NOTES.md). yield: Yield ($400). exits: $3B8 (wait for the next frame: emulated time has to pass), $C262 (inside Kgam: wait 300 frames on the VBlank flag, after sleeping at an inn), $4BF8 (reset the stack, re-enter the frame loop), $4A06 (restart), $4CB4 (hang: no free task slot). defer: entries deliberately left untranslated (none now). Addresses only. seen (optional): targets of computed jumps found only at run time (the harness report), translated like roots; none are needed now, the translator finds them all statically. contracts: the movement entry points, which call ordinary C (port/movement.c), are checked on memory and the stack pointer; registers they leave different are watched for reads.",
  "roots": [ "002E38", "002E9E", "002ED4", "002EDE", "002F34", "002F8E", "002FD0", "004CC8", "004D18", "004D56", "004D68", "004DA8", "004DE2", "004F58", "004FCC", "005080", "00560C", "006EAC", "006F8A", "007042", "00715C", "0071C6", "008EB4"],
  "yield": "000400",
- "exits": [ "0003B8", "004A06", "004BF8", "004CB4", "00C262"]
+ "exits": [ "0003B8", "004A06", "004BF8", "004CB4", "00C262"],
+ "contracts": { "002E38": [
+   "sp"
+  ], "002E9E": [
+   "sp"
+  ], "002ED4": [
+   "sp"
+  ], "002EDE": [
+   "sp"
+  ], "002F34": [
+   "sp"
+  ], "002F8E": [
+   "sp"
+  ], "002FD0": [
+   "sp"
+  ]
+ }
 }

@@ -93,7 +93,12 @@ status 3, instead of hanging.
 
 Environment variables:
 
-* `WBMW_PORT_BREAK=NAME`: self-test. Corrupts one flag of that routine's result, so every
+Checks compare memory, the PC and the stack pointer, and the registers a routine's contract
+names; any other register left different is watched, and the run reports `CONTRACT` if the
+game reads it before writing it. That needs `work/usedef.bin` (`python tools/liveness.py
+work/map.json --usedef work/usedef.bin`, after every map change).
+
+* `WBMW_PORT_BREAK=NAME`: self-test. Corrupts the stack pointer in that routine's result, so every
   checked call of it must be reported.
 * `WBMW_TRACE=ADDR[,ADDR...]` (hex, any mode): each time the 68000 reaches one of these
   addresses, print the game's frame counter, `d0`-`d3`, `a0` and the return address. For

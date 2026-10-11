@@ -253,6 +253,48 @@ unused flag, a stack residue), because the shadow check can only prove equivalen
 is left out. Once the callers of a routine are also C, the side effects nobody reads can be
 dropped. Doing it in that order keeps every step checkable.
 
+### The idiomatic rewrite: contracts and the dead-register watch (started 2026-10-11)
+
+The rewrite replaces translated routines with ordinary C, a subsystem at a time, in
+`port/<subsystem>.c`. The first slice is the moving-platform collision in `port/movement.c`:
+`PlatformsSideways` ($3AFC) and `PlatformsVertical` ($3C22), which push an entity out of the
+21 platform records, stand it on one and carry it along. They are written as C functions over
+named fields (`E_X(e)`, `P_HALF_W(p)`, ...) with ordinary arguments, and the adapter that
+registers them only unpacks the register they take (`a4`, the entity).
+
+Ordinary C cannot reproduce the scratch registers and flags the original leaves behind, so a
+registered routine now carries a **contract**: the registers its callers depend on
+(`CT_D0`..`CT_SP`, `CT_NZVC`, `CT_X`; `"contracts"` in `analysis/translate.json` for
+generated routines, the fifth field of a `PortRoutine` for hand-written ones). Every shadow
+check now works this way:
+
+* Memory, the PC and the stack pointer must match exactly; the dead stack below the final
+  stack pointer is not compared.
+* Registers and flags outside the contract that differ are copied from the original's result
+  and **watched**: `tools/liveness.py --usedef work/usedef.bin` writes, for every instruction,
+  the registers it reads and writes. The harness follows the original from there; a watched
+  register read before it is written is a `CONTRACT` violation naming the routine, the
+  register and the reading instruction; one overwritten first is dead and only counted
+  ("dead registers left different" in the report). Regenerate `work/usedef.bin` whenever
+  the map changes.
+
+Static liveness alone was not enough: past indirect jumps it has to assume every register is
+live. Watching at run time decides it for the paths the game actually takes, which is what the
+shadow runs check anyway. It also applies to the generated code: `g_00901C` now calls the
+readable platform code, which leaves `a2` different; the game never reads it (3 calls in the
+demo), and that is allowed.
+
+A movement routine that ran the original's QueueSound busy-wait inside a check froze, because
+the Z80 is held during checks; the harness lets sound time pass at $38E while a check is open,
+the same way `port_idle` does for the 68000.
+
+Result: 0 mismatches and 0 contract violations over the standard runs (new game, demo, the
+eight `platform.state` runs) and the castle and after-boss states; 50,000 fuzz cases each from
+`platform.state` and `demo1500.state` with 0 mismatches, every instruction of both originals
+covered (97 and 159). The self-test (`WBMW_PORT_BREAK=PlatformsVertical`) is caught 100 out of
+100 times. Fuzzing found the one difference reading missed: the original tests the riding
+flag with `tst.w`, a word read, not a byte.
+
 ### Tasks and `Yield`: stackless now, coroutines for the rewrite (revised 2026-10-10)
 
 The first decision (2026-10-10) was stackful coroutines: each task on its own C stack, `Yield()`
