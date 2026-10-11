@@ -183,8 +183,28 @@ void yield_survey_report(void)
     for (int i = 0; i < 0x20000; i++)
         if (sv_n[i]) fprintf(stderr, "yield: resume %06X, returns to %06X, %ld times\n", i, sv_to[i], sv_n[i]);
 }
+/* call trace (WBMW_TRACE=ADDR[,ADDR...] in hex, any mode): each time the 68000 reaches one of
+ * these addresses, print the game's frame counter ($FF8002), d0-d3, a0 and the return address */
+static uint32_t tr_addr[8]; static int tr_n = -1;
+static void trace_at(unsigned pc)
+{
+    if (tr_n < 0) {
+        tr_n = 0;
+        const char *s = getenv("WBMW_TRACE");
+        while (s && *s && tr_n < 8) { char *e; tr_addr[tr_n++] = (uint32_t)strtoul(s, &e, 16); s = *e ? e + 1 : e; }
+    }
+    for (int i = 0; i < tr_n; i++)
+        if (tr_addr[i] == pc) {
+            uint32_t sp = m68k_get_reg(NULL, M68K_REG_SP);
+            fprintf(stderr, "trace %06X game frame %u d0 %08X d1 %08X d2 %08X d3 %08X a0 %08X from %06X\n", pc, (unsigned)(ram[0x8002] << 24 | ram[0x8003] << 16 | ram[0x8004] << 8 | ram[0x8005]),
+                    m68k_get_reg(NULL, M68K_REG_D0), m68k_get_reg(NULL, M68K_REG_D1), m68k_get_reg(NULL, M68K_REG_D2),
+                    m68k_get_reg(NULL, M68K_REG_D3), m68k_get_reg(NULL, M68K_REG_A0), bus_read16(sp) << 16 | bus_read16(sp + 2));
+        }
+}
+
 int md_instr_hook(unsigned int pc)
 {
+    if (tr_n) trace_at(pc);
     if (sv_on < 0) sv_on = getenv("WBMW_YIELD_SURVEY") != NULL;
     if (sv_on && pc == YIELD_ADDR) {
         uint32_t sp = m68k_get_reg(NULL, M68K_REG_SP);

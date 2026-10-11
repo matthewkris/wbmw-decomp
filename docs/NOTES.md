@@ -208,6 +208,15 @@ six-byte blocks at $18BB8 and $1A3DE are one-box lists. `$FF8C7A` (text pointer,
   address onto a continuation stack at `$FF9C14` and returns through it later.
 * The code up to `jmp (a1)` at `$88A2` picks a handler from two records at `$88C2` (mask word, and-mask long, code
   pointer: `$893C`, `$8950`); that code ($88F2-$89B4) is reached only this way.
+* The ocarina and the note blocks. Using the ocarina (`$C48C`) while standing at a note-block
+  object (type `$24`; `$FFA0DE` points at it, negative when there is none) plays the tune
+  numbered by the object's byte `$FFCE02` (`$2AAE`). Notes are buttons (`$2B08`): A = note 0
+  (sound `$18`), B = note 1 (`$19`), C = note 2 (`$1A`), each within 60 frames of the last.
+  Tunes at `$2B38` (word offsets), each ending in `$FF`: tune 0 = 1 0 1 0 1 2 1 (B A B A B C B),
+  tune 1 = 0 1 2 1 2 0 1 (A B C B C A B), tune 2 = 0 2 2 0 1 0 1 (A C C A B A B). A correct tune
+  sets a flag bit per tune number (through `$2758`) and shows "You play beautifully." ($2BA9); a
+  wrong note "The melody isn't quite right." ($2BE5); no note in time "But I can't play very
+  well." ($2BC4). The same check is a text-script command (`$19D2`).
 * Sleeping at an inn: after the yes, `Kgam` waits 300 frames by polling bit 0 of `$FF8006` (set
   by VBlank) at `$C262`, then restarts the gameplay task at `$8EB4`. `$3B8` and `$C262` are the
   only readers of that flag.

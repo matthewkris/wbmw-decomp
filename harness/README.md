@@ -86,6 +86,9 @@ Environment variables:
 
 * `WBMW_PORT_BREAK=NAME`: self-test. Corrupts one flag of that routine's result, so every
   checked call of it must be reported.
+* `WBMW_TRACE=ADDR[,ADDR...]` (hex, any mode): each time the 68000 reaches one of these
+  addresses, print the game's frame counter, `d0`-`d3`, `a0` and the return address. For
+  example `WBMW_TRACE=366` lists every sound the game queues.
 * `WBMW_YIELD_SURVEY=1` (any mode): at the end, list every task resume point and where `Yield`
   returned to. If every line names a scheduler ($4BD8 or $4C8A), tasks only yield from their
   top level.

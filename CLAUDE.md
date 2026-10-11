@@ -94,7 +94,7 @@ and "The gameplay task"). Only the frame loop, the scheduler and the VBlank inte
 
 Owner save states in `work/` (not committed): `platform.state` (area 1 room 2, floating
 platforms), `inn2.state` (at an innkeeper's question; answering yes found the `$C262` hang),
-`owner2.state` (Sega logo after a game over), `castle.state` (inside a castle, frame 29,683). Copy `play.state`/F2 states to their own names:
+`owner2.state` (Sega logo after a game over), `castle.state` (inside a castle, frame 29,683), `ocarina.state` (on a note block, frame 35,051; the tunes are in `docs/NOTES.md`). Copy `play.state`/F2 states to their own names:
 F2 overwrites the same file each time.
 
 1. Coverage, from play (44% so far): the owner plays with `play.exe --state S --load --port shadow --coverage FILE` (any
