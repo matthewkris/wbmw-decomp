@@ -16,12 +16,20 @@ This makes `work/native/wbmw.exe` (and copies `SDL2.dll` next to it).
 
 ## Run
 
-    work/native/wbmw ROM [--scale N] [--save FILE]
+    work/native/wbmw ROM [--scale N] [--save FILE] [--fullscreen] [--integer-scale] [--fps]
 
 plays in a window: arrows, Z = A, X = B, C = C, Enter = Start, Esc quits; a controller works too.
 The window is sized for the game's 256-pixel width at the largest scale up to 3 that fits the
 screen (`--scale N` to choose); it can be resized, and the picture keeps its proportions.
 The save EEPROM is read from FILE at start and written at exit (default `wbmw.sav`).
+
+* **F11** or **Alt+Enter** toggles full screen (borderless, at the desktop's resolution, picture
+  centred with its proportions); `--fullscreen` starts in it.
+* `--integer-scale` scales only by whole multiples, so every pixel is the same size (a slightly
+  smaller picture, with a wider border).
+* **F3** toggles a frame-rate display in the top right corner (`--fps` starts with it on); the
+  window title always shows the rate. The game itself always runs 60 frames a second of game
+  time; the display tells whether the PC keeps up.
 
     work/native/wbmw ROM --frames N [--png-every K] [--out DIR] [--input FILE]
 

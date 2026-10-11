@@ -11,7 +11,7 @@
  * ($4B5C), as the hardware would. Restart points ($4BF8: reset the stack and re-enter the frame
  * loop) unwind the C stack to the host, which calls them again from the top.
  *
- *   wbmw ROM [--scale N] [--save FILE]                       play in a window
+ *   wbmw ROM [--scale N] [--save FILE] [--fullscreen] [--integer-scale] [--fps]   play in a window
  *   wbmw ROM --frames N [--png-every K] [--out DIR] [--input FILE]   headless, for comparison
  *
  * The ROM is still needed: the game's data (graphics, maps, text) is read from it. */
@@ -93,6 +93,39 @@ static uint8_t buttons_at(int fr)
 #ifndef WBMW_HEADLESS_ONLY
 static SDL_Window *win; static SDL_Renderer *ren; static SDL_Texture *tex; static SDL_GameController *gc;
 static Uint64 next_tick;
+static int fullscreen, integer_scale, show_fps;
+static const char *TITLE = "Wonder Boy in Monster World (native)  (arrows, Z/X/C, Enter; F11 full screen, F3 fps, Esc quits)";
+
+/* frames shown per second, measured over each second */
+static Uint64 fps_start; static int fps_frames; static double fps;
+
+/* a 3x5 pixel font for the fps overlay: digits, '.', 'f', 'p', 's'; each row is 3 bits */
+static const uint8_t FONT[][5] = {
+    {7,5,5,5,7}, {2,6,2,2,7}, {7,1,7,4,7}, {7,1,7,1,7}, {5,5,7,1,1},
+    {7,4,7,1,7}, {7,4,7,5,7}, {7,1,1,1,1}, {7,5,7,5,7}, {7,5,7,1,7},
+    {0,0,0,0,2}, {3,4,6,4,4}, {6,5,6,4,4}, {3,4,2,1,6},
+};
+static int glyph(char ch) { return ch >= '0' && ch <= '9' ? ch - '0' : ch == '.' ? 10 : ch == 'f' ? 11 : ch == 'p' ? 12 : ch == 's' ? 13 : -1; }
+
+/* draw the fps in the top right corner of the picture, white on a black box */
+static void draw_fps(void)
+{
+    char text[16]; snprintf(text, sizeof text, "%.1ffps", fps);
+    int n = (int)strlen(text), w = n * 4 + 1, x0 = frame_width - w - 2, y0 = 2;
+    for (int y = y0 - 1; y < y0 + 6; y++) for (int x = x0 - 1; x < x0 + w; x++) frame_rgb[y][x] = 0x000000;
+    for (int i = 0; i < n; i++) {
+        int g = glyph(text[i]); if (g < 0) continue;
+        for (int r = 0; r < 5; r++) for (int col = 0; col < 3; col++)
+            if (FONT[g][r] >> (2 - col) & 1) frame_rgb[y0 + r][x0 + i * 4 + col] = 0xFFFFFF;
+    }
+}
+
+static void set_fullscreen(int on)
+{
+    fullscreen = on;
+    SDL_SetWindowFullscreen(win, on ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);    /* borderless, at the desktop's size */
+    SDL_ShowCursor(on ? SDL_DISABLE : SDL_ENABLE);
+}
 
 static void window_open(void)
 {
@@ -104,10 +137,12 @@ static void window_open(void)
         if (SDL_GetDisplayUsableBounds(0, &r) == 0)
             while (scale > 1 && (224 * scale > r.h * 9 / 10 || 256 * scale > r.w * 9 / 10)) scale--;
     }
-    win = SDL_CreateWindow("Wonder Boy in Monster World (native)  (arrows, Z/X/C, Enter; Esc quits)",
-                           SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 256 * scale, 224 * scale, SDL_WINDOW_RESIZABLE);
+    win = SDL_CreateWindow(TITLE, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 256 * scale, 224 * scale, SDL_WINDOW_RESIZABLE);
     ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
+    SDL_RenderSetIntegerScale(ren, integer_scale ? SDL_TRUE : SDL_FALSE);   /* whole multiples only: even pixels */
+    if (fullscreen) set_fullscreen(1);
+    fps_start = SDL_GetPerformanceCounter();
     tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, 320, 224);
     next_tick = SDL_GetPerformanceCounter();
 }
@@ -125,6 +160,11 @@ static void window_frame(void)
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
         if (e.type == SDL_QUIT || (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE)) quit(0);
+        if (e.type == SDL_KEYDOWN && !e.key.repeat) {
+            SDL_Keycode key = e.key.keysym.sym;
+            if (key == SDLK_F11 || (key == SDLK_RETURN && (e.key.keysym.mod & KMOD_ALT))) set_fullscreen(!fullscreen);
+            if (key == SDLK_F3) show_fps = !show_fps;
+        }
         if (e.type == SDL_CONTROLLERDEVICEADDED && !gc) gc = SDL_GameControllerOpen(e.cdevice.which);
     }
     const Uint8 *k = SDL_GetKeyboardState(NULL);
@@ -132,7 +172,8 @@ static void window_frame(void)
     b |= k[SDL_SCANCODE_UP] ? 1 : 0;    b |= k[SDL_SCANCODE_DOWN] ? 2 : 0;
     b |= k[SDL_SCANCODE_LEFT] ? 4 : 0;  b |= k[SDL_SCANCODE_RIGHT] ? 8 : 0;
     b |= k[SDL_SCANCODE_X] ? 16 : 0;    b |= k[SDL_SCANCODE_C] ? 32 : 0;
-    b |= k[SDL_SCANCODE_Z] ? 64 : 0;    b |= k[SDL_SCANCODE_RETURN] ? 128 : 0;
+    b |= k[SDL_SCANCODE_Z] ? 64 : 0;
+    b |= k[SDL_SCANCODE_RETURN] && !(SDL_GetModState() & KMOD_ALT) ? 128 : 0;   /* Alt+Enter is full screen */
     if (gc) {
         b |= SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_DPAD_UP) ? 1 : 0;
         b |= SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_DPAD_DOWN) ? 2 : 0;
@@ -144,11 +185,19 @@ static void window_frame(void)
         b |= SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_START) ? 128 : 0;
     }
     pad_buttons = b;
+    Uint64 freq = SDL_GetPerformanceFrequency(), t = SDL_GetPerformanceCounter();
+    fps_frames++;
+    if (t - fps_start >= freq) {                     /* once a second: the rate, in the title too */
+        fps = fps_frames * (double)freq / (double)(t - fps_start);
+        fps_frames = 0; fps_start = t;
+        char title[256]; snprintf(title, sizeof title, "%s  %.1f fps", TITLE, fps);
+        SDL_SetWindowTitle(win, title);
+    }
+    if (show_fps) draw_fps();
     SDL_UpdateTexture(tex, NULL, &frame_rgb[0][0], 320 * 4);
     SDL_Rect src = {0, 0, frame_width, ACTIVE_LINES};              /* only the width the game uses */
     SDL_RenderSetLogicalSize(ren, frame_width, ACTIVE_LINES);
     SDL_RenderClear(ren); SDL_RenderCopy(ren, tex, &src, NULL); SDL_RenderPresent(ren);
-    Uint64 freq = SDL_GetPerformanceFrequency();
     next_tick += (Uint64)(freq / 59.922);
     Uint64 now = SDL_GetPerformanceCounter();
     if (now < next_tick) SDL_Delay((Uint32)((next_tick - now) * 1000 / freq));
@@ -194,10 +243,15 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--input") && i + 1 < argc) input = argv[++i];
         else if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--save") && i + 1 < argc) save_path = argv[++i];
+#ifndef WBMW_HEADLESS_ONLY
+        else if (!strcmp(argv[i], "--fullscreen")) fullscreen = 1;
+        else if (!strcmp(argv[i], "--integer-scale")) integer_scale = 1;
+        else if (!strcmp(argv[i], "--fps")) show_fps = 1;
+#endif
         else rom_path = argv[i];
     }
     if (!rom_path) {
-        fprintf(stderr, "usage: wbmw ROM [--scale N] [--save FILE]\n"
+        fprintf(stderr, "usage: wbmw ROM [--scale N] [--save FILE] [--fullscreen] [--integer-scale] [--fps]\n"
                         "       wbmw ROM --frames N [--png-every K] [--out DIR] [--input FILE]\n");
         return 2;
     }
