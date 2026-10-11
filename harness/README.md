@@ -82,6 +82,11 @@ emulated time (`docs/PORT.md`, Tasks).
 before the first frame, and puts the registers back. With `--save-state-at` it edits states:
 after patching the health in a state file, `--call g_008AA2` redraws the hearts.
 
+By game frame (`framelog.c`, the same in the native build): `--frame-log FILE` writes a line
+per game frame (counter, hashes of RAM, VRAM, CRAM+VSRAM) when the game waits for VBlank;
+`--input-game FILE` keys input to the game's frame counter instead of real frames; `--dump-at N
+DIR` writes the memory at game frame N. `tools/framecmp.py A B` compares two logs.
+
 If translated code loops 100 million branches in one call (waiting for time or an interrupt,
 which it never gets), the harness prints `STUCK` with the recent branch targets and exits with
 status 3, instead of hanging.

@@ -37,6 +37,11 @@ runs headless for N frames, writing `DIR/frame_NNNNN.png` every K frames (and th
 file with `--wav`), with the harness's
 input script format, for comparison with `work/harness/harness`.
 
+## Comparing with the original
+
+Both this program and the harness take `--frame-log FILE`, `--input-game FILE` and `--dump-at N
+DIR` (`harness/framelog.c`); `tools/framecmp.py` compares two frame logs by game frame.
+
 ## How time works
 
 Translated code takes no time of its own. The game runs until it waits for the VBlank interrupt

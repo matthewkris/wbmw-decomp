@@ -90,6 +90,14 @@ int md_instr_hook(unsigned int pc);
 void audio_open(void);
 void audio_frame(int mute);
 
+/* framelog.c: comparing runs by game frame (harness and native build) */
+int framelog_open(const char *path);
+int framelog_input(const char *path);    /* input keyed by game frame */
+int framelog_input_active(void);
+void framelog_dump_at(long n, const char *dir);
+void framelog_at(uint32_t pc);
+void framelog_close(void);
+
 /* wav.c */
 int wav_open(const char *path, uint32_t rate);
 void wav_write(const int16_t *stereo, int n);

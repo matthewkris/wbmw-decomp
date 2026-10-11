@@ -106,8 +106,10 @@ F2 overwrites the same file each time.
 2. The native build runs (`native/`, `work/native/wbmw.exe`; `docs/PORT.md`, "The native
    build"): the whole game as C, no 68000 emulator, pixel-identical to the original once the
    time shift from the original's dropped frames is accounted for, with sound (`docs/PORT.md`,
-   "Sound"). Next for it: comparison by game frame (`$FF8002`) instead of real frame, and save
-   states. The sound driver itself is still Z80 code run by an emulator; translating it is a
+   "Sound"). Compared by game frame (`--frame-log`, `tools/framecmp.py`), its picture and game
+   state match the original; only raster-timed scheduling differs (three bytes; `docs/PORT.md`,
+   "Comparing by game frame"). Next for it: save states; optionally 68000 cycle counting in the
+   generated code, for exact timing and the original's slowdowns. The sound driver itself is still Z80 code run by an emulator; translating it is a
    later, separate project.
 3. Then the idiomatic rewrite, subsystem by subsystem, checked against the original the same
    way; that is where the coroutine library belongs. Fuzz input generators live in

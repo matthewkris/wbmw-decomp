@@ -14,6 +14,7 @@
  *
  *   wbmw ROM [--scale N] [--save FILE] [--fullscreen] [--integer-scale] [--fps]   play in a window
  *   wbmw ROM --frames N [--png-every K] [--out DIR] [--input FILE] [--wav FILE]   headless, for comparison
+ *            [--frame-log FILE] [--input-game FILE] [--dump-at N DIR]          by game frame (harness/framelog.c)
  *
  * The ROM is still needed: the game's data (graphics, maps, text) is read from it. */
 #include <stdio.h>
@@ -214,6 +215,7 @@ static void window_frame(void)
  * yet, this is the end of the frame: draw it, show it, and deliver the interrupt. */
 void rt_poll(Cpu *c, uint32_t at)
 {
+    framelog_at(at);                                /* --frame-log, --input-game, --dump-at */
     if (ram[0x8006] & 1) return;                    /* the interrupt already came this frame */
     rt_steps = 0;
     for (int line = 0; line < ACTIVE_LINES; line++) { vdp_line = line; vdp_render_line(line); }
@@ -226,8 +228,8 @@ void rt_poll(Cpu *c, uint32_t at)
             png_write_rgb(path, &frame_rgb[0][0], frame_width, ACTIVE_LINES, 320);
         }
         { static int16_t snd[4096 * 2]; int n = sound_take(snd, 4096); if (wav_path) wav_write(snd, n); }
-        if (frame >= frames_max) { wav_close(); exit(0); }
-        pad_buttons = buttons_at(frame + 1);
+        if (frame >= frames_max) { wav_close(); framelog_close(); exit(0); }
+        if (!framelog_input_active()) pad_buttons = buttons_at(frame + 1);
     }
 #ifndef WBMW_HEADLESS_ONLY
     else { window_frame(); audio_frame(mute); }
@@ -249,6 +251,9 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--out") && i + 1 < argc) out_dir = argv[++i];
         else if (!strcmp(argv[i], "--input") && i + 1 < argc) input = argv[++i];
         else if (!strcmp(argv[i], "--wav") && i + 1 < argc) wav_path = argv[++i];
+        else if (!strcmp(argv[i], "--frame-log") && i + 1 < argc) { if (framelog_open(argv[++i])) return 1; }
+        else if (!strcmp(argv[i], "--input-game") && i + 1 < argc) { if (framelog_input(argv[++i])) return 1; }
+        else if (!strcmp(argv[i], "--dump-at") && i + 2 < argc) { long n = atol(argv[++i]); framelog_dump_at(n, argv[++i]); }
         else if (!strcmp(argv[i], "--mute")) mute = 1;
         else if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--save") && i + 1 < argc) save_path = argv[++i];

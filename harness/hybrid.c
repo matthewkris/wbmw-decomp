@@ -208,6 +208,7 @@ static void trace_at(unsigned pc)
 int md_instr_hook(unsigned int pc)
 {
     if (tr_n) trace_at(pc);
+    framelog_at(pc);
     if (sv_on < 0) sv_on = getenv("WBMW_YIELD_SURVEY") != NULL;
     if (sv_on && pc == YIELD_ADDR) {
         uint32_t sp = m68k_get_reg(NULL, M68K_REG_SP);

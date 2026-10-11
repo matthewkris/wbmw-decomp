@@ -414,6 +414,42 @@ Results:
   timing. And comparison by game frame rather than real frame (the game's counter at
   `$FF8002`), so long runs can be compared exactly despite the time shift.
 
+#### Comparing by game frame (2026-10-11)
+
+The native build never drops frames and the original does, so comparing them frame by real
+frame only shows the time shift. `harness/framelog.c` (in both builds) samples the machine at the
+same point of every game frame, where the game waits for VBlank (`$3DC`, after the frame counter
+`$FF8002` went up):
+
+* `--frame-log FILE` writes one line per game frame with hashes of work RAM, VRAM and
+  CRAM+VSRAM. The stack area and the VBlank counter `$FF8A49` are left out, because they depend on
+  where the interrupt struck.
+* `--input-game FILE` gives the buttons by game frame (same format as `--input`), so both builds
+  see each press on the same game frame.
+* `--dump-at N DIR` writes the memory at game frame N.
+* `tools/framecmp.py A B` compares two logs.
+
+Results, from power-on through the new-game script (3,864 game frames in both):
+
+* **The picture.** VRAM is identical from game frame 884 on, and CRAM and VSRAM from 619. The
+  earlier differences are while the title loads.
+* **Work RAM** differs in every game frame from 233 on, but in very few bytes. At game frame
+  3,000, three bytes differ: `$FF8A4A` (the user scheduler's round-robin position), `$FF8109` (a
+  counter in a system task's slot) and `$FFC709` (one object's blink counter). The player, every
+  object, the map and the camera are identical.
+* **The cause** is the time-sliced scheduler. With bit 6 of `$FF8A5D` set (nearly all the time,
+  gameplay included), `$4C00` runs user tasks only until the raster reaches line `$D0`, carrying
+  on round-robin next frame, and `YieldIfLate` does the same within tasks. The original's raster
+  moves with the 68000's cycles; the native build takes no time, so its raster is always line 0
+  and it runs a different set of task passes per frame. In the attract demo the same timing
+  makes the recorded demo play out differently.
+
+So the native build's game logic matches the original. What it lacks is the original's timing,
+and that shows only through raster-dependent scheduling (and the dropped frames). To match
+exactly, the native build would have to count the 68000 cycles the original would spend and
+derive the raster position from them. The translator could add each instruction's cycle count,
+which would also reproduce the original's slowdowns.
+
 #### Sound (2026-10-11)
 
 The game's sound is the Z80 running the game's own driver (6,775 bytes at `$98000`, uploaded at

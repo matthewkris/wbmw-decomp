@@ -105,6 +105,7 @@ runnable as early as possible and ask for specific checks.
 | Native and original frames diverged in the attract demo, but the native picture was found 154 frames later in the original. | Translated code takes no time, so it never drops frames; compare by game frame, not real frame, or find the time shift before calling a difference a bug. |
 | Adding a second processor (the Z80) turned a 68000 wait loop that had never been taken into one that could hang zero-time code. | Each new piece of hardware: look for code that waits on it, and give ported code a way to let time pass there. Hold the new processor still during differential checks so its own state changes do not count as differences. |
 | Audio cannot be judged by listening here. | Record it to a file and measure it (silence, levels, clipping, DC offset, stereo); compare two builds by the sequence of chip writes, not by waveform, since timing shifts phases. |
+| Comparing a zero-time port with the original frame by frame only measured the time shift. | Compare at the same point of each game frame (the game's own frame counter), with input keyed to it; then whatever still differs is timing the port does not model (here, raster-timed task scheduling), and names its own bytes. |
 | Following stored code pointers pulled in the whole game at once. | Let the translator leave to the original code for anything untranslated (always correct in the harness), and defer big subsystems explicitly, to keep each step's checks fine-grained. |
 
 ## General versus game-specific
