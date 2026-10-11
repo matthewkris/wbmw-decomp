@@ -171,7 +171,13 @@ static inline void stack_residue(Cpu *c, uint32_t ret) { wr32(c->a[7] - 4, ret);
 
 /* the registry of ported routines */
 typedef void (*PortFn)(Cpu *);
-typedef struct { uint32_t addr, end; const char *name; PortFn fn; } PortRoutine;
+/* contract: 0 for an exact port (every register and flag as the original leaves them). An
+ * ordinary C rewrite instead names what it must get right: bits 0-15 = d0-d7, a0-a7, bit 16 =
+ * the NZVC flags, bit 17 = X (a7 is always checked). The harness then checks memory exactly
+ * (except the dead stack below the stack pointer) and those registers, and watches that every
+ * other register left different is overwritten before the game reads it. */
+enum { CT_D0 = 1, CT_A0 = 1 << 8, CT_SP = 1 << 15, CT_NZVC = 1 << 16, CT_X = 1 << 17 };
+typedef struct { uint32_t addr, end; const char *name; PortFn fn; uint32_t contract; } PortRoutine;
 extern const PortRoutine port_routines[];
 extern const int port_routine_count;
 

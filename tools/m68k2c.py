@@ -11,6 +11,9 @@ CONFIG (analysis/translate.json) gives the game's facts, as hex address strings:
           stack and re-enters the frame loop, waits for the next frame, or hangs. Reaching one
           ends the call with c->ret = that address.
   defer   entries deliberately not translated yet (with what only they reach).
+  contracts  {"ADDR": ["sp", "d6", ...]}: check that routine only on these registers and flags
+          (and memory), watching the rest at run time (port.h, contracts). For translated routines
+          that call ordinary C rewrites, whose leftover registers and stack differ.
   restart (native build) exits that are also translated as entries of their own: code reaching
           one unwinds to the host, which then calls it fresh (re-entering the frame loop with a
           reset stack, so the C stack does not grow).
@@ -47,6 +50,18 @@ ROOTS = [int(a, 16) for a in CONFIG['roots'] + CONFIG.get('seen', [])]
 YIELD = int(CONFIG['yield'], 16) if 'yield' in CONFIG else None
 EXITS = {int(a, 16) for a in CONFIG.get('exits', [])}
 DEFER = {int(a, 16) for a in CONFIG.get('defer', [])}
+# contracts (port.h): the registers and flags a translated routine's check compares, by name;
+# the rest is left to the harness's dead-register watch. For routines that call ordinary C.
+def contract_mask(names):
+    m = 1 << 15
+    for n in names:
+        n = n.lower()
+        if n == 'sp': continue
+        if n == 'nzvc': m |= 1 << 16
+        elif n == 'x': m |= 1 << 17
+        else: m |= 1 << (int(n[1]) + (8 if n[0] == 'a' else 0))
+    return m
+CONTRACTS = {int(a, 16): contract_mask(v) for a, v in CONFIG.get('contracts', {}).items()}
 RESTART = {int(a, 16) for a in CONFIG.get('restart', [])}
 EXITS |= RESTART
 POLL = {int(a, 16) for a in CONFIG.get('poll', [])}
@@ -59,7 +74,7 @@ CALLS = {int(a, 16) for a in m['calls']}
 # hand ports: {0xADDR, 0xEND, "Name", Fn}
 HAND = {}
 for line in open(os.path.join(os.path.dirname(__file__), '..', 'port', 'registry.c')):
-    mm = re.search(r'\{0x([0-9A-Fa-f]+), 0x([0-9A-Fa-f]+), "(\w+)", (\w+)\}', line)
+    mm = re.search(r'\{0x([0-9A-Fa-f]+), 0x([0-9A-Fa-f]+), "(\w+)", (\w+)(?:, [^}]*)?\}', line)
     if mm: HAND[int(mm.group(1), 16)] = mm.group(4)
 
 if CONFIG.get('hand_ports', True) is False: HAND = {}
@@ -621,7 +636,7 @@ with open(os.path.join(OUT, 'gen_registry.c'), 'w', newline='\n') as f:
     f.write('\nconst PortRoutine gen_routines[] = {\n')
     for e in sorted(fns):
         end = max(fns[e].body) + INS[max(fns[e].body)][0]
-        f.write('    {0x%06X, 0x%06X, "g_%06X", g_%06X},\n' % (e, end, e, e))
+        f.write('    {0x%06X, 0x%06X, "g_%06X", g_%06X, 0x%X},\n' % (e, end, e, e, CONTRACTS.get(e, 0)))
     f.write('};\nconst int gen_routine_count = %d;\n\n' % len(fns))
     f.write('/* where generated code stops (translate.json "exits"): a check also ends there */\n')
     f.write('const uint32_t gen_exits[] = {%s0};\nconst int gen_exit_count = %d;\n\n'

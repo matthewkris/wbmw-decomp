@@ -12,6 +12,7 @@ void BuildSprites(Cpu *), AddEntitySprites(Cpu *);
 void HitboxOverlapSwap(Cpu *), HitboxOverlap(Cpu *), BoxPairOverlap(Cpu *), BodyVsHurtBoxes(Cpu *);
 void BodyVsAttackBoxesSwap(Cpu *), BodyVsAttackBoxes(Cpu *), BoxVsBody(Cpu *), ResolveContact(Cpu *);
 void ContactSide(Cpu *), CheckBodyContact(Cpu *), BodyOverlap(Cpu *);
+void PlatformsSideways(Cpu *), PlatformsVertical(Cpu *);   /* movement.c: ordinary C, with contracts */
 void MapBlockAt(Cpu *), MapBlockAtRaw(Cpu *), TileAttrAtPixel(Cpu *), TileAttrAt(Cpu *), TileTypeOf(Cpu *);
 void ProbeTileBelow(Cpu *), ProbeTileAbove(Cpu *), ProbeTileFeet(Cpu *), ProbeTileAt(Cpu *), ProbeTileAtA3(Cpu *);
 
@@ -56,6 +57,9 @@ const PortRoutine port_routines[] = {
     {0x0030D2, 0x0030DA, "TileAttrAtPixel", TileAttrAtPixel},
     {0x0030DA, 0x0030F4, "TileAttrAt", TileAttrAt},
     {0x0030F4, 0x003142, "TileTypeOf", TileTypeOf},
+    /* the idiomatic rewrite (movement.c): checked on memory and the stack pointer only */
+    {0x003AFC, 0x003C22, "PlatformsSideways", PlatformsSideways, CT_SP},
+    {0x003C22, 0x003E20, "PlatformsVertical", PlatformsVertical, CT_SP},
     {0x003F58, 0x003F70, "ProbeTileBelow", ProbeTileBelow},
     {0x003F74, 0x003F8E, "ProbeTileAbove", ProbeTileAbove},
     {0x003F92, 0x003FAC, "ProbeTileFeet", ProbeTileFeet},
