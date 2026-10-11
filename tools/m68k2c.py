@@ -11,6 +11,8 @@ CONFIG (analysis/translate.json) gives the game's facts, as hex address strings:
           stack and re-enters the frame loop, waits for the next frame, or hangs. Reaching one
           ends the call with c->ret = that address.
   defer   entries deliberately not translated yet (with what only they reach).
+  seen    entries found only at run time: targets of computed jumps the tracer could not
+          resolve, from the harness's "left generated code" report. Translated like roots.
 
 A call or jump to code that is not translated goes through rt_dispatch at run time; if that
 has no translation either, rt_leave (provided by the host) decides: the harness hands control
@@ -27,7 +29,7 @@ import sys, os, re, json
 
 ROM, MAP, OUT = sys.argv[1], sys.argv[2], sys.argv[3]
 CONFIG = json.load(open(sys.argv[4]))
-ROOTS = [int(a, 16) for a in CONFIG['roots']]
+ROOTS = [int(a, 16) for a in CONFIG['roots'] + CONFIG.get('seen', [])]
 YIELD = int(CONFIG['yield'], 16) if 'yield' in CONFIG else None
 EXITS = {int(a, 16) for a in CONFIG.get('exits', [])}
 DEFER = {int(a, 16) for a in CONFIG.get('defer', [])}

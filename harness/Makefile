@@ -4,8 +4,9 @@ CC = gcc
 CFLAGS ?= -O2 -Wall -Wno-unused-function -Wno-unused-label -Wno-unused-variable
 MUSASHI = ../third_party/musashi
 OUT = ../work/harness
-CORE = core.c bus.c vdp.c png.c hybrid.c $(PORT) $(GEN)
+CORE = core.c bus.c vdp.c png.c hybrid.c $(PORT) $(GENO)
 GEN = ../work/gen/gen.c ../work/gen/gen_registry.c
+GENO = $(OUT)/gen.o $(OUT)/gen_registry.o
 PYTHON ?= python
 ROM ?= ../rom/Wonder Boy in Monster World (USA, Europe).md
 PORT = ../port/kernel.c ../port/entity.c ../port/anim.c ../port/gfx.c ../port/sprites.c ../port/hitbox.c ../port/map.c ../port/registry.c
@@ -31,6 +32,12 @@ $(OUT)/softfloat.o: $(MUSASHI)/softfloat/softfloat.c
 # the translated routines (tools/m68k2c.py): roots, yield and exits from analysis/translate.json; needs work/map.json
 $(GEN): ../tools/m68k2c.py ../analysis/translate.json ../port/registry.c ../work/map.json
 	$(PYTHON) -I ../tools/m68k2c.py "$(ROM)" ../work/map.json ../work/gen ../analysis/translate.json
+
+# compiled once for both programs: gen.c is megabytes of C
+$(OUT)/gen.o: ../work/gen/gen.c ../port/m68k_rt.h ../port/port.h
+	$(CC) $(CFLAGS) -I../port -c $< -o $@
+$(OUT)/gen_registry.o: ../work/gen/gen_registry.c ../port/m68k_rt.h ../port/port.h
+	$(CC) $(CFLAGS) -I../port -c $< -o $@
 
 $(OUT)/harness: main.c $(CORE) md.h ../port/port.h $(CPU)
 	$(CC) $(CFLAGS) -I$(MUSASHI) -I../port main.c $(CORE) $(CPU) -o $@ $(LDFLAGS) -lm

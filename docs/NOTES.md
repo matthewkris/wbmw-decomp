@@ -204,6 +204,10 @@ six-byte blocks at $18BB8 and $1A3DE are one-box lists. `$FF8C7A` (text pointer,
 * Every task yields from its top level: in the standard runs, `Yield` always returns straight to
   $4BD8 or $4C8A. A task is stackless between passes (resume address + RAM). A task that ends a
   pass with `rts` instead runs again from the same resume address.
+* `Kgam` runs the gameplay frame at `$901C` (one pass a frame). `$C7E6` pushes its own return
+  address onto a continuation stack at `$FF9C14` and returns through it later.
+* The code up to `jmp (a1)` at `$88A2` picks a handler from two records at `$88C2` (mask word, and-mask long, code
+  pointer: `$893C`, `$8950`); that code ($88F2-$89B4) is reached only this way.
 * `EndTask` ($4E6) calls the slot's exit handler (slot+8, set by the task, e.g. `$569C`, `$6BAE`)
   and frees the slot. `$62A` turns the display off and waits a frame (`jmp $3B8`), before a
   system task starts.

@@ -332,6 +332,50 @@ generated routines, 8,065 instructions, 40 resume points, no unsupported instruc
   and the continue screen. Fuzzing cannot stand in for these; they need save states (the
   ending, game over and continue, each menu option). Until then these routines stay unaccepted.
 
+#### The gameplay task (`Kgam`, $8EB4): the whole game logic
+
+With `Kgam` added as a root, every task is translated: 1,094 generated routines, 66,163
+instructions counted per routine (20,765 distinct; the tracer knows 28,267), 132 resume points,
+no unsupported instruction. Only the frame loop, the scheduler and the VBlank interrupt are still
+68000 code. Every gameplay frame is one checked pass of `Kgam` (`g_00901C`), compared byte for
+byte at its end, so the checks are coarse (about six per frame). To localise a mismatch, defer
+parts again (`defer`) so they run as 68000 and the checks fall back to smaller routines.
+
+Getting there needed:
+
+* **Targets of computed jumps found at run time.** Some indirect jumps go through data the
+  tracer cannot follow, such as behaviour pointers and dispatch records. The "left generated
+  code" report names each one, and `analysis/translate.json` `"seen"` lists them as roots (31,
+  over three rounds, until no standard run leaves generated code). Targets that only other
+  parts of the game reach will show up the same way, and until then the harness runs them as
+  68000.
+* **A tracer gap.** `$88F2`-`$89B4` was taken for data, but it is code reached through two
+  dispatch records at `$88C2`. `analysis/hints.json` now names `$893C` and `$8950` as entries,
+  and the rebuild is still byte-identical.
+* **Checks end where the C version ended.** `$C7E6` saves its return address on a continuation
+  stack (`$FF9C14`) and jumps back to it later. The original reached its caller (`$908A`) that
+  way while the C version, with `$908A` translated, ran on to the end of the pass, so the check
+  compared them at different moments. A check now closes only at the C version's final PC and
+  stack pointer, or at an exit; if the original never gets there, it is reported `UNFINISHED`.
+* **A harness bug.** The per-routine counters were a fixed table of 1,024, and there are now
+  1,139 routines. It overflowed and corrupted the report; the table is now sized at start-up.
+* **Build time.** The generated C is about 7 MB and is now compiled once into an object file
+  for both programs (3½ minutes).
+
+Results:
+
+* The ten standard runs: zero mismatches and no generated code left. The self-test reports a
+  corrupted `Kgam` pass on every frame.
+* Replace mode (the C runs all of the game logic): from the platform state, all 12 frames
+  sampled over 1,200 frames are pixel-identical to the original. In the new-game run the frames
+  match from frame 2,000 on. Before that, the title arrives a few frames early: the original
+  drops frames while it decompresses, and the C takes no emulated time.
+* Coverage: 7,489 of the 20,765 distinct translated instructions (36%) ran inside checks. The
+  rest is game the standard runs never reach (other areas, bosses, shops, most enemies), and it
+  stays unaccepted until something runs it. The way to get there is playing with checks on:
+  `play.exe --port shadow --coverage FILE` records which code each session checked, and
+  `tools/coverage.py` merges the sessions.
+
 ### Platform layer
 
 The native build will provide `port.h`'s memory accessors and a Mega Drive platform library

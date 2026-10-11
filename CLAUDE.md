@@ -86,19 +86,23 @@ The port now has two kinds of C: hand ports (`port/*.c`, 45 routines) and transl
 (`tools/m68k2c.py` into `work/gen`, roots in `analysis/translate.json`; the owner chose this as
 scaffolding, see `docs/PORT.md`). Next:
 
-Done so far: movement with collision (39 routines, fully covered but for a deliberate hang),
-and every task except `Kgam` (273 generated routines in all, 0 mismatches over the standard
-runs; tasks are stackless, see `docs/PORT.md`, "Tasks and Yield"). Next:
+Done so far: every task is translated, including `Kgam`, the gameplay task: 1,094 generated
+routines, zero mismatches over the standard runs, no generated code left in them, and replace
+mode matches the original pixel for pixel in gameplay (see `docs/PORT.md`, "Tasks and Yield"
+and "The gameplay task"). Only the frame loop, the scheduler and the VBlank interrupt are still
+68000. Coverage is 36% of the translated instructions. Next:
 
-1. Cover the task layer: 78 translated routines never ran in the standard runs, mostly the
-   ending (`Kedm`), menus and continue screens. Ask the owner for save states there (F2 in
-   `play.exe`), then run the standard checks from them.
-2. Translate `Kgam` ($8EB4), the gameplay task (about 900 routines): remove it from `defer` in
-   `analysis/translate.json`. Expect coarse checks (one per task pass); check finer by deferring
-   parts of it while diagnosing.
-3. Then the scheduler and frame loop (`$4BBC`-`$4C00`), last, once everything they call is C;
-   then the platform layer for a native build. Fuzz input generators live in `harness/hybrid.c`
-   and are game-specific; move them to a game file when the second game starts.
+1. Coverage, from play: the owner plays with `play.exe --port shadow --coverage FILE` (any
+   mismatch is printed to the console and in the report at exit; save states with F2 for
+   anything worth re-checking). Merge the files with `tools/coverage.py`. Add any new "left
+   generated code" targets to `"seen"` in `analysis/translate.json` (the harness report names
+   them).
+2. Then the frame loop, scheduler and interrupt (`$4BBC`-`$4C00`, `$4B5C`) in C, and the
+   platform layer (VDP, input, timing, then sound) for a native build without Musashi.
+3. Then the idiomatic rewrite, subsystem by subsystem, checked against the original the same
+   way; that is where the coroutine library belongs. Fuzz input generators live in
+   `harness/hybrid.c` and are game-specific; move them to a game file when the second game
+   starts.
 
 Every ported routine is accepted only with zero shadow mismatches and every instruction of the
 original covered (gameplay runs plus fuzzing); see "How a ported routine is accepted" in

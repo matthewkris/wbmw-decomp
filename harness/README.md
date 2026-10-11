@@ -26,7 +26,13 @@ This builds two programs in `work/harness/` (git-ignored, like everything in `wo
 
 ## Play
 
-    work/harness/play ROM [--scale N] [--save FILE]
+    work/harness/play ROM [--scale N] [--save FILE] [--state FILE] [--port replace|shadow]
+                          [--coverage FILE]
+
+`--port replace` plays with the translated C running the game; `--port shadow` plays the
+original while checking every translated call against it (mismatches print to the console, and
+a report at exit). With `--coverage FILE` the session also records which translated code it
+checked; `tools/coverage.py work/map.json FILE ...` merges sessions.
 
 | Key | Pad | Mega Drive |
 |---|---|---|

@@ -57,7 +57,7 @@ static int mode;
 static int break_idx = -1;            /* self-test: corrupt this routine's result (WBMW_PORT_BREAK=name) */
 static int16_t *slot_of;              /* routine index for each even ROM address, -1 if none */
 #define SLOTS 0x20000
-static struct { long calls, bad; } stats[1024];
+static struct Stat { long calls, bad; } *stats;    /* one per routine, sized in hybrid_init */
 
 static void get_cpu(Cpu *c)
 {
@@ -189,10 +189,12 @@ int md_instr_hook(unsigned int pc)
             shadow.open = 0; bus_timing(TIMING_OFF); md_irq_hold(0);
             return 0;
         }
-        /* the check ends where the original returns to its caller, or where the C version
-         * ended up if that is elsewhere (Yield returns to the scheduler), or at an exit */
+        /* the check ends where the C version ended: usually the return to the caller, but Yield
+         * returns to the scheduler, and a routine that saves its return address and jumps back
+         * to it later ($C7E6) ends after that; or at an exit. If the original never gets there,
+         * the check is reported unfinished. */
         uint32_t sp = m68k_get_reg(NULL, M68K_REG_SP);
-        if ((pc == shadow.ret && sp == shadow.sp) || (pc == want->pc && sp == want->cpu.a[7]) || is_exit(pc)) check();
+        if ((pc == want->pc && sp == want->cpu.a[7]) || is_exit(pc)) check();
         return 0;
     }
     if (pc >= SLOTS || slot_of[pc] < 0) return 0;
@@ -225,6 +227,7 @@ void hybrid_init(int m)
     slot_of = malloc(SLOTS * sizeof *slot_of);
     for (int i = 0; i < SLOTS; i++) slot_of[i] = -1;
     NR = port_routine_count + gen_routine_count;
+    stats = calloc((size_t)NR, sizeof *stats);
     for (int i = NR - 1; i >= 0; i--) slot_of[R(i)->addr] = (int16_t)i;   /* a hand port wins over a translation */
     const char *brk = getenv("WBMW_PORT_BREAK");
     for (int i = 0; brk && i < NR; i++)

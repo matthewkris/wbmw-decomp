@@ -37,6 +37,11 @@ def main():
             sz, mn, ops = insn[a]
             print('    never ran: %06X  %s %s' % (a, mn, ops))
     print('%d of %d routines fully covered' % (full, len(ranges)))
+    if bodies:                          # resume points repeat their task's code: count each once
+        tr = set().union(*map(set, bodies.values()))
+        ran = set().union(*seen.values()) if seen else set()
+        print('%d of %d distinct translated instructions ran inside checks (%.0f%%)'
+              % (len(tr & ran), len(tr), 100.0 * len(tr & ran) / max(1, len(tr))))
 
 if __name__ == '__main__':
     main()

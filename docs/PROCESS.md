@@ -95,6 +95,9 @@ runnable as early as possible and ask for specific checks.
 | Generated code took the wrong path: it was laid out by address and the entry was not the lowest one. Invisible until a routine jumped backwards. | Emit an explicit jump to the entry; test a translator on code shapes beyond the first subsystem. |
 | Translated code read an earlier raster position than the original (it runs in no emulated time), and took a different branch. | Treat timing reads (VDP status, HV counter) as inputs: record what the port read, replay it to the original during the check. |
 | A translated wait-for-VBlank loop spun forever: only an interrupt ends it, and translated code takes no time. | Waits on interrupts or time are boundaries (exits) where translated code hands control back to the machine. |
+| A fixed-size per-routine table overflowed once the translation grew past 1,024 routines, and the report showed nonsense (negative call counts). | Size tables from the data; treat an absurd report as a tool bug before reading it as a result. |
+| A check closed at the original's first return to the caller, while the C version legitimately ran on (a routine jumping back through a saved return address). | End a differential check at the point the port itself ended, and report when the original never gets there. |
+| Computed jumps through data the tracer could not follow left the translation incomplete. | Let the harness report where translated code had to fall back to the original, feed those targets back as roots, and repeat until a run needs no fallback. |
 | Following stored code pointers pulled in the whole game at once. | Let the translator leave to the original code for anything untranslated (always correct in the harness), and defer big subsystems explicitly, to keep each step's checks fine-grained. |
 
 ## General versus game-specific

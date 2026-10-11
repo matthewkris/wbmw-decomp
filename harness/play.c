@@ -2,7 +2,7 @@
  * at 60 frames a second, with keyboard and game controller input. No sound (the Z80 and the
  * sound chips are not emulated).
  *
- *   play ROM [--scale N] [--save FILE] [--state FILE] [--port replace|shadow]
+ *   play ROM [--scale N] [--save FILE] [--state FILE] [--port replace|shadow] [--coverage FILE]
  *
  * Keys: arrows = D-pad, Z = A, X = B, C = C, Enter = Start.
  *       Esc quits, P pauses, Tab (held) runs fast, F12 writes a screenshot, F5 resets,
@@ -51,20 +51,22 @@ static uint8_t pad_down(SDL_GameController *gc)
 
 int main(int argc, char **argv)
 {
-    const char *rom_path = NULL, *save = "play.sav", *state = "play.state";
+    const char *rom_path = NULL, *save = "play.sav", *state = "play.state", *cov = NULL;
     int scale = 3, port = PORT_OFF;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--save") && i + 1 < argc) save = argv[++i];
         else if (!strcmp(argv[i], "--state") && i + 1 < argc) state = argv[++i];
+        else if (!strcmp(argv[i], "--coverage") && i + 1 < argc) cov = argv[++i];
         else if (!strcmp(argv[i], "--port") && i + 1 < argc) {
             i++; port = !strcmp(argv[i], "replace") ? PORT_REPLACE : !strcmp(argv[i], "shadow") ? PORT_SHADOW : PORT_OFF;
         }
         else rom_path = argv[i];
     }
-    if (!rom_path) { fprintf(stderr, "usage: play ROM [--scale N] [--save FILE] [--state FILE]\n"); return 2; }
+    if (!rom_path) { fprintf(stderr, "usage: play ROM [--scale N] [--save FILE] [--state FILE] [--port replace|shadow] [--coverage FILE]\n"); return 2; }
     if (md_load_rom(rom_path)) return 1;
     md_power_on();
+    if (cov) hybrid_coverage(cov);                  /* written at exit, with the report */
     hybrid_init(port);
     if (eeprom_load(save) == 0) fprintf(stderr, "loaded save data from %s\n", save);
 
