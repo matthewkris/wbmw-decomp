@@ -115,11 +115,12 @@ F2 overwrites the same file each time.
    later, separate project.
 3. The idiomatic rewrite, subsystem by subsystem, checked against the original the same way
    (`docs/PORT.md`, "The idiomatic rewrite"); that is where the coroutine library belongs.
-   Started with movement and collision: the platform collision ($3AFC-$3E1F) is ordinary C in
-   `port/movement.c`, checked on memory and the stack pointer only, with every other register
-   watched at run time (`work/usedef.bin` from `tools/liveness.py`; regenerate it when the map
-   changes). Next in movement: the entry points $2E38-$2FD0, the wall, floor and slope
-   handlers, the conveyors ($3F08) and the map lookups. Fuzz input generators live in
+   Movement and collision is done: all of it ($2E38-$3E1F, the conveyors and the water
+   currents) is ordinary C in `port/movement.c`, checked on memory and the stack pointer (and
+   d6/d7 for the player), with every other register watched at run time (`work/usedef.bin`
+   from `tools/liveness.py`, data registers in three parts; regenerate it when the map
+   changes). Next: pick the next subsystem (the player's control code that calls `MovePlayer`
+   around $DD08, or the entity helpers in `port/entity.c` rewritten the same way). Fuzz input generators live in
    `harness/hybrid.c` and are game-specific; move them to a game file when the second game
    starts.
 

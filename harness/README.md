@@ -96,13 +96,15 @@ Environment variables:
 
 Checks compare memory, the PC and the stack pointer, and the registers a routine's contract
 names; any other register left different is watched, and the run reports `CONTRACT` if the
-game reads it before writing it. That needs `work/usedef.bin` (`python tools/liveness.py
-work/map.json --usedef work/usedef.bin`, after every map change).
+game reads it before writing it. Data registers are watched in three parts (bits 0-7, 8-15,
+16-31), so a byte written over a register whose upper part differs is not a read. That needs
+`work/usedef.bin` (`python tools/liveness.py work/map.json --usedef work/usedef.bin`, after
+every map change, and once after updating from before 2026-10-11: the table's format changed).
 
 * `WBMW_PORT_BREAK=NAME`: self-test. Corrupts the stack pointer in that routine's result, so every
   checked call of it must be reported.
 * `WBMW_TRACE=ADDR[,ADDR...]` (hex, any mode): each time the 68000 reaches one of these
-  addresses, print the game's frame counter, `d0`-`d3`, `a0` and the return address. For
+  addresses, print the game's frame counter, `d0`-`d7`, `a0` and the return address. For
   example `WBMW_TRACE=366` lists every sound the game queues.
 * `WBMW_YIELD_SURVEY=1` (any mode): at the end, list every task resume point and where `Yield`
   returned to. If every line names a scheduler ($4BD8 or $4C8A), tasks only yield from their

@@ -127,33 +127,60 @@ static void diff_bytes(const char *what, const uint8_t *a, const uint8_t *b, siz
 /* Contracts (port.h): for an ordinary C rewrite, the registers outside its contract may differ
  * from the original's, provided the game never reads them before writing them. After such a
  * check, the registers that differ are watched instruction by instruction (work/usedef.bin, from
- * tools/liveness.py: what each instruction reads and writes); reading one is a violation. */
-static uint32_t *usedef;                  /* reads, writes for each instruction address / 2 */
-static uint32_t watch;                    /* registers and flags that differ from the original's */
-static int watch_of[18];                  /* the routine that left each one different */
+ * tools/liveness.py: what each instruction reads and writes); reading one is a violation. Data
+ * registers are watched in three parts (bits 0-7, 8-15, 16-31), so a byte written over a register
+ * whose upper part differs is not a read of it. Bits: 3i..3i+2 di's parts, 24+i ai, 32 NZVC, 33 X. */
+#define W_NZVC (1ull << 32)
+#define W_X    (1ull << 33)
+static uint64_t *usedef;                  /* reads, writes for each instruction address / 2 */
+static uint64_t watch;                    /* parts of registers and flags that differ from the original's */
+static int watch_of[34];                  /* the routine that left each one different */
 static long violations;
 
-static uint32_t reg_diff(const Cpu *a, const Cpu *b)
+static uint64_t reg_diff(const Cpu *a, const Cpu *b)
 {
-    uint32_t m = 0;
-    for (int i = 0; i < 8; i++) { if (a->d[i] != b->d[i]) m |= 1u << i; if (a->a[i] != b->a[i]) m |= 1u << (8 + i); }
-    if ((a->ccr ^ b->ccr) & 0x0F) m |= CT_NZVC;
-    if ((a->ccr ^ b->ccr) & 0x10) m |= CT_X;
+    uint64_t m = 0;
+    for (int i = 0; i < 8; i++) {
+        uint32_t x = a->d[i] ^ b->d[i];
+        if (x & 0xFF) m |= 1ull << (3 * i);
+        if (x & 0xFF00) m |= 2ull << (3 * i);
+        if (x & 0xFFFF0000u) m |= 4ull << (3 * i);
+        if (a->a[i] != b->a[i]) m |= 1ull << (24 + i);
+    }
+    if ((a->ccr ^ b->ccr) & 0x0F) m |= W_NZVC;
+    if ((a->ccr ^ b->ccr) & 0x10) m |= W_X;
+    return m;
+}
+
+/* a contract (whole registers, port.h) in the watch's bits */
+static uint64_t contract_parts(uint32_t ct)
+{
+    uint64_t m = 0;
+    for (int i = 0; i < 8; i++) {
+        if (ct >> i & 1) m |= 7ull << (3 * i);
+        if (ct >> (8 + i) & 1) m |= 1ull << (24 + i);
+    }
+    if (ct & CT_NZVC) m |= W_NZVC;
+    if (ct & CT_X) m |= W_X;
     return m;
 }
 
 static void watch_step(unsigned pc)
 {
     if (!watch || !usedef || pc >= 0x20000) return;
-    uint32_t reads = usedef[(pc >> 1) * 2], writes = usedef[(pc >> 1) * 2 + 1];
+    uint64_t reads = usedef[(pc >> 1) * 2], writes = usedef[(pc >> 1) * 2 + 1];
     if (reads & watch) {
         int bitn = 0; while (!((reads & watch) >> bitn & 1)) bitn++;
         int who = watch_of[bitn];
         stats[who].bad++; violations++;
         if (reports++ < 20) {
-            static const char *names[18] = {"d0","d1","d2","d3","d4","d5","d6","d7","a0","a1","a2","a3","a4","a5","a6","a7","NZVC","X"};
+            static const char *parts[3] = {"bits 0-7", "bits 8-15", "bits 16-31"};
+            char what[32];
+            if (bitn < 24) snprintf(what, sizeof what, "d%d (%s)", bitn / 3, parts[bitn % 3]);
+            else if (bitn < 32) snprintf(what, sizeof what, "a%d", bitn - 24);
+            else snprintf(what, sizeof what, "%s", bitn == 32 ? "NZVC" : "X");
             fprintf(stderr, "CONTRACT %s ($%06X): left %s different from the original's, and the game reads it at %06X\n",
-                    R(who)->name, (unsigned)R(who)->addr, names[bitn], pc);
+                    R(who)->name, (unsigned)R(who)->addr, what, pc);
         }
         watch = 0;
         return;
@@ -174,10 +201,10 @@ static void check(void)
     uint32_t sp = a->a[7] & 0xFFFF;
     if ((a->a[7] & 0xFF0000) == 0xFF0000)
         for (uint32_t i = 0; i < sp && i < 0x1000; i++) got->ram[i] = want->ram[i];
-    uint32_t diff = reg_diff(a, b) & ~contract;
+    uint64_t diff = reg_diff(a, b) & ~contract_parts(contract);
     if (diff) {
         stats[shadow.idx].dead++;
-        for (int i = 0; i < 18; i++) if (diff >> i & 1) watch_of[i] = shadow.idx;
+        for (int i = 0; i < 34; i++) if (diff >> i & 1) watch_of[i] = shadow.idx;
         if (!fuzzing) watch |= diff;               /* a fuzz case has no caller afterwards: nothing to watch */
     }
     for (int i = 0; i < 8; i++) { if (!(contract >> i & 1)) a->d[i] = b->d[i]; if (!(contract >> (8 + i) & 1)) a->a[i] = b->a[i]; }
@@ -241,7 +268,7 @@ void yield_survey_report(void)
         if (sv_n[i]) fprintf(stderr, "yield: resume %06X, returns to %06X, %ld times\n", i, sv_to[i], sv_n[i]);
 }
 /* call trace (WBMW_TRACE=ADDR[,ADDR...] in hex, any mode): each time the 68000 reaches one of
- * these addresses, print the game's frame counter ($FF8002), d0-d3, a0 and the return address */
+ * these addresses, print the game's frame counter ($FF8002), d0-d7, a0 and the return address */
 static uint32_t tr_addr[8]; static int tr_n = -1;
 static void trace_at(unsigned pc)
 {
@@ -253,9 +280,12 @@ static void trace_at(unsigned pc)
     for (int i = 0; i < tr_n; i++)
         if (tr_addr[i] == pc) {
             uint32_t sp = m68k_get_reg(NULL, M68K_REG_SP);
-            fprintf(stderr, "trace %06X game frame %u d0 %08X d1 %08X d2 %08X d3 %08X a0 %08X from %06X\n", pc, (unsigned)(ram[0x8002] << 24 | ram[0x8003] << 16 | ram[0x8004] << 8 | ram[0x8005]),
+            fprintf(stderr, "trace %06X game frame %u d0 %08X d1 %08X d2 %08X d3 %08X d4 %08X d5 %08X d6 %08X d7 %08X a0 %08X from %06X\n",
+                    pc, (unsigned)(ram[0x8002] << 24 | ram[0x8003] << 16 | ram[0x8004] << 8 | ram[0x8005]),
                     m68k_get_reg(NULL, M68K_REG_D0), m68k_get_reg(NULL, M68K_REG_D1), m68k_get_reg(NULL, M68K_REG_D2),
-                    m68k_get_reg(NULL, M68K_REG_D3), m68k_get_reg(NULL, M68K_REG_A0), bus_read16(sp) << 16 | bus_read16(sp + 2));
+                    m68k_get_reg(NULL, M68K_REG_D3), m68k_get_reg(NULL, M68K_REG_D4), m68k_get_reg(NULL, M68K_REG_D5),
+                    m68k_get_reg(NULL, M68K_REG_D6), m68k_get_reg(NULL, M68K_REG_D7),
+                    m68k_get_reg(NULL, M68K_REG_A0), bus_read16(sp) << 16 | bus_read16(sp + 2));
         }
 }
 
@@ -331,7 +361,7 @@ void hybrid_init(int m)
     if (cov_path && mode == PORT_SHADOW) visited = calloc(SLOTS, 1);
     FILE *ud = fopen("work/usedef.bin", "rb");     /* for contracts; from tools/liveness.py --usedef */
     if (!ud) ud = fopen("../work/usedef.bin", "rb");
-    if (ud) { usedef = malloc(0x10000 * 8); if (fread(usedef, 8, 0x10000, ud) != 0x10000) { free(usedef); usedef = NULL; } fclose(ud); }
+    if (ud) { usedef = malloc(0x10000 * 16); if (fread(usedef, 16, 0x10000, ud) != 0x10000) { free(usedef); usedef = NULL; } fclose(ud); }
 }
 
 /* Differential fuzzing: call one ported routine directly, many times, from the current machine
@@ -674,10 +704,11 @@ int hybrid_fuzz(const char *name, long count)
             }
         }
         int generated = !strncmp(name, "g_", 2)
-                     || (R(idx)->contract && R(idx)->addr >= 0x2E38 && R(idx)->addr < 0x3E20);   /* movement.c */
+                     || (R(idx)->contract && R(idx)->addr >= 0x2E38 && R(idx)->addr < 0x3F54);   /* movement.c */
+        int movement = generated && strncmp(name, "g_", 2);
         if (strstr(name, "MapBlock") || strstr(name, "Tile") || generated) {
             /* a position on (or just off) a real layer, sometimes as the player */
-            uint32_t layer = rnd() % 4 ? 0x9754 : 0x97D4;
+            uint32_t layer = rnd() % 4 || movement ? 0x9754 : 0x97D4;   /* movement.c: always plane A */
             if (rnd() % 2) {                        /* a synthetic layer: up to 8x8 chunks */
                 ram[layer] = (uint8_t)rnd();
                 put_word(layer + 0x44, rnd() % 128); put_word(layer + 0x46, (rnd() % 96) * 64);
@@ -714,6 +745,13 @@ int hybrid_fuzz(const char *name, long count)
                 m68k_set_reg(M68K_REG_D6, (rnd() << 16) | ((0x100 + col) & 0xFFFF));
                 m68k_set_reg(M68K_REG_D7, (rnd() << 16) | ((0x4000 + row * 64) & 0xFFFF));
             }
+        }
+        if (!strcmp(name, "Currents")) {            /* in water with a current, near the speed limit */
+            ram[0x966B] = (uint8_t)(rnd() | (rnd() % 4 ? 1 : 0));
+            put_word(0x9EE2, rnd() % 4 ? 0xB000 | (rnd() & 0xFFF) : rnd());
+            uint32_t e = m68k_get_reg(NULL, M68K_REG_A4);
+            put_word(0xCA00 + e, (uint32_t)(rnd() % 2 ? 0x180 : -0x180) + small(8));
+            put_word(0xCA02 + e, (uint32_t)(rnd() % 2 ? 0x180 : -0x180) + small(8));
         }
         if (!strcmp(name, "DecodeGfxBlock")) {     /* a real block, into the game's decode buffer */
             m68k_set_reg(M68K_REG_D0, (rnd() << 16) | (rnd() % 768));

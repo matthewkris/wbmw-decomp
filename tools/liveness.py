@@ -4,9 +4,11 @@ Usage: liveness.py work/map.json [ADDR ...]
        liveness.py work/map.json --usedef OUT
 
 --usedef writes, for every instruction, what it reads and writes: a table of 0x10000 pairs of
-little-endian uint32 (reads, writes), indexed by address / 2, bits 0-15 = d0-d7, a0-a7, bit 16 =
-the NZVC flags, bit 17 = X. The harness uses it at run time to check that registers an ordinary
-C rewrite leaves different are really dead (harness/hybrid.c, contracts).
+little-endian uint64 (reads, writes), indexed by address / 2. Data registers come in three parts
+(bits 3i, 3i+1, 3i+2 = bits 0-7, 8-15, 16-31 of di), so that move.b into d4 writes only its low
+byte and reads nothing; bits 24-31 = a0-a7, bit 32 = the NZVC flags, bit 33 = X. The harness uses
+it at run time to check that registers an ordinary C rewrite leaves different are really dead
+(harness/hybrid.c, contracts).
 
 For every routine (a call target in the map) it computes
   USES   the registers and flags it reads before writing them (its inputs), and
@@ -118,6 +120,127 @@ def use_def(mn, ops):
         return use, NZVC | (XF if base not in ('rol', 'ror') else 0)
     return ALL, ALL                                    # unknown: assume it reads and writes everything
 
+# ---- the run-time table (--usedef): data registers in three parts, so that a byte or word write
+# does not count as reading the rest. Bits 3i, 3i+1, 3i+2: bits 0-7, 8-15 and 16-31 of di; 24+i:
+# ai (whole); 32 NZVC; 33 X.
+L_NZVC, L_X = 1 << 32, 1 << 33
+L_ALL = (1 << 34) - 1
+PARTS = {'b': 1, 'w': 3, 'l': 7}
+
+def lanes(r, size='l'):
+    r = r.strip()
+    if r == 'sp': r = 'a7'
+    i = int(r[1])
+    return PARTS[size] << (3 * i) if r[0] == 'd' else 1 << (24 + i)
+
+def ea_lanes(op):
+    """registers an addressing mode reads: address registers whole, index registers as sized"""
+    m = 0
+    for r, sz in re.findall(r'(?<![$\w])([da][0-7]|sp)(?:\.([wl]))?\b', op):   # not inside a hex number
+        m |= lanes(r, sz or 'w') if r[0] == 'd' else lanes(r)
+    if op.strip() in ('sr', 'ccr'): m |= L_NZVC | L_X
+    return m
+
+def bit_lane(n, r):
+    """the part of data register r holding bit n"""
+    n %= 32
+    return (1 if n < 8 else 2 if n < 16 else 4) << (3 * int(r[1]))
+
+def lane_use_def(mn, ops):
+    """(reads, writes) of one instruction in the run-time table's bits"""
+    base, _, suf = mn.partition('.')
+    size = suf if suf in PARTS else 'l'
+    p = split_ops(ops) if ops else []
+    a7 = lanes('a7')
+    if base in ('nop', 'bra'): return 0, 0
+    if base == 'rts': return a7, a7
+    if base == 'rte': return a7, a7 | L_NZVC | L_X
+    if base in ('jsr', 'bsr', 'pea'): return ea_lanes(ops) | a7, a7
+    if base == 'jmp': return ea_lanes(ops), 0
+    if base[0] == 'b' and base[1:] in CONDS and base not in ('bset', 'bclr', 'bchg', 'btst'): return L_NZVC, 0
+    if base.startswith('db'):
+        r = lanes(p[0], 'w')
+        return r | (L_NZVC if base not in ('dbra', 'dbf') else 0), r
+    def is_d(o): return re.fullmatch(r'd[0-7]', o.strip()) is not None
+    def is_a(o): return re.fullmatch(r'(a[0-7]|sp)', o.strip()) is not None
+    def src_reads(o, sz):
+        if o.startswith('#'): return 0
+        if is_d(o): return lanes(o, sz)
+        if is_a(o): return lanes(o)
+        return ea_lanes(o)
+    def autoinc(o): return ea_lanes(o) if (o.endswith(')+') or o.startswith('-(')) else 0
+    if base == 'movem':
+        if re.fullmatch(r'[da][0-7]([-/][da][0-7])*', p[0].replace(' ', '')):
+            regs = 0
+            for i in range(16):
+                if reglist(p[0]) >> i & 1: regs |= lanes(REGS[i], size)
+            return regs | ea_lanes(p[1]), autoinc(p[1])
+        regs = 0
+        for i in range(16):
+            if reglist(p[1]) >> i & 1: regs |= lanes(REGS[i])
+        return ea_lanes(p[0]), regs | autoinc(p[0])
+    if base == 'link': r = lanes(p[0]) | a7; return r, r
+    if base == 'unlk': return lanes(p[0]), lanes(p[0]) | a7
+    if base == 'exg': r = lanes(p[0]) | lanes(p[1]); return r, r
+    if base == 'swap': r = lanes(p[0]); return r, r | L_NZVC
+    if base == 'ext':
+        return (lanes(p[0], 'b') if size == 'w' else lanes(p[0], 'w')), lanes(p[0], size) | L_NZVC
+    if base == 'lea': return ea_lanes(p[0]), lanes(p[1])
+    if base in ('tst', 'cmp', 'cmpi', 'cmpm', 'cmpa'):
+        use = 0
+        for i, o in enumerate(p):
+            use |= lanes(o) if base == 'cmpa' and i == 1 else src_reads(o, size)
+        return use, L_NZVC
+    if base == 'btst' or base in ('bset', 'bclr', 'bchg'):
+        src, dst = p
+        use = 0 if src.startswith('#') else lanes(src, 'b')
+        if is_d(dst):
+            part = bit_lane(int(src[1:].lstrip('$') or '0', 16 if '$' in src else 10), dst) if src.startswith('#') else lanes(dst)
+            use |= part
+            return use, L_NZVC | (part if base != 'btst' else 0)
+        return use | ea_lanes(dst), L_NZVC | autoinc(dst)
+    if base[0] == 's' and base[1:] in CONDS:          # Scc
+        o = p[0]
+        if is_d(o): return L_NZVC, lanes(o, 'b')
+        return L_NZVC | ea_lanes(o), autoinc(o)
+    if base in ('clr', 'neg', 'negx', 'not', 'tas'):
+        o = p[0]
+        if is_d(o): r = lanes(o, size if base != 'tas' else 'b'); use, defs = (0 if base == 'clr' else r), r
+        else: use, defs = ea_lanes(o), autoinc(o)
+        if base == 'negx': use |= L_X
+        return use, defs | L_NZVC | (L_X if base in ('neg', 'negx') else 0)
+    if len(p) == 2:
+        src, dst = p
+        shift = base in ('asl', 'asr', 'lsl', 'lsr', 'roxl', 'roxr', 'rol', 'ror')
+        use = (lanes(src, 'b') if shift and is_d(src) else src_reads(src, 'w' if base in ('mulu', 'muls', 'divu', 'divs') else size))
+        defs = autoinc(src)
+        if is_d(dst):
+            if base == 'moveq': defs |= lanes(dst)
+            elif base in ('mulu', 'muls'): use |= lanes(dst, 'w'); defs |= lanes(dst)
+            elif base in ('divu', 'divs'): use |= lanes(dst); defs |= lanes(dst)
+            elif base == 'move': defs |= lanes(dst, size)
+            else: use |= lanes(dst, size); defs |= lanes(dst, size)
+        elif is_a(dst):
+            if base not in ('movea',): use |= lanes(dst)
+            defs |= lanes(dst)
+        elif dst in ('ccr', 'sr'):
+            if base in ('andi', 'ori', 'eori', 'and', 'or', 'eor'): use |= L_NZVC | L_X
+        else:
+            use |= ea_lanes(dst); defs |= autoinc(dst)
+        flags = 0
+        if base in ('move', 'moveq', 'and', 'andi', 'or', 'ori', 'eor', 'eori', 'mulu', 'muls', 'divu', 'divs'):
+            flags = L_NZVC
+        elif base in ('add', 'addi', 'addq', 'sub', 'subi', 'subq', 'addx', 'subx', 'asl', 'asr', 'lsl', 'lsr', 'roxl', 'roxr'):
+            flags = 0 if is_a(dst) else L_NZVC | L_X
+        elif base in ('rol', 'ror'): flags = L_NZVC
+        if dst in ('ccr', 'sr'): flags = L_NZVC | L_X
+        if base in ('addx', 'subx', 'roxl', 'roxr'): use |= L_X
+        if base in ('movea', 'adda', 'suba') or (base in ('addq', 'subq') and is_a(dst)): flags = 0
+        return use, defs | flags
+    if len(p) == 1 and base in ('asl', 'asr', 'lsl', 'lsr', 'roxl', 'roxr', 'rol', 'ror'):
+        return ea_lanes(p[0]) | (L_X if base in ('roxl', 'roxr') else 0), autoinc(p[0]) | L_NZVC | (L_X if base not in ('rol', 'ror') else 0)
+    return L_ALL, L_ALL                                # unknown: assume it reads and writes everything
+
 def inst_use_def(mn, ops):
     """reads and writes of one instruction, control flow included"""
     base = mn.split('.')[0]
@@ -136,10 +259,10 @@ def main():
     m = json.load(open(sys.argv[1]))
     if len(sys.argv) > 3 and sys.argv[2] == '--usedef':
         import struct
-        table = bytearray(0x10000 * 8)
+        table = bytearray(0x10000 * 16)
         for a, (sz, mn, ops) in m['insn'].items():
             a = int(a, 16)
-            if a < 0x20000: struct.pack_into('<II', table, (a >> 1) * 8, *inst_use_def(mn, ops))
+            if a < 0x20000: struct.pack_into('<QQ', table, (a >> 1) * 16, *lane_use_def(mn, ops))
         open(sys.argv[3], 'wb').write(table)
         return
     ins = {int(a, 16): v for a, v in m['insn'].items()}
