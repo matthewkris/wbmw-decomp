@@ -12,6 +12,7 @@ void BuildSprites(Cpu *), AddEntitySprites(Cpu *);
 void HitboxOverlapSwap(Cpu *), HitboxOverlap(Cpu *), BoxPairOverlap(Cpu *), BodyVsHurtBoxes(Cpu *);
 void BodyVsAttackBoxesSwap(Cpu *), BodyVsAttackBoxes(Cpu *), BoxVsBody(Cpu *), ResolveContact(Cpu *);
 void ContactSide(Cpu *), CheckBodyContact(Cpu *), BodyOverlap(Cpu *);
+void PlayerState(Cpu *);   /* player.c */
 void PlatformsSideways(Cpu *), PlatformsVertical(Cpu *);   /* movement.c: ordinary C, with contracts */
 void MovePlayer(Cpu *), MoveFlat(Cpu *), MoveOnSlopesNoConveyor(Cpu *), MoveOnSlopes(Cpu *),
      MoveOnSlopesWithCeiling(Cpu *), MoveWithPlatforms(Cpu *), MoveWithPlatformsAndSlopes(Cpu *),
@@ -91,6 +92,7 @@ const PortRoutine port_routines[] = {
     {0x003C22, 0x003E20, "PlatformsVertical", PlatformsVertical, CT_SP},
     {0x003E4C, 0x003EB8, "Currents", Currents, CT_SP},
     {0x003F08, 0x003F54, "Conveyors", Conveyors, CT_SP},
+    {0x00E2C6, 0x00ED5C, "PlayerState", PlayerState, CT_SP},   /* player.c: the state handlers and their checks */
     {0x003F58, 0x003F70, "ProbeTileBelow", ProbeTileBelow},
     {0x003F74, 0x003F8E, "ProbeTileAbove", ProbeTileAbove},
     {0x003F92, 0x003FAC, "ProbeTileFeet", ProbeTileFeet},

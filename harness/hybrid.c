@@ -69,6 +69,7 @@ static int is_exit(uint32_t pc)
 
 static int mode;
 static int break_idx = -1;            /* self-test: corrupt this routine's result (WBMW_PORT_BREAK=name) */
+static int watch_break_idx = -1;      /* self-test of the watch: scramble its leftovers (WBMW_WATCH_BREAK=name) */
 static int16_t *slot_of;              /* routine index for each even ROM address, -1 if none */
 #define SLOTS 0x20000
 static struct Stat { long calls, bad, dead; } *stats;   /* dead: left registers different, never read */    /* one per routine, sized in hybrid_init */
@@ -165,10 +166,44 @@ static uint64_t contract_parts(uint32_t ct)
     return m;
 }
 
+/* link An saves An in the new frame and unlk An puts it back: a watched An that is only saved
+ * and restored is not used. So link does not count as a read; the watch bit is kept with the
+ * frame (by its address) and given back to An by the unlk of that frame. ($E2C6 links with a
+ * positive displacement, so its first call overwrites half of the saved a6: the original comes
+ * back with a6 changed, and the next link would otherwise count as reading it.) */
+static struct { uint32_t frame; int who, reg; } frames[64];
+static int nframes;
+
 static void watch_step(unsigned pc)
 {
-    if (!watch || !usedef || pc >= 0x20000) return;
-    uint64_t reads = usedef[(pc >> 1) * 2], writes = usedef[(pc >> 1) * 2 + 1];
+    if ((!watch && !nframes) || !usedef || pc >= 0x20000) return;
+    uint64_t reads = usedef[(pc >> 1) * 3], writes = usedef[(pc >> 1) * 3 + 1], to_flags = usedef[(pc >> 1) * 3 + 2];
+    uint16_t op = (uint16_t)bus_read16(pc);
+    if ((op & 0xFFF8) == 0x4840 || (op & 0xFFB8) == 0x4880) {
+        /* swap Dn, ext.w/ext.l Dn: the difference moves between the register's parts (and into
+         * the flags) instead of being used */
+        int n = op & 7;
+        uint64_t p0 = 1ull << (3 * n), p1 = 2ull << (3 * n), p2 = 4ull << (3 * n), all = p0 | p1 | p2;
+        uint64_t was = watch & all;
+        if (!was) { watch &= ~W_NZVC; return; }
+        int who = watch_of[__builtin_ctzll(was)];
+        uint64_t now;
+        if ((op & 0xFFF8) == 0x4840) now = ((was & p2) ? p0 | p1 : 0) | ((was & (p0 | p1)) ? p2 : 0);
+        else if (!(op & 0x40)) now = (was & p2) | ((was & p0) ? p0 | p1 : 0);   /* ext.w: from bits 0-7 */
+        else now = (was & (p0 | p1)) | ((was & p1) ? p2 : 0);                    /* ext.l: from bits 0-15 */
+        watch = (watch & ~all & ~W_NZVC) | now | W_NZVC;
+        for (int i = 0; i < 3; i++) if (now >> (3 * n + i) & 1) watch_of[3 * n + i] = who;
+        watch_of[32] = who;
+        return;
+    }
+    if ((op & 0xFFF8) == 0x4E50) {                  /* link.w An */
+        int n = op & 7; uint64_t bit = 1ull << (24 + n);
+        reads &= ~bit;
+        if ((watch & bit) && nframes < 64) {
+            frames[nframes].frame = m68k_get_reg(NULL, M68K_REG_SP) - 4;
+            frames[nframes].who = watch_of[24 + n]; frames[nframes].reg = n; nframes++;
+        }
+    }
     if (reads & watch) {
         int bitn = 0; while (!((reads & watch) >> bitn & 1)) bitn++;
         int who = watch_of[bitn];
@@ -182,10 +217,25 @@ static void watch_step(unsigned pc)
             fprintf(stderr, "CONTRACT %s ($%06X): left %s different from the original's, and the game reads it at %06X\n",
                     R(who)->name, (unsigned)R(who)->addr, what, pc);
         }
-        watch = 0;
+        watch = 0; nframes = 0;
         return;
     }
+    int into_flags = (to_flags & watch) != 0;      /* a shift moved a difference into C and X */
+    int flags_from = into_flags ? watch_of[__builtin_ctzll(to_flags & watch)] : 0;
     watch &= ~writes;
+    if (into_flags) { watch |= W_NZVC | W_X; watch_of[32] = watch_of[33] = flags_from; }
+    if ((op & 0xFFF8) == 0x4E58 && nframes) {      /* unlk An: An comes back from its frame */
+        int n = op & 7;
+        uint32_t frame = m68k_get_reg(NULL, (m68k_register_t)(M68K_REG_A0 + n));
+        for (int i = nframes - 1; i >= 0; i--) {
+            if (frames[i].frame < frame) { nframes = i; continue; }   /* deeper frames: gone */
+            if (frames[i].frame == frame && frames[i].reg == n) {
+                watch |= 1ull << (24 + n); watch_of[24 + n] = frames[i].who;
+                nframes = i;
+            }
+            break;
+        }
+    }
 }
 
 static void check(void)
@@ -243,6 +293,11 @@ static void run_port(int idx)
     rt_steps = 0;
     R(idx)->fn(&c);
     if (idx == break_idx) c.a[7] ^= 2;              /* the stack pointer: compared in every check */
+    if (idx == watch_break_idx)                     /* every register outside the contract */
+        for (int i = 0; i < 7; i++) {
+            if (!(R(idx)->contract >> i & 1)) c.d[i] ^= 0x5A5A5A5Au;
+            if (!(R(idx)->contract >> (8 + i) & 1)) c.a[i] ^= 0x10u;
+        }
     uint32_t ret;
     if (pops(idx)) ret = c.ret;                     /* generated: it did the rts (maybe elsewhere) */
     else { ret = rd32(c.a[7]); c.a[7] += 4; }       /* hand port: the original's rts */
@@ -357,11 +412,14 @@ void hybrid_init(int m)
     const char *brk = getenv("WBMW_PORT_BREAK");
     for (int i = 0; brk && i < NR; i++)
         if (!strcmp(brk, R(i)->name)) { break_idx = i; fprintf(stderr, "self-test: corrupting %s\n", brk); }
+    const char *wbrk = getenv("WBMW_WATCH_BREAK");
+    for (int i = 0; wbrk && i < NR; i++)
+        if (!strcmp(wbrk, R(i)->name)) { watch_break_idx = i; fprintf(stderr, "self-test: scrambling the leftovers of %s\n", wbrk); }
     want = malloc(sizeof *want); got = malloc(sizeof *got);
     if (cov_path && mode == PORT_SHADOW) visited = calloc(SLOTS, 1);
     FILE *ud = fopen("work/usedef.bin", "rb");     /* for contracts; from tools/liveness.py --usedef */
     if (!ud) ud = fopen("../work/usedef.bin", "rb");
-    if (ud) { usedef = malloc(0x10000 * 16); if (fread(usedef, 16, 0x10000, ud) != 0x10000) { free(usedef); usedef = NULL; } fclose(ud); }
+    if (ud) { usedef = malloc(0x10000 * 24); if (fread(usedef, 24, 0x10000, ud) != 0x10000) { free(usedef); usedef = NULL; } fclose(ud); }
 }
 
 /* Differential fuzzing: call one ported routine directly, many times, from the current machine
@@ -746,6 +804,64 @@ int hybrid_fuzz(const char *name, long count)
                 m68k_set_reg(M68K_REG_D7, (rnd() << 16) | ((0x4000 + row * 64) & 0xFFFF));
             }
         }
+        if (!strcmp(name, "PlayerState")) {
+            /* the player, in a valid state and form, with random buttons and ground; often at a
+             * ladder or vine of the map, or by a platform carrying a vine */
+            uint32_t e = (uint32_t)(int32_t)(int16_t)(ram[0x9EEE] << 8 | ram[0x9EEF]);
+            m68k_set_reg(M68K_REG_A4, e);
+            uint32_t layer = 0x9754;
+            uint32_t cols = (uint32_t)(ram[layer + 0x44] << 8 | ram[layer + 0x45]) + 1;
+            uint32_t rows = (uint32_t)(ram[layer + 0x46] << 8 | ram[layer + 0x47]) / 64 + 1;
+            collision_scene(name, layer, cols, rows, e & 0xFF);
+            ram[0x966B] = (uint8_t)rnd(); ram[0x9EF1] = (uint8_t)rnd();
+            ram[0xCE01 + e] = (uint8_t)(rnd() % 10);                    /* the state, -$31FF */
+            ram[0x9F04] = (uint8_t)(rnd() % 3);                         /* the form */
+            ram[0x9F0B] = (uint8_t)rnd();
+            ram[0x9F0D] = (uint8_t)(rnd() & (rnd() % 2 ? ram[0x9F0B] : 0xFF));
+            ram[0x9F03] = (uint8_t)rnd(); ram[0x9F02] = (uint8_t)rnd(); ram[0x9F06] = (uint8_t)rnd();
+            for (uint32_t a = 0x9F07; a <= 0x9F09; a++) ram[a] = (uint8_t)(rnd() % 3 ? 0 : rnd() % 8);
+            ram[0x9F0E] = (uint8_t)(rnd() % 4); ram[0x9F12] = (uint8_t)(rnd() % 40);
+            put_word(0x9EF2, (uint32_t)(-0x300 + small(0x100))); put_word(0x9EF4, (uint32_t)(rnd() % 5));
+            static const uint16_t tiles[] = {0, 0x4000, 0x4008, 0x7000, 0x8000, 0xA000, 0x1008, 0x3000};
+            put_word(0x9EDE, tiles[rnd() % 8]); put_word(0x9EE0, tiles[rnd() % 8]); put_word(0x9EE2, tiles[rnd() % 8]);
+            ram[0x95CE] = (uint8_t)(rnd() % 8);
+            static const uint32_t items[] = {0xA5AA, 0xA60A, 0xA68E, 0xA898, 0xA8D8, 0xA902, 0xADAC, 0x1822A};   /* the item routines the game stores ($A8A6 only from dead code) */
+            ram[0x9980] = (uint8_t)(rnd() % 2); ram[0x9981] = (uint8_t)(rnd() % 2);
+            put_long(0x998A, items[rnd() % 8]); put_long(0x998E, items[rnd() % 8]);
+            static const uint32_t scripts[] = {0xF5C8, 0xF594, 0xF530, 0xF4F6, 0xF55E};
+            put_long(0x9F2C, scripts[rnd() % 5]); put_word(0x9F2A, rnd() % 3 ? rnd() % 4 : 0xFFFF);
+            ram[0xD400 + e] = (uint8_t)(rnd() % 4);                     /* the attack step, -$2C00 */
+            if (rnd() % 2) { ram[0xD800 + e] = 0; ram[0xD801 + e] = (uint8_t)(rnd() % 10); }   /* near a rung's end */
+            if (rnd() % 2) {                        /* at a ladder or vine: painted into the map */
+                static uint8_t ladders[16]; static int nl = -1;  /* attributes of type $4xxx */
+                if (nl < 0) {
+                    nl = 0;
+                    for (uint32_t a = 0; a < 0x80 && nl < 16; a++) {
+                        Cpu t = {0}; t.a[4] = e; t.d[1] = a; TileTypeOf(&t);
+                        if ((t.d[2] & 0xF000) == 0x4000) ladders[nl++] = (uint8_t)a;
+                    }
+                }
+                int32_t x = get_sword(0xC800 + e), y = get_sword(0xC900 + e);
+                int32_t hh = ram[(0xCB03 + e) & 0xFFFF], grip = (int8_t)(uint8_t)(hh - ram[0x9F12]);
+                for (int32_t dy = -16; nl && dy <= 16; dy += 16) {          /* at the hands and feet */
+                    if (rnd() % 3 == 0) continue;
+                    set_block_attr(layer, e, (uint32_t)x, (uint32_t)(y + grip + dy), ladders[rnd() % (unsigned)nl]);
+                    if (rnd() % 2) set_block_attr(layer, e, (uint32_t)x, (uint32_t)(y + hh + dy), ladders[rnd() % (unsigned)nl]);
+                }
+            }
+            if (rnd() % 4 == 0) {                   /* a platform carrying a vine, at the player */
+                uint32_t p = (rnd() % 6) * 4, attr = 0;
+                for (uint32_t a = 0; a < 0x80; a++) {
+                    Cpu t = {0}; t.a[4] = e; t.d[1] = a; TileTypeOf(&t);
+                    if ((t.d[2] & 0xFFFF) == 0x4000) { attr = a; break; }
+                }
+                ram[0x9F8E + p] = 0x80; ram[0x9F8F + p] = (uint8_t)attr;
+                put_word(0x9FE2 + p, (uint32_t)(get_sword(0xC800 + e) + small(6)));
+                put_word(0x9FE4 + p, (uint32_t)(get_sword(0xC900 + e) + small(20)));
+                put_word(0xD300 + e, p);
+                ram[0xD101 + e] |= (uint8_t)(rnd() % 2 ? 0x20 : 0);  /* PREV_COLL: on it */
+            }
+        }
         if (!strcmp(name, "Currents")) {            /* in water with a current, near the speed limit */
             ram[0x966B] = (uint8_t)(rnd() | (rnd() % 4 ? 1 : 0));
             put_word(0x9EE2, rnd() % 4 ? 0xB000 | (rnd() & 0xFFF) : rnd());
@@ -786,7 +902,7 @@ int hybrid_fuzz(const char *name, long count)
         do { m68k_execute(1000000); budget++; } while (shadow.open && budget < 500);
         if (shadow.open) { fprintf(stderr, "fuzz: %s did not return within 500M cycles (case %ld)\n", name, k + 1); count = k; break; }
     }
-    fuzzing = 0; watch = 0;                         /* no caller after a fuzz case: nothing to watch */
+    fuzzing = 0; watch = 0; nframes = 0;                        /* no caller after a fuzz case: nothing to watch */
     md_restore(base, n); free(base);
     if (scenes) fprintf(stderr, "fuzz: %ld collision scenes, %ld on a slope, %ld on a solid block\n", scenes, on_slope, on_solid);
     fprintf(stderr, "fuzz %s: %ld cases run, %ld mismatches\n", name, count, stats[idx].bad - before);
