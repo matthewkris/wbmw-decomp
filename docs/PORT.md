@@ -376,6 +376,44 @@ Results:
   `play.exe --port shadow --coverage FILE` records which code each session checked, and
   `tools/coverage.py` merges the sessions.
 
+#### The native build (`native/`, 2026-10-10)
+
+`work/native/wbmw.exe` runs the game with no 68000 emulator. Every instruction is translated
+from the reset vector (`analysis/native.json`) or hand-ported; `native/wbmw.c` is the host. How
+it is put together (`native/README.md`):
+
+* **The machine.** The memory map, EEPROM, controller and VDP are the harness's own files. The
+  ROM is read only as data.
+* **Time.** At the poll points (the two VBlank-flag waits, `$3DC` and `$C262`), the generated
+  code calls `rt_poll`. If the interrupt has not come yet this frame, the host renders the 224
+  lines, shows the frame, keeps 60 Hz, reads input, then runs the translated interrupt handler
+  `$4B5C` on an interrupt frame it pushes (the translator now supports `rte`).
+* **Restart points.** `$4BF8` (reset the stack, re-enter the frame loop) and `$4A06` (restart)
+  end the generated call. The return-address convention unwinds every C frame back to the host,
+  which calls the point again from the top, so the C stack never grows.
+* **Exits.** `$4CB4`, the "no free task slot" hang, is reported by the host. `rt_leave` (no
+  translation) is fatal here: everything must be translated.
+* **Translator additions.** `rte`, `move #imm,sr` (the interrupt mask is the host's business)
+  and `move aN,usp` (ignored: no user mode).
+* **One more tracer gap.** A task, `K_mn` at `$7136`, is started from a descriptor list at
+  `$4D5C` that the tracer took for data. In the harness its code simply ran as 68000 code; the
+  native build stopped at it. It is now a hint entry, and the rebuild is still byte-identical.
+
+Results:
+
+* **Runs.** The native build runs from power-on through the title, the attract demo and the
+  new-game script (4,000 frames each) without stopping. Headless it does about 400 frames a
+  second, as the harness does, because rendering dominates.
+* **Matches the original.** The new-game run is pixel-identical to the original in every
+  sampled frame from frame 1,800 to 4,000. Before that, and throughout the attract demo, it is
+  ahead of the original in real frames: the original drops frames when the 68000 runs out of
+  time, and the native build never does. The same pictures appear, later in the original:
+  native frame 2,000 of the demo is identical to the original's frame 2,154.
+* **To do.** Sound. Save states (the harness's states hold a 68000 mid-instruction, which a
+  native build cannot resume). Optionally, emulating the original's dropped frames for exact
+  timing. And comparison by game frame rather than real frame (the game's counter at
+  `$FF8002`), so long runs can be compared exactly despite the time shift.
+
 #### Computed jump targets, found statically
 
 A native build has no original code to fall back to, so every address the game can jump to

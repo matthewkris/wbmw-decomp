@@ -1,0 +1,8 @@
+{
+ "comment": "Config for tools/m68k2c.py for the native build (native/): everything from the reset vector ($200) and the VBlank interrupt ($4B5C), with the harness roots. restart: $4BF8 (reset the stack, re-enter the frame loop) and $4A06 (restart): the host calls them fresh. poll: $3DC (the frame wait in $3B8) and $C262 (the 300-frame wait after an inn): the host runs a frame and the interrupt there. exits: $4CB4 (hang: no free task slot), reported by the host. Addresses only.",
+ "roots": [ "000200", "004B5C", "002E38", "002E9E", "002ED4", "002EDE", "002F34", "002F8E", "002FD0", "004CC8", "004D18", "004D56", "004D68", "004DA8", "004DE2", "004F58", "004FCC", "005080", "00560C", "006EAC", "006F8A", "007042", "00715C", "0071C6", "008EB4"],
+ "yield": "000400",
+ "restart": [ "004BF8", "004A06"],
+ "poll": [ "0003DC", "00C262"],
+ "exits": [ "004CB4"]
+}

@@ -194,6 +194,9 @@ void rt_unknown(uint32_t from, uint32_t target);
  * back to the 68000 at `target` (c->ret = target; the generated callers unwind); a native build,
  * where everything is translated, stops. */
 void rt_leave(Cpu *c, uint32_t from, uint32_t target);
+/* native build: generated code calls this at a poll point (a loop waiting for an interrupt,
+ * analysis/native.json "poll"); the host runs a frame and the interrupt there */
+void rt_poll(Cpu *c, uint32_t at);
 
 /* watchdog: every branch target in generated code passes here. Translated code takes no
  * emulated time, so a loop that waits for time or an interrupt never ends; after rt_limit passes

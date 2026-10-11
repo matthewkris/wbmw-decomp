@@ -102,13 +102,10 @@ F2 overwrites the same file each time.
    anything worth re-checking). Merge the files with `tools/coverage.py`. Add any new "left
    generated code" targets to `"seen"` in `analysis/translate.json` (the harness report names
    them).
-2. The native build. Computed-jump targets are now all found statically (`docs/PORT.md`,
-   "Computed jump targets"): 97.4% of the traced code is C, and what is left is reset and
-   start-up, the frame loop and scheduler (`$4BBC`-`$4C6E`), the per-frame work behind `$3B8`
-   (`$5262`) and the exception handlers. Translate those, give the exits native meanings
-   (`$3B8` and `$C262`: present a frame and wait; `$4BF8`: reset the C stack and re-enter the
-   loop), and write the platform layer (VDP renderer from `harness/vdp.c`, input, timing, then
-   sound), for a native build without Musashi, checked frame by frame against the harness.
+2. The native build runs (`native/`, `work/native/wbmw.exe`; `docs/PORT.md`, "The native
+   build"): the whole game as C, no emulator, pixel-identical to the original once the time
+   shift from the original's dropped frames is accounted for. Next for it: sound (Z80 + YM2612
+   + SN76489), comparison by game frame (`$FF8002`) instead of real frame, and save states.
 3. Then the idiomatic rewrite, subsystem by subsystem, checked against the original the same
    way; that is where the coroutine library belongs. Fuzz input generators live in
    `harness/hybrid.c` and are game-specific; move them to a game file when the second game

@@ -17,4 +17,5 @@ byte-identical:
 
 See `docs/NOTES.md` for what is known so far, `docs/PORT.md` for the C port (hand-written routines,
 the translator, and how every routine is checked against the original), `harness/README.md` for
-the reference harness and the playable window, and `docs/PROCESS.md` for the process as a whole.
+the reference harness and the playable window, `native/README.md` for the native build (the
+game as C, without an emulator), and `docs/PROCESS.md` for the process as a whole.

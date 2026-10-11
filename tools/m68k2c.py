@@ -11,6 +11,11 @@ CONFIG (analysis/translate.json) gives the game's facts, as hex address strings:
           stack and re-enters the frame loop, waits for the next frame, or hangs. Reaching one
           ends the call with c->ret = that address.
   defer   entries deliberately not translated yet (with what only they reach).
+  restart (native build) exits that are also translated as entries of their own: code reaching
+          one unwinds to the host, which then calls it fresh (re-entering the frame loop with a
+          reset stack, so the C stack does not grow).
+  poll    (native build) instructions in loops that wait for an interrupt: generated code calls
+          rt_poll(c, address) there first, and the host runs a frame and the interrupt.
   seen    entries found only at run time: targets of computed jumps the tracer could not
           resolve, from the harness's "left generated code" report. Translated like roots.
 
@@ -33,6 +38,9 @@ ROOTS = [int(a, 16) for a in CONFIG['roots'] + CONFIG.get('seen', [])]
 YIELD = int(CONFIG['yield'], 16) if 'yield' in CONFIG else None
 EXITS = {int(a, 16) for a in CONFIG.get('exits', [])}
 DEFER = {int(a, 16) for a in CONFIG.get('defer', [])}
+RESTART = {int(a, 16) for a in CONFIG.get('restart', [])}
+EXITS |= RESTART
+POLL = {int(a, 16) for a in CONFIG.get('poll', [])}
 d = open(ROM, 'rb').read()
 m = json.load(open(MAP))
 INS = {int(a, 16): v for a, v in m['insn'].items()}
@@ -271,6 +279,7 @@ def translate(fn):
         except Unsupported as e:
             body = ['rt_unknown(0x%Xu, 0); /* unsupported: %s */' % (a, e)]
             UNSUPPORTED.append((a, mn, ops, str(e)))
+        if a in POLL: body = ['rt_poll(c, 0x%Xu);' % a] + body
         out.append('    { %s }  /* %06X %s %s */' % (' '.join(body), a, mn, ops))
     out.append('    rt_unknown(0x%Xu, 0xFFFFFFFFu);  /* never reached: every path ends in rts or a jump */' % fn.entry)
     return out
@@ -282,7 +291,8 @@ def insn(fn, a, nxt, mn, ops):
     L = []
     if base in ('nop',): return ['/* nop */']
     if base == 'rts': return ['rt_rts(c); return;']
-    if base == 'rte': raise Unsupported('rte')
+    if base == 'rte':                                 # pop SR (only the condition codes are kept) and PC
+        return ['c->ccr = (uint16_t)(rd16(c->a[7]) & 0x1F); c->ret = rd32(c->a[7] + 2); c->a[7] += 6; return;']
     if base == 'bra': return ['goto L_%06X;' % int(ops[1:], 16)]
     if base == 'bsr': return call_stmt(int(ops[1:], 16), nxt)
     if base[0] == 'b' and base[1:] in CONDS and base not in ('bset', 'bclr', 'bchg', 'btst'):
@@ -338,8 +348,12 @@ def insn(fn, a, nxt, mn, ops):
         ea = EA(parts[0], 1, a)
         write(ea, 1, '(rt_cond(c, %d) ? 0xFFu : 0)' % cond, L); return L
     if base in ('move', 'movea'):
+        if base == 'move' and suf == '' and parts[1] == 'usp':
+            return ['/* move to usp: no user mode in the port */']
         if base == 'move' and suf == '':
             raise Unsupported('move to/from usp, sr or ccr')
+        if parts[1] == 'sr' and parts[0].startswith('#'):          # the interrupt mask is the host's business
+            return ['c->ccr = 0x%Xu;' % (hexv(parts[0][1:]) & 0x1F)]
         if any(p in ('sr', 'ccr', 'usp') for p in parts): raise Unsupported('special register')
         src, dst = EA(parts[0], sz, a), EA(parts[1], sz, a)
         read(src, sz, 's', L)
@@ -481,12 +495,12 @@ UNSUPPORTED = []
 HINTS = json.load(open(os.path.join(os.path.dirname(MAP), '..', 'analysis', 'hints.json')))
 HINT_ROOTS = [int(e, 16) for e in HINTS.get('entries', [])] + sorted(set().union(*HINT_BASES.values()) if HINT_BASES else set())
 HINT_ROOTS += [x for t in HINTS.get('tables', []) for x in m['tables'].get('%06X' % int(t['addr'], 16), [])]
-fns, todo = {}, list(ROOTS) + [x for x in HINT_ROOTS if x in INS]
+fns, todo = {}, list(ROOTS) + sorted(RESTART) + [x for x in HINT_ROOTS if x in INS]
 RESUME = set()
 CONTINUE = set()
 while todo:
     e = todo.pop()
-    if e in fns or e in HAND or e in EXITS or e in DEFER: continue
+    if e in fns or e in HAND or (e in EXITS and e not in RESTART) or e in DEFER: continue
     if e not in INS: print('warning: %06X is not traced code' % e); continue
     f = fn_of(e); fns[e] = f
     todo += [x for x in f.calls if x not in fns and x not in HAND and x not in EXITS]
@@ -520,7 +534,8 @@ with open(os.path.join(OUT, 'gen_registry.c'), 'w', newline='\n') as f:
     f.write('const uint32_t gen_exits[] = {%s0};\nconst int gen_exit_count = %d;\n\n'
             % (''.join('0x%06X, ' % e for e in sorted(EXITS)), len(EXITS)))
     f.write('int rt_dispatch(Cpu *c, uint32_t t)\n{\n    switch (t & 0xFFFFFF) {\n')
-    for e in sorted(fns): f.write('    case 0x%06X: g_%06X(c); return 1;\n' % (e, e))
+    for e in sorted(fns):
+        if e not in RESTART: f.write('    case 0x%06X: g_%06X(c); return 1;\n' % (e, e))
     for e in sorted(EXITS): f.write('    case 0x%06X: c->ret = 0x%06X; return 1;   /* exit */\n' % (e, e))
     for e in sorted(HAND): f.write('    case 0x%06X: %s(c); rt_rts(c); return 1;\n' % (e, HAND[e]))
     f.write('    }\n    return 0;\n}\n\n')
