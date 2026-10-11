@@ -119,11 +119,11 @@ F2 overwrites the same file each time.
    currents) is ordinary C in `port/movement.c`, checked on memory and the stack pointer (and
    d6/d7 for the player), with every other register watched at run time (`work/usedef.bin`
    from `tools/liveness.py`, data registers in three parts; regenerate it when the map
-   changes). The player's states ($E2C6) and batch 1 of its frame ($E1A6, $DE6A, $DFA0,
-   $EF4E, $DD7C, $DDDE, $EFE2) are done too, in `port/player.c`. Still to do in the player's
-   update ($DD08), with a checklist shown to the owner each time: the animation choice $F064,
-   the sword attack $ED5C, A + left/right $EF12 (starts $11170, likely magic), pickups $F1B0,
-   damage $DFDE, the update itself $DD08, death $E22E (resets the stack and yields). Readable C
+   changes). The player's states ($E2C6) and batches 1 and 2 of its frame ($E1A6, $DE6A,
+   $DFA0, $EF4E, $DD7C, $DDDE, $EFE2; $F064, $ED5C, $EF12) are done too, in `port/player.c`.
+   Still to do in the player's update ($DD08), with a checklist shown to the owner each time:
+   pickups $F1B0, damage $DFDE, the update itself $DD08, death $E22E (resets the stack and
+   yields). Readable C
    calls what is not rewritten yet through `call_68k` (`port/world.c`). Fuzz
    input generators live in
    `harness/hybrid.c` and are game-specific; move them to a game file when the second game

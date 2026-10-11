@@ -428,6 +428,21 @@ pad bits, ground types with ice and icy slopes, poses and shields, bounce and wa
 Results: 0 mismatches over the standard runs and the five owner states, 20,000 fuzz cases per
 routine per state (three states), every instruction covered, self-test caught 100 of 100.
 
+#### The player's frame, batch 2 (2026-10-11)
+
+| Routine | Address | |
+|---|---|---|
+| `PlayerAnimate` | $F064 | the animation for the state (unless a handler chose one) and the sprite's facing; on ice the legs run faster while slipping; on a vine the climbing frames step every 8 pixels |
+| `PlayerSword` | $ED5C | B swings the sword (not with A held, hurt, on $8xxx/$Axxx tiles, or within 4 frames of the last swing): the trail's effect script ($EDE0), sound $20; while the swing's animation runs, the hit points of its current step ($EE14, then $EE70, not rewritten) by form, sword and ducking |
+| `PlayerSpecial` | $EF12 | A + left/right starts the special action set for that side (`$FF9F10`/`$FF9F11`, 13 kinds, likely magic) through `$11170` |
+
+`$11170` was reached only by branching into it from $EF12, so it had no entry the C could call;
+`analysis/hints.json` now names it (the ROM still rebuilds byte for byte). The animation table at
+$F080 has entries for states 0-8 only; the state handlers also accept 9, so `PlayerAnimate`
+stops with a message on state 9, where the original would jump into the following code.
+Results: 0 mismatches over the standard runs and the five owner states, 20,000 fuzz cases per
+routine per state (three states), every instruction covered, self-test caught 100 of 100.
+
 ### Tasks and `Yield`: stackless now, coroutines for the rewrite (revised 2026-10-10)
 
 The first decision (2026-10-10) was stackful coroutines: each task on its own C stack, `Yield()`

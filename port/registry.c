@@ -13,7 +13,8 @@ void HitboxOverlapSwap(Cpu *), HitboxOverlap(Cpu *), BoxPairOverlap(Cpu *), Body
 void BodyVsAttackBoxesSwap(Cpu *), BodyVsAttackBoxes(Cpu *), BoxVsBody(Cpu *), ResolveContact(Cpu *);
 void ContactSide(Cpu *), CheckBodyContact(Cpu *), BodyOverlap(Cpu *);
 void PlayerState(Cpu *), PlayerStartFrame(Cpu *), PlayerInput(Cpu *), PlayerBounce(Cpu *),   /* player.c */
-     PlayerAccel(Cpu *), PlayerSplash(Cpu *), PlayerBubbles(Cpu *), PlayerHurtBoxes(Cpu *);
+     PlayerAccel(Cpu *), PlayerSplash(Cpu *), PlayerBubbles(Cpu *), PlayerHurtBoxes(Cpu *),
+     PlayerAnimate(Cpu *), PlayerSword(Cpu *), PlayerSpecial(Cpu *);
 void PlatformsSideways(Cpu *), PlatformsVertical(Cpu *);   /* movement.c: ordinary C, with contracts */
 void MovePlayer(Cpu *), MoveFlat(Cpu *), MoveOnSlopesNoConveyor(Cpu *), MoveOnSlopes(Cpu *),
      MoveOnSlopesWithCeiling(Cpu *), MoveWithPlatforms(Cpu *), MoveWithPlatformsAndSlopes(Cpu *),
@@ -101,6 +102,9 @@ const PortRoutine port_routines[] = {
     {0x00DD7C, 0x00DDDE, "PlayerSplash", PlayerSplash, CT_SP},
     {0x00DDDE, 0x00DE6A, "PlayerBubbles", PlayerBubbles, CT_SP},
     {0x00EFE2, 0x00F064, "PlayerHurtBoxes", PlayerHurtBoxes, CT_SP},
+    {0x00F064, 0x00F1B0, "PlayerAnimate", PlayerAnimate, CT_SP},
+    {0x00ED5C, 0x00EE70, "PlayerSword", PlayerSword, CT_SP},
+    {0x00EF12, 0x00EF4E, "PlayerSpecial", PlayerSpecial, CT_SP},
     {0x003F58, 0x003F70, "ProbeTileBelow", ProbeTileBelow},
     {0x003F74, 0x003F8E, "ProbeTileAbove", ProbeTileAbove},
     {0x003F92, 0x003FAC, "ProbeTileFeet", ProbeTileFeet},
