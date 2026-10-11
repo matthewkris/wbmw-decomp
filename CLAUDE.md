@@ -121,9 +121,11 @@ F2 overwrites the same file each time.
    from `tools/liveness.py`, data registers in three parts; regenerate it when the map
    changes). The player's states ($E2C6) and batches 1 and 2 of its frame ($E1A6, $DE6A,
    $DFA0, $EF4E, $DD7C, $DDDE, $EFE2; $F064, $ED5C, $EF12) are done too, in `port/player.c`.
-   Still to do in the player's update ($DD08), with a checklist shown to the owner each time:
-   pickups $F1B0, damage $DFDE, the update itself $DD08, death $E22E (resets the stack and
-   yields). Readable C
+   Batch 3 (damage $DFDE, pickups $F1EC/$F256/$F262) too; a rewritten routine that jumps away
+   instead of returning hands over with `port_continue_at` (docs/PORT.md, batch 3). Still to
+   do in the player's update ($DD08), with a checklist shown to the owner each time: the pickup
+   dispatcher $F1B0 and full heal $F282/$F288, the update itself $DD08, death $E22E (these
+   reset the stack and yield: they need the coroutine work). Readable C
    calls what is not rewritten yet through `call_68k` (`port/world.c`). Fuzz
    input generators live in
    `harness/hybrid.c` and are game-specific; move them to a game file when the second game

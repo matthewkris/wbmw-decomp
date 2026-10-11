@@ -14,7 +14,8 @@ void BodyVsAttackBoxesSwap(Cpu *), BodyVsAttackBoxes(Cpu *), BoxVsBody(Cpu *), R
 void ContactSide(Cpu *), CheckBodyContact(Cpu *), BodyOverlap(Cpu *);
 void PlayerState(Cpu *), PlayerStartFrame(Cpu *), PlayerInput(Cpu *), PlayerBounce(Cpu *),   /* player.c */
      PlayerAccel(Cpu *), PlayerSplash(Cpu *), PlayerBubbles(Cpu *), PlayerHurtBoxes(Cpu *),
-     PlayerAnimate(Cpu *), PlayerSword(Cpu *), PlayerSpecial(Cpu *);
+     PlayerAnimate(Cpu *), PlayerSword(Cpu *), PlayerSpecial(Cpu *),
+     PlayerDamage(Cpu *), PlayerGold(Cpu *), PlayerItem(Cpu *), PlayerHeart(Cpu *);
 void PlatformsSideways(Cpu *), PlatformsVertical(Cpu *);   /* movement.c: ordinary C, with contracts */
 void MovePlayer(Cpu *), MoveFlat(Cpu *), MoveOnSlopesNoConveyor(Cpu *), MoveOnSlopes(Cpu *),
      MoveOnSlopesWithCeiling(Cpu *), MoveWithPlatforms(Cpu *), MoveWithPlatformsAndSlopes(Cpu *),
@@ -105,6 +106,10 @@ const PortRoutine port_routines[] = {
     {0x00F064, 0x00F1B0, "PlayerAnimate", PlayerAnimate, CT_SP},
     {0x00ED5C, 0x00EE70, "PlayerSword", PlayerSword, CT_SP},
     {0x00EF12, 0x00EF4E, "PlayerSpecial", PlayerSpecial, CT_SP},
+    {0x00DFDE, 0x00E1A6, "PlayerDamage", PlayerDamage, CT_SP},   /* may carry on at $E22E or $F288 */
+    {0x00F1EC, 0x00F256, "PlayerGold", PlayerGold, CT_SP},       /* pickups: reached from $F1B0's table */
+    {0x00F256, 0x00F262, "PlayerItem", PlayerItem, CT_SP},
+    {0x00F262, 0x00F282, "PlayerHeart", PlayerHeart, CT_SP},
     {0x003F58, 0x003F70, "ProbeTileBelow", ProbeTileBelow},
     {0x003F74, 0x003F8E, "ProbeTileAbove", ProbeTileAbove},
     {0x003F92, 0x003FAC, "ProbeTileFeet", ProbeTileFeet},

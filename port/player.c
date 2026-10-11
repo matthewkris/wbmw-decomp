@@ -976,6 +976,175 @@ static void special(Ent e)
     call_with_d0(e, 0x11170, which);
 }
 
+/* ---- batch 3: pickups and damage ---- */
+
+#define HEALTH(e)     ((e) - 0x2600)   /* word; $40 a quarter heart? (see the hearts at $8AA2) */
+#define MAX_HEALTH    0xFFFF9F00u
+#define REFILL        0xFFFF9F14u   /* health still to add, a little each frame ($F288) */
+#define GOLD          0xFFFF962Cu   /* long, up to 999,999 */
+#define DAMAGE_BITS   0xFFFF9854u   /* bit 0: touched something harmful; bit 1: harm of $9856 */
+#define DAMAGE_AMOUNT 0xFFFF9856u
+#define ARMOR         0xFFFF95D1u
+#define TILE_ABOVE    0xFFFF9EDCu
+#define HIT_FLASH(e)  ((e) - 0x3900)   /* word: $2101 while hit */
+#define HIT_DAMAGE(e) ((e) - 0x23FE)   /* word: the damage of the hit taken */
+#define KNOCKBACK(e)  ((e) - 0x610A)   /* word: knockback speed */
+#define REVIVAL       0x2A          /* the item that saves the player at 0 health */
+
+/* $F1EC: gold: a random amount by the pickup's kind (masks and bases at $F226), the total kept
+ * to 999,999, then the message and the gold display, sound $28 */
+static void pick_gold(Cpu *c)
+{
+    uint16_t kind = (uint16_t)c->d[0];              /* 0, 2 .. 22 */
+    Cpu t = *c;
+    call_68k(&t, 0x5D8);                            /* Random, in t: its d1 goes on to $1FCA */
+    uint32_t pair = 0xF226 + 2 * kind;
+    int32_t amount = (int16_t)((t.d[0] & rd16(pair)) + rd16(pair + 2));
+    uint32_t gold = rd32(GOLD) + (uint32_t)amount, over = gold - 999999;
+    if (gold > 999999) { amount -= (int32_t)over; gold -= over; }
+    wr32(GOLD, gold);
+    t.d[0] = (uint32_t)amount; t.d[2] = gold; t.d[3] = over;
+    call_68k(&t, 0x1FCA);                           /* "Found ... GOLD." */
+    call_68k(&t, 0x85A8);                           /* the gold display */
+    queue_sound(0x28);
+}
+
+/* $F256: an item ($26) */
+static void pick_item(Cpu *c)
+{
+    queue_sound(0x28);
+    Cpu t = *c; t.d[0] = 0x26;
+    call_68k(&t, 0x245A);
+}
+
+/* $F262: a heart: $80 more health, up to the maximum; redraw the hearts */
+static void pick_heart(Cpu *c)
+{
+    queue_sound(0x29);
+    Ent e = c->a[4];
+    uint16_t h = (uint16_t)(rdw(HEALTH(e)) + 0x80);
+    if (h > rd16(MAX_HEALTH)) h = rd16(MAX_HEALTH);
+    wrw(HEALTH(e), h);
+    Cpu t = *c;
+    call_68k(&t, 0x8AA2);
+}
+
+/* $E188: thrown up a little, unless still blinking from the last hit */
+static void bump_up(Ent e)
+{
+    if (rd8(BLINK_TIME)) return;
+    wr8(COLL(e), rd8(COLL(e)) & 0x75);
+    int16_t j = rdw(JUMP_SPEED) >> 1;
+    wrw(VEL_Y(e), j + (j >> 1));
+}
+
+/* $E16C: knocked back, away from the hit (unless climbing), and up */
+static void knock_back(Ent e)
+{
+    if (rd8(ANIM) & 4) return;
+    int16_t v = rdw(KNOCKBACK(e));
+    wrw(VEL_X(e), rd8(HIT_STATE(e)) & 1 ? v : -v);
+    bump_up(e);
+}
+
+/* $E12E: the hurt state: blinking, the hurt pose, sound $36 */
+static void hurt(Ent e)
+{
+    wr8(ANIM, (uint8_t)((rd8(ANIM) & 0xFA) | 0x10));
+    wr8(FLAGS(e), (uint8_t)((rd8(FLAGS(e)) & 0xC7) | F_HURT));
+    wrw(HIT_FLASH(e), 0x2101);
+    set8(FACING(e), 0x40);
+    wr8(TIMER(e), 0x1E);
+    set_state(e, S_HURT);
+    wr8(BLINK_TIME, 0x3C);
+    queue_sound(0x36);
+}
+
+/* $E0A4: lose health. Below $40: saved by the revival item (the hearts refill to half, $F288),
+ * or dead ($E22E); both carry on in the original's code (they reset the stack and yield).
+ * Returns 1 if it left that way. `nested`: reached from inside $E04E, whose return address
+ * ($DFE0) the original has on the stack there. */
+static int lose_health(Cpu *c, int16_t amount, int nested)
+{
+    Ent e = c->a[4];
+    wrw(HEALTH(e), rdw(HEALTH(e)) - amount);
+    if (rdw(HEALTH(e)) >= 0x40) {
+        Cpu t = *c; call_68k(&t, 0x8AA2);           /* the hearts */
+        return 0;
+    }
+    wrw(HEALTH(e), 0);
+    Cpu t = *c; t.d[0] = REVIVAL;
+    call_68k(&t, 0x23E4);                           /* has the item? (Z clear if so) */
+    if (!(t.ccr & CC_Z)) {
+        t = *c; t.d[0] = REVIVAL; call_68k(&t, 0x24DC);   /* used up */
+        t = *c; call_68k(&t, 0x8AA2);
+        wrw(REFILL, (uint16_t)(((uint16_t)(rd16(MAX_HEALTH) + 0x100) >> 1) & 0xFF00));   /* half */
+        wr8(HIT_STATE(e), 0);
+        port_continue_at(c, 0xF288, nested ? 0xDFE0 : 0);
+        return 1;
+    }
+    wr8(e - 0x2BFF, 0);
+    set_state(e, S_HURT);
+    set8(FLAGS(e), 0x80);                           /* dead */
+    port_continue_at(c, 0xE22E, nested ? 0xDFE0 : 0);
+    return 1;
+}
+
+/* $E04E: being hit this frame (HIT_STATE, set by whatever hit): bit 7 a hit that hurts (knocked
+ * back, the hurt state, the hit's damage after armour, $4964), bit 4 or 6 pushed back only */
+static int being_hit(Cpu *c)
+{
+    Ent e = c->a[4];
+    uint8_t hit = rd8(HIT_STATE(e));
+    if (hit & 0x80) {
+        if (rd8(BLINK_TIME)) { knock_back(e); return 0; }
+        knock_back(e);
+        hurt(e);
+        Cpu t = *c; t.d[0] = (uint16_t)rdw(HIT_DAMAGE(e));
+        call_68k(&t, 0x4964);
+        return lose_health(c, (int16_t)t.d[0], 1);
+    }
+    if (hit & 0x10) {
+        if (rd8(FALL_FLAGS) & 0x40) { Cpu t = *c; call_68k(&t, 0x114C0); return 0; }
+        queue_sound(0x30);
+    } else if (hit & 0x40) queue_sound(0x46);
+    else return 0;
+    wrw(VEL_X(e), rd8(SPRITE(e)) & 8 ? 0x180 : -0x180);   /* pushed the way it faces? */
+    return 0;
+}
+
+/* $DFDE: damage this frame: a hit, then the surroundings: a hot area without the armour for it,
+ * a $Dxxx tile, harm signalled in $9854, $3xxx tiles at the feet, body or head */
+static void damage(Cpu *c)
+{
+    Ent e = c->a[4];
+    if (being_hit(c)) return;
+    int16_t amount;
+    uint16_t below = rd16(TILE_BELOW) & 0xF000;
+    if ((rd8(AREA_FLAGS) & 0x40) && ((rd8(EQUIP) & 0x10) || rd8(ARMOR) != 2)) amount = 1;
+    else if (below == 0xD000) amount = 1;
+    else {
+        uint8_t bits = rd8(DAMAGE_BITS);
+        clr8(DAMAGE_BITS, 2);
+        if (bits & 2) amount = rdw(DAMAGE_AMOUNT);
+        else {
+            if (rd8(BLINK_TIME)) return;
+            if (below != 0x3000 && (rd16(TILE_FEET) & 0xF000) != 0x3000 && (rd16(TILE_ABOVE) & 0xF000) != 0x3000) {
+                clr8(DAMAGE_BITS, 1);
+                if (!(bits & 1)) return;
+            }
+            bump_up(e);                             /* $E11A: thrown up and hurt */
+            hurt(e);
+            lose_health(c, 0x80, 0);
+            return;
+        }
+    }
+    wrw(HIT_FLASH(e), 0x2101);                      /* $E104: a steady burn: blink, small damage */
+    set8(FACING(e), 0x40);
+    wr8(BLINK_TIME, 0x3C);
+    lose_health(c, amount, 0);
+}
+
 /* $E2C6: the handler for the player's state */
 static void player_state(Ent e)
 {
@@ -1010,3 +1179,7 @@ void PlayerHurtBoxes(Cpu *c)  { cpu = c; hurt_boxes(c->a[4]); }
 void PlayerAnimate(Cpu *c)    { cpu = c; animate(c->a[4]); }
 void PlayerSword(Cpu *c)      { cpu = c; sword(c->a[4]); }
 void PlayerSpecial(Cpu *c)    { cpu = c; special(c->a[4]); }
+void PlayerDamage(Cpu *c)     { cpu = c; damage(c); }
+void PlayerGold(Cpu *c)       { cpu = c; pick_gold(c); }
+void PlayerItem(Cpu *c)       { cpu = c; pick_item(c); }
+void PlayerHeart(Cpu *c)      { cpu = c; pick_heart(c); }
