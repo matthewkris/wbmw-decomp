@@ -74,6 +74,10 @@ In shadow mode, a check that never reaches the point where the C version ended i
 and HV counter values the C version read are replayed to the original, because C runs in no
 emulated time (`docs/PORT.md`, Tasks).
 
+If translated code loops 100 million branches in one call (waiting for time or an interrupt,
+which it never gets), the harness prints `STUCK` with the recent branch targets and exits with
+status 3, instead of hanging.
+
 Environment variables:
 
 * `WBMW_PORT_BREAK=NAME`: self-test. Corrupts one flag of that routine's result, so every

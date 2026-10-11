@@ -195,4 +195,11 @@ void rt_unknown(uint32_t from, uint32_t target);
  * where everything is translated, stops. */
 void rt_leave(Cpu *c, uint32_t from, uint32_t target);
 
+/* watchdog: every branch target in generated code passes here. Translated code takes no
+ * emulated time, so a loop that waits for time or an interrupt never ends; after rt_limit passes
+ * in one call the host's rt_stuck reports the recent branch targets (a ring of 16). */
+extern uint32_t rt_ring[16]; extern unsigned rt_ring_i; extern unsigned long rt_steps, rt_limit;
+void rt_stuck(void);
+#define RT_AT(a) do { rt_ring[rt_ring_i++ & 15] = (a); if (++rt_steps > rt_limit) rt_stuck(); } while (0)
+
 #endif

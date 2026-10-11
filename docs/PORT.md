@@ -376,6 +376,29 @@ Results:
   `play.exe --port shadow --coverage FILE` records which code each session checked, and
   `tools/coverage.py` merges the sessions.
 
+#### The inn crash (found by the owner, 2026-10-10)
+
+Saving at an inn froze `play.exe`. The owner saved a state at the innkeeper's question
+(`work/inn2.state`, frame 13,701), and from it, answering yes hung the C version every time;
+the original was fine. The game's own save (the EEPROM write, `$1C494`) works in both.
+
+The cause was a second wait for time. After the yes, `Kgam` plays the night music and waits 300
+frames by polling the VBlank flag itself (`bclr #0,$8006; beq` at `$C262`), then restarts the
+gameplay task. Only the VBlank interrupt sets that flag, and translated code takes no time, so
+it spun forever. Only `$3B8` and `$C262` read that flag anywhere in the ROM.
+
+* **Exits can be inside a routine now.** `$C262` is an exit: generated code reaching it stops
+  and leaves that address to the 68000, which waits the 300 frames on real emulated time, then
+  enters the translated gameplay task again.
+* **A watchdog for hangs in generated code.** Every branch target in generated code counts its
+  passes (`RT_AT`, `port/m68k_rt.h`). A call that passes 100 million prints `STUCK` with the 16
+  most recent branch targets and stops. It named `$C262` on the first run, and turns any future
+  hang of this kind into a report instead of a frozen window.
+
+From the inn state with yes answered, shadow mode reports zero mismatches. Replace mode matches
+the original's frames until the morning text, where the C is one letter ahead (the same timing
+difference as the intro).
+
 ### Platform layer
 
 The native build will provide `port.h`'s memory accessors and a Mega Drive platform library

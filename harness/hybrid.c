@@ -43,6 +43,17 @@ void rt_leave(Cpu *c, uint32_t from, uint32_t target)
     if (i < nleaves) leaves[i].n++;
 }
 
+/* the generated code's watchdog (port/m68k_rt.h): a call into C that passes 100 million branch
+ * targets is taken to be stuck in a loop that waits for time; say where, and stop */
+uint32_t rt_ring[16]; unsigned rt_ring_i; unsigned long rt_steps, rt_limit = 100000000;
+void rt_stuck(void)
+{
+    fprintf(stderr, "STUCK: generated code looped %lu times without returning; recent branch targets:", rt_steps);
+    for (unsigned i = 0; i < 16; i++) fprintf(stderr, " %06X", (unsigned)rt_ring[(rt_ring_i + i) & 15]);
+    fprintf(stderr, "\n");
+    exit(3);
+}
+
 /* exits (analysis/translate.json): the generated code stops there, e.g. where a task resets the
  * stack and re-enters the frame loop, so a check also ends when the original reaches one */
 extern const uint32_t gen_exits[];
@@ -145,6 +156,7 @@ static void check(void)
 static void run_port(int idx)
 {
     Cpu c; get_cpu(&c);
+    rt_steps = 0;
     R(idx)->fn(&c);
     if (idx == break_idx) c.ccr ^= CC_X;            /* one flag, the subtlest thing to get wrong */
     uint32_t ret;

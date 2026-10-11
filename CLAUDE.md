@@ -92,6 +92,11 @@ mode matches the original pixel for pixel in gameplay (see `docs/PORT.md`, "Task
 and "The gameplay task"). Only the frame loop, the scheduler and the VBlank interrupt are still
 68000. Coverage is 36% of the translated instructions. Next:
 
+Owner save states in `work/` (not committed): `platform.state` (area 1 room 2, floating
+platforms), `inn2.state` (at an innkeeper's question; answering yes found the `$C262` hang),
+`owner2.state` (Sega logo after a game over). Copy `play.state`/F2 states to their own names:
+F2 overwrites the same file each time.
+
 1. Coverage, from play: the owner plays with `play.exe --port shadow --coverage FILE` (any
    mismatch is printed to the console and in the report at exit; save states with F2 for
    anything worth re-checking). Merge the files with `tools/coverage.py`. Add any new "left

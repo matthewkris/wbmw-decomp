@@ -98,6 +98,7 @@ runnable as early as possible and ask for specific checks.
 | A fixed-size per-routine table overflowed once the translation grew past 1,024 routines, and the report showed nonsense (negative call counts). | Size tables from the data; treat an absurd report as a tool bug before reading it as a result. |
 | A check closed at the original's first return to the caller, while the C version legitimately ran on (a routine jumping back through a saved return address). | End a differential check at the point the port itself ended, and report when the original never gets there. |
 | Computed jumps through data the tracer could not follow left the translation incomplete. | Let the harness report where translated code had to fall back to the original, feed those targets back as roots, and repeat until a run needs no fallback. |
+| Sleeping at an inn froze the translated game: a second wait-for-interrupt loop, inside the gameplay task, that no scripted run reached. Found from the owner's save state. | Search the ROM for every reader of interrupt-set flags when choosing exits; give translated code a watchdog so a hang names its loop; owner save states at the point of failure make such bugs a one-run reproduction. |
 | Following stored code pointers pulled in the whole game at once. | Let the translator leave to the original code for anything untranslated (always correct in the harness), and defer big subsystems explicitly, to keep each step's checks fine-grained. |
 
 ## General versus game-specific

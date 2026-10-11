@@ -208,6 +208,9 @@ six-byte blocks at $18BB8 and $1A3DE are one-box lists. `$FF8C7A` (text pointer,
   address onto a continuation stack at `$FF9C14` and returns through it later.
 * The code up to `jmp (a1)` at `$88A2` picks a handler from two records at `$88C2` (mask word, and-mask long, code
   pointer: `$893C`, `$8950`); that code ($88F2-$89B4) is reached only this way.
+* Sleeping at an inn: after the yes, `Kgam` waits 300 frames by polling bit 0 of `$FF8006` (set
+  by VBlank) at `$C262`, then restarts the gameplay task at `$8EB4`. `$3B8` and `$C262` are the
+  only readers of that flag.
 * `EndTask` ($4E6) calls the slot's exit handler (slot+8, set by the task, e.g. `$569C`, `$6BAE`)
   and frees the slot. `$62A` turns the display off and waits a frame (`jmp $3B8`), before a
   system task starts.

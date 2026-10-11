@@ -181,6 +181,7 @@ class Fn:
             a = work.pop()
             while a in INS and a not in self.body:
                 self.body.add(a)
+                if a in EXITS and a != entry: break      # stops here; the 68000 carries on
                 sz, mn, ops = INS[a]
                 base = mn.split('.')[0]
                 t = re.search(r'\$([0-9a-f]+)$', ops)
@@ -237,9 +238,10 @@ def translate(fn):
     for a in sorted(fn.body):
         sz_b, mn, ops = INS[a]
         nxt = a + sz_b
-        if a in labels: out.append('L_%06X:' % a)
+        if a in labels: out.append('L_%06X: RT_AT(0x%06X);' % (a, a))
         try:
-            body = insn(fn, a, nxt, mn, ops)
+            # an exit inside a routine (a loop that waits for an interrupt): hand it to the 68000
+            body = ['c->ret = 0x%Xu; return; /* exit */' % a] if a in EXITS and a != fn.entry else insn(fn, a, nxt, mn, ops)
         except Unsupported as e:
             body = ['rt_unknown(0x%Xu, 0); /* unsupported: %s */' % (a, e)]
             UNSUPPORTED.append((a, mn, ops, str(e)))
