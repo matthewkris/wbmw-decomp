@@ -957,6 +957,45 @@ int hybrid_fuzz(const char *name, long count)
                 ram[0xCB00 + s] = (uint8_t)(rnd() % 16); ram[0xCB01 + s] = (uint8_t)(rnd() % 16);
             }
         }
+        if (!strcmp(name, "PlayerSwordTip")) {      /* a list of the sword's points, as the game passes */
+            uint32_t sword = rnd() % 8, list = 0xF2FC + (uint32_t)(int32_t)(int16_t)bus_read16(0xF2FC + 2 * sword);
+            list += (uint32_t)(int32_t)(int16_t)bus_read16(list + 2 * (rnd() % (bus_read8(0xF2F4 + sword) ? bus_read8(0xF2F4 + sword) : 1)));
+            m68k_set_reg(M68K_REG_A0, rnd() % 3 ? list : 0xE9F2 + 2 * (rnd() % 4));
+            put_word(0x9F2A, rnd() % 4 ? rnd() % 16 : 0xFFFF);                 /* any step of the trail script */
+            if (rnd() % 2) ram[0x9F03] |= 0x20;                                  /* power on */
+            uint32_t a0 = m68k_get_reg(NULL, M68K_REG_A0), e = m68k_get_reg(NULL, M68K_REG_A4);
+            if (bus_read8(a0) != 0x80 && rnd() % 2) {                           /* a breakable block (2) at the tip */
+                uint8_t dx = (uint8_t)bus_read8(a0);
+                if (ram[0xC002 + e] & 8) dx = (uint8_t)-(uint8_t)(dx + 1);
+                set_block_attr(0x9754, e, (uint32_t)(get_sword(0xC800 + e) + (int8_t)dx),
+                               (uint32_t)(get_sword(0xC900 + e) + (int8_t)bus_read8(a0 + 1)), 2);
+            }
+        }
+        if (!strcmp(name, "Hearts")) {              /* health up to the maximum, up to 15 hearts */
+            uint32_t e = (uint32_t)(int32_t)(int16_t)(ram[0x9EEE] << 8 | ram[0x9EEF]);
+            uint32_t max = (1 + rnd() % 15) * 0x100;
+            put_word(0x9F00, rnd() % 8 ? max : rnd());
+            put_word(0xDA00 + e, rnd() % 8 ? rnd() % (max + 1) : rnd());
+        }
+        if (!strncmp(name, "SpawnItem", 9)) {
+            /* a kind of the table (two groups: 15 and 12 kinds) or a big item, the slots often all
+             * busy with kinds of every priority */
+            static const uint16_t big[] = {0x1040, 0x102A, 0x1000, 0x1012};
+            uint16_t kind = rnd() % 8 == 0 ? big[rnd() % 4] : rnd() % 2 ? (uint16_t)(2 * (rnd() % 15)) : (uint16_t)(0x200 + 2 * (rnd() % 12));
+            m68k_set_reg(M68K_REG_D0, (rnd() << 16) | kind);
+            m68k_set_reg(M68K_REG_D1, rnd()); m68k_set_reg(M68K_REG_D2, rnd());
+            uint32_t a4 = (rnd() % 64) * 4;
+            m68k_set_reg(M68K_REG_A4, a4);
+            ram[0xD100 + a4] = (uint8_t)rnd();                                 /* -$2F00 */
+            int busy = rnd() % 4 != 0;
+            for (uint32_t s = 0x80; s < 0xC0; s += 4) {
+                ram[0xC000 + s] = (uint8_t)(busy || rnd() % 2 ? 0x80 | (rnd() & 0x40) : 0);
+                put_word(0xD402 + s, rnd() % 2 ? 2 * (rnd() % 15) : 0x200 + 2 * (rnd() % 12));
+            }
+            put_word(0x9962, rnd() % 2 ? 0 : rnd() % 16);
+            ram[0x959E] = (uint8_t)(rnd() % 3 ? rnd() % 4 : rnd());
+            ram[0x959D] = (uint8_t)(rnd() % 3);
+        }
         if (!strcmp(name, "Currents")) {            /* in water with a current, near the speed limit */
             ram[0x966B] = (uint8_t)(rnd() | (rnd() % 4 ? 1 : 0));
             put_word(0x9EE2, rnd() % 4 ? 0xB000 | (rnd() & 0xFFF) : rnd());

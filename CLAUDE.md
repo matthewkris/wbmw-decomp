@@ -128,8 +128,9 @@ F2 overwrites the same file each time.
    revival and full heal and the pickup dispatcher are C too (docs/PORT.md, "Coroutines").
    The special actions (magic, potions: $11170-$11BA3) are C too, in `port/magic.c`; the quake
    and thunder are coroutine loops, their resume addresses registered entries (docs/PORT.md,
-   "Magic"). Next (show the owner a checklist): other subsystems, e.g. the hearts display
-   ($8AA2), effect spawning ($10910), the sword's hit points ($EE70). Readable C
+   "Magic"). The hearts display ($8AA2, `port/hud.c`), the item and effect spawner ($1090C/$10910,
+   `port/effects.c`) and the sword's tip ($EE70) are C too. Next (show the owner a checklist):
+   other subsystems (the items and effects themselves, $10A1E; the big items, $B42A). Readable C
    calls what is not rewritten yet through `call_68k` (`port/world.c`). Fuzz
    input generators live in
    `harness/hybrid.c` and are game-specific; move them to a game file when the second game

@@ -599,6 +599,33 @@ corrupted result (`WBMW_PORT_BREAK`) is caught in every case. In replace mode, w
 given by game frame (`--input-game`), the spirits, quake, thunder and shield runs from
 `castle.state` match the original in RAM, VRAM and colours in every game frame.
 
+#### The hearts, the item spawner, the sword's tip (2026-10-11)
+
+The routines the player's C still called in the original most often:
+
+* `port/hud.c`, `Hearts` ($8AA2): the eight heart cells built in `$FF95AA` (full, a quarter-
+  filled one, empty up to the maximum, blanks; past eight hearts a band of "double" cells at the
+  left) and drawn as two rows into VRAM. It leaves a4 the player, as the original does (its
+  contract names a4).
+* `port/effects.c`, `SpawnItem` / `SpawnItemAt` ($1090C / $10910): items and effects in the
+  sixteen slots $80-$BC, from the kinds' table at $11094 (8-byte records: animation set,
+  priority, speed limits, acceleration). With every slot busy, a kind replaces the first slot
+  of a less important kind (higher priority number), else the first drawn one of the same
+  priority, else it is dropped (d3 = -1, N set). Every register is as the original leaves it,
+  so the routines carry no contract (all registers compared). Kept: while searching, the
+  original keeps the high byte of the last record offset in the index register, and the
+  table's offsets and indexes are signed words. Kinds $1000 and up (heart containers, the
+  revival item: $B42A) still run the original.
+* `port/player.c`, `PlayerSwordTip` ($EE70): a breakable block (collision byte 2) at the
+  sword's tip is broken ($B2BA); with the power spell on, the swing's trail script leaves
+  sparkles ($216) at its next points.
+
+Checked: the standard runs, both scenes from the five owner states, 20,000 fuzz cases each
+from three states (the fuzzer paints a breakable block at the tip, picks any step of the trail
+script, fills the item slots with kinds of every priority), every instruction covered, the
+self-test caught in every case, and in replace mode a run casting power and swinging the sword
+from `castle.state` matches the original in every game frame.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
