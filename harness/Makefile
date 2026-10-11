@@ -42,8 +42,10 @@ $(OUT)/gen_registry.o: ../work/gen/gen_registry.c ../port/m68k_rt.h ../port/port
 $(OUT)/harness: main.c $(CORE) md.h ../port/port.h $(CPU)
 	$(CC) $(CFLAGS) -I$(MUSASHI) -I../port main.c $(CORE) $(CPU) -o $@ $(LDFLAGS) -lm
 
+# -mconsole: sdl2-config asks for a Windows GUI program, which has no console, so nothing it
+# prints (mismatch reports, the report at exit) would be seen
 $(OUT)/play: play.c $(CORE) md.h ../port/port.h $(CPU)
-	$(CC) $(CFLAGS) -I$(MUSASHI) -I../port $$(sdl2-config --cflags) play.c $(CORE) $(CPU) -o $@ $(LDFLAGS) $$(sdl2-config --libs) -lm
+	$(CC) $(CFLAGS) -I$(MUSASHI) -I../port $$(sdl2-config --cflags) play.c $(CORE) $(CPU) -o $@ $(LDFLAGS) $$(sdl2-config --libs) -mconsole -lm
 	cp "$$(dirname $$(which sdl2-config))/SDL2.dll" $(OUT)/
 
 clean:
