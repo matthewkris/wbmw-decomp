@@ -414,6 +414,26 @@ Results:
   timing. And comparison by game frame rather than real frame (the game's counter at
   `$FF8002`), so long runs can be compared exactly despite the time shift.
 
+#### Save states in the native build (2026-10-11)
+
+The native build reads and writes the harness's state format. A native program has no 68000
+call stack to restore, only C frames, so a state is taken where nothing is pending: the frame
+wait in `$3B8` ($3D6-$3FE), called from the frame loop (the stack holds only `$4BF6`). Every
+harness state examined stopped there, including all of the owner's. Each instruction of that wait
+is a translated entry (`analysis/native.json`), so loading a state starts the code at its PC;
+when it returns to `$4BF6`, the host calls that next. Loading during play unwinds the C stack
+with `longjmp`. Saving waits for the next such point. With `--timing`, a load starts at line 0,
+slice 0, as the harness's next frame would.
+
+Checks:
+
+* Saving at frame 1,500 and resuming matches the uninterrupted run in every game frame to
+  3,000, timed and untimed.
+* The owner's castle state (saved by `play.exe`, version 1), run 1,800 frames in both programs
+  with the same input, is identical in every game frame, every sampled picture and the sound.
+* A state saved by the native build, continued in the harness, matches the native build's own
+  uninterrupted run in every game frame.
+
 #### Exact timing, optional (`--timing`, 2026-10-11)
 
 With `--timing` the native build counts the 68000 cycles the original would spend, and runs

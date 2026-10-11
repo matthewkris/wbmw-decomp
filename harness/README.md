@@ -104,6 +104,9 @@ Environment variables:
 
 ## Save states
 
+The native build (`native/`) reads and writes the same files.
+
+
 Taken between frames: the 68000 registers and pending interrupts, RAM, Z80 RAM, the EEPROM and
 its protocol state, the pad latch, and all VDP state. About 137 KB. Integers are stored in host
 byte order, so a state belongs to the machine that wrote it. Checked exact: a run loaded from a

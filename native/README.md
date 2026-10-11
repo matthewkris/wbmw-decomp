@@ -17,6 +17,7 @@ This makes `work/native/wbmw.exe` (and copies `SDL2.dll` next to it).
 ## Run
 
     work/native/wbmw ROM [--scale N] [--save FILE] [--fullscreen] [--integer-scale] [--fps] [--mute] [--timing]
+                         [--state FILE] [--load]
 
 plays in a window: arrows, Z = A, X = B, C = C, Enter = Start, Esc quits; a controller works too.
 The window is sized for the game's 256-pixel width at the largest scale up to 3 that fits the
@@ -41,6 +42,19 @@ input script format, for comparison with `work/harness/harness`.
 
 Both this program and the harness take `--frame-log FILE`, `--input-game FILE` and `--dump-at N
 DIR` (`harness/framelog.c`); `tools/framecmp.py` compares two frame logs by game frame.
+
+## Save states
+
+    work/native/wbmw ROM [--state FILE] [--load] ...          F2 saves to FILE, F4 loads it
+    work/native/wbmw ROM --load-state FILE | --save-state-at N FILE ...   (headless too)
+
+The format is the harness's own (`WBMWST02`, `harness/core.c`): states move freely between
+`play.exe` and `wbmw.exe`, including all the earlier ones (`WBMWST01`). The default file is
+`wbmw.state`. A state is taken only where the game waits for VBlank, called from the frame loop.
+The harness's states stop there too (between frames). F2 saves at the next such point, normally
+the same frame. A loaded state resumes by starting the translated code at its PC; every
+instruction of that wait is an entry. With `--timing`, a state loads at line 0, as the harness's
+next frame would, so a run from a state matches the harness from the same state exactly.
 
 ## Exact timing (`--timing`)
 

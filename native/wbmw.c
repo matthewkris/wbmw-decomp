@@ -20,12 +20,21 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <setjmp.h>
 #include "../harness/md.h"
 #include "../port/m68k_rt.h"
 
 #ifndef WBMW_HEADLESS_ONLY
 #include <SDL.h>
 #endif
+
+/* save states (below), used by the window's keys */
+static const char *state_path;
+static int save_pending;
+static const char *save_to;
+
+static void request_load(const char *path);
+static void maybe_save(Cpu *c, uint32_t pc);
 
 /* ---- the machine around the code ---- */
 uint8_t rd8(uint32_t a) { return (uint8_t)bus_read8(a); }
@@ -36,8 +45,15 @@ void wr16(uint32_t a, uint16_t v) { bus_write16(a, v); }
 /* ported code waiting on the Z80 (QueueSound): let sound time pass, as the hardware would */
 void port_idle(void) { sound_idle(); }
 
-/* save states are the harness's; the native build has none yet */
-void state_io(FILE *f, void *p, size_t n, int saving) { (void)f; (void)p; (void)n; (void)saving; }
+/* save states: the harness's own file format (harness/core.c), so states move between play.exe
+ * and wbmw.exe. The modules write their parts through state_io. */
+static int state_failed;
+void state_io(FILE *f, void *p, size_t n, int saving)
+{
+    if (!f) return;
+    size_t done = saving ? fwrite(p, 1, n, f) : fread(p, 1, n, f);
+    if (done != n) state_failed = 1;
+}
 
 /* generated code reached an address with no translation: everything is translated here, so
  * this is a bug in the translation (a computed jump the translator did not find) */
@@ -170,6 +186,8 @@ static void window_frame(void)
             SDL_Keycode key = e.key.keysym.sym;
             if (key == SDLK_F11 || (key == SDLK_RETURN && (e.key.keysym.mod & KMOD_ALT))) set_fullscreen(!fullscreen);
             if (key == SDLK_F3) show_fps = !show_fps;
+            if (key == SDLK_F2) { save_pending = frame; save_to = state_path; }   /* at the next frame wait */
+            if (key == SDLK_F4) request_load(state_path);
         }
         if (e.type == SDL_CONTROLLERDEVICEADDED && !gc) gc = SDL_GameControllerOpen(e.cdevice.which);
     }
@@ -298,7 +316,7 @@ void rt_slice(Cpu *c, uint32_t next)
     while (rt_budget <= 0) {                        /* the slice is used up: on to the next */
         if (++slice == 8) {
             end_line(); slice = 0;
-            if (++line == LINES_PER_FRAME) { line = 0; frame_done(); }
+            if (++line == LINES_PER_FRAME) { line = 0; frame_done(); maybe_save(c, next); }
             start_line();
         }
         vdp_line_cycle = slice * SLICE;
@@ -315,6 +333,101 @@ void rt_slice(Cpu *c, uint32_t next)
     }
 }
 
+/* ---- save states ----
+ * A state is taken only where the game waits for VBlank in $3B8 ($3D6-$3FE), called from the
+ * frame loop (the stack holds just its return address, $4BF6). Every instruction there is a
+ * translated entry, so a state resumes by starting the code at its PC: no C call stack needed.
+ * That is also where the harness's states stop (between frames), so they load here too. With
+ * --timing a loaded state starts at line 0, slice 0, as the harness's next frame would. */
+static const char *state_path = "wbmw.state";   /* F2 saves here, F4 and --load load it */
+static int save_pending = -1;                       /* the frame from which to save, or -1 */
+
+static jmp_buf restart;
+static Cpu *the_cpu;
+static uint32_t resume_pc;
+
+static int resumable(Cpu *c, uint32_t pc)
+{
+    return pc >= 0x3D6 && pc <= 0x3FE && entry(pc) && (c->a[7] & 0xFFFFFF) == 0xFF0BFC && rd32(0xFF0BFC) == 0x4BF6;
+}
+
+static void state_regs(FILE *f, Cpu *c, uint32_t *pc, int saving)
+{
+    /* the harness's order: SR, USP, ISP, D0-D7, A0-A6, PC (core.c) */
+    unsigned regs[19] = {0};
+    if (saving) {
+        regs[0] = 0x2000 | (unsigned)sr_mask << 8 | c->ccr; regs[2] = c->a[7];
+        for (int i = 0; i < 8; i++) regs[3 + i] = c->d[i];
+        for (int i = 0; i < 7; i++) regs[11 + i] = c->a[i];
+        regs[18] = *pc;
+    }
+    state_io(f, regs, sizeof regs, saving);
+    if (!saving) {
+        c->ccr = (uint16_t)(regs[0] & 0x1F); sr_mask = (int)(regs[0] >> 8) & 7; c->a[7] = regs[2];
+        for (int i = 0; i < 8; i++) c->d[i] = regs[3 + i];
+        for (int i = 0; i < 7; i++) c->a[i] = regs[11 + i];
+        *pc = regs[18] & 0xFFFFFF;
+    }
+    int irq[2] = {vint_pending, hint_pending};
+    state_io(f, irq, sizeof irq, saving);
+    if (!saving) { vint_pending = irq[0]; hint_pending = irq[1]; }
+}
+
+static int save_state(const char *path, Cpu *c, uint32_t pc)
+{
+    FILE *f = fopen(path, "wb");
+    if (!f) { perror(path); return -1; }
+    state_failed = 0;
+    char magic[8]; memcpy(magic, "WBMWST02", 8);
+    state_io(f, magic, 8, 1); state_io(f, &frame, sizeof frame, 1);
+    state_regs(f, c, &pc, 1);
+    bus_state_io(f, 1); vdp_state_io(f, 1); sound_state_io(f, 1);
+    fclose(f);
+    if (state_failed) { fprintf(stderr, "%s: writing failed\n", path); return -1; }
+    fprintf(stderr, "saved state at frame %d to %s\n", frame, path);
+    return 0;
+}
+
+static int load_state(const char *path, Cpu *c, uint32_t *pc)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) { perror(path); return -1; }
+    state_failed = 0;
+    char magic[8];
+    state_io(f, magic, 8, 0);
+    int version = !memcmp(magic, "WBMWST02", 8) ? 2 : !memcmp(magic, "WBMWST01", 8) ? 1 : 0;
+    if (!version) { fprintf(stderr, "%s: not a save state\n", path); fclose(f); return -1; }
+    state_io(f, &frame, sizeof frame, 0);
+    state_regs(f, c, pc, 0);
+    bus_state_io(f, 0); vdp_state_io(f, 0);
+    if (version >= 2) sound_state_io(f, 0); else { sound_reset(); sound_set_reset(0); }
+    fclose(f);
+    if (state_failed) { fprintf(stderr, "%s: reading failed\n", path); return -1; }
+    if (!resumable(c, *pc)) {
+        fprintf(stderr, "%s: the game is not waiting for a frame there (PC %06X); save it again a moment later\n", path, (unsigned)*pc);
+        return -1;
+    }
+    if (timing) { line = 0; slice = 0; start_line(); vdp_line_cycle = 0; rt_budget = SLICE; rt_irq_check = 1; }
+    else { vdp_line = 0; vdp_set_vblank(0); }       /* untimed code runs at line 0 */
+    fprintf(stderr, "loaded state from %s (frame %d)\n", path, frame);
+    return 0;
+}
+
+/* a frame boundary with the game at `pc` (the next instruction): save if asked and possible */
+static void maybe_save(Cpu *c, uint32_t pc)
+{
+    if (save_pending < 0 || frame < save_pending || !resumable(c, pc)) return;
+    save_state(save_to, c, pc);
+    save_pending = -1;
+}
+
+/* load: abandon the C call stack and start the code at the state's PC (main) */
+static void request_load(const char *path)
+{
+    uint32_t pc;
+    if (load_state(path, the_cpu, &pc) == 0) { resume_pc = pc; longjmp(restart, 1); }
+}
+
 /* Called by the generated code at a poll point. Without timing, a wait for VBlank ($3DC, $C262)
  * is the end of the frame: draw it, show it and deliver the interrupt; $386 is QueueSound waiting
  * on the Z80, where sound time is let pass. With timing, time passes by itself. */
@@ -324,6 +437,7 @@ void rt_poll(Cpu *c, uint32_t at)
     if (timing) return;
     if (at == 0x386) { sound_idle(); return; }
     if (ram[0x8006] & 1) return;                    /* the interrupt already came this frame */
+    maybe_save(c, at);                              /* the game waits for VBlank: a state can be taken */
     for (int l = 0; l < ACTIVE_LINES; l++) { vdp_line = l; vdp_render_line(l); }
     vdp_line = 0;                                   /* the game's own time runs at line 0 */
     for (int l = 0; l < LINES_PER_FRAME; l++) sound_run_line(l == ACTIVE_LINES);   /* a frame of sound */
@@ -340,7 +454,8 @@ void rt_poll(Cpu *c, uint32_t at)
 
 int main(int argc, char **argv)
 {
-    const char *rom_path = NULL, *input = NULL;
+    const char *rom_path = NULL, *input = NULL, *load_path = NULL;
+    const char *state_path_ptr = "\x01";            /* --load: the --state file, whatever it ends up being */
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--frames") && i + 1 < argc) { frames_max = atoi(argv[++i]); headless = 1; }
         else if (!strcmp(argv[i], "--png-every") && i + 1 < argc) png_every = atoi(argv[++i]);
@@ -352,6 +467,10 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--dump-at") && i + 2 < argc) { long n = atol(argv[++i]); framelog_dump_at(n, argv[++i]); }
         else if (!strcmp(argv[i], "--mute")) mute = 1;
         else if (!strcmp(argv[i], "--timing")) timing = 1;
+        else if (!strcmp(argv[i], "--state") && i + 1 < argc) state_path = argv[++i];
+        else if (!strcmp(argv[i], "--load")) load_path = state_path_ptr;
+        else if (!strcmp(argv[i], "--load-state") && i + 1 < argc) load_path = argv[++i];
+        else if (!strcmp(argv[i], "--save-state-at") && i + 2 < argc) { save_pending = atoi(argv[++i]); save_to = argv[++i]; }
         else if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--save") && i + 1 < argc) save_path = argv[++i];
 #ifndef WBMW_HEADLESS_ONLY
@@ -364,7 +483,8 @@ int main(int argc, char **argv)
     if (!rom_path) {
         fprintf(stderr, "usage: wbmw ROM [--scale N] [--save FILE] [--fullscreen] [--integer-scale] [--fps] [--mute] [--timing]\n"
                         "       wbmw ROM --frames N [--png-every K] [--out DIR] [--input FILE] [--wav FILE] [--timing]\n"
-                        "                [--frame-log FILE] [--input-game FILE] [--dump-at N DIR]\n");
+                        "                [--frame-log FILE] [--input-game FILE] [--dump-at N DIR]\n"
+                        "       states: [--state FILE] [--load] [--load-state FILE] [--save-state-at N FILE]; F2 saves, F4 loads\n");
         return 2;
     }
     FILE *f = fopen(rom_path, "rb");
@@ -389,9 +509,16 @@ int main(int argc, char **argv)
     Cpu c; memset(&c, 0, sizeof c);
     c.a[7] = rd32(0); c.ccr = 0;
     uint32_t pc = rd32(4) & 0xFFFFFF;
+    the_cpu = &c;
+    if (load_path == state_path_ptr) load_path = state_path;
     if (timing) {                                   /* reset takes 40 of the first slice's 61 cycles */
         line = 0; slice = 0; start_line(); vdp_line_cycle = 0; rt_budget = SLICE - 40;
     }
+    if (load_path) {
+        if (load_state(load_path, &c, &pc)) return 1;
+        if (headless && !framelog_input_active()) pad_buttons = buttons_at(frame + 1);
+    }
+    if (setjmp(restart)) pc = resume_pc;             /* a state was loaded (F4) */
     for (;;) {                                       /* restart points come back here */
         const PortRoutine *r = entry(pc);
         if (!r) { fprintf(stderr, "wbmw: cannot start at %06X\n", (unsigned)pc); return 4; }

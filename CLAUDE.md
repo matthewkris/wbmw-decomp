@@ -110,7 +110,8 @@ F2 overwrites the same file each time.
    state match the original; only raster-timed scheduling differs (three bytes; `docs/PORT.md`,
    "Comparing by game frame"). With `--timing` (optional) it counts the 68000's cycles and is
    identical to the original in every byte and every frame, sound included ("Exact timing").
-   Next for it: save states. The sound driver itself is still Z80 code run by an emulator; translating it is a
+   It has save states in the harness's format (F2/F4, `--load`), so states move between
+   `play.exe` and `wbmw.exe`. The sound driver itself is still Z80 code run by an emulator; translating it is a
    later, separate project.
 3. Then the idiomatic rewrite, subsystem by subsystem, checked against the original the same
    way; that is where the coroutine library belongs. Fuzz input generators live in
