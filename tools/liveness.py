@@ -3,8 +3,11 @@
 Usage: liveness.py work/map.json [ADDR ...]
        liveness.py work/map.json --usedef OUT
 
---usedef writes, for every instruction, what it reads and writes: a table of 0x10000 pairs of
-little-endian uint64 (reads, writes), indexed by address / 2. Data registers come in three parts
+--usedef writes, for every instruction, what it reads and writes: a table of 0x10000 triples of
+little-endian uint64 (reads, writes, flag-only reads), indexed by address / 2. The third is for
+shifts by a constant: the parts of the register whose bits reach only the flags (the last bit
+shifted out goes to C and X), so a difference there moves into the flags instead of being used.
+Data registers come in three parts
 (bits 3i, 3i+1, 3i+2 = bits 0-7, 8-15, 16-31 of di), so that move.b into d4 writes only its low
 byte and reads nothing; bits 24-31 = a0-a7, bit 32 = the NZVC flags, bit 33 = X. The harness uses
 it at run time to check that registers an ordinary C rewrite leaves different are really dead
@@ -146,6 +149,41 @@ def bit_lane(n, r):
     n %= 32
     return (1 if n < 8 else 2 if n < 16 else 4) << (3 * int(r[1]))
 
+def bit_range_lanes(r, lo, hi):
+    """the parts of data register r holding any of bits lo..hi"""
+    m, i = 0, int(r[1])
+    for part, (a, b) in enumerate(((0, 7), (8, 15), (16, 31))):
+        if lo <= b and hi >= a: m |= 1 << (3 * i + part)
+    return m
+
+def shift_lanes(base, size, n, r):
+    """a shift of data register r by an immediate n: (parts the result comes from, parts that
+    reach only the flags: the last bit shifted out, into C and X, and for asl the bits V sees)"""
+    s = {'b': 8, 'w': 16, 'l': 32}[size]
+    if base in ('lsl', 'asl'):
+        value = bit_range_lanes(r, 0, s - n - 1) if n < s else 0
+        flags = bit_range_lanes(r, s - n, s - n)
+        if base == 'asl': flags |= bit_range_lanes(r, max(s - n - 1, 0), s - 1)
+    else:                                              # lsr, asr
+        value = bit_range_lanes(r, n, s - 1) if n < s else 0
+        if base == 'asr': value |= bit_range_lanes(r, s - 1, s - 1)
+        flags = bit_range_lanes(r, n - 1, n - 1)
+    return value, flags & ~value
+
+def lane_use_def3(mn, ops):
+    """(reads, writes, flag-only reads) of one instruction in the run-time table's bits"""
+    base, _, suf = mn.partition('.')
+    p = split_ops(ops) if ops else []
+    if base in ('lsl', 'lsr', 'asl', 'asr') and len(p) == 2 and p[0].startswith('#') \
+            and re.fullmatch(r'd[0-7]', p[1].strip()):
+        n = int(p[0][1:].lstrip('$') or '0', 16 if '$' in p[0] else 10) or 8
+        value, flags = shift_lanes(base, suf if suf in PARTS else 'l', n, p[1].strip())
+        use, defs = lane_use_def(mn, ops)
+        own = lanes(p[1].strip())
+        return (use & ~own) | value, defs, flags
+    use, defs = lane_use_def(mn, ops)
+    return use, defs, 0
+
 def lane_use_def(mn, ops):
     """(reads, writes) of one instruction in the run-time table's bits"""
     base, _, suf = mn.partition('.')
@@ -259,10 +297,10 @@ def main():
     m = json.load(open(sys.argv[1]))
     if len(sys.argv) > 3 and sys.argv[2] == '--usedef':
         import struct
-        table = bytearray(0x10000 * 16)
+        table = bytearray(0x10000 * 24)
         for a, (sz, mn, ops) in m['insn'].items():
             a = int(a, 16)
-            if a < 0x20000: struct.pack_into('<QQ', table, (a >> 1) * 16, *lane_use_def(mn, ops))
+            if a < 0x20000: struct.pack_into('<QQQ', table, (a >> 1) * 24, *lane_use_def3(mn, ops))
         open(sys.argv[3], 'wb').write(table)
         return
     ins = {int(a, 16): v for a, v in m['insn'].items()}

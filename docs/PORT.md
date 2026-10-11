@@ -348,6 +348,55 @@ of `platform.state`, `demo1500.state` and `castle.state`, 0 mismatches. Every in
 the originals is covered except the endless loop at $3888. The self-test (`WBMW_PORT_BREAK`)
 is caught 100 out of 100 times for `MovePlayer` and `FloorWithSlopes`.
 
+#### The player's states (2026-10-11)
+
+`port/player.c` holds the player's state machine (`PlayerState`, $E2C6-$ED5B, 708
+instructions): each frame the player's update ($DD08) runs the handler for the state at
+`-$31FF(a4)`:
+
+| State | Handler | |
+|---|---|---|
+| 0 | $E346 | hurt: blinks, then stands |
+| 1, 9 | $E374 | standing |
+| 2 | $E3C4 | walking |
+| 3 | $E3EC | in the air |
+| 4 | $E44C ($E4CA in form 1) | in water (form 1 swims) |
+| 5 | $E5FC | ducking |
+| 6 | $E98A | the up attack (up+B with swords 4-6; sound $31, hit points at $EE70) |
+| 7 | $E62E | on a ladder |
+| 8 | $E71C | on a vine (of the map, or hanging from a platform) |
+
+A handler checks in turn whether to use an item, attack, grab a ladder, jump, walk or duck. In
+the original each check ends the handler itself when it acts, by unlinking the handler's frame
+(`unlk a6; rts` from inside the check); in C a check returns 1 and the handler returns.
+
+Code that is not rewritten yet is called through `call_68k` (`port/world.c`): it pushes a
+return address no code has, runs the routine through the generated code's `rt_dispatch`, and
+stops the program if it does not come back. Small wrappers (`queue_sound`) keep the 68000
+registers out of the readable code. The map lookups movement.c has are shared through
+`port/world.h`.
+
+The original's leftovers needed three refinements of the register watch, each a case of a
+difference that is moved around but never used:
+
+* **Saved and restored.** `$E2C6` links with a positive displacement (`link.w a6,#$2`), so the
+  handler's first call overwrites half of the saved a6 and the original returns with a6
+  changed. `link` only saves the register and `unlk` restores it: the watch now keeps the
+  watched state with the frame and gives it back at that frame's `unlk`.
+* **Into the flags.** A shift by a constant sends the bits it shifts out only to C and X; the
+  run-time table has a third column for those parts (`lsl.w #8,d5` after a byte load).
+* **Between parts.** `swap` and `ext` move a difference between a register's parts.
+
+`WBMW_WATCH_BREAK=NAME` scrambles every register outside NAME's contract in its C result; the
+watch must report it (it does, in all 1,109 checks of `g_00901C` in the demo).
+
+The fuzz generator for `PlayerState` puts the player in a valid state and form with random
+buttons, often paints ladder tiles into the map at its hands and feet, or puts a platform
+carrying a vine next to it, and picks the item routines from those the game stores (`$A8A6`
+is stored only by dead code at $A806, so the fuzzer leaves it out). Results: 0 mismatches over
+the standard runs and the five owner states, 60,000 fuzz cases (three states), every
+instruction covered; the self-test is caught 100 out of 100 times.
+
 ### Tasks and `Yield`: stackless now, coroutines for the rewrite (revised 2026-10-10)
 
 The first decision (2026-10-10) was stackful coroutines: each task on its own C stack, `Yield()`

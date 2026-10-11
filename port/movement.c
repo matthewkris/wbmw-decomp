@@ -13,14 +13,11 @@
  * ($2542, $30D2-$3140) are shared with the rest of the game and stay in map.c. */
 #include <stdio.h>
 #include <stdlib.h>
-#include "port.h"
+#include "world.h"
 
 /* ---- entities: fields are arrays of 256 bytes, indexed by the entity's offset (0-$FC). As in the
  * original, a field is the entity (a4) plus a negative displacement, in 32 bits; the bus then
  * keeps 24 (so $FFFFC800 + e is work RAM). Platforms are addressed the same way from a2. */
-typedef uint32_t Ent;
-static int16_t  rdw(uint32_t a) { return (int16_t)rd16(a); }
-static void     wrw(uint32_t a, int v) { wr16(a, (uint16_t)v); }
 
 #define X(e)          ((e) - 0x3800)   /* position, whole pixels */
 #define X_FRAC(e)     ((e) - 0x37FE)   /* its fraction (the high byte; written as a word) */
@@ -823,3 +820,7 @@ void CeilingSpanRising(Cpu *c)   { ceiling_span_rising(c->a[4]); }
 void CeilingSpan(Cpu *c)         { ceiling_span(c->a[4]); }
 void CeilingAtCentre(Cpu *c)     { ceiling_at_centre(c->a[4]); }
 void Conveyors(Cpu *c)           { conveyors(c->a[4]); }
+
+/* ---- for the other rewritten files (world.h) ---- */
+uint16_t world_tile_type(uint8_t attr, Ent e) { return tile_type(attr, e); }
+uint16_t world_type_at_pixel(Ent e, int16_t x, int16_t y) { return type_at_pixel(e, x, y); }

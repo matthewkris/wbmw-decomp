@@ -99,8 +99,12 @@ names; any other register left different is watched, and the run reports `CONTRA
 game reads it before writing it. Data registers are watched in three parts (bits 0-7, 8-15,
 16-31), so a byte written over a register whose upper part differs is not a read. That needs
 `work/usedef.bin` (`python tools/liveness.py work/map.json --usedef work/usedef.bin`, after
-every map change, and once after updating from before 2026-10-11: the table's format changed).
+every map change, and after updating: the table's format changed twice on 2026-10-11). The
+watch follows a difference that is only saved and restored (`link`/`unlk`), shifted into the
+flags, or moved between a register's parts (`swap`, `ext`).
 
+* `WBMW_WATCH_BREAK=NAME`: self-test of the register watch. Scrambles every register outside
+  that routine's contract in its C result, which the watch must then report as `CONTRACT`.
 * `WBMW_PORT_BREAK=NAME`: self-test. Corrupts the stack pointer in that routine's result, so every
   checked call of it must be reported.
 * `WBMW_TRACE=ADDR[,ADDR...]` (hex, any mode): each time the 68000 reaches one of these
