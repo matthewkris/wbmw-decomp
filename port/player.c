@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "world.h"
+#include "task.h"
 
 /* ---- the player's entity fields (a4 = the player) ---- */
 #define X(e)          ((e) - 0x3800)
@@ -82,6 +83,7 @@ enum { S_HURT, S_STAND, S_WALK, S_AIR, S_WATER, S_DUCK, S_UP_ATTACK, S_LADDER, S
 #define P_HALF_W(p)   ((uint32_t)(int32_t)(p) - 0x5F76)
 #define P_HALF_H(p)   ((uint32_t)(int32_t)(p) - 0x5F74)
 
+#define PLAYER_W      0xFFFF9EEEu   /* the player's entity offset (a word) */
 #define LADDER        0x4000          /* collision types: a ladder; with bit 3 its top */
 #define WATER         0x7000
 
@@ -1060,10 +1062,98 @@ static void hurt(Ent e)
     queue_sound(0x36);
 }
 
+/* ---- death and the heart refill: they wait for frames (task.h) ---- */
+
+static int on_pass;                     /* 1: running in the player's update on the task's pass */
+
+#define DD08_SP       0xFFFF9F26u       /* the stack pointer at the player's update ($DD08) */
+#define AFTER_UPDATE  0xFFFF9F1Eu       /* where the frame carries on after it */
+#define GAME_FLAGS    0xFFFF9659u
+#define GAME_OVER     0x80              /* in FALL_FLAGS ($9F03) */
+
+static void with_player(Cpu *c, Ent e, uint32_t addr) { Cpu t = *c; t.a[4] = e; call_68k(&t, addr); }
+
+/* $E29C: one frame of falling off the screen, turning about every 30 frames; 1 once gone */
+static int fall_step(Cpu *c, Ent e)
+{
+    wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+    if (!rd8(TIMER(e))) { wr8(TIMER(e), 0x1E); wrw(ACCEL_X(e), -rdw(ACCEL_X(e))); }
+    Cpu t = *c; t.a[4] = e;
+    call_68k(&t, 0xBF4);                            /* off the screen? */
+    if (t.d[0]) return 1;
+    with_player(c, e, 0xAF4);                       /* AccelX */
+    with_player(c, e, 0xAB4);                       /* ApplyVelocity */
+    return 0;
+}
+
+/* $E22E: dead. The first time: the music stops, the world freezes, the player jumps up and falls
+ * off the screen, a frame at a time; then the frame carries on after the player's update with
+ * GAME_OVER set. Afterwards (the update runs it each frame), one more step of the fall. Returns
+ * 1: the player's update is over. */
+static int dying(Cpu *c, Ent e)
+{
+    if (rd8(STATE(e)) & 0x80) {                     /* already falling */
+        if (fall_step(c, e)) {
+            set8(FALL_FLAGS, GAME_OVER);
+            port_continue_at(c, rd32(AFTER_UPDATE), 0);   /* jmp ($9F1E): the stack as it is */
+        }
+        return 1;
+    }
+    set8(STATE(e), 0x80);
+    wr8(0xFFFF9661u, 0xFF);
+    queue_sound(-1);                                /* stop */
+    queue_sound(0x53);
+    wr32(AFTER_UPDATE, rd32(rd32(DD08_SP)));        /* the update's return address */
+    with_player(c, e, 0xA66);                       /* freeze everything else */
+    set8(GAME_FLAGS, 0x60);
+    set8(SPRITE(e), 0x80);
+    wrw(ACCEL_X(e), 0x20);
+    wrw(SPEED(e), 0x100);
+    wr8(TIMER(e), 0x1E);
+    wrw(VEL_Y(e), -0x100);
+    clr8(FACING(e), 0x40);
+    if (rd8(ANIM_ID(e)) == 8) {                     /* already in the dying pose: no wait */
+        if (fall_step(c, e)) { set8(FALL_FLAGS, GAME_OVER); return 1; }
+        task_end_pass(c, 0);                        /* the pass ends; the next starts at the frame */
+    }
+    set_anim(e, 8);
+    with_player(c, e, 0x8AA2);
+    for (;;) {
+        task_wait_frame(c, 0xE298);
+        cpu = c;
+        if (fall_step(c, e)) { set8(FALL_FLAGS, GAME_OVER); return 1; }
+    }
+}
+
+/* $F288: the hearts refill by $10 a frame from REFILL while the world is frozen; then the
+ * gameplay loop starts again at $8FFC. Returns only if the health is full already. */
+static void refill(Cpu *c, Ent e)
+{
+    if (rdw(HEALTH(e)) == rdw(MAX_HEALTH)) return;
+    queue_sound(0x3D);
+    with_player(c, e, 0xA66);                       /* freeze */
+    for (;;) {
+        task_wait_frame(c, 0xF2AA);
+        cpu = c;
+        uint16_t add = 0x10, left = rd16(REFILL);
+        if (!left) break;
+        if (left > 0x10) left -= 0x10; else { add = left; left = 0; }
+        wrw(REFILL, left);
+        uint16_t h = (uint16_t)(rd16(HEALTH(e)) + add);
+        if (h >= rd16(MAX_HEALTH)) { h = rd16(MAX_HEALTH); wrw(REFILL, 0); }
+        wrw(HEALTH(e), h);
+        with_player(c, e, 0x8AA2);
+    }
+    with_player(c, e, 0xA8E);                       /* unfreeze */
+    queue_sound(0x3E);
+    task_end_pass(c, 0x8FFC);
+}
+
 /* $E0A4: lose health. Below $40: saved by the revival item (the hearts refill to half, $F288),
- * or dead ($E22E); both carry on in the original's code (they reset the stack and yield).
- * Returns 1 if it left that way. `nested`: reached from inside $E04E, whose return address
- * ($DFE0) the original has on the stack there. */
+ * or dead ($E22E); both reset the stack and yield. In the player's update they run here (on the
+ * task's pass); called on their own (fuzzing) they carry on in the original's code. Returns 1
+ * if the update is over. `nested`: reached from inside $E04E, whose return address ($DFE0) the
+ * original has on the stack there. */
 static int lose_health(Cpu *c, int16_t amount, int nested)
 {
     Ent e = c->a[4];
@@ -1080,12 +1170,14 @@ static int lose_health(Cpu *c, int16_t amount, int nested)
         t = *c; call_68k(&t, 0x8AA2);
         wrw(REFILL, (uint16_t)(((uint16_t)(rd16(MAX_HEALTH) + 0x100) >> 1) & 0xFF00));   /* half */
         wr8(HIT_STATE(e), 0);
+        if (on_pass) { refill(c, e); return 0; }
         port_continue_at(c, 0xF288, nested ? 0xDFE0 : 0);
         return 1;
     }
     wr8(e - 0x2BFF, 0);
     set_state(e, S_HURT);
     set8(FLAGS(e), 0x80);                           /* dead */
+    if (on_pass) return dying(c, e);
     port_continue_at(c, 0xE22E, nested ? 0xDFE0 : 0);
     return 1;
 }
@@ -1115,10 +1207,10 @@ static int being_hit(Cpu *c)
 
 /* $DFDE: damage this frame: a hit, then the surroundings: a hot area without the armour for it,
  * a $Dxxx tile, harm signalled in $9854, $3xxx tiles at the feet, body or head */
-static void damage(Cpu *c)
+static int damage(Cpu *c)
 {
     Ent e = c->a[4];
-    if (being_hit(c)) return;
+    if (being_hit(c)) return 1;
     int16_t amount;
     uint16_t below = rd16(TILE_BELOW) & 0xF000;
     if ((rd8(AREA_FLAGS) & 0x40) && ((rd8(EQUIP) & 0x10) || rd8(ARMOR) != 2)) amount = 1;
@@ -1128,21 +1220,76 @@ static void damage(Cpu *c)
         clr8(DAMAGE_BITS, 2);
         if (bits & 2) amount = rdw(DAMAGE_AMOUNT);
         else {
-            if (rd8(BLINK_TIME)) return;
+            if (rd8(BLINK_TIME)) return 0;
             if (below != 0x3000 && (rd16(TILE_FEET) & 0xF000) != 0x3000 && (rd16(TILE_ABOVE) & 0xF000) != 0x3000) {
                 clr8(DAMAGE_BITS, 1);
-                if (!(bits & 1)) return;
+                if (!(bits & 1)) return 0;
             }
             bump_up(e);                             /* $E11A: thrown up and hurt */
             hurt(e);
-            lose_health(c, 0x80, 0);
-            return;
+            return lose_health(c, 0x80, 0);
         }
     }
     wrw(HIT_FLASH(e), 0x2101);                      /* $E104: a steady burn: blink, small damage */
     set8(FACING(e), 0x40);
     wr8(BLINK_TIME, 0x3C);
-    lose_health(c, amount, 0);
+    return lose_health(c, amount, 0);
+}
+
+/* $F1B0: a pickup the player touched ($FF9F78, bit 7 set by it): gold of 12 kinds, a heart, the
+ * full heal, an item */
+static void pickups(Cpu *c)
+{
+    uint8_t p = rd8(0xFFFF9F78u);
+    clr8(0xFFFF9F78u, 0x80);
+    if (!(p & 0x80)) return;
+    uint8_t kind = rd8(0xFFFF9F78u);
+    Ent e = (Ent)(int32_t)(int16_t)rd16(PLAYER_W);
+    c->a[4] = e;
+    if (kind <= 22 && !(kind & 1)) { c->d[0] = kind; pick_gold(c); }
+    else if (kind == 24) pick_heart(c);
+    else if (kind == 26) { wrw(REFILL, rdw(MAX_HEALTH)); refill(c, e); }   /* $F282 */
+    else if (kind == 28) pick_item(c);
+    else {
+        fprintf(stderr, "player: pickup %d is outside the original's table ($F1CE)\n", kind);
+        exit(3);
+    }
+}
+
+static void player_state(Ent e);
+void ProbeTileBelow(Cpu *), ProbeTileAbove(Cpu *), ProbeTileFeet(Cpu *), ProbeTileAtA3(Cpu *);
+void UpdateAnim(Cpu *), Currents(Cpu *), MovePlayer(Cpu *);
+
+/* $DD08: the player's frame */
+static void update(Cpu *c)
+{
+    wr32(DD08_SP, c->a[7]);
+    set8(GAME_FLAGS, 4);
+    Ent e = (Ent)(int32_t)(int16_t)rd16(PLAYER_W);
+    c->a[4] = e;
+    if (rd8(FLAGS(e)) & 0x80) { dying(c, e); return; }
+    c->a[3] = 0xFFFF9754u;                          /* plane A: what is under, over, at the player */
+    ProbeTileBelow(c); ProbeTileAbove(c); ProbeTileFeet(c); ProbeTileAtA3(c);
+    if (damage(c)) return;
+    start_frame(e);
+    read_input(e);
+    pickups(c);
+    bounce(e);
+    player_state(e);
+    special(e);
+    sword(e);
+    hurt_boxes(e);
+    accelerate(e);
+    animate(e);
+    c->a[4] = e; UpdateAnim(c);
+    splash(e);
+    bubbles(e);
+    c->a[4] = e; Currents(c);
+    MovePlayer(c);                                  /* leaves the cell under the feet in d6/d7 */
+    wrw(0xFFFF9F18u, (uint16_t)c->d[6]);
+    wrw(0xFFFF9F1Au, (uint16_t)c->d[7]);
+    wr8(0xFFFF9F1Cu, rd8(e - 0x30FF));
+    port_continue_at(c, 0x1141A, 0);                /* the special actions' frame */
 }
 
 /* $E2C6: the handler for the player's state */
@@ -1179,7 +1326,8 @@ void PlayerHurtBoxes(Cpu *c)  { cpu = c; hurt_boxes(c->a[4]); }
 void PlayerAnimate(Cpu *c)    { cpu = c; animate(c->a[4]); }
 void PlayerSword(Cpu *c)      { cpu = c; sword(c->a[4]); }
 void PlayerSpecial(Cpu *c)    { cpu = c; special(c->a[4]); }
-void PlayerDamage(Cpu *c)     { cpu = c; damage(c); }
+void PlayerDamage(Cpu *c)     { cpu = c; on_pass = 0; damage(c); }
+void PlayerUpdate(Cpu *c)     { cpu = c; on_pass = 1; update(c); on_pass = 0; }
 void PlayerGold(Cpu *c)       { cpu = c; pick_gold(c); }
 void PlayerItem(Cpu *c)       { cpu = c; pick_item(c); }
 void PlayerHeart(Cpu *c)      { cpu = c; pick_heart(c); }

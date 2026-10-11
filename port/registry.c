@@ -15,7 +15,8 @@ void ContactSide(Cpu *), CheckBodyContact(Cpu *), BodyOverlap(Cpu *);
 void PlayerState(Cpu *), PlayerStartFrame(Cpu *), PlayerInput(Cpu *), PlayerBounce(Cpu *),   /* player.c */
      PlayerAccel(Cpu *), PlayerSplash(Cpu *), PlayerBubbles(Cpu *), PlayerHurtBoxes(Cpu *),
      PlayerAnimate(Cpu *), PlayerSword(Cpu *), PlayerSpecial(Cpu *),
-     PlayerDamage(Cpu *), PlayerGold(Cpu *), PlayerItem(Cpu *), PlayerHeart(Cpu *);
+     PlayerDamage(Cpu *), PlayerGold(Cpu *), PlayerItem(Cpu *), PlayerHeart(Cpu *), PlayerUpdate(Cpu *);
+void TaskCallSystem(Cpu *), TaskCallUser(Cpu *);   /* task.c: task passes on coroutines */
 void PlatformsSideways(Cpu *), PlatformsVertical(Cpu *);   /* movement.c: ordinary C, with contracts */
 void MovePlayer(Cpu *), MoveFlat(Cpu *), MoveOnSlopesNoConveyor(Cpu *), MoveOnSlopes(Cpu *),
      MoveOnSlopesWithCeiling(Cpu *), MoveWithPlatforms(Cpu *), MoveWithPlatformsAndSlopes(Cpu *),
@@ -107,6 +108,9 @@ const PortRoutine port_routines[] = {
     {0x00ED5C, 0x00EE70, "PlayerSword", PlayerSword, CT_SP},
     {0x00EF12, 0x00EF4E, "PlayerSpecial", PlayerSpecial, CT_SP},
     {0x00DFDE, 0x00E1A6, "PlayerDamage", PlayerDamage, CT_SP},   /* may carry on at $E22E or $F288 */
+    {0x00DD08, 0x00DD7C, "PlayerUpdate", PlayerUpdate, CT_SP},       /* the player's frame; waits on its task's pass */
+    {0x004BD6, 0x004BD8, "TaskCallSystem", TaskCallSystem, CT_SP},   /* the scheduler's jsr (a0) */
+    {0x004C88, 0x004C8A, "TaskCallUser", TaskCallUser, CT_SP},
     {0x00F1EC, 0x00F256, "PlayerGold", PlayerGold, CT_SP},       /* pickups: reached from $F1B0's table */
     {0x00F256, 0x00F262, "PlayerItem", PlayerItem, CT_SP},
     {0x00F262, 0x00F282, "PlayerHeart", PlayerHeart, CT_SP},
