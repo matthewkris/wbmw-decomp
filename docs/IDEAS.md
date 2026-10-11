@@ -10,6 +10,10 @@ comparisons with the original keep working.
 * **FPS display** (asked 2026-10-10): `--fps` or F3, drawn over the picture by the host.
 * **Full screen** (asked 2026-10-10): `--fullscreen`, F11 or Alt+Enter; `--integer-scale` for
   even pixels.
+* **The menu, first version** (asked 2026-10-11, native build): Esc opens it over the frozen
+  game; Show FPS and Exit game, with a confirmation (also when closing the window). See
+  `native/README.md`. Still to do from the settings menu below: more toggles, volume, saving
+  the settings, and the same menu in `play.exe`.
 
 ## To do
 
@@ -33,11 +37,10 @@ A host menu that opens over the paused game, with settings that are kept between
   * The menu needs its own text and drawing; the host already draws the FPS counter, which can
     be grown into a small font and menu renderer.
 
-### Exit confirmation (asked 2026-10-11)
+### Exit confirmation (asked 2026-10-11): done in the native build
 
-Today Escape and closing the window quit at once, losing anything not saved. Instead, ask
-"Quit?" (yes/no) in the same host menu. Closing the window could ask too, or skip the question
-if a state was saved recently. Command-line runs used for testing (`--frames`, `--dump-at` and
+Esc and closing the window no longer quit at once: the menu asks first. Still open: skipping
+the question if a state was saved recently, and `play.exe`. Command-line runs used for testing (`--frames`, `--dump-at` and
 the like) must still exit without asking.
 
 ### Enemy health and damage numbers (asked 2026-10-11)
