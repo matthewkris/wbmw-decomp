@@ -348,6 +348,17 @@ of `platform.state`, `demo1500.state` and `castle.state`, 0 mismatches. Every in
 the originals is covered except the endless loop at $3888. The self-test (`WBMW_PORT_BREAK`)
 is caught 100 out of 100 times for `MovePlayer` and `FloorWithSlopes`.
 
+#### A door the translation missed (2026-10-11)
+
+Fuzzing `PlayerState` called the item routine `$A8A6` (stored at `$998A` for up+A by the code
+at $A806) and found that the generated code had no entry for it. The owner's next save, at a
+temple door, then stopped the native build: "no translation for 00A800 (jumped to from
+00A7E8)". `$A7E8` is `jmp $a7ec(pc,d0.w)` into a table of `bra.b`; the tracer counts entries
+while they are `bra` and found 10, but the door type's offset 20 lands on the 11th "entry",
+which is plain code (`bsr.w $a88c` at $A800) that the table runs into. `analysis/hints.json`
+now names $A800 as an entry; it was the only branch table followed by code the trace had left
+as an orphan. The ROM still rebuilds byte for byte.
+
 #### The player's states (2026-10-11)
 
 `port/player.c` holds the player's state machine (`PlayerState`, $E2C6-$ED5B, 708
@@ -392,8 +403,7 @@ watch must report it (it does, in all 1,109 checks of `g_00901C` in the demo).
 
 The fuzz generator for `PlayerState` puts the player in a valid state and form with random
 buttons, often paints ladder tiles into the map at its hands and feet, or puts a platform
-carrying a vine next to it, and picks the item routines from those the game stores (`$A8A6`
-is stored only by dead code at $A806, so the fuzzer leaves it out). Results: 0 mismatches over
+carrying a vine next to it, and picks the item routines from those the game stores. Results: 0 mismatches over
 the standard runs and the five owner states, 60,000 fuzz cases (three states), every
 instruction covered; the self-test is caught 100 out of 100 times.
 
