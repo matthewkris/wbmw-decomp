@@ -15,6 +15,9 @@ void task_wait_frame(Cpu *c, uint32_t resume);
  * `resume` (stored in the slot first), or at its resume address as it is if 0. Does not return. */
 void task_end_pass(Cpu *c, uint32_t resume);
 
+/* 1 if c is the registers of the task pass running now (so it may wait for frames) */
+int task_on_pass(const Cpu *c);
+
 /* the machine was reset or a state loaded: forget every waiting pass */
 void task_reset(void);
 

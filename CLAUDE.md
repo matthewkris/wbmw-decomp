@@ -126,8 +126,10 @@ F2 overwrites the same file each time.
    do in the player's update: nothing; with coroutines (`port/coro.c`, `port/task.c`, task
    passes on per-slot coroutines, `task_wait_frame`) the update itself ($DD08), death, the
    revival and full heal and the pickup dispatcher are C too (docs/PORT.md, "Coroutines").
-   Next (show the owner a checklist): the special actions ($11170 start, $1141A each frame),
-   then other subsystems. Readable C
+   The special actions (magic, potions: $11170-$11BA3) are C too, in `port/magic.c`; the quake
+   and thunder are coroutine loops, their resume addresses registered entries (docs/PORT.md,
+   "Magic"). Next (show the owner a checklist): other subsystems, e.g. the hearts display
+   ($8AA2), effect spawning ($10910), the sword's hit points ($EE70). Readable C
    calls what is not rewritten yet through `call_68k` (`port/world.c`). Fuzz
    input generators live in
    `harness/hybrid.c` and are game-specific; move them to a game file when the second game

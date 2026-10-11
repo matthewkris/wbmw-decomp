@@ -136,4 +136,6 @@ void task_end_pass(Cpu *c, uint32_t resume)
     exit(3);
 }
 
+int task_on_pass(const Cpu *c) { return current && c == &current->cpu; }
+
 void task_reset(void) { generation++; }

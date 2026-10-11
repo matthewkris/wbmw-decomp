@@ -9,7 +9,7 @@ GEN = ../work/gen/gen.c ../work/gen/gen_registry.c
 GENO = $(OUT)/gen.o $(OUT)/gen_registry.o
 PYTHON ?= python
 ROM ?= ../rom/Wonder Boy in Monster World (USA, Europe).md
-PORT = ../port/kernel.c ../port/entity.c ../port/anim.c ../port/gfx.c ../port/sprites.c ../port/hitbox.c ../port/map.c ../port/movement.c ../port/player.c ../port/world.c ../port/coro.c ../port/task.c ../port/registry.c
+PORT = ../port/kernel.c ../port/entity.c ../port/anim.c ../port/gfx.c ../port/sprites.c ../port/hitbox.c ../port/map.c ../port/movement.c ../port/player.c ../port/magic.c ../port/world.c ../port/coro.c ../port/task.c ../port/registry.c
 CPU = $(OUT)/m68kcpu.o $(OUT)/m68kops.o $(OUT)/softfloat.o
 CXX = g++
 YMFM = ../third_party/ymfm
@@ -38,7 +38,7 @@ $(OUT)/softfloat.o: $(MUSASHI)/softfloat/softfloat.c
 	$(CC) $(CFLAGS) -w -I$(MUSASHI) -c $< -o $@
 
 # the translated routines (tools/m68k2c.py): roots, yield and exits from analysis/translate.json; needs work/map.json
-$(GEN): ../tools/m68k2c.py ../analysis/translate.json ../port/registry.c ../work/map.json
+$(GEN): ../tools/m68k2c.py ../analysis/translate.json $(PORT) ../work/map.json
 	$(PYTHON) -I ../tools/m68k2c.py "$(ROM)" ../work/map.json ../work/gen ../analysis/translate.json
 
 # compiled once for both programs: gen.c is megabytes of C
