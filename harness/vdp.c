@@ -1,6 +1,7 @@
 /* VDP: registers, VRAM/CRAM/VSRAM, ports, DMA, status and HV counter, and a scanline renderer
- * for planes A and B, the window and sprites with priorities. Not modelled: shadow/highlight,
- * interlace, the sprite-per-line limits, FIFO timing, DMA timing (DMA completes at once). */
+ * for planes A and B, the window and sprites with priorities, sprite masking and the per-line
+ * sprite limits. Not modelled: shadow/highlight, interlace, FIFO timing, DMA timing (DMA
+ * completes at once). */
 #include <string.h>
 #include "md.h"
 
@@ -221,19 +222,29 @@ static void draw_window(uint8_t *out, int line, int width, int *from, int *to)
     }
 }
 
+/* Sprites on one line, in link order, with the hardware's limits: at most 16 sprites and 256
+ * sprite pixels per line in H32 (20 and 320 in H40), and masking: a sprite at x = 0 (raw) hides
+ * every later sprite on its lines, once a sprite not at x = 0 has been found on the line. The
+ * game masks the bottom of the HUD this way, so hanging spider webs pass behind it. */
 static void draw_sprites(uint8_t *out, int line, int width)
 {
     int h40 = vdp_reg[12] & 1;
     unsigned sat = (vdp_reg[5] & (h40 ? 0x7E : 0x7F)) << 9;
     int max = h40 ? 80 : 64, link = 0;
+    int per_line = h40 ? 20 : 16, pixels = h40 ? 320 : 256, seen = 0, nonzero = 0;
     memset(out, 0, 320);
     for (int n = 0; n < max; n++) {
         const uint8_t *s = &vram[(sat + link * 8) & 0xFFFF];
         int y = ((s[0] << 8 | s[1]) & 0x3FF) - 128;
         int hs = ((s[2] >> 2) & 3) + 1, vs = (s[2] & 3) + 1;
         uint16_t attr = s[4] << 8 | s[5];
-        int x = ((s[6] << 8 | s[7]) & 0x1FF) - 128;
+        int rawx = (s[6] << 8 | s[7]) & 0x1FF, x = rawx - 128;
         if (line >= y && line < y + vs * 8) {
+            if (seen++ == per_line) break;
+            if (rawx == 0 && nonzero) break;              /* masking */
+            if (rawx) nonzero = 1;
+            int draw = hs * 8 < pixels ? hs * 8 : pixels;    /* the pixel budget can run out inside a sprite */
+            pixels -= draw;
             int ty = line - y;
             int vf = attr & 0x1000, hf = attr & 0x800;
             int row = vf ? vs * 8 - 1 - ty : ty;
@@ -242,11 +253,12 @@ static void draw_sprites(uint8_t *out, int line, int width)
                 uint16_t name = (attr & 0xF800) | ((attr + col * vs + (row >> 3)) & 0x7FF);
                 uint8_t px[8];
                 tile_pixel_row((uint16_t)(name & ~0x1000), row & 7, px);   /* row already flipped */
-                for (int i = 0; i < 8; i++) {
+                for (int i = 0; i < 8 && c * 8 + i < draw; i++) {
                     int sx = x + c * 8 + i;
                     if (sx >= 0 && sx < width && px[i] && !out[sx]) out[sx] = px[i];
                 }
             }
+            if (!pixels) break;
         }
         link = s[3] & 0x7F;
         if (!link) break;

@@ -105,6 +105,7 @@ runnable as early as possible and ask for specific checks.
 | Native and original frames diverged in the attract demo, but the native picture was found 154 frames later in the original. | Translated code takes no time, so it never drops frames; compare by game frame, not real frame, or find the time shift before calling a difference a bug. |
 | Adding a second processor (the Z80) turned a 68000 wait loop that had never been taken into one that could hang zero-time code. | Each new piece of hardware: look for code that waits on it, and give ported code a way to let time pass there. Hold the new processor still during differential checks so its own state changes do not count as differences. |
 | The owner heard the music slow down in shadow runs: the Z80, held still during each check, lost the time the original routine took (9% with the movement checks). | When a check holds a processor still, give it the time back when the check closes; measure it (here the shadow and pure recordings are now identical). |
+| The owner saw spider webs drawn over the HUD; the original did the same in the harness, so it looked like the game's own behaviour. It was the emulated VDP: the game hides sprites under the HUD with masking sprites, which it did not model. | "The original does it too" only clears the port, not the emulator. Before calling a visual oddity intended, check the hardware features the renderer leaves out (here, dump the sprite table at that frame). |
 | Audio cannot be judged by listening here. | Record it to a file and measure it (silence, levels, clipping, DC offset, stereo); compare two builds by the sequence of chip writes, not by waveform, since timing shifts phases. |
 | Comparing a zero-time port with the original frame by frame only measured the time shift. | Compare at the same point of each game frame (the game's own frame counter), with input keyed to it; then whatever still differs is timing the port does not model (here, raster-timed task scheduling), and names its own bytes. |
 | Exact timing for a zero-time port looked like a big project; with the reference emulator's own cycle table and its slice and interrupt rules copied exactly, it was exact on the first full run. | Take timing from the reference implementation (dump its tables, read its execute loop), not from manuals; then the comparison tools can demand equality, not similarity. |
@@ -120,7 +121,7 @@ What is reusable as it stands, what is reusable after changes, and what belongs 
 
 * `harness/` VDP, bus, controller, core loop, save states, `play.exe`. Gaps another game may
   need: sound (Z80, YM2612, PSG; this game never drives them from the 68000), shadow/highlight,
-  interlace, per-line sprite limits, DMA timing, bank-switching mappers for ROMs over 4 MB, and
+  interlace, DMA timing, bank-switching mappers for ROMs over 4 MB, and
   other save hardware (battery SRAM at `$200000`, other EEPROM chips). The EEPROM here is an
   X24C01 at `$200001`, which is this game's choice, not the platform's.
 * `tools/mkasm.py` and `tools/checkasm.py`: the Capstone-to-vasm translation, the per-line

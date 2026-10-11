@@ -173,9 +173,11 @@ Start again at 600 (the menu), then face buttons to page the intro text.
 
 ## What is not
 
-* Shadow/highlight, interlace, sprite limits per line, sprite collision and overflow flags,
-  DMA and FIFO timing. None has been seen to matter for this game yet; each is a known gap if a
-  frame ever disagrees with real hardware.
+* Shadow/highlight, interlace, sprite collision and overflow flags, DMA and FIFO timing. None
+  has been seen to matter for this game yet; each is a known gap if a frame ever disagrees with
+  real hardware. (Sprite masking and the per-line sprite limits were in this list until the owner
+  saw spider webs drawn over the HUD: the game hides sprites under the HUD's bottom edge with
+  masking sprites at x = 0.)
 * Controller 2 always reads as nothing pressed.
 
 ## Checked so far
