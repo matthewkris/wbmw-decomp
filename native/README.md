@@ -19,7 +19,8 @@ This makes `work/native/wbmw.exe` (and copies `SDL2.dll` next to it).
     work/native/wbmw ROM [--scale N] [--save FILE] [--fullscreen] [--integer-scale] [--fps] [--mute] [--timing]
                          [--state FILE] [--load]
 
-plays in a window: arrows, Z = A, X = B, C = C, Enter = Start, Esc quits; a controller works too.
+plays in a window: arrows, Z = A, X = B, C = C, Enter = Start, Esc opens the menu; a controller
+works too.
 The window is sized for the game's 256-pixel width at the largest scale up to 3 that fits the
 screen (`--scale N` to choose); it can be resized, and the picture keeps its proportions.
 The save EEPROM is read from FILE at start and written at exit (default `wbmw.sav`).
@@ -31,6 +32,14 @@ The save EEPROM is read from FILE at start and written at exit (default `wbmw.sa
 * **F3** toggles a frame-rate display in the top right corner (`--fps` starts with it on); the
   window title always shows the rate. The game itself always runs 60 frames a second of game
   time; the display tells whether the PC keeps up.
+* **Esc** opens the menu over the picture: **Show FPS** (on/off) and **Exit game**, which asks
+  "Exit the game?" (No first). Up/Down choose, Enter (or Z, Space) selects, Esc goes back or
+  resumes; on a controller the D-pad, A, and B or Start. Closing the window asks the same
+  question. The game is frozen while the menu is open (no frames, no sound), and buttons still
+  held when it closes reach the game only after they are released.
+* Testing the menu without a person: `WBMW_MENU_KEYS="escape return down ..."` presses those keys
+  (SDL key names), one per frame after 120 frames; `WBMW_MENU_SHOTS=DIR` writes each screen of
+  the menu to `DIR/menu_NN.png`.
 
     work/native/wbmw ROM --frames N [--png-every K] [--out DIR] [--input FILE] [--wav FILE]
 

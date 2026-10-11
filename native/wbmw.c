@@ -116,7 +116,7 @@ static uint8_t buttons_at(int fr)
 static SDL_Window *win; static SDL_Renderer *ren; static SDL_Texture *tex; static SDL_GameController *gc;
 static Uint64 next_tick;
 static int fullscreen, integer_scale, show_fps;
-static const char *TITLE = "Wonder Boy in Monster World (native)  (arrows, Z/X/C, Enter; F11 full screen, F3 fps, Esc quits)";
+static const char *TITLE = "Wonder Boy in Monster World (native)  (arrows, Z/X/C, Enter; F11 full screen, F3 fps, Esc menu)";
 
 /* frames shown per second, measured over each second */
 static Uint64 fps_start; static int fps_frames; static double fps;
@@ -149,6 +149,162 @@ static void set_fullscreen(int on)
     SDL_ShowCursor(on ? SDL_DISABLE : SDL_ENABLE);
 }
 
+/* ---- the menu (Esc): drawn by the host over the frozen game, which never knows ---- */
+
+/* a 5x7 font: A-Z, 0-9 and a little punctuation; each row is 5 bits, the top bit leftmost */
+static const char FONT7_CHARS[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:?>-./";
+static const uint8_t FONT7[][7] = {
+    {14,17,17,31,17,17,17}, {30,17,17,30,17,17,30}, {14,17,16,16,16,17,14}, {30,17,17,17,17,17,30},
+    {31,16,16,30,16,16,31}, {31,16,16,30,16,16,16}, {14,17,16,23,17,17,15}, {17,17,17,31,17,17,17},
+    {14,4,4,4,4,4,14},      {7,2,2,2,2,18,12},      {17,18,20,24,20,18,17}, {16,16,16,16,16,16,31},
+    {17,27,21,21,17,17,17}, {17,17,25,21,19,17,17}, {14,17,17,17,17,17,14}, {30,17,17,30,16,16,16},
+    {14,17,17,17,21,18,13}, {30,17,17,30,20,18,17}, {15,16,16,14,1,1,30},   {31,4,4,4,4,4,4},
+    {17,17,17,17,17,17,14}, {17,17,17,17,17,10,4},  {17,17,17,21,21,21,10}, {17,17,10,4,10,17,17},
+    {17,17,17,10,4,4,4},    {31,1,2,4,8,16,31},
+    {14,17,19,21,25,17,14}, {4,12,4,4,4,4,14},      {14,17,1,2,4,8,31},     {31,2,4,2,1,17,14},
+    {2,6,10,18,31,2,2},     {31,16,30,1,1,17,14},   {6,8,16,30,17,17,14},   {31,1,2,4,8,8,8},
+    {14,17,17,14,17,17,14}, {14,17,17,15,1,2,12},
+    {0,12,12,0,12,12,0},    {14,17,1,2,4,0,4},      {8,4,2,1,2,4,8},        {0,0,0,31,0,0,0},
+    {0,0,0,0,0,12,12},      {1,1,2,4,8,16,16},
+};
+
+static void draw_text(int x, int y, const char *s, uint32_t color)
+{
+    for (; *s; s++, x += 6) {
+        const char *k = strchr(FONT7_CHARS, *s);
+        if (*s == ' ' || !k) continue;
+        for (int r = 0; r < 7; r++) for (int c = 0; c < 5; c++)
+            if (FONT7[k - FONT7_CHARS][r] >> (4 - c) & 1 && x + c >= 0 && x + c < 320 && y + r >= 0 && y + r < ACTIVE_LINES)
+                frame_rgb[y + r][x + c] = color;
+    }
+}
+
+static void draw_text_centred(int y, const char *s, uint32_t color) { draw_text(frame_width / 2 - (int)strlen(s) * 3, y, s, color); }
+
+static void present(void)
+{
+    SDL_UpdateTexture(tex, NULL, &frame_rgb[0][0], 320 * 4);
+    SDL_Rect src = {0, 0, frame_width, ACTIVE_LINES};              /* only the width the game uses */
+    SDL_RenderSetLogicalSize(ren, frame_width, ACTIVE_LINES);
+    SDL_RenderClear(ren); SDL_RenderCopy(ren, tex, &src, NULL); SDL_RenderPresent(ren);
+}
+
+enum { MENU_WHITE = 0xFFFFFF, MENU_GREY = 0x8890A0, MENU_GOLD = 0xFFD860, MENU_BOX = 0x101830 };
+
+/* the picture darkened, a box, and either the options or the exit question */
+static void draw_menu(int item, int asking, int yes)
+{
+    for (int y = 0; y < ACTIVE_LINES; y++) for (int x = 0; x < frame_width; x++)
+        frame_rgb[y][x] = (frame_rgb[y][x] >> 2) & 0x3F3F3F;
+    int w = 150, h = 74, x0 = frame_width / 2 - w / 2, y0 = ACTIVE_LINES / 2 - h / 2;
+    for (int y = y0; y < y0 + h; y++) for (int x = x0; x < x0 + w; x++)
+        frame_rgb[y][x] = (y == y0 || y == y0 + h - 1 || x == x0 || x == x0 + w - 1) ? MENU_GREY : MENU_BOX;
+    if (!asking) {
+        draw_text_centred(y0 + 8, "PAUSED", MENU_WHITE);
+        static const char *items[2] = {"SHOW FPS", "EXIT GAME"};
+        for (int i = 0; i < 2; i++) {
+            uint32_t col = i == item ? MENU_GOLD : MENU_WHITE;
+            int y = y0 + 26 + i * 14;
+            if (i == item) draw_text(x0 + 12, y, ">", col);
+            draw_text(x0 + 24, y, items[i], col);
+            if (i == 0) draw_text(x0 + w - 12 - 18, y, show_fps ? "ON" : "OFF", col);
+        }
+        draw_text_centred(y0 + h - 14, "ESC: RESUME", MENU_GREY);
+    } else {
+        draw_text_centred(y0 + 12, "EXIT THE GAME?", MENU_WHITE);
+        int y = y0 + 34, cx = frame_width / 2;
+        draw_text(cx - 40, y, yes ? " NO" : ">NO", yes ? MENU_WHITE : MENU_GOLD);
+        draw_text(cx + 16, y, yes ? ">YES" : " YES", yes ? MENU_GOLD : MENU_WHITE);
+        draw_text_centred(y0 + h - 14, "ESC: BACK", MENU_GREY);
+    }
+}
+
+/* Run the menu until it closes; the game is frozen meanwhile (no frames, no sound time).
+ * asking: start at the exit question (closing the window). Returns 1 to exit the game. */
+static void menu_test_keys(void);
+
+static int menu(int asking)
+{
+    static uint32_t saved[ACTIVE_LINES][320];
+    memcpy(saved, frame_rgb, sizeof saved);
+    int item = 0, yes = 0, only_asking = asking;
+    for (;;) {
+        SDL_Event e;
+        while (SDL_PollEvent(&e)) {
+            int up = 0, down = 0, side = 0, ok = 0, back = 0;
+            if (e.type == SDL_QUIT) { asking = 1; yes = 0; }
+            if (e.type == SDL_KEYDOWN) {
+                SDL_Keycode key = e.key.keysym.sym;
+                if (key == SDLK_F11 || (key == SDLK_RETURN && (e.key.keysym.mod & KMOD_ALT))) {
+                    if (!e.key.repeat) set_fullscreen(!fullscreen);
+                    continue;
+                }
+                if (key == SDLK_F3 && !e.key.repeat) show_fps = !show_fps;
+                up = key == SDLK_UP; down = key == SDLK_DOWN; side = key == SDLK_LEFT || key == SDLK_RIGHT;
+                ok = !e.key.repeat && (key == SDLK_RETURN || key == SDLK_KP_ENTER || key == SDLK_SPACE || key == SDLK_z);
+                back = !e.key.repeat && (key == SDLK_ESCAPE || key == SDLK_x);
+            }
+            if (e.type == SDL_CONTROLLERBUTTONDOWN) {
+                int b = e.cbutton.button;
+                up = b == SDL_CONTROLLER_BUTTON_DPAD_UP; down = b == SDL_CONTROLLER_BUTTON_DPAD_DOWN;
+                side = b == SDL_CONTROLLER_BUTTON_DPAD_LEFT || b == SDL_CONTROLLER_BUTTON_DPAD_RIGHT;
+                ok = b == SDL_CONTROLLER_BUTTON_A;
+                back = b == SDL_CONTROLLER_BUTTON_B || b == SDL_CONTROLLER_BUTTON_START;
+            }
+            if (e.type == SDL_CONTROLLERDEVICEADDED && !gc) gc = SDL_GameControllerOpen(e.cdevice.which);
+            if (!asking) {
+                if (up || down) item ^= 1;
+                if (ok && item == 0) show_fps = !show_fps;
+                if (ok && item == 1) { asking = 1; yes = 0; }
+                if (back) { memcpy(frame_rgb, saved, sizeof saved); return 0; }
+            } else {
+                if (up || down || side) yes ^= 1;
+                if (ok && yes) return 1;
+                if ((ok && !yes) || back) {
+                    if (only_asking) { memcpy(frame_rgb, saved, sizeof saved); return 0; }
+                    asking = 0;
+                }
+            }
+        }
+        memcpy(frame_rgb, saved, sizeof saved);
+        draw_menu(item, asking, yes);
+        if (show_fps) draw_fps();
+        present();
+        const char *shots = getenv("WBMW_MENU_SHOTS");   /* testing: each screen of the menu as a PNG */
+        if (shots) {
+            static int n, last = -1;
+            int state = item | asking << 1 | yes << 2 | show_fps << 3;
+            if (state != last) {
+                char path[1024]; snprintf(path, sizeof path, "%s/menu_%02d.png", shots, n++);
+                png_write_rgb(path, &frame_rgb[0][0], frame_width, ACTIVE_LINES, 320);
+                last = state;
+            }
+        }
+        menu_test_keys();
+        SDL_Delay(15);
+    }
+}
+
+/* testing: WBMW_MENU_KEYS="escape return down ..." (SDL key names) are pressed one per frame
+ * (or per menu screen) after the first 120 frames of the session, as if typed */
+static void menu_test_keys(void)
+{
+    static const char *keys; static int started, calls;
+    if (!started) { keys = getenv("WBMW_MENU_KEYS"); started = 1; }
+    if (!keys || !*keys || ++calls < 120) return;
+    char name[32]; int n = 0;
+    while (*keys == ' ') keys++;
+    while (*keys && *keys != ' ' && n < 31) name[n++] = *keys++;
+    name[n] = 0;
+    if (!n) return;
+    SDL_Event e = {0};
+    e.type = SDL_KEYDOWN; e.key.keysym.sym = SDL_GetKeyFromName(name);
+    SDL_PushEvent(&e);
+}
+
+/* buttons held when the menu closed: kept from the game until released */
+static uint8_t held_over;
+
 static void window_open(void)
 {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0) { fprintf(stderr, "SDL: %s\n", SDL_GetError()); exit(1); }
@@ -180,8 +336,11 @@ static void quit(int code)
 static void window_frame(void)
 {
     SDL_Event e;
+    menu_test_keys();
+    int open_menu = -1;                             /* 0: the menu, 1: straight to the exit question */
     while (SDL_PollEvent(&e)) {
-        if (e.type == SDL_QUIT || (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE)) quit(0);
+        if (e.type == SDL_QUIT) open_menu = 1;
+        if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE && !e.key.repeat) open_menu = 0;
         if (e.type == SDL_KEYDOWN && !e.key.repeat) {
             SDL_Keycode key = e.key.keysym.sym;
             if (key == SDLK_F11 || (key == SDLK_RETURN && (e.key.keysym.mod & KMOD_ALT))) set_fullscreen(!fullscreen);
@@ -190,6 +349,12 @@ static void window_frame(void)
             if (key == SDLK_F4) request_load(state_path);
         }
         if (e.type == SDL_CONTROLLERDEVICEADDED && !gc) gc = SDL_GameControllerOpen(e.cdevice.which);
+    }
+    if (open_menu >= 0) {
+        if (menu(open_menu)) quit(0);
+        Uint64 now = SDL_GetPerformanceCounter();   /* carry on as if no time had passed */
+        next_tick = now; fps_start = now; fps_frames = 0;
+        held_over = 0xFF;                           /* whatever is still held, until released */
     }
     const Uint8 *k = SDL_GetKeyboardState(NULL);
     uint8_t b = 0;
@@ -208,7 +373,8 @@ static void window_frame(void)
         b |= SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_X) ? 64 : 0;
         b |= SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_START) ? 128 : 0;
     }
-    pad_buttons = b;
+    held_over &= b;                                 /* released: the game sees it again */
+    pad_buttons = b & (uint8_t)~held_over;
     Uint64 freq = SDL_GetPerformanceFrequency(), t = SDL_GetPerformanceCounter();
     fps_frames++;
     if (t - fps_start >= freq) {                     /* once a second: the rate, in the title too */
@@ -218,10 +384,7 @@ static void window_frame(void)
         SDL_SetWindowTitle(win, title);
     }
     if (show_fps) draw_fps();
-    SDL_UpdateTexture(tex, NULL, &frame_rgb[0][0], 320 * 4);
-    SDL_Rect src = {0, 0, frame_width, ACTIVE_LINES};              /* only the width the game uses */
-    SDL_RenderSetLogicalSize(ren, frame_width, ACTIVE_LINES);
-    SDL_RenderClear(ren); SDL_RenderCopy(ren, tex, &src, NULL); SDL_RenderPresent(ren);
+    present();
     next_tick += (Uint64)(freq / 59.922);
     Uint64 now = SDL_GetPerformanceCounter();
     if (now < next_tick) SDL_Delay((Uint32)((next_tick - now) * 1000 / freq));
