@@ -38,8 +38,11 @@ int md_load_rom(const char *path)
     return 0;
 }
 
+void task_reset(void);                         /* port/task.c: waiting task passes are stale now */
+
 void md_power_on(void)
 {
+    task_reset();
     bus_reset(); vdp_reset(); sound_reset();
     vint_pending = hint_pending = 0;
     m68k_init(); m68k_set_cpu_type(M68K_CPU_TYPE_68000); m68k_pulse_reset();
@@ -138,7 +141,7 @@ void md_restore(const uint8_t *buf, size_t n)
 }
 
 int md_save_state(const char *path, int frame) { return state_file(path, &frame, 1); }
-int md_load_state(const char *path, int *frame) { return state_file(path, frame, 0); }
+int md_load_state(const char *path, int *frame) { task_reset(); return state_file(path, frame, 0); }
 
 void md_run_frame(void)
 {

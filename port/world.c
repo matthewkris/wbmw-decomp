@@ -11,7 +11,7 @@ void call_68k(Cpu *t, uint32_t addr)
 {
     t->a[7] -= 4; wr32(t->a[7], RETURN_MARK);
     if (!rt_dispatch(t, addr) || t->ret != RETURN_MARK) {
-        fprintf(stderr, "call_68k: $%06X did not return normally\n", (unsigned)addr);
+        fprintf(stderr, "call_68k: $%06X did not return normally (control went to $%06X)\n", (unsigned)addr, (unsigned)t->ret);
         exit(3);
     }
 }

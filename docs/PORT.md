@@ -496,6 +496,56 @@ With that, the owner chose **stackless now, coroutines later**:
 * The coroutine library belongs to the idiomatic rewrite, where `while (1) { ...; yield(); }`
   reads better than resume points. It has not been built.
 
+#### Coroutines (2026-10-11)
+
+The player's death and heart refill wait for frames from deep inside the gameplay frame: the
+original resets the stack to the task's base (`$FF9662`, saved by the gameplay loop at $9014),
+yields, and later jumps back to just after the player's update (`$FF9F1E`) or to the top of
+the loop ($8FFC). Readable C does the same with coroutines:
+
+* `port/coro.c`: coroutines on their own C stacks (Windows fibers; ucontext elsewhere).
+* `port/task.c`: the scheduler's two `jsr (a0)` ($4BD6 system slots, $4C88 user slots) are
+  ported (`TaskCallSystem`, `TaskCallUser`). Each slot's pass runs on that slot's coroutine.
+* `task_wait_frame(c, resume)` (`port/task.h`): from anywhere in a pass's call chain, store
+  `resume` as the slot's resume address (as `Yield` does), keep the 68000 stack the chain uses
+  (up to the pass's base), and suspend; the scheduler carries on as if the pass had ended. When
+  the scheduler next runs that slot at that address, the chain carries on where it stopped.
+* `task_end_pass(c, resume)`: end the pass and abandon the chain (the original's "reset the
+  stack and yield to the loop's top").
+* Anything else that starts the slot (another address, a loaded state, a reset: `task_reset`)
+  discards the waiting chain and runs the pass afresh at the slot's address: the original's
+  state in RAM always decides, so save states need nothing new.
+
+Why it is exact: the original resets the stack to the base the gameplay frame had, and the
+frame's code after the player's update runs with that same stack pointer; so "wait inside the
+update, then return from it" is the same program. The checks still compare every task pass
+(the ported `jsr (a0)` is the checked routine now).
+
+With this, the player's update itself is C (`PlayerUpdate`, $DD08): the probes, damage
+(death and revival now run as C loops: `dying`, `refill`), the frame start, input, pickups
+(`pickups`, $F1B0, including the full heal), bounce tiles, the states, A + left/right, the
+sword, hit boxes, acceleration, the animation, `UpdateAnim`, water, currents and `MovePlayer`;
+then it hands over to the special actions' frame ($1141A).
+
+What it needed besides:
+
+* **Every routine the readable C calls must be generated.** When the gold pickup became C,
+  nothing generated called $1FCA any more and it dropped out of the harness's translation;
+  `call_68k` then had nothing to call. `tools/m68k2c.py` now scans `port/*.c` for the
+  addresses passed to `call_68k`, its wrappers and `port_continue_at`, and makes them entries.
+* **A check that closes at an instruction**: the instruction's own writes now count against the
+  watch that check arms (`$1141A`'s `tst.b` cleared the flags, but the check had closed just
+  before it, so the next `bmi` looked like a read of a stale difference).
+* `analysis/hints.json` names `$1141A`, where the update hands over.
+* `--poke ADDR=HEX` (harness) writes bytes into RAM after loading a state, to set up a scene:
+  `--poke FFDA00=0080 --poke FF9854=01` from `castle.state` is a deadly touch at low health;
+  with `--poke FF959D=00` there is no revival item.
+
+Results: 0 mismatches over the standard runs (every task pass checked); the death and revival
+scenes above, 900 frames each, 0 mismatches: the fall and GAME OVER, and the hearts refilling
+to half. In replace mode the death scene matches the original frame for frame until the title
+screen, which the C version reaches a little earlier (the known time shift).
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

@@ -79,6 +79,9 @@ In shadow mode, a check that never reaches the point where the C version ended i
 and HV counter values the C version read are replayed to the original, because C runs in no
 emulated time (`docs/PORT.md`, Tasks).
 
+`--poke ADDR=HEX` writes the bytes HEX into work RAM at ADDR (e.g. `FF9F00=0200`, a word) right
+after loading a state, to set up a scene; it can be given several times.
+
 `--call NAME` runs one ported or translated routine once, right after loading a state and
 before the first frame, and puts the registers back. With `--save-state-at` it edits states:
 after patching the health in a state file, `--call g_008AA2` redraws the hearts.

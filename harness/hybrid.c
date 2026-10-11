@@ -376,7 +376,10 @@ int md_instr_hook(unsigned int pc)
          * to it later ($C7E6) ends after that; or at an exit. If the original never gets there,
          * the check is reported unfinished. */
         uint32_t sp = m68k_get_reg(NULL, M68K_REG_SP);
-        if ((pc == want->pc && sp == want->cpu.a[7]) || is_exit(pc)) check();
+        if ((pc == want->pc && sp == want->cpu.a[7]) || is_exit(pc)) {
+            check();
+            if (watch) watch_step(pc);              /* the instruction here runs next: under the new watch */
+        }
         return 0;
     }
     if (pc >= SLOTS || slot_of[pc] < 0) return 0;

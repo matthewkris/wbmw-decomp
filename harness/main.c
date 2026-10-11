@@ -59,6 +59,7 @@ int main(int argc, char **argv)
     const char *fuzz_name = NULL, *call_name = NULL, *wav_path = NULL; long fuzz_count = 0;
     const char *flog_path = NULL, *ginput = NULL, *dump_dir = NULL; long dump_at = -1;
     int frames = 600, png_every = 0, ram_every = 0, vdp_every = 0, quiet = 0;
+    const char *pokes[32]; int npokes = 0;   /* --poke ADDR=HEX: bytes into work RAM after loading */
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--out") && i + 1 < argc) out = argv[++i];
@@ -80,6 +81,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--input-game") && i + 1 < argc) ginput = argv[++i];
         else if (!strcmp(argv[i], "--dump-at") && i + 2 < argc) { dump_at = atol(argv[++i]); dump_dir = argv[++i]; }
         else if (!strcmp(argv[i], "--call") && i + 1 < argc) call_name = argv[++i];
+        else if (!strcmp(argv[i], "--poke") && i + 1 < argc && npokes < 32) pokes[npokes++] = argv[++i];
         else rom_path = argv[i];
     }
     if (!rom_path) { fprintf(stderr, "usage: harness ROM [--frames N] [--out DIR] [--png-every K] [--ram-every K] [--input FILE]\n"); return 2; }
@@ -87,6 +89,13 @@ int main(int argc, char **argv)
     if (input) load_input(input);
     md_power_on();
     if (load_path && md_load_state(load_path, &first)) return 1;
+    for (int k = 0; k < npokes; k++) {             /* e.g. --poke FF9F00=0200 (a word: two bytes) */
+        unsigned a; const char *eq = strchr(pokes[k], '=');
+        if (!eq || sscanf(pokes[k], "%x", &a) != 1) { fprintf(stderr, "--poke ADDR=HEX\n"); return 2; }
+        for (const char *h = eq + 1; h[0] && h[1]; h += 2, a++) {
+            unsigned b; sscanf(h, "%2x", &b); ram[a & 0xFFFF] = (uint8_t)b;
+        }
+    }
     hybrid_init(port);
     if (wav_path && wav_open(wav_path, SOUND_RATE)) return 1;
     if (flog_path && framelog_open(flog_path)) return 1;
