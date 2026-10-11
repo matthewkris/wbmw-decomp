@@ -49,7 +49,7 @@ checked; `tools/coverage.py work/map.json FILE ...` merges sessions.
 Esc quits, P pauses, Tab (held) runs as fast as possible, F12 writes a screenshot to the
 current directory, F5 resets, F2 saves a save state and F4 loads it. The save EEPROM is read from FILE at start and written back on
 exit (default `play.sav` in the current directory), so CONTINUE works across sessions. There is
-no sound.
+sound (the Z80 and both sound chips; `--mute` to turn it off).
 
 ## Run
 
@@ -137,7 +137,7 @@ Start again at 600 (the menu), then face buttons to page the intro text.
   HBlank interrupt (level 4) from the line counter in register 10.
 * Memory map: ROM, 64 KB work RAM (mirrored from `$E00000`), Z80 RAM (8 KB, written by the
   driver upload and the sound queue), I/O version register (overseas NTSC), controller 1 as a
-  3-button pad with the TH protocol, Z80 bus request always granted.
+  3-button pad with the TH protocol, the Z80's bus request and reset lines.
 * The serial EEPROM at `$200001` (X24C01, 128 bytes, starts blank). The game hangs at `$1C552`
   if a byte is not acknowledged, so this is not optional.
 * VDP: all registers, VRAM/CRAM/VSRAM, the control and data ports with auto-increment, 68000
@@ -146,10 +146,19 @@ Start again at 600 (the menu), then face buttons to page the intro text.
   horizontal scroll and full or 2-cell vertical scroll, the window, sprites through the link
   list, and the six-layer priority order, H32 and H40.
 
+* Sound (`sound.c`, `ym2612.cpp`): the Z80 (`third_party/chips/z80.h`) runs the game's own sound
+  driver from Z80 RAM, one scanline (228 cycles) at a time, with its VBlank interrupt, its bank
+  window on 68000 memory and the bus request and reset lines. The YM2612 is ymfm
+  (`third_party/ymfm`, with its timers counted in chip clocks); the SN76489 is written here.
+  Output is stereo at 53,267 Hz (one YM2612 sample), through a DC blocker like the console's
+  output capacitor. `play` plays it (`--mute` to turn it off); `--wav FILE` records it headless.
+  During a shadow check the sound is held still, like the interrupts, so the Z80's own RAM
+  writes do not count as differences. `WBMW_SOUND_LOG=FILE` lists every write to the sound
+  chips. Save states are version 2 (`WBMWST02`, with the sound); version-1 states still load,
+  with the sound driver restarted.
+
 ## What is not
 
-* The Z80 and sound chips. The 68000 never touches the YM2612 or PSG; commands queued at
-  Z80 `$1C30` simply accumulate. No audio is produced.
 * Shadow/highlight, interlace, sprite limits per line, sprite collision and overflow flags,
   DMA and FIFO timing. None has been seen to matter for this game yet; each is a known gap if a
   frame ever disagrees with real hardware.

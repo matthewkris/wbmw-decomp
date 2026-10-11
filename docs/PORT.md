@@ -414,6 +414,37 @@ Results:
   timing. And comparison by game frame rather than real frame (the game's counter at
   `$FF8002`), so long runs can be compared exactly despite the time shift.
 
+#### Sound (2026-10-11)
+
+The game's sound is the Z80 running the game's own driver (6,775 bytes at `$98000`, uploaded at
+boot), driving a YM2612 (FM) and an SN76489 (tone and noise). The 68000 only queues one-byte
+commands in Z80 RAM. `harness/sound.c` emulates all of it, and both the harness and the native
+build use it:
+
+* **Parts.** The Z80 is floooh's `z80.h` (zlib licence, `third_party/chips`). The YM2612 is ymfm
+  (BSD-3, `third_party/ymfm`, behind the C wrapper `harness/ym2612.cpp`, with the chip's timers
+  counted in its clocks). The SN76489 is written here. The owner chose ymfm over Nuked-OPN2 (LGPL).
+* **Clocking.** One master clock, as on the console: the Z80 runs one scanline (228 cycles) at a
+  time, and a YM2612 sample falls every 67.2 Z80 cycles (the clocks are 7:15 apart). Output is
+  stereo at 53,267 Hz, through a DC blocker standing in for the console's output capacitor; SDL
+  converts it to the sound card's rate (`harness/audio.c`).
+* **The 68000's side.** `$A11100` (bus request) and `$A11200` (reset) are real now: the Z80 stops
+  while the 68000 holds its bus or reset.
+* **Waiting on the Z80 in ported code.** `QueueSound` retries while the driver's busy flag (Z80
+  `$1C00`) is set. The driver sets it only for the few instructions in which it reads the queue,
+  but code that takes no time would spin on it forever. The hand port now calls `port_idle()`
+  there, and the host lets 64 Z80 cycles pass.
+* **Shadow checks.** The sound is held still while a check is open, like the interrupts, so the
+  Z80's own writes to its RAM do not count as differences. The standard runs are still clean.
+* **Save states.** Version 2 (`WBMWST02`) adds the sound. Version-1 states, including all the
+  owner's, still load: the driver restarts.
+
+Checks: the attract mode recorded headless (`--wav`) is silent through start-up, then has music
+from the title on, in stereo, with no clipping and no DC offset. The native build plays the same
+music: 99.8% of its musical register writes match the harness's over 30 seconds. The rest are
+small reorderings, where a command lands one driver tick earlier because the native build never
+drops frames. `WBMW_SOUND_LOG=FILE` lists every chip write, for such comparisons.
+
 #### Computed jump targets, found statically
 
 A native build has no original code to fall back to, so every address the game can jump to

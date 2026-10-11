@@ -1,0 +1,4 @@
+Upstream: https://github.com/aaronsgiles/ymfm commit 81aec25ccbb98f4873a255f7551ac4dadac59b4a (2026-07-27).
+BSD 3-Clause licence: see LICENSE. Only the files the YM2612 (OPN2) needs are vendored, unchanged:
+ymfm.h, ymfm_fm.h, ymfm_fm.ipp, ymfm_opn.h/.cpp, and ymfm_adpcm and ymfm_ssg, which ymfm_opn.cpp
+includes for its other chips. Used through the C wrapper harness/ym2612.cpp.

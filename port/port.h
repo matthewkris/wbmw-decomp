@@ -29,6 +29,11 @@ void wr16(uint32_t a, uint16_t v);
 static inline uint32_t rd32(uint32_t a) { return (uint32_t)rd16(a) << 16 | rd16(a + 2); }
 static inline void wr32(uint32_t a, uint32_t v) { wr16(a, (uint16_t)(v >> 16)); wr16(a + 2, (uint16_t)v); }
 
+/* the code is waiting on another chip (the Z80's busy flag): let time pass, provided by the host.
+ * Ported code takes no time, so a wait loop that rereads a flag only another chip changes needs
+ * this to ever end. */
+void port_idle(void);
+
 /* d(An): a 16-bit signed displacement, as the 68000 adds it */
 static inline uint32_t ea(uint32_t base, int16_t disp) { return base + (uint32_t)(int32_t)disp; }
 

@@ -1,11 +1,12 @@
 /* Live window for the reference harness: the same machine as `harness`, shown in an SDL2 window
- * at 60 frames a second, with keyboard and game controller input. No sound (the Z80 and the
- * sound chips are not emulated).
+ * at 60 frames a second, with keyboard and game controller input, and sound (harness/sound.c).
  *
  *   play ROM [--scale N] [--save FILE] [--state FILE] [--load] [--port replace|shadow] [--coverage FILE]
  *
  * --load starts from the state file (as if F4 were pressed at once). The state carries the save
  * EEPROM too, so it replaces what --save loaded; --save still names where it is written at exit.
+ *
+ * --mute plays without sound.
  *
  * Keys: arrows = D-pad, Z = A, X = B, C = C, Enter = Start.
  *       Esc quits, P pauses, Tab (held) runs fast, F12 writes a screenshot, F5 resets,
@@ -55,13 +56,14 @@ static uint8_t pad_down(SDL_GameController *gc)
 int main(int argc, char **argv)
 {
     const char *rom_path = NULL, *save = "play.sav", *state = "play.state", *cov = NULL;
-    int scale = 0, port = PORT_OFF, load = 0;      /* scale 0: fit the screen */
+    int scale = 0, port = PORT_OFF, load = 0, mute = 0;    /* scale 0: fit the screen */
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--save") && i + 1 < argc) save = argv[++i];
         else if (!strcmp(argv[i], "--state") && i + 1 < argc) state = argv[++i];
         else if (!strcmp(argv[i], "--coverage") && i + 1 < argc) cov = argv[++i];
         else if (!strcmp(argv[i], "--load")) load = 1;
+        else if (!strcmp(argv[i], "--mute")) mute = 1;
         else if (!strcmp(argv[i], "--port") && i + 1 < argc) {
             i++; port = !strcmp(argv[i], "replace") ? PORT_REPLACE : !strcmp(argv[i], "shadow") ? PORT_SHADOW : PORT_OFF;
         }
@@ -90,6 +92,7 @@ int main(int argc, char **argv)
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
     SDL_Texture *tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, 320, 224);
     SDL_GameController *gc = NULL;
+    audio_open();
 
     const double frame_s = 1.0 / 59.922;                     /* NTSC */
     Uint64 freq = SDL_GetPerformanceFrequency(), next = SDL_GetPerformanceCounter();
@@ -130,6 +133,7 @@ int main(int argc, char **argv)
         if (!paused) {
             pad_buttons = keys_down(k) | pad_down(gc);
             md_run_frame(); frame++;
+            audio_frame(mute || fast);                  /* no sound while fast-forwarding */
         }
         /* the game switches between 256 and 320 pixels wide; show the active width */
         SDL_UpdateTexture(tex, NULL, &frame_rgb[0][0], 320 * sizeof(uint32_t));

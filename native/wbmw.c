@@ -3,7 +3,8 @@
  * All of the game's code is the C in work/gen_native (tools/m68k2c.py with analysis/native.json)
  * and port/ (the hand ports). This file is the host: it plays the part of the console around
  * that code. The memory map, the save EEPROM, the controller and the VDP (video) are the
- * harness's own (harness/bus.c, harness/vdp.c); there is no sound yet.
+ * harness's own (harness/bus.c, harness/vdp.c), and so is the sound (harness/sound.c: the Z80
+ * running the game's sound driver, the YM2612 and the SN76489), one frame of it at each poll point.
  *
  * Time: the translated code takes no time of its own. It runs until it waits for the VBlank
  * interrupt (the poll points in analysis/native.json); there the host draws the frame, shows it,
@@ -12,7 +13,7 @@
  * loop) unwind the C stack to the host, which calls them again from the top.
  *
  *   wbmw ROM [--scale N] [--save FILE] [--fullscreen] [--integer-scale] [--fps]   play in a window
- *   wbmw ROM --frames N [--png-every K] [--out DIR] [--input FILE]   headless, for comparison
+ *   wbmw ROM --frames N [--png-every K] [--out DIR] [--input FILE] [--wav FILE]   headless, for comparison
  *
  * The ROM is still needed: the game's data (graphics, maps, text) is read from it. */
 #include <stdio.h>
@@ -30,6 +31,9 @@ uint8_t rd8(uint32_t a) { return (uint8_t)bus_read8(a); }
 uint16_t rd16(uint32_t a) { return (uint16_t)bus_read16(a); }
 void wr8(uint32_t a, uint8_t v) { bus_write8(a, v); }
 void wr16(uint32_t a, uint16_t v) { bus_write16(a, v); }
+
+/* ported code waiting on the Z80 (QueueSound): let sound time pass, as the hardware would */
+void port_idle(void) { sound_idle(); }
 
 /* save states are the harness's; the native build has none yet */
 void state_io(FILE *f, void *p, size_t n, int saving) { (void)f; (void)p; (void)n; (void)saving; }
@@ -64,7 +68,8 @@ static const PortRoutine *entry(uint32_t a)
 
 /* ---- frames: drawing, showing, input, the interrupt ---- */
 static int frame, frames_max, png_every, headless, scale;            /* scale 0: fit the screen */
-static const char *out_dir = ".", *save_path = "wbmw.sav";
+static const char *out_dir = ".", *save_path = "wbmw.sav", *wav_path;
+static int mute;
 static struct { int frame; uint8_t buttons; } *script; static int script_n;
 
 static void load_input(const char *path)
@@ -213,17 +218,19 @@ void rt_poll(Cpu *c, uint32_t at)
     rt_steps = 0;
     for (int line = 0; line < ACTIVE_LINES; line++) { vdp_line = line; vdp_render_line(line); }
     vdp_line = 0;                                   /* the game's own time runs at line 0 */
+    for (int line = 0; line < LINES_PER_FRAME; line++) sound_run_line(line == ACTIVE_LINES);   /* a frame of sound */
     frame++;
     if (headless) {
         if (png_every && frame % png_every == 0) {
             char path[1024]; snprintf(path, sizeof path, "%s/frame_%05d.png", out_dir, frame);
             png_write_rgb(path, &frame_rgb[0][0], frame_width, ACTIVE_LINES, 320);
         }
-        if (frame >= frames_max) exit(0);
+        { static int16_t snd[4096 * 2]; int n = sound_take(snd, 4096); if (wav_path) wav_write(snd, n); }
+        if (frame >= frames_max) { wav_close(); exit(0); }
         pad_buttons = buttons_at(frame + 1);
     }
 #ifndef WBMW_HEADLESS_ONLY
-    else window_frame();
+    else { window_frame(); audio_frame(mute); }
 #endif
     if (!vdp_vint_enabled()) return;                /* the game turned the interrupt off */
     c->a[7] -= 6;                                   /* the 68000's interrupt frame: SR, then PC */
@@ -241,6 +248,8 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--png-every") && i + 1 < argc) png_every = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--out") && i + 1 < argc) out_dir = argv[++i];
         else if (!strcmp(argv[i], "--input") && i + 1 < argc) input = argv[++i];
+        else if (!strcmp(argv[i], "--wav") && i + 1 < argc) wav_path = argv[++i];
+        else if (!strcmp(argv[i], "--mute")) mute = 1;
         else if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--save") && i + 1 < argc) save_path = argv[++i];
 #ifndef WBMW_HEADLESS_ONLY
@@ -261,12 +270,14 @@ int main(int argc, char **argv)
     rom = malloc(rom_size);
     if (fread(rom, 1, rom_size, f) != rom_size) { fprintf(stderr, "%s: short read\n", rom_path); return 1; }
     fclose(f);
-    bus_reset(); vdp_reset();
+    bus_reset(); vdp_reset(); sound_reset();
     if (input) load_input(input);
+    if (wav_path && wav_open(wav_path, SOUND_RATE)) return 1;
     if (!headless) {
         if (eeprom_load(save_path) == 0) fprintf(stderr, "loaded save data from %s\n", save_path);
 #ifndef WBMW_HEADLESS_ONLY
         window_open();
+        audio_open();
 #endif
     }
     pad_buttons = buttons_at(1);

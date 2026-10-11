@@ -7,7 +7,10 @@ ROM ?= ../rom/Wonder Boy in Monster World (USA, Europe).md
 OUT = ../work/native
 GEN = ../work/gen_native/gen.c ../work/gen_native/gen_registry.c
 PORT = ../port/kernel.c ../port/entity.c ../port/anim.c ../port/gfx.c ../port/sprites.c ../port/hitbox.c ../port/map.c ../port/registry.c
-MACHINE = ../harness/bus.c ../harness/vdp.c ../harness/png.c
+MACHINE = ../harness/bus.c ../harness/vdp.c ../harness/png.c ../harness/wav.c ../harness/sound.c ../harness/audio.c
+CXX = g++
+YMFM = ../third_party/ymfm
+YMO = $(OUT)/ym2612.o $(OUT)/ymfm_opn.o $(OUT)/ymfm_adpcm.o $(OUT)/ymfm_ssg.o
 
 all: $(OUT)/wbmw
 
@@ -22,10 +25,18 @@ $(OUT)/gen_registry.o: ../work/gen_native/gen_registry.c ../port/m68k_rt.h ../po
 	@mkdir -p $(OUT)
 	$(CC) $(CFLAGS) -I../port -c $< -o $@
 
+# the YM2612: ymfm (C++) behind harness/ym2612.cpp
+$(OUT)/ym2612.o: ../harness/ym2612.cpp
+	@mkdir -p $(OUT)
+	$(CXX) -O2 -std=c++14 -I$(YMFM) -c $< -o $@
+$(OUT)/ymfm_%.o: $(YMFM)/ymfm_%.cpp
+	@mkdir -p $(OUT)
+	$(CXX) -O2 -std=c++14 -w -I$(YMFM) -c $< -o $@
+
 # -mconsole: sdl2-config asks for a Windows GUI program, which has no console for messages
-$(OUT)/wbmw: wbmw.c $(MACHINE) $(PORT) $(OUT)/gen.o $(OUT)/gen_registry.o ../harness/md.h
-	$(CC) $(CFLAGS) -I../port -I../harness $$(sdl2-config --cflags) wbmw.c $(MACHINE) $(PORT) $(OUT)/gen.o $(OUT)/gen_registry.o \
-		-o $@ -static-libgcc $$(sdl2-config --libs) -mconsole -lm
+$(OUT)/wbmw: wbmw.c $(MACHINE) $(PORT) $(OUT)/gen.o $(OUT)/gen_registry.o $(YMO) ../harness/md.h
+	$(CC) $(CFLAGS) -I../port -I../harness $$(sdl2-config --cflags) wbmw.c $(MACHINE) $(PORT) $(OUT)/gen.o $(OUT)/gen_registry.o $(YMO) \
+		-o $@ -static-libgcc $$(sdl2-config --libs) -mconsole -static-libstdc++ -lstdc++ -lm
 	cp "$$(dirname $$(which sdl2-config))/SDL2.dll" $(OUT)/
 
 clean:

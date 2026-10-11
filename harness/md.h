@@ -5,6 +5,7 @@
 #define MD_H
 #include <stdint.h>
 #include <stddef.h>
+#include <stdio.h>
 
 /* timing (NTSC) */
 #define LINES_PER_FRAME 262
@@ -23,6 +24,19 @@ enum { TIMING_OFF, TIMING_RECORD, TIMING_REPLAY };
 void bus_timing(int mode);              /* record a port's VDP status/HV reads, replay them to the original */
 void bus_write8(unsigned int a, unsigned int v);
 void bus_write16(unsigned int a, unsigned int v);
+
+/* sound.c (with ym2612.cpp): the Z80 and its sound driver, the YM2612 and the SN76489 */
+void sound_reset(void);
+void sound_set_busreq(int on);
+void sound_set_reset(int on);
+int sound_bus_granted(void);
+void sound_psg_write(uint8_t d);
+void sound_hold(int on);                /* hold the Z80 and the chips still (shadow checks) */
+void sound_run_line(int vint);          /* one scanline; vint: raise the Z80's VBlank interrupt */
+void sound_idle(void);                  /* let some sound time pass, even while held */
+int sound_take(int16_t *dst, int max);  /* take up to max stereo samples (53,267 Hz) */
+#define SOUND_RATE 53267
+void sound_state_io(FILE *f, int saving);
 
 /* vdp.c */
 extern int vdp_line, vdp_line_cycle;   /* current scanline and cycle within it */
@@ -71,6 +85,15 @@ void hybrid_coverage(const char *path);
 int hybrid_fuzz(const char *name, long count);
 int hybrid_call(const char *name);      /* run one ported routine once, registers kept */
 int md_instr_hook(unsigned int pc);
+
+/* audio.c (windows only): the sound through SDL */
+void audio_open(void);
+void audio_frame(int mute);
+
+/* wav.c */
+int wav_open(const char *path, uint32_t rate);
+void wav_write(const int16_t *stereo, int n);
+void wav_close(void);
 
 /* png.c */
 int png_write_rgb(const char *path, const uint32_t *px, int w, int h, int stride);

@@ -17,6 +17,9 @@
 #include "../port/port.h"
 #include "../third_party/musashi/m68k.h"
 
+/* ported code waiting on the Z80: let sound time pass (undone with the snapshot in shadow mode) */
+void port_idle(void) { sound_idle(); }
+
 /* memory for port/, through the bus so VDP and Z80 writes behave as on the machine */
 uint8_t rd8(uint32_t a) { return (uint8_t)bus_read8(a); }
 uint16_t rd16(uint32_t a) { return (uint16_t)bus_read16(a); }

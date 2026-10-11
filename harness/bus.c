@@ -115,7 +115,7 @@ unsigned int bus_read8(unsigned int a)
     case 0xA10003: return pad_read();
     case 0xA10005: return 0x7F;                   /* port 2: nothing pressed */
     case 0xA10009: return pad_ctrl;
-    case 0xA11100: return 0x00;                   /* Z80 bus always granted (the Z80 is not run) */
+    case 0xA11100: return sound_bus_granted() ? 0x00 : 0x01;   /* bit 0 clear: the 68000 has the Z80's bus */
     }
     if (a >= 0xC00000 && a < 0xC00020) {
         uint16_t w = bus_read16(a & ~1);
@@ -159,12 +159,15 @@ void bus_write8(unsigned int a, unsigned int v)
     if (a >= 0xE00000) { ram[a & 0xFFFF] = v; return; }
     if (a == 0x200001) { eeprom_write(v); return; }
     if (a >= 0xA00000 && a < 0xA10000) { if ((a & 0x7FFF) < 0x2000) zram[a & 0x1FFF] = v; return; }
+    if (a == 0xA11100) { sound_set_busreq(v & 1); return; }       /* request the Z80's bus */
+    if (a == 0xA11200) { sound_set_reset(!(v & 1)); return; }     /* 0 holds the Z80 (and YM2612) in reset */
     if (a == 0xA10003) { pad_data = v; return; }
     if (a == 0xA10009) { pad_ctrl = v; return; }
     if (a >= 0xC00000 && a < 0xC00020) {
         if ((a & 0x1C) == 0x00) vdp_write_data(v << 8 | v);
         else if ((a & 0x1C) == 0x04) vdp_write_ctrl(v << 8 | v);
-        return;                                   /* PSG at $C00011 is not modelled */
+        else if (a == 0xC00011) sound_psg_write(v);
+        return;
     }
 }
 

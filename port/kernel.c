@@ -44,6 +44,7 @@ void QueueSound(Cpu *c)
         if (!rd8(0xA01C00)) break;
         wr16(0xA11100, 0);
         c->d[1] = 0x0000FFFF;                             /* moveq #31,d1; dbra to -1 */
+        port_idle();                                      /* the driver needs time to clear its flag */
     }
     uint16_t cc = c->ccr;
     uint32_t n = add_b(&cc, rd8(0xA01C2F), rd8(0xA01C2E));

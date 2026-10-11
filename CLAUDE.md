@@ -47,7 +47,8 @@ Done:
   controller and serial EEPROM, headless, at about 7x real time. It boots through the SEGA logo,
   title and menu into a new game, and dumps frames, RAM and VDP state per frame. `play.exe` is
   the same machine in an SDL2 window with keyboard and pad input, so the owner can play builds
-  (no sound). See `harness/README.md` for what it does and does not model.
+  with sound (the Z80 and its driver, ymfm's YM2612, an SN76489). See `harness/README.md` for
+  what it does and does not model.
 - **The port has started.** `port/` holds C routines that replace 68000 routines one at a time
   (45 so far: `Random`, `SetVRAMWrite`, palettes, velocity, friction and acceleration, the sound
   queue, `SetGfxSlots`, the animation interpreter, graphics decompression and streaming, sprite building, the hitbox tests, the map lookups and tile probes). The harness runs them in place of the originals (`--port replace`) or
@@ -103,9 +104,11 @@ F2 overwrites the same file each time.
    generated code" targets to `"seen"` in `analysis/translate.json` (the harness report names
    them).
 2. The native build runs (`native/`, `work/native/wbmw.exe`; `docs/PORT.md`, "The native
-   build"): the whole game as C, no emulator, pixel-identical to the original once the time
-   shift from the original's dropped frames is accounted for. Next for it: sound (Z80 + YM2612
-   + SN76489), comparison by game frame (`$FF8002`) instead of real frame, and save states.
+   build"): the whole game as C, no 68000 emulator, pixel-identical to the original once the
+   time shift from the original's dropped frames is accounted for, with sound (`docs/PORT.md`,
+   "Sound"). Next for it: comparison by game frame (`$FF8002`) instead of real frame, and save
+   states. The sound driver itself is still Z80 code run by an emulator; translating it is a
+   later, separate project.
 3. Then the idiomatic rewrite, subsystem by subsystem, checked against the original the same
    way; that is where the coroutine library belongs. Fuzz input generators live in
    `harness/hybrid.c` and are game-specific; move them to a game file when the second game

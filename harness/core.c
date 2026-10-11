@@ -17,7 +17,7 @@ static void update_irq(void)
     m68k_set_irq(irq_hold ? 0 : vint_pending ? 6 : hint_pending ? 4 : 0);
 }
 
-void md_irq_hold(int on) { irq_hold = on; update_irq(); }
+void md_irq_hold(int on) { irq_hold = on; update_irq(); sound_hold(on); }
 
 int md_int_ack(int level)
 {
@@ -40,16 +40,16 @@ int md_load_rom(const char *path)
 
 void md_power_on(void)
 {
-    bus_reset(); vdp_reset();
+    bus_reset(); vdp_reset(); sound_reset();
     vint_pending = hint_pending = 0;
     m68k_init(); m68k_set_cpu_type(M68K_CPU_TYPE_68000); m68k_pulse_reset();
 }
 
 /* ---- save states, taken between frames ----
  * File: "WBMWST01", the frame number, the 68000 registers, pending interrupts, then the bus
- * (RAM, Z80 RAM, EEPROM and its protocol state, pad latch) and the VDP. Integers are in host
+ * (RAM, Z80 RAM, EEPROM and its protocol state, pad latch), the VDP and (from WBMWST02) the sound. Integers are in host
  * byte order: a state belongs to the machine that wrote it. */
-static const char STATE_MAGIC[8] = "WBMWST01";
+static const char STATE_MAGIC[8] = "WBMWST02";        /* 02 adds the sound; 01 states still load */
 static int state_failed;
 static FILE *st_file;                 /* a state goes to a file or, for snapshots, to memory */
 static uint8_t *st_mem; static size_t st_pos, st_cap;
@@ -84,6 +84,7 @@ static const int cpu_regs[] = {
 #define NREGS (int)(sizeof cpu_regs / sizeof cpu_regs[0])
 
 /* the machine, through state_io: CPU registers, pending interrupts, bus, VDP */
+static int state_version = 2;        /* of the state being read: 1 has no sound */
 static void machine_io(int saving)
 {
     unsigned regs[NREGS];
@@ -93,6 +94,8 @@ static void machine_io(int saving)
     state_io(NULL, irq, sizeof irq, saving);
     bus_state_io(NULL, saving);
     vdp_state_io(NULL, saving);
+    if (saving || state_version >= 2) sound_state_io(NULL, saving);
+    else { sound_reset(); sound_set_reset(0); }         /* an old state: restart the driver */
     if (!saving && !state_failed) {
         for (int i = 0; i < NREGS; i++) m68k_set_reg(cpu_regs[i], regs[i]);
         vint_pending = irq[0]; hint_pending = irq[1];
@@ -107,7 +110,9 @@ static int state_file(const char *path, int *frame, int saving)
     st_file = f; state_failed = 0;
     char magic[8]; memcpy(magic, STATE_MAGIC, 8);
     state_io(f, magic, 8, saving);
-    if (!saving && memcmp(magic, STATE_MAGIC, 8)) { fprintf(stderr, "%s: not a save state\n", path); fclose(f); st_file = NULL; return -1; }
+    state_version = 2;
+    if (!saving && !memcmp(magic, "WBMWST01", 8)) state_version = 1;
+    else if (!saving && memcmp(magic, STATE_MAGIC, 8)) { fprintf(stderr, "%s: not a save state\n", path); fclose(f); st_file = NULL; return -1; }
     state_io(f, frame, sizeof *frame, saving);
     machine_io(saving);
     fclose(f); st_file = NULL;
@@ -118,7 +123,7 @@ static int state_file(const char *path, int *frame, int saving)
 /* in-memory snapshots, for the shadow check: the whole machine, restored exactly */
 const uint8_t *md_snapshot(size_t *n)
 {
-    st_file = NULL; st_pos = 0; state_failed = 0;
+    st_file = NULL; st_pos = 0; state_failed = 0; state_version = 2;
     machine_io(1);
     *n = st_pos;
     return st_mem;
@@ -127,7 +132,7 @@ const uint8_t *md_snapshot(size_t *n)
 void md_restore(const uint8_t *buf, size_t n)
 {
     uint8_t *keep = st_mem; size_t keep_cap = st_cap;
-    st_mem = (uint8_t *)buf; st_cap = n; st_pos = 0; state_failed = 0; st_file = NULL;
+    st_mem = (uint8_t *)buf; st_cap = n; st_pos = 0; state_failed = 0; st_file = NULL; state_version = 2;
     machine_io(0);
     st_mem = keep; st_cap = keep_cap;
 }
@@ -160,5 +165,6 @@ void md_run_frame(void)
                 if (vdp_hint_enabled()) { hint_pending = 1; update_irq(); }
             }
         } else hcount = vdp_hint_counter_reload();
+        sound_run_line(line == ACTIVE_LINES);         /* the Z80 is interrupted at VBlank */
     }
 }

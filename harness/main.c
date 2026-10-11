@@ -56,7 +56,7 @@ int main(int argc, char **argv)
 {
     const char *rom_path = NULL, *out = ".", *input = NULL, *save_path = NULL, *load_path = NULL;
     int save_at = -1, first = 0, port = PORT_OFF;
-    const char *fuzz_name = NULL, *call_name = NULL; long fuzz_count = 0;
+    const char *fuzz_name = NULL, *call_name = NULL, *wav_path = NULL; long fuzz_count = 0;
     int frames = 600, png_every = 0, ram_every = 0, vdp_every = 0, quiet = 0;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atoi(argv[++i]);
@@ -74,6 +74,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--coverage") && i + 1 < argc) hybrid_coverage(argv[++i]);
         else if (!strcmp(argv[i], "--fuzz") && i + 2 < argc) { fuzz_name = argv[++i]; fuzz_count = atol(argv[++i]); }
         else if (!strcmp(argv[i], "--quiet")) quiet = 1;
+        else if (!strcmp(argv[i], "--wav") && i + 1 < argc) wav_path = argv[++i];
         else if (!strcmp(argv[i], "--call") && i + 1 < argc) call_name = argv[++i];
         else rom_path = argv[i];
     }
@@ -83,12 +84,14 @@ int main(int argc, char **argv)
     md_power_on();
     if (load_path && md_load_state(load_path, &first)) return 1;
     hybrid_init(port);
+    if (wav_path && wav_open(wav_path, SOUND_RATE)) return 1;
     if (call_name && hybrid_call(call_name)) return 1;
 
     char path[1024];
     for (int fr = first + 1; fr <= frames; fr++) {
         pad_buttons = buttons_at(fr); md_trace = fr == trace_frame;
         md_run_frame();
+        { static int16_t snd[4096 * 2]; int n = sound_take(snd, 4096); if (wav_path) wav_write(snd, n); }
         if (fr == save_at && md_save_state(save_path, fr)) return 1;
         if (png_every && fr % png_every == 0) {
             snprintf(path, sizeof path, "%s/frame_%05d.png", out, fr);
@@ -113,6 +116,7 @@ int main(int argc, char **argv)
             fprintf(stderr, "frame %d  pc %06X  frame counter %08X\n", fr, m68k_get_reg(NULL, M68K_REG_PC),
                     ram[0x8002] << 24 | ram[0x8003] << 16 | ram[0x8004] << 8 | ram[0x8005]);
     }
+    wav_close();
     int fuzz_bad = fuzz_name ? hybrid_fuzz(fuzz_name, fuzz_count) : 0;
     yield_survey_report(); hybrid_report();
     return fuzz_bad ? 1 : 0;

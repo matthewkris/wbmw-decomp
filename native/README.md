@@ -3,7 +3,7 @@
 `wbmw` runs Wonder Boy in Monster World as C, with no 68000 emulator: every instruction of the
 game is translated (`tools/m68k2c.py` with `analysis/native.json`, into `work/gen_native`) or
 hand-ported (`port/`). `wbmw.c` is the host around it: the memory map, save EEPROM, controller and
-VDP come from the harness (`harness/bus.c`, `harness/vdp.c`). There is no sound yet. The ROM is
+VDP come from the harness (`harness/bus.c`, `harness/vdp.c`). Sound is the harness's too (`harness/sound.c`: the Z80 running the game's driver, ymfm's YM2612, an SN76489). The ROM is
 still needed at run time, for the game's data (graphics, maps, text).
 
 ## Build
@@ -16,7 +16,7 @@ This makes `work/native/wbmw.exe` (and copies `SDL2.dll` next to it).
 
 ## Run
 
-    work/native/wbmw ROM [--scale N] [--save FILE] [--fullscreen] [--integer-scale] [--fps]
+    work/native/wbmw ROM [--scale N] [--save FILE] [--fullscreen] [--integer-scale] [--fps] [--mute]
 
 plays in a window: arrows, Z = A, X = B, C = C, Enter = Start, Esc quits; a controller works too.
 The window is sized for the game's 256-pixel width at the largest scale up to 3 that fits the
@@ -31,9 +31,10 @@ The save EEPROM is read from FILE at start and written at exit (default `wbmw.sa
   window title always shows the rate. The game itself always runs 60 frames a second of game
   time; the display tells whether the PC keeps up.
 
-    work/native/wbmw ROM --frames N [--png-every K] [--out DIR] [--input FILE]
+    work/native/wbmw ROM --frames N [--png-every K] [--out DIR] [--input FILE] [--wav FILE]
 
-runs headless for N frames, writing `DIR/frame_NNNNN.png` every K frames, with the harness's
+runs headless for N frames, writing `DIR/frame_NNNNN.png` every K frames (and the sound to a WAV
+file with `--wav`), with the harness's
 input script format, for comparison with `work/harness/harness`.
 
 ## How time works
