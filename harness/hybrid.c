@@ -1004,6 +1004,27 @@ int hybrid_fuzz(const char *name, long count)
                 for (uint32_t e = 0xE0; e < 0x100; e += 4) ram[0xC000 + e] |= 0x80;   /* all busy */
             m68k_set_reg(M68K_REG_A4, (rnd() % 64) * 4);
         }
+        static const char *maths[] = {"Cosine", "Sine", "VelocityAt", "VelocityAtCoarse", "Direction16To",
+            "Direction16", "DirectionTo", "Direction", "SetVelocityAt", "VelocityTo", "SetVelocityToCoarse",
+            "SetVelocityAtCoarse", "VelocityToCoarse", "Distance"};
+        for (int m = 0; m < 14; m++) if (!strcmp(name, maths[m])) {
+            /* angles anywhere, often on a quarter or eighth; speeds of every size; two
+             * entities apart by any offset, often level, straight above or at 45 degrees */
+            static const uint16_t edges[] = {0, 0x4000, 0x8000, 0xC000, 0x2000, 0x3FFF, 0x4001, 0x7FFF, 0xFFFF, 0x0400};
+            m68k_set_reg(M68K_REG_D3, (rnd() << 16) | (rnd() % 3 ? rnd() & 0xFFFF : edges[rnd() % 10]));
+            m68k_set_reg(M68K_REG_D4, (rnd() << 16) | (rnd() % 3 ? rnd() % 0x800 : rnd() & 0xFFFF));
+            uint32_t a4 = (rnd() % 64) * 4, a2 = (rnd() % 64) * 4;
+            m68k_set_reg(M68K_REG_A4, a4); m68k_set_reg(M68K_REG_A2, a2);
+            int32_t dx = (int32_t)(rnd() % 4 ? rnd() % 512 : rnd() % 8) * (rnd() % 2 ? 1 : -1);
+            int32_t dy = rnd() % 4 == 0 ? dx * (rnd() % 2 ? 1 : -1) : rnd() % 5 == 0 ? 0 : (int32_t)(rnd() % 512) * (rnd() % 2 ? 1 : -1);
+            if (rnd() % 8 == 0) dx = 0;
+            if (rnd() % 16 == 0) { dx = (int32_t)(rnd() & 0xFFFF); dy = (int32_t)(rnd() & 0xFFFF); }   /* anything */
+            uint32_t x = rnd() & 0xFFFF, y = rnd() & 0xFFFF;
+            put_word(0xC800 + a4, x); put_word(0xC900 + a4, y);
+            if (a2 != a4) { put_word(0xC800 + a2, x + (uint32_t)dx); put_word(0xC900 + a2, y + (uint32_t)dy); }
+            m68k_set_reg(M68K_REG_D0, rnd() % 4 ? (rnd() << 16) | (uint32_t)(dx & 0xFFFF) : rnd());
+            m68k_set_reg(M68K_REG_D1, rnd() % 4 ? (rnd() << 16) | (uint32_t)(dy & 0xFFFF) : rnd());
+        }
         if (!strcmp(name, "RunItems")) {
             /* the item slots: kinds of the table at every step, begun or not, near the player,
              * timers near their ends; the attacker ($9F30) and its spark state */
