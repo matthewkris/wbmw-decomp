@@ -223,6 +223,8 @@ PATH, so prepend both before running tools. Other scripts:
 
 - `tools/header.py ROM` prints vectors and header fields and checks the checksum.
 - `tools/dis.py ROM ADDR [COUNT]` does a quick linear disassembly from a hex address.
+- `tools/checks/`: the acceptance checks (standard runs, fuzzing, spell scenes, coverage by
+  address) and their button scripts; see its README.
 - `tools/gaps.py ROM work/map.json [MINSIZE]` lists untraced ranges with a rough code-or-data
   score (how much decodes, how many `rts`).
 
@@ -262,3 +264,15 @@ The owner supplied the ROM and will be the one playing builds. You can run thing
 inspect rendered frames as images, but only they can judge how the game feels and sounds, so give
 them something runnable as early as the harness allows and ask for specific checks. Keep reports
 short and lead with what changed and what you need from them.
+
+How the owner works:
+
+- Each step on its own branch; push and merge only when the owner says so, then delete the
+  branch (locally and on the remote).
+- When continuing a multi-part rewrite, show a checklist of the pieces, each with what it does
+  and whether it is done, next or not started, prominently in the reply (not buried mid-turn).
+- The owner tests by playing: `work/test/` holds copies of `play.exe`, `wbmw.exe` and
+  `SDL2.dll` so they can play while builds run (copy the new builds there). They save states
+  with F2 and keep them in `work/` (not committed: they hold ROM data).
+- The owner wants this process reused for other games (`docs/PROCESS.md`).
+- Feature requests go in `docs/IDEAS.md`.
