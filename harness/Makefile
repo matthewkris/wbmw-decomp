@@ -5,8 +5,11 @@ CFLAGS ?= -O2 -Wall -Wno-unused-function -Wno-unused-label -Wno-unused-variable
 MUSASHI = ../third_party/musashi
 OUT = ../work/harness
 CORE = core.c bus.c vdp.c png.c wav.c framelog.c sound.c hybrid.c $(PORT) $(GENO) $(YMO)
-GEN = ../work/gen/gen.c ../work/gen/gen_registry.c
-GENO = $(OUT)/gen.o $(OUT)/gen_registry.o
+# the translated routines come in parts (tools/m68k2c.py "parts"), compiled in parallel (make -j)
+GEN_PARTS = 00 01 02 03 04 05 06 07 08 09 10 11
+GEN_STAMP = ../work/gen/.stamp
+GEN = $(patsubst %,../work/gen/gen_%.c,$(GEN_PARTS)) ../work/gen/gen_registry.c ../work/gen/gen.h
+GENO = $(patsubst %,$(OUT)/gen_%.o,$(GEN_PARTS)) $(OUT)/gen_registry.o
 PYTHON ?= python
 ROM ?= ../rom/Wonder Boy in Monster World (USA, Europe).md
 PORT = ../port/kernel.c ../port/entity.c ../port/anim.c ../port/gfx.c ../port/sprites.c ../port/hitbox.c ../port/map.c ../port/movement.c ../port/player.c ../port/magic.c ../port/hud.c ../port/effects.c ../port/items.c ../port/maths.c ../port/enemies.c ../port/spawns.c ../port/objects.c ../port/people.c ../port/handlers.c ../port/actions.c ../port/world.c ../port/coro.c ../port/task.c ../port/registry.c
@@ -38,13 +41,15 @@ $(OUT)/softfloat.o: $(MUSASHI)/softfloat/softfloat.c
 	$(CC) $(CFLAGS) -w -I$(MUSASHI) -c $< -o $@
 
 # the translated routines (tools/m68k2c.py): roots, yield and exits from analysis/translate.json; needs work/map.json
-$(GEN): ../tools/m68k2c.py ../analysis/translate.json $(PORT) ../work/map.json
+# (one stamp, so that a parallel make runs it once; files whose text is the same keep their dates)
+$(GEN_STAMP): ../tools/m68k2c.py ../analysis/translate.json $(PORT) ../work/map.json
 	$(PYTHON) -I ../tools/m68k2c.py "$(ROM)" ../work/map.json ../work/gen ../analysis/translate.json
+	touch $@
+$(GEN): $(GEN_STAMP) ;
 
-# compiled once for both programs: gen.c is megabytes of C
-$(OUT)/gen.o: ../work/gen/gen.c ../port/m68k_rt.h ../port/port.h
-	$(CC) $(CFLAGS) -I../port -c $< -o $@
-$(OUT)/gen_registry.o: ../work/gen/gen_registry.c ../port/m68k_rt.h ../port/port.h
+# compiled once for both programs: megabytes of C, in parts
+$(OUT)/gen_%.o: ../work/gen/gen_%.c ../work/gen/gen.h ../port/m68k_rt.h ../port/port.h
+	@mkdir -p $(OUT)
 	$(CC) $(CFLAGS) -I../port -c $< -o $@
 
 # the YM2612: ymfm (C++, third_party/ymfm) behind a C interface

@@ -6,7 +6,7 @@
 #
 #   tools/accept.sh OUTDIR NAME [NAME ...]
 #
-# Environment: PYTHON (python3), LIMIT (seconds per harness run, 1200), CASES (fuzz cases per routine and state, 5000), FUZZ_STATES
+# Environment: PYTHON (python3), LIMIT (seconds per harness run, 1200), JOBS (fuzz runs at once, 12), CASES (fuzz cases per routine and state, 5000), FUZZ_STATES
 # (state names in work/, "castle platform after-boss2 boss2 thunder"), REPLACE_STATES (states
 # for replace mode, "boss2 thunder door-crash castle"), ROM. Each state's random input is
 # work/runs/inputs/STATE.txt, made once (3,000 frames of random buttons) and kept. Run from the
@@ -16,6 +16,7 @@ OUT="$1"; shift
 NAMES="$*"
 PY="${PYTHON:-python3}"
 CASES="${CASES:-5000}"
+JOBS="${JOBS:-12}"                # fuzz runs at once: the cores
 FUZZ_STATES="${FUZZ_STATES:-castle platform after-boss2 boss2 thunder}"
 REPLACE_STATES="${REPLACE_STATES:-boss2 thunder door-crash castle}"
 ROM="${ROM:-rom/Wonder Boy in Monster World (USA, Europe).md}"
@@ -37,14 +38,11 @@ while f < b + 3000:
 }
 
 echo "== fuzz ($CASES cases per routine and state: $FUZZ_STATES)"
-for s in $FUZZ_STATES; do
-    f=$(frame "$s")
-    for n in $NAMES; do
-        $T "$H" "$ROM" --load-state "work/$s.state" --frames $((f + 1)) --port shadow --fuzz "$n" "$CASES" \
-            --coverage "$OUT/fcov_${s}_$n.txt" --quiet > "$OUT/fz_${s}_$n.log" 2>&1 &
-    done
-    wait
-done
+export H ROM T OUT CASES                # every state and routine at once, JOBS at a time
+for s in $FUZZ_STATES; do for n in $NAMES; do echo "$s $n"; done; done |
+    xargs -P "$JOBS" -n 2 sh -c 'f=$(od -A n -t u4 -j 8 -N 4 "work/$0.state" | tr -d " ")
+        $T "$H" "$ROM" --load-state "work/$0.state" --frames $((f + 1)) --port shadow --fuzz "$1" "$CASES" \
+            --coverage "$OUT/fcov_$0_$1.txt" --quiet > "$OUT/fz_$0_$1.log" 2>&1'
 grep -h "^fuzz" "$OUT"/fz_*.log | awk '{c += $3; m += $6} END {print "cases", c, "mismatches", m}'
 
 echo "== shadow runs (the standard runs and every state)"
