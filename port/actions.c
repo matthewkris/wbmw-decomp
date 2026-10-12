@@ -291,7 +291,7 @@
 #define MOUNT_PLACE       0x18332u  /* the rider on its mount, by the mount's animation ($18372) */
 #define MOUNT_TOUCH       0x1839Cu  /* the mount takes its health; the player against it */
 #define MOUNT_GROUNDED    0x183BAu  /* a2 the mount; z: on the ground (COLL & 10 is 2) */
-#define SHAKE             0x183D4u  /* the screen shaken ($9738), sound 57 */
+#define SHAKE_SCREEN      0x183D4u  /* the screen shaken ($9738), sound 57 */
 #define APPLY_VEL_X       0xAB8u
 
 void EnemySetState(Cpu *);           /* enemies.c */
@@ -3821,7 +3821,7 @@ static void a183E0(Ent e)
         if (!(c->ccr & CC_Z)) return;
         e = c->a[4];
         wr8(TIMER2(e), (uint8_t)(rd8(TIMER2(e)) + 1));
-        call(SHAKE);
+        call(SHAKE_SCREEN);
         return;
     }
     c->d[0] = set_b(c->d[0], c->d[0] - 1);
@@ -3984,7 +3984,7 @@ static void a185EC(Ent e)
     if (rd8(TIMER(e))) {
         call(MOUNT_GROUNDED);
         if (!(c->ccr & CC_Z)) return;
-        call(SHAKE);
+        call(SHAKE_SCREEN);
         ride_settle(1);
         return;
     }
