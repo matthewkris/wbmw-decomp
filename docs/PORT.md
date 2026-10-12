@@ -1254,6 +1254,32 @@ Results: 0 mismatches over the standard runs and every owner state (422,373 chec
 125,000 fuzz cases from five states, 0 mismatches, every instruction covered. Replace mode plays
 the new-game script and four states. 122 of the 135 actions are C.
 
+#### The monsters' actions, batch 25: a hoverer and a creature that runs round the room ($19200-$19489, 2026-10-12)
+
+Three actions. `$19200` hovers about a height (`$1032`, or `$1070` when it picks high, one time
+in 16), drifting at the player unless within `$20`, and on frames where the counter `& $4F` is 0
+drops a young one (kind `$80A`, `$12650`). `$192C8` shows its DELAY animation and, when it ends,
+goes on to DELAY's second byte. `$192EC` falls, then runs round the inside of the room: TIMER is
+its heading (0-7: right, down, left, up, the second four at double speed; `$19434` its velocity,
+`$19468` its facing and animation), turning at each wall (`$193CA`) or, after WORD_31FE frames,
+back the way it came (`$1942C`) at normal speed; VAR counts its turns on floor and ceiling, and at
+256 it begins over. Its `bpl` after `EnemyCheckHit` is always taken (`EnemyCheckHit` leaves past
+the action when hit), so those three instructions are in `analysis/coverage_skip.txt`.
+
+**The self-test no longer stops early.** It corrupted the stack pointer after the C version ran.
+For an action that goes on to another state, the code carrying on then never came back, so the
+check never closed: earlier batches noted these early stops, and `$192C8` stopped at its first
+case. Now, when the C version goes on elsewhere, the self-test corrupts a byte of RAM above the
+stack (`$FF1000`) through the bus instead, and such actions report 100 in 100 like the others.
+
+The fuzz puts kind `$80A` in the room's list, gives `$19200` its frames to drop on and a full
+entity table, and gives `$192EC` its phase, heading, the room's edges and its 256th turn.
+
+Results: 0 mismatches over the standard runs and every owner state (422,373 checked calls);
+75,000 fuzz cases from five states, 0 mismatches, every instruction covered. Self-test caught
+100 in 100 for each. Replace mode plays the new-game script and four states. 125 of the 135
+actions are C.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

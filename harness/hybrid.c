@@ -293,7 +293,10 @@ static void run_port(int idx)
     rt_steps = 0;
     c.ret = 0;
     R(idx)->fn(&c);
-    if (idx == break_idx) c.a[7] ^= 2;              /* the stack pointer: compared in every check */
+    if (idx == break_idx) {                         /* the stack pointer: compared in every check */
+        if (!pops(idx) && c.ret) wr8(0xFFFF1000u, (uint8_t)(rd8(0xFFFF1000u) ^ 0xA5));   /* but code going on elsewhere would never come back with a */
+        else c.a[7] ^= 2;                           /* bad one: a byte of RAM above the stack ($FF1000), then */
+    }
     if (idx == watch_break_idx)                     /* every register outside the contract */
         for (int i = 0; i < 7; i++) {
             if (!(R(idx)->contract >> i & 1)) c.d[i] ^= 0x5A5A5A5Au;
@@ -1384,6 +1387,24 @@ int hybrid_fuzz(const char *name, long count)
                     if (!strcmp(name, "Act185EC") && rnd() % 2) ram[0xD800 + e] = 0;
                     if (!strcmp(name, "Act185EC") && rnd() % 2) ram[0xCF00 + q] = (uint8_t)(rnd() % 2 ? 2 : rnd());   /* the mount's floor */
                     if (!strcmp(name, "Act17E4C") && rnd() % 2) put_word(0xCA00 + e, 0);   /* at rest */
+                }
+                if (!strcmp(name, "Act19200")) {                                  /* its young ($80A) in the room's list */
+                    uint32_t n = (uint32_t)(ram[0xA142] << 8 | ram[0xA143]), i;
+                    for (i = 0; i < n && i < 8; i++) if ((ram[0xA122 + 4 * i] << 8 | ram[0xA123 + 4 * i]) == 0x80A) break;
+                    if (i == n || i == 8) { i = n < 8 ? n : 7; put_word(0xA122 + 4 * i, 0x80A); if (n < 8) put_word(0xA142, n + 1); }
+                    ram[0xCE01 + e] = (uint8_t)(rnd() % 2 ? 0 : 0xFF);            /* high or not */
+                    if (rnd() % 2) ram[0xD801 + e] = (uint8_t)(1 + rnd() % 2);
+                    if (rnd() % 2) put_word(0x965A, rnd() & ~79u);                /* a frame to drop on */
+                    if (rnd() % 3 == 0)                                           /* no room */
+                        for (uint32_t k3 = 0, b = (uint32_t)(ram[0xA11A] << 8 | ram[0xA11B]); k3 < 16; k3++)
+                            ram[(0xC000 + b + 4 * k3) & 0xFFFF] |= 0x80;
+                }
+                if (!strcmp(name, "Act192EC")) {                                  /* running round: heading, edges */
+                    ram[0xCE01 + e] = (uint8_t)(rnd() % 2);
+                    ram[0xD800 + e] = (uint8_t)(rnd() % 8);
+                    if (rnd() % 2) put_word(0xCE02 + e, 1 + rnd() % 2);
+                    if (rnd() % 2) ram[0xD802 + e] = 0xFF;                       /* its 256th turn */
+                    if (rnd() % 2) { put_word(0xC800 + e, 0x1080 + rnd() % 0x100); put_word(0xC900 + e, 0x1000 + rnd() % 0x90); }
                 }
                 if (!strcmp(name, "Act1916A")) {                                  /* falling, lying, rising */
                     ram[0xCE01 + e] = (uint8_t)(rnd() % 3);
