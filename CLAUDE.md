@@ -139,9 +139,9 @@ F2 overwrites the same file each time.
    and nine more, the townspeople at $163AA-$168E7 (`port/people.c`, batch 4), and eight small
    ones and the last four (`port/handlers.c`, batches 5 and 6): all 35 handlers are C. Next the
    monsters' action routines (135 entries at $140F2-$1A3E4, about 7,000 instructions), small
-   to large, in batches of related routines: batches 7-18 (`port/actions.c`, appearing,
+   to large, in batches of related routines: batches 7-19 (`port/actions.c`, appearing,
    defeated, hurt, walking, choosing, patrolling, jumping, attacking, swimming, flying,
-   Gragg & Glagg, the water creatures, the chain, bouncers and a dodger, $140F2-$1766B: 93 of the 135) are done. `tools/accept.sh OUTDIR NAMES...` runs the whole acceptance. Then the rest of the text system (status screen, shops,
+   Gragg & Glagg, the water creatures, the chain, bouncers, a dodger, a boss and its brood, $140F2-$179A9: 99 of the 135) are done. `tools/accept.sh OUTDIR NAMES...` runs the whole acceptance. Then the rest of the text system (status screen, shops,
    dialogue, $7600-$8900). The angle maths ($EE2-$1278, `port/maths.c`, exact) and the HUD
    bar (magic name and uses, meter, slot icons, gold: `port/hud.c`) are C too. The items and effects each frame ($10A1E, `port/items.c`), the big items
    ($B42A) and exact kernel helpers (ClearEntity, Freeze/UnfreezeEntities, FindFreeEffect,

@@ -268,6 +268,13 @@
 #define BOUNCE            0x17420u  /* off walls (COLL): VEL reversed */
 #define AIM_LEVEL         0x174B0u  /* d3: the angle to a2, kept within an eighth of level */
 #define SHOT_AT           0x18256u  /* an enemy d0 at the offsets at a0 (by its facing); a2, mi: none */
+#define QUEUE_SOUND_FF    0x364u    /* sound $FF: stop */
+#define VELOCITY_TOWARD   0x44BCu   /* VEL_X: (a2's x - its x) * 256 / d1 */
+#define SPAWN_KIND        0x12650u  /* a2 made kind d1 at d6, d7, spawn point d0 */
+#define BOSS_MARK         0xFFFF9748u   /* word: the room's boss; byte $FF once beaten */
+#define SOUND_MODE        0xFFFF9668u   /* byte: $12 keeps the music */
+#define BODY_W(e)     ((e) - 0x3500)   /* byte: its body's half width */
+#define BODY_H(e)     ((e) - 0x34FF)   /* byte: its body's half height */
 #define APPLY_VEL_X       0xAB8u
 
 void EnemySetState(Cpu *);           /* enemies.c */
@@ -3207,6 +3214,218 @@ static void a1759A(Ent e)
     dodge(e);
 }
 
+/* ---- a boss and its brood (batch 19) ---- */
+
+/* $17704: touched from behind (TOUCH bit 2): TIMER 1 and state 5, leaving past the action */
+static int touched_back(Ent e)
+{
+    if (!(rd8(TOUCH(e)) & 4)) return 0;
+    wr8(TIMER(e), 1);
+    c->d[0] = 5;
+    new_state(0);
+    return 1;
+}
+
+/* the boss rises by its height, facing the player; a frame later it marks itself the room's boss
+ * and goes to state 3 */
+static void a1771C(Ent e)
+{
+    if (!begins(e)) {
+        wrw(BOSS_MARK, (uint16_t)e);
+        c->d[0] = 3;
+        new_state(0);
+        return;
+    }
+    wr8(ANIM_RATE(e), 0x0E);
+    call_d0(SET_ANIM_NOW, 0);
+    c->d[0] = rd8(HALF_H(e));
+    wrw(Y(e), (uint16_t)(rdw(Y(e)) - c->d[0]));
+    set8(ALIVE(e), 0x40);
+    call(FACE_PLAYER);
+}
+
+/* the boss beaten: the music stopped, the room frozen, its tiles shown ($177C4); 20 puffs, 4
+ * frames apart, then 16 frames on, it is gone (sound 19) */
+static void a1774E(Ent e)
+{
+    if (begins(e)) {
+        if (rd8(SOUND_MODE) != 0x12) call(QUEUE_SOUND_FF);
+        call(FREEZE_ENEMIES);
+        call(START_BLINK);
+        wrw(TIMER(e), 0x1406);
+        set_d0w(rdw(X(e)));
+        c->d[1] = set_w(c->d[1], rdw(Y(e)));
+        c->d[2] = 32; c->d[3] = 16;
+        c->a[0] = 0x177C4u;
+        call(SHOW_TILES);
+        call_d0(SET_ANIM, 2);
+        return;
+    }
+    wr8(TIMER2(e), (uint8_t)(rd8(TIMER2(e)) - 1));
+    if (rd8(TIMER2(e))) return;
+    c->d[0] = set_b(c->d[0], rd8(TIMER(e)));
+    if (!(c->d[0] & 0xFF)) {
+        wr8(ALIVE(e), 0);
+        wr8(BOSS_MARK, 0xFF);
+        if (rd8(SOUND_MODE) != 0x12) call_d0(QUEUE_SOUND, 19);
+        wrw(Y(e), (uint16_t)(rdw(Y(e)) + 0x10));
+        call(ENEMY_DEFEATED);
+        return;
+    }
+    c->d[4] = rd8(BODY_W(e));
+    c->d[5] = rd8(BODY_H(e));
+    call(PUFF_B);
+    c->d[0] = 4;
+    wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+    if (!rd8(TIMER(e))) c->d[0] = 16;
+    wr8(TIMER2(e), (uint8_t)c->d[0]);
+}
+
+/* stands a random while on the ground, then walks (4) or, one time in two, leaps (5) */
+static void a177D6(Ent e)
+{
+    if (begins(e)) {
+        wrw(VEL_X(e), 0);
+        call_d0(SET_ANIM, 6);
+        call(RANDOM_DELAY);
+        return;
+    }
+    call(CONTACT_AND_MOVE);
+    if (hit()) return;
+    if (touched_back(e)) return;
+    call(CHECK_GROUNDED);
+    if (!(c->ccr & CC_Z)) return;
+    if (rd8(TIMER2(e))) {
+        wr8(TIMER2(e), (uint8_t)(rd8(TIMER2(e)) - 1));
+        if (rd8(TIMER2(e))) return;
+    }
+    call(RANDOM);
+    c->d[1] = 4;
+    int odd = c->d[0] & 1;
+    c->d[0] = set_b(c->d[0], (c->d[0] & 0xFF) >> 1);
+    if (odd) { wr8(TIMER(e), 0); c->d[1] = 5; }
+    set_d0w(c->d[1]);
+    new_state(0);
+}
+
+/* walks a random while, turning at walls, then leaps (5) */
+static void a17822(Ent e)
+{
+    if (begins(e)) {
+        call_d0(SET_ANIM, 8);
+        call(WALK_FORWARD);
+        call(RANDOM_DELAY);
+        return;
+    }
+    call(CONTACT_AND_MOVE);
+    if (hit()) return;
+    call(TURN_AT_WALL);
+    if (touched_back(e)) return;
+    call(CHECK_GROUNDED);
+    if (!(c->ccr & CC_Z)) return;
+    wr8(TIMER2(e), (uint8_t)(rd8(TIMER2(e)) - 1));
+    if (rd8(TIMER2(e))) return;
+    wr8(TIMER(e), 0);
+    c->d[0] = 5;
+    new_state(0);
+}
+
+/* leaps: at the target (or, TIMER bit 0, back from the player), turning at walls; landed, a
+ * random next state ($178C8) */
+static void a17860(Ent e)
+{
+    if (begins(e)) {
+        call_d0(SET_ANIM, 10);
+        uint8_t t = rd8(TIMER(e));
+        wr8(TIMER(e), t & 0xFE);
+        if (!(t & 1)) {
+            c->a[2] = (uint32_t)(int32_t)(int16_t)rdw(TARGET_W);
+            c->d[1] = 48;
+            call(VELOCITY_TOWARD);
+        } else {
+            call(FACE_PLAYER);
+            set_d0w(0xFE00);
+            call(SET_VEL_X_FACING);
+        }
+        set_d0w(0xFA00);
+        call(SET_VEL_Y);
+        return;
+    }
+    call(CONTACT_AND_MOVE);
+    if (hit()) return;
+    c->d[0] = (uint8_t)((65 & rd8(COLL(e))) - 1);
+    if (!c->d[0]) {
+        wrw(VEL_X(e), (uint16_t)-rdw(VEL_X(e)));
+        call(FACE_VELOCITY);
+    }
+    call(CHECK_GROUNDED);
+    if (!(c->ccr & CC_Z)) return;
+    call(RANDOM);
+    set_d0w(c->d[0] & 7);
+    c->d[0] = set_b(c->d[0], rd8(0x178C8u + (c->d[0] & 7)));
+    new_state(0);
+}
+
+/* with five of the room's enemies about, leaps (5); else it stops, facing the player, and lays
+ * one young (kind 8, or 6, from $1793C) when its animation marks it; 30 frames, then leaps back */
+static void a178D0(Ent e)
+{
+    if (begins(e)) {
+        uint32_t a0 = (uint32_t)(int32_t)(int16_t)rdw(0xFFFFA11Au);
+        c->d[0] = 15; c->d[1] = 4;
+        for (;;) {
+            if (rd8(ALIVE(a0)) & 0x80) {
+                c->d[1] = set_w(c->d[1], c->d[1] - 1);
+                if ((c->d[1] & 0xFFFF) == 0xFFFF) { c->a[0] = a0; c->d[0] = 5; new_state(0); return; }
+            }
+            a0 += 4;
+            c->d[0] = set_w(c->d[0], c->d[0] - 1);
+            if ((c->d[0] & 0xFFFF) == 0xFFFF) break;
+        }
+        c->a[0] = a0;
+        call_d0(SET_ANIM, 12);
+        wr8(TIMER2(e), 0x1E);
+        call(STOP);
+        wr8(VAR(e), 0);
+        call(FACE_PLAYER);
+        return;
+    }
+    call(CONTACT_AND_MOVE);
+    if (hit()) return;
+    if (!rd8(VAR(e)) && rd8(FRAME_SEEN(e))) {
+        wr8(VAR(e), (uint8_t)(rd8(VAR(e)) + 1));
+        call(FIND_FREE_ENTITY);
+        if (!(c->ccr & CC_N)) {
+            call(RANDOM);
+            set_d0w(c->d[0] & 0xE);
+            c->d[1] = set_w(c->d[1], rdw(0x1793Cu + (c->d[0] & 0xE)));
+            c->d[0] = 0xFFFFFFFFu;
+            c->d[6] = set_w(c->d[6], rdw(X(e)));
+            c->d[7] = set_w(c->d[7], (uint16_t)(rdw(Y(e)) - 8));
+            call(SPAWN_KIND);
+            Ent s = c->a[2];                        /* exg a2,a4: the young one's turn */
+            c->a[4] = s; c->a[2] = e;
+            wr8(STEP(s), 5);
+            call_d0(SET_ANIM_NOW, 0);
+            c->d[1] = set_w(c->d[1], rdw(SPEED_X(s)));
+            c->d[0] = 8 & rd8(ATTR(e));
+            if (c->d[0]) c->d[1] = set_w(c->d[1], (uint16_t)-c->d[1]);
+            set8(ATTR(s), (uint8_t)c->d[0]);
+            wrw(VEL_X(s), (uint16_t)c->d[1]);
+            c->d[0] = 3 | rd8(MOVE_FLAGS(s));       /* its flags, with the parent's bit 7 */
+            c->d[1] = set_b(c->d[1], (uint8_t)(rd8(MOVE_FLAGS(e)) << 1));
+            c->d[0] = set_b(c->d[0], (uint8_t)((rd8(MOVE_FLAGS(e)) & 0x80) | (c->d[0] & 0x7F)));
+            wr8(MOVE_FLAGS(s), (uint8_t)c->d[0]);
+            c->a[4] = e; c->a[2] = s;
+        }
+    }
+    wr8(TIMER2(e), (uint8_t)(rd8(TIMER2(e)) - 1));
+    if (rd8(TIMER2(e))) return;
+    wr8(TIMER(e), 1);
+    c->d[0] = 5;
+    new_state(0);
+}
+
 /* the actions, registered by their addresses (registry.c). call_68k leaves its mark in ret: it
  * is cleared unless the action went on elsewhere */
 #define ACTION(addr) void Act##addr(Cpu *cpu) { c = cpu; went_on = 0; a##addr((Ent)c->a[4]); if (!went_on) c->ret = 0; }
@@ -3227,3 +3446,4 @@ ACTION(15A86) ACTION(15C9E) ACTION(15DD2) ACTION(15E54) ACTION(15EE6) ACTION(15F
 ACTION(16D70) ACTION(16ED0) ACTION(16F50) ACTION(16FF0)
 ACTION(17014) ACTION(1729A) ACTION(17310) ACTION(17362)
 ACTION(173AA) ACTION(1743C) ACTION(174E6) ACTION(17548) ACTION(17588) ACTION(1759A)
+ACTION(1771C) ACTION(1774E) ACTION(177D6) ACTION(17822) ACTION(17860) ACTION(178D0)
