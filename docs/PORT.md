@@ -928,6 +928,28 @@ mismatches, every instruction of the twenty-four covered. Self-test caught every
 returned (`$1436C` and `$14682` hand over to other actions, so their runs stop early). Replace
 mode plays the new-game script and four states.
 
+#### The monsters' actions, batch 10: choosing ($14822-$14C4F, 2026-10-12)
+
+Ten actions in `port/actions.c` that stand until their wait is over, then choose a step:
+`$14822`, `$14888` (with the shield, and its moves from its kind's stats: `$15A3A`, `$15A76`),
+`$1492A`, `$14974`, `$14AEA`/`$14AFA` (a range of their own in VAR), `$14B7E` (rows for water);
+`$149D0` walks back home first; `$14A82` turns to a player it faces close by; `$14C1A` waits
+for the player, then falls.
+
+* **`$42AA` leaves past the action too** (`addq.w #4,a7` at `$42C0`), unless the monster is on
+  the ground and its wait is over; the first search for such helpers started at `$4300` and
+  missed it. The whole library (`$3F00`-`$4A00`) leaves past its caller at `$42C0`, `$4378`,
+  `$43C4`, `$4432`, `$444E`, `$447C`, `$45A0`, `$45E0`, `$4632` and `$490C`. Its ground test is
+  `$4356`'s, whose flags on the ground are FrictionX's: the C reads the flags after the call.
+* **`$428C`** picks the step: a random 0-7 plus the row (d2) indexes a table of bytes, 0 stays,
+  negative goes on to the next state (`pick_step`).
+* **`$14B7E` tests its first frame the other way round** (`beq` after `bset`): it sets its
+  animation and wait on every frame but the first. The C does the same.
+
+Results: 0 mismatches over the standard runs and every owner state (420,931 checked calls);
+250,000 fuzz cases from five states, 0 mismatches, every instruction covered. Self-test caught
+100 in 100 for each. Replace mode plays the new-game script and four states.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
