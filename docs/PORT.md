@@ -1191,6 +1191,28 @@ it, but acceptance only fuzzes the batch it is given. The routine is now `SHAKE_
 and batch 21 pass again (275,000 fuzz cases, 0 mismatches), and `tools/accept.sh` reports any name
 `#define`d twice in one `port/` file among its problems.
 
+#### The monsters' actions, batch 22: the rider and its mount, on ($186D6-$18BB7, 2026-10-12)
+
+Four actions. `$186D6` walks the mount at the player a random while, until it is blocked
+(`$183C8`). `$18710` leaps the mount: away at `$200` when a state is pending or, three times in
+four, when the player is within `$40`; otherwise at the player, 8 times the distance up to `$300`;
+landed or blocked, a shake. `$187AC` turns both to the player, aims from the rider's muzzle
+(`$1890C`, level or down) with the angle held to its side (`$109C`, then `$FA8` for the shot's
+velocity at `$200`), and fires up to six shots of kind `$21A`, 4 frames apart, after `$20` frames.
+`$18ADE` sets up a party of four in one frame: a mount under the rider and two followers (kinds
++2 and +4, `$41AA`) chained through GOAL, each with its own pending state and delay; the rider
+rides at `Y_OFFSET` (-$36FD) above the mount (`$18A3E`).
+
+One slip the fuzz caught: `$18710` tests d1 again after calling `Random`, which leaves its own
+value in d1; the C now reads d1 after the call. The fuzz also gives `$187AC` its first shot and,
+one time in three, no free entity for a shot. `tools/quickfuzz.sh CASES NAMES...` fuzzes from
+one state and lists what the original never ran, a quick look before the full acceptance.
+
+Results: 0 mismatches over the standard runs and every owner state (422,373 checked calls);
+100,000 fuzz cases from five states, 0 mismatches, every instruction covered. Self-test caught
+100 in 100 for each. Replace mode plays the new-game script and four states. 113 of the 135
+actions are C.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
