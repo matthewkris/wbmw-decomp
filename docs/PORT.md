@@ -1135,6 +1135,31 @@ Results: 0 mismatches over the standard runs and every owner state (422,373 chec
 100 in 100 for each. Replace mode plays the new-game script and four states. 99 of the 135
 actions are C.
 
+#### The monsters' actions, batch 20: the two-part boss ($17A44-$17E87, 2026-10-12)
+
+Five actions of a boss in two entities, a head and a body, partners through MAKER (-$2CFE).
+`$17A44` makes the body and throws both in from $100 to the left (`$17AD2`); a phase byte steps
+through the body's two landings and the head's two (`$17B76`/`$17B7A`), then sets the room's
+walls (`$9C16`, `$9962`) and goes to state 3. `$17B8A` is the pair beaten: the head's tiles
+shown, two strips of the screen cleared at `$FF5200`, the body's tiles faded from VRAM a strip at
+a time (`$17C84`), the head broken up tile by tile (`$17C32`, `$182AA`) over `$80` frames.
+`$17D22` is the pair hurt, knocked from the sword at `$400` and slowing; `$17DC4` rocks the head
+on the body about its home, then picks a random state (`$17E44`); `$17E4C` carries it left,
+`$80` past home.
+
+The pair's helpers step a4 to the partner and back (`movea.w -$2CFE(a4),a4` twice), so the
+code after them works on whatever a4 then holds. The C reads `c->a[4]` again after each of them
+and does not assume the entity it began with. The fuzz gives these actions a partner that
+points back, an even phase (the phase indexes a jump table), and frames near the timers' ends
+and the carry's end. Reaching the carry's end caught a slip in the C: `rdw` reads a signed word,
+and `$17E4C` compared it with an unsigned one (`cmp.w` then `bcs`), so x at `$8000` and above
+ended the carry early. The other `rdw` comparisons in the actions are sign tests, as intended.
+
+Results: 0 mismatches over the standard runs and every owner state (422,373 checked calls);
+125,000 fuzz cases from five states, 0 mismatches, every instruction covered. Self-test caught
+100 in 100 for each. Replace mode plays the new-game script and four states. 104 of the 135
+actions are C.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
