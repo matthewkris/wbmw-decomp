@@ -685,7 +685,7 @@ int hybrid_fuzz(const char *name, long count)
         for (int i = 0; i < 8; i++) m68k_set_reg(M68K_REG_D0 + i, rnd() << 16 ^ rnd());
         m68k_set_reg(M68K_REG_A4, (rnd() & 63) * 4);
         m68k_set_reg(M68K_REG_SR, (m68k_get_reg(NULL, M68K_REG_SR) & ~0x1Fu) | (rnd() & 0x1F));
-        if (strncmp(name, "Obj", 3) && strncmp(name, "Ppl", 3))   /* these keep the state's entities (below) */
+        if (strncmp(name, "Obj", 3) && strncmp(name, "Ppl", 3) && strncmp(name, "Hnd", 3))   /* these keep the state's entities (below) */
             for (uint32_t a = 0xC000; a < 0xE000; a++) ram[a] = (uint8_t)rnd();
         for (uint32_t a = 0x8A52; a < 0x8A56; a++) ram[a] = (uint8_t)(rnd() & (k & 1 ? 0xFF : 0));  /* seed 0 half the time */
         if (!strcmp(name, "SetGfxSlots")) {         /* a random valid slot list in scratch RAM */
@@ -1199,7 +1199,7 @@ int hybrid_fuzz(const char *name, long count)
             uint32_t at = items[rnd() % (unsigned)ni];
             for (int k2 = 0; k2 < 4; k2++) { ram[0xC400 + e + k2] = (uint8_t)(at >> (24 - 8 * k2)); ram[0xC500 + e + k2] = (uint8_t)(script >> (24 - 8 * k2)); }
         }
-        if (!strncmp(name, "Obj", 3) || !strncmp(name, "Ppl", 3)) {
+        if (!strncmp(name, "Obj", 3) || !strncmp(name, "Ppl", 3) || !strncmp(name, "Hnd", 3)) {
             /* one of objects.c's or people.c's handlers: an enemy slot set up by the game's own
              * routine for one of the handler's kinds ($12684: animation set, stats), then its
              * fields at the values each step reads: on the first frame or later, near the player
@@ -1213,6 +1213,9 @@ int hybrid_fuzz(const char *name, long count)
                 {"PplScene", {0x400}}, {"PplStanding", {0x402}}, {"PplBreakable", {0x404}},
                 {"PplTownsperson", {0x406, 0x416, 0x468}}, {"PplStandingStill", {0x412}}, {"PplWanderer", {0x438}},
                 {"PplFlagged", {0x43A}}, {"PplPlacedBreakable", {0x46A}}, {"PplSpeaker", {0x600}},
+                {"HndAreaMonster", {0x058}}, {"HndHopperOr", {0x800}}, {"HndGuardian", {0x060}},
+                {"HndVanishing", {0x218}}, {"HndFlyer", {0x21A}}, {"HndThrownLater", {0x220}},
+                {"HndCarried", {0x228}}, {"HndPacer", {0x80C}},
             };
             uint16_t kind = 0;
             for (unsigned i = 0; i < sizeof objs / sizeof *objs; i++)
@@ -1258,6 +1261,62 @@ int hybrid_fuzz(const char *name, long count)
             put_word(0xA11C, rnd() % 2 ? p : 0x40 + (rnd() % 16) * 4);
             ram[0xA10E] = (uint8_t)(rnd() % 4);
             if (rnd() % 8 == 0) ram[0x966B] ^= 0x20;
+            if (!strncmp(name, "Hnd", 3)) {
+                uint8_t begun = (uint8_t)(rnd() % 2 ? 0x80 : 0);
+                ram[0xDA03 + e] = (uint8_t)(rnd() % 4 ? rnd() % 24 : rnd());    /* the monsters' variant */
+                if (!strcmp(name, "HndAreaMonster")) {      /* area 6 room 5: $16908's steps (0-16) */
+                    if (rnd() % 2) put_word(0x9668, 0x605);
+                    ram[0xD401 + e] = (uint8_t)((ram[0x9668] << 8 | ram[0x9669]) == 0x605 ? (rnd() % 9) * 2 | begun : rnd() % 9 | begun);
+                }
+                if (!strcmp(name, "HndGuardian")) {
+                    /* step 0's first frame ($15ACE) takes three free entities and loops for ever
+                     * without them, in the original as well: always past it */
+                    ram[0xD401 + e] = (uint8_t)(rnd() % 9 | begun);
+                    if (!(ram[0xD401 + e] & 0x7F)) ram[0xD401 + e] = 0x80;
+                    ram[0xA10F] = (uint8_t)(rnd() % 4 ? 2 | (rnd() & 1) : rnd());
+                    ram[0xA107] = (uint8_t)(rnd() % 2 ? 0 : rnd());
+                    ram[0xA111] = (uint8_t)(rnd() % 4 ? 0 : rnd());
+                    ram[0xA10E] = (uint8_t)(rnd() % 9);
+                    ram[0xA110] = (uint8_t)(rnd() % 2 ? 0x2D + rnd() % 4 : rnd());
+                    uint32_t t = rnd() % 2 ? p : 0x40 + (rnd() % 16) * 4;  /* the target, by the place or not */
+                    if (t == e) t = p;
+                    put_word(0xA11C, t);
+                    if (rnd() % 2) {
+                        put_word(0xC800 + t, (uint32_t)(0x1100 + small(0x24)));
+                        put_word(0xC900 + t, (uint32_t)(0x1050 - ram[0xCB03 + t] + small(0x24)));
+                    }
+                    ram[0xD800 + e] = (uint8_t)(rnd() % 2 ? 0 : rnd() % 3);       /* blinking */
+                    ram[0xD801 + e] = (uint8_t)((rnd() % 5) * 2 | (rnd() % 2 ? 0x80 : 0));   /* $15B44's steps (0-8) */
+                    ram[0xDE01 + e] = (uint8_t)rnd();                             /* the magic hit (-$21FF) */
+                    {   /* step 6 ($15EE6) looks up kind $800 in the room's list, and $4910 loops for ever
+                         * when it is not there: give the room one */
+                        uint32_t n = (uint32_t)(ram[0xA142] << 8 | ram[0xA143]), i;
+                        for (i = 0; i < n && i < 8; i++) if ((ram[0xA122 + 4 * i] << 8 | ram[0xA123 + 4 * i]) == 0x800) break;
+                        if (i == n || i == 8) {
+                            i = n < 8 ? n : 7;
+                            put_word(0xA122 + 4 * i, 0x800);
+                            if (n < 8) put_word(0xA142, n + 1);
+                        }
+                    }
+                    put_word(0xD300 + e, 0xF800);                                 /* its companions: a list at $FFF800 */
+                    for (uint32_t k3 = 0; k3 < 4; k3++) put_word(0xF800 + 2 * k3, 0x40 + (rnd() % 16) * 4);
+                }
+                if (!strcmp(name, "HndThrownLater")) ram[0xD401 + e] = (uint8_t)(rnd() % 4);
+                if (!strcmp(name, "HndPacer")) {
+                    ram[0xD401 + e] = (uint8_t)(rnd() % 2 ? 0 : 2);
+                    if (rnd() % 2) put_word(0xC800 + e, 0x1000 + rnd() % 0xA0);
+                }
+                if (!strcmp(name, "HndFlyer")) {
+                    ram[0xD401 + e] = begun;
+                    ram[0xD800 + e] = (uint8_t)(rnd() % 4 ? rnd() % 4 : rnd());
+                    ram[0xD801 + e] = (uint8_t)(rnd() % 4 ? 1 + rnd() % 2 : rnd());
+                }
+                if (!strcmp(name, "HndCarried") || !strcmp(name, "HndVanishing") || !strcmp(name, "HndHopperOr"))
+                    ram[0xD401 + e] = (uint8_t)(rnd() % 4 | begun);
+                if (!strcmp(name, "HndCarried")) ram[0xC003 + e] = (uint8_t)rnd();   /* BLINK's bit 2 */
+                put_word(0xCE02 + e, rnd() % 3 ? 1 + rnd() % 3 : rnd());          /* frames to live */
+                if (rnd() % 2) ram[0x966B] ^= 0x20;
+            }
             if (!strncmp(name, "Ppl", 3)) {
                 /* the steps of their tables (0-8), begun or not; a broken thing's $FF */
                 ram[0xD401 + e] = (uint8_t)((rnd() % 5) * 2 | (rnd() % 2 ? 0x80 : 0));

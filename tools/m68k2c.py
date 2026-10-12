@@ -84,7 +84,7 @@ if CONFIG.get('hand_ports', True) is False: HAND = {}
 C_CALL = re.compile(r'\b(?:call_68k|with_player|call_with_d0|with_entity|call_at|call_d0|call|port_continue_at)\s*\([^;]*?\b0x([0-9A-Fa-f]{3,6})\b')
 # the same through a name the file defines (#define SET_ANIM 0x7E8u)
 C_DEFINE = re.compile(r'^\s*#define\s+(\w+)\s+0x([0-9A-Fa-f]{3,6})u?\b')
-C_CALL_NAMED = re.compile(r'\b(?:call_68k|with_player|call_with_d0|with_entity|call_at|call_d0|call|port_continue_at)\s*\(\s*(?:\w+\s*,\s*)?([A-Z_][A-Z0-9_]*)\b')
+C_CALL_ARGS = re.compile(r'\b(?:call_68k|with_player|call_with_d0|with_entity|call_at|call_d0|call|port_continue_at)\s*\(([^;]*)')
 for name in sorted(os.listdir(os.path.join(os.path.dirname(__file__), '..', 'port'))):
     if name.endswith('.c'):
         lines = open(os.path.join(os.path.dirname(__file__), '..', 'port', name), encoding='utf-8').read().splitlines()
@@ -93,9 +93,10 @@ for name in sorted(os.listdir(os.path.join(os.path.dirname(__file__), '..', 'por
             for mm in C_CALL.finditer(line):
                 a = int(mm.group(1), 16)
                 if a not in ROOTS: ROOTS.append(a)
-            for mm in C_CALL_NAMED.finditer(line):
-                a = named.get(mm.group(1))
-                if a is not None and a in INS and a not in ROOTS: ROOTS.append(a)
+            for mm in C_CALL_ARGS.finditer(line):       # any defined name in the arguments
+                for nm in re.findall(r'\b[A-Z_][A-Z0-9_]*\b', mm.group(1)):
+                    a = named.get(nm)
+                    if a is not None and a in INS and a not in ROOTS: ROOTS.append(a)
 
 # indirect sites with known targets: auto tables, hint tables and bra tables
 SITE_TARGETS = {}
