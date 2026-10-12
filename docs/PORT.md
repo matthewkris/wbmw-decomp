@@ -881,6 +881,28 @@ calls; play reaches four of the eleven); 275,000 fuzz cases from five states, 0 
 every one of the 170 instructions covered. Self-test caught every time. Replace mode plays the
 new-game script and four states.
 
+#### The monsters' actions, batch 8: hurt ($1436C-$14517, 2026-10-12)
+
+Six of state 2's actions, in `port/actions.c`: the first frame clears the hit records and takes
+the damage (beaten: state 1), then the monster blinks and is knocked back; each frame after
+(`$144E8`) it can be hit again, and after TIMER frames it goes on to the next state. `$1436C`
+and `$14394` stand, `$143BC`, `$143F2` and `$14420` are knocked back and fall, `$14456` drifts
+in water and comes to rest at step 3 or 7.
+
+* **`bra EnemySetState`** hands over to the new state's action: the C sets d0 and calls
+  `EnemySetState` (enemies.c), which carries on there (`new_state`). `$14456` reaches the hurt
+  frame by `bsr`, so there the new action returns into `$14456`, which carries on: the C calls
+  `$1357E` through `call_68k` instead, and goes on with its own code.
+* **The self-test** corrupts the stack pointer of the C's result; when the C has handed over to
+  another action (`$1436C` beaten), that action's `rts` reads the corrupted stack and the
+  original then runs into garbage, so a self-test run of `$1436C` stops early (37 cases caught,
+  then the 38th does not return). Every case that returns is caught; plain fuzzing never hangs.
+
+Results (with batch 7's actions again, the fuzz having changed): 0 mismatches over the standard
+runs and every owner state (420,931 checked calls; play reaches `$143BC` in full and part of
+`$14456`); 425,000 fuzz cases from five states, 0 mismatches, every instruction of the seventeen
+covered (118 of them this batch). Replace mode plays the new-game script and four states.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
