@@ -292,6 +292,14 @@
 #define MOUNT_TOUCH       0x1839Cu  /* the mount takes its health; the player against it */
 #define MOUNT_GROUNDED    0x183BAu  /* a2 the mount; z: on the ground (COLL & 10 is 2) */
 #define SHAKE_SCREEN      0x183D4u  /* the screen shaken ($9738), sound 57 */
+#define BODY_HIT          0x19DD2u  /* the player against it (a little ahead); mi: hit */
+#define TURN_LOOK         0x19E2Cu  /* its animation by its heading (VAR) */
+#define AT_NODE           0x19E44u  /* z: at NEXT_NODE's place ($19DA6) */
+#define STEP_ALONG        0x19E64u  /* a pixel in its direction (DELAY) */
+#define TURN_TOWARD       0x19E88u  /* VAR 4 nearer SHOT; z: there */
+#define NODE(e)       ((e) - 0x37FD)   /* byte: the node it is at, or $FF */
+#define NEXT_NODE(e)  ((e) - 0x36FD)   /* byte: the node it heads for, or $FF */
+#define TAKEN(n)      (0xFFFFA112u + (n))  /* byte: a node someone heads for */
 #define RUN_VEL           0x19434u  /* VEL by its heading (TIMER), doubled when TIMER2 */
 #define RUN_LOOK          0x19468u  /* facing and animation by its heading */
 #define ENEMY_MAX_HEALTH  0x4928u   /* d0: its kind's health */
@@ -4885,6 +4893,137 @@ static void a192EC(Ent e)
     clr8(STEP(e), 0x80);
 }
 
+/* ---- a creature that walks between five nodes (batch 26) ----
+ * NODE is the node it is at, NEXT_NODE the one it heads for ($FF: none); TAKEN($A112) marks a
+ * node someone heads for. VAR is its heading, SHOT the heading it turns to, DELAY's first byte
+ * its direction of travel (0 right, 1 down, 2 left, 3 up). */
+
+/* the node's mark: TAKEN, for a node number in a word register */
+static uint32_t taken(uint32_t d) { return TAKEN((uint32_t)(int32_t)(int16_t)d); }
+
+/* appears: its kind ($1274A), its looks, heading $40, at no node; 32 frames stepping on, then 4 */
+static void a19EAE(Ent e)
+{
+    if (begins(e)) {
+        c->d[1] = set_w(c->d[1], rdw(TYPE(e)));
+        call(BECOME_KIND);
+        e = c->a[4];
+        wrw(ANIM_SET(e), 0x0A6C);
+        wrw(WORD_3DFE(e), rdw(0xFFFF99FCu));
+        wr8(ANIM_RATE(e), 0x12);
+        wrw(VAR(e), 0x4040);
+        wr8(NODE(e), 0xFF);
+        wr8(TIMER(e), 0x20);
+        wr8(ANIM_ID(e), 0xFF);
+        call(TURN_LOOK);
+        set8(ALIVE(c->a[4]), 0x40);
+        return;
+    }
+    call(STEP_ALONG);
+    e = c->a[4];
+    wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+    if (rd8(TIMER(e))) return;
+    c->d[0] = 4;
+    new_state(0);
+}
+
+/* beaten: its nodes freed, a pause for the spawn point DELAY's second byte names (unless $99DE
+ * bit 6), and it becomes a puff ($19D64) */
+static void a19F00(Ent e)
+{
+    c->d[0] = rd8(NODE(e));
+    if (!(c->d[0] & 0x80)) { c->a[0] = c->d[0]; wr8(taken(c->d[0]), 0); }
+    c->d[0] = set_b(c->d[0], rd8(NEXT_NODE(e)));
+    if (!(c->d[0] & 0x80)) { c->a[0] = (uint32_t)(int32_t)(int16_t)c->d[0]; wr8(taken(c->d[0]), 0); }
+    c->d[0] = set_b(c->d[0], rd8(DELAY(e) + 1));
+    c->a[0] = (uint32_t)(int32_t)(int16_t)c->d[0];
+    if (!(rd8(0xFFFF99DEu) & 0x40)) wr8(c->a[0] - 0x5EE9, 0x78);
+    c->d[0] = 2;
+    set8(ATTR(e), 0x80);
+    wrw(ANIM_SET(e), 0x161E);
+    wr8(ANIM_RATE(e), 0x0A);
+    wrw(TYPE(e), 0x218);
+    call(SET_ANIM_NOW);
+}
+
+/* hurt: blinking for TIMER frames, hit again meanwhile (state 1 if that beats it); then 3 */
+static void a19F32(Ent e)
+{
+    if (begins(e)) {
+        call(DAMAGE_ENEMY);
+        if (c->ccr & CC_Z) { c->d[0] = 1; new_state(0); return; }
+        call(START_BLINK);
+        return;
+    }
+    call(BODY_HIT);
+    if (c->ccr & CC_N) {
+        call(DAMAGE_ENEMY);
+        if (c->ccr & CC_Z) { c->d[0] = 1; new_state(0); return; }
+    }
+    e = c->a[4];
+    wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+    if (rd8(TIMER(e))) return;
+    clr8(BLINK(e), 0x40);
+    c->d[0] = 3;
+    new_state(0);
+}
+
+/* at a node: with a node to head for, on (4); else it turns to heading $40 and, every 8 frames,
+ * picks one of the node's exits at random ($19D82) that no one heads for, and goes (4) */
+static void a19F6A(Ent e)
+{
+    if (begins(e)) {
+        if (!(rd8(NEXT_NODE(e)) & 0x80)) { c->d[0] = 4; new_state(0); return; }
+        wr8(SHOT(e), 0x40);
+        wr8(TIMER(e), 8);
+        return;
+    }
+    call(BODY_HIT);
+    if (c->ccr & CC_N) { c->d[0] = 2; new_state(0); return; }
+    call(TURN_TOWARD);
+    if (!(c->ccr & CC_Z)) return;
+    e = c->a[4];
+    wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+    if (rd8(TIMER(e))) return;
+    c->d[0] = rd8(NODE(e)) * 2;
+    c->a[0] = 0x19D82u + (uint32_t)(int32_t)(int16_t)rdw(0x19D82u + c->d[0]);
+    call(RANDOM);
+    c->d[1] = c->d[0] & 0xFF;
+    c->d[0] = c->d[1];
+    c->d[1] = set_b(c->d[1], rd8(c->a[0]++));
+    uint16_t n = (uint16_t)c->d[1];                 /* the exits (never 0 in the table) */
+    uint32_t q = c->d[0] / n, r = c->d[0] % n;
+    c->d[0] = (q & 0xFFFF) << 16 | ((2 * r) & 0xFFFF);
+    c->a[0] += (uint32_t)(int32_t)(int16_t)c->d[0];
+    c->d[0] = rd8(c->a[0]++);
+    c->a[1] = c->d[0];
+    e = c->a[4];
+    if (rd8(taken(c->d[0]))) { wr8(TIMER(e), 8); return; }
+    wr8(taken(c->d[0]), 0xFF);
+    wr8(NEXT_NODE(e), (uint8_t)c->d[0]);
+    wr8(DELAY(e), rd8(c->a[0]));
+    c->d[0] = 4;
+    new_state(0);
+}
+
+/* walking to the next node; there, it is its node (the old one freed) and on to 6 */
+static void a19FE6(Ent e)
+{
+    if (begins(e)) return;
+    call(BODY_HIT);
+    if (c->ccr & CC_N) { c->d[0] = 2; new_state(0); return; }
+    call(STEP_ALONG);
+    call(AT_NODE);
+    if (!(c->ccr & CC_Z)) return;
+    e = c->a[4];
+    c->d[0] = rd8(NODE(e));
+    wr8(NODE(e), rd8(NEXT_NODE(e)));
+    if (!(c->d[0] & 0x80)) { c->a[0] = c->d[0]; wr8(taken(c->d[0]), 0); }
+    wr8(NEXT_NODE(e), 0xFF);
+    c->d[0] = 6;
+    new_state(0);
+}
+
 /* the actions, registered by their addresses (registry.c). call_68k leaves its mark in ret: it
  * is cleared unless the action went on elsewhere */
 #define ACTION(addr) void Act##addr(Cpu *cpu) { c = cpu; went_on = 0; a##addr((Ent)c->a[4]); if (!went_on) c->ret = 0; }
@@ -4912,3 +5051,4 @@ ACTION(186D6) ACTION(18710) ACTION(187AC) ACTION(18ADE)
 ACTION(18BBE) ACTION(18E3A) ACTION(18F62) ACTION(18FC2)
 ACTION(19026) ACTION(190C8) ACTION(190E4) ACTION(19102) ACTION(1916A)
 ACTION(19200) ACTION(192C8) ACTION(192EC)
+ACTION(19EAE) ACTION(19F00) ACTION(19F32) ACTION(19F6A) ACTION(19FE6)
