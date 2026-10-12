@@ -1142,6 +1142,25 @@ idle after the release and were right; only the native build's poll point was wr
 * **A report.** The native build prints `QueueSound waited for the sound driver (frame N)` the
   first ten times it takes that path, so a session that goes through it shows it.
 
+#### The castle door crash (found by the owner, 2026-10-12)
+
+Going left through a door in the town after the second boss stopped `play.exe` (shadow mode)
+with `call_68k: $00C1E0 did not return normally (control went to $000000)`; the owner saved a
+state just before it (`work/door-crash.state`, frame 305,313). The door's scene gives the player
+an input routine: `lea $C1E0(pc),a0; bsr $C0C2`, which stores a0 in `$FF9F22`, and the
+player's input (mode 6, `port/player.c`) calls it. `$C1E0` is two instructions (`move.b
+#4,$FF9F0B; rts`), an orphan to the tracer, and the translator only took code addresses stored
+by `move.l #code`, so it had no translation; `rt_dispatch` failed and `call_68k` stopped. In
+the harness, 68000 code reaching it would have run it as it is; C calling through the pointer
+cannot.
+
+* **The fix.** `tools/m68k2c.py` counts `lea code,aN` (an address that is a traced instruction)
+  as a stored code pointer, like `move.l #code`. That brought in 31 routines (1,280 to 1,311 in
+  the harness), `$C1E0` and the two routines at `$18DB8`/`$18DC0` that `$18D36` installs the
+  same way among them.
+* **Checks.** From the owner's state, walking left through the door, 900 frames: 0 mismatches,
+  into the next area. The standard runs and every owner state: 0 mismatches.
+
 ### Platform layer
 
 The native build will provide `port.h`'s memory accessors and a Mega Drive platform library

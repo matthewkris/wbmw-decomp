@@ -145,6 +145,12 @@ for a, (sz, mn, ops) in INS.items():                   # `move.l #code,X` the tr
     mm = re.match(r'#\$([0-9a-f]+), ', ops) if mn in ('move.l', 'movea.l') else None
     if mm and int(mm.group(1), 16) in INS and int(mm.group(1), 16) >= 0x200:
         STORED_BY.setdefault(int(mm.group(1), 16), set()).add(a)
+# `lea code,aN`: a code pointer, often handed on to be stored (the player's input routine: `lea
+# $C1E0(pc),a0; bsr $C0C2`, which stores a0 in $FF9F22)
+for a, (sz, mn, ops) in INS.items():
+    mm = re.fullmatch(r'\$([0-9a-f]+)(?:\.[wl]|\(pc\)), a[0-7]', ops) if mn == 'lea.l' else None
+    if mm and int(mm.group(1), 16) in INS and int(mm.group(1), 16) >= 0x200:
+        STORED_BY.setdefault(int(mm.group(1), 16), set()).add(a)
 
 def push_rts(a):
     """`move.l X,-(a7); rts` jumps to X; with `pea R` before it, X returns to R (a computed call,
