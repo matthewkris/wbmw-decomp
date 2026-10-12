@@ -592,13 +592,18 @@ static void request_load(const char *path)
 }
 
 /* Called by the generated code at a poll point. Without timing, a wait for VBlank ($3DC, $C262)
- * is the end of the frame: draw it, show it and deliver the interrupt; $386 is QueueSound waiting
- * on the Z80, where sound time is let pass. With timing, time passes by itself. */
+ * is the end of the frame: draw it, show it and deliver the interrupt; $38E is QueueSound waiting
+ * on the Z80, where sound time is let pass. It must come after $386 gives the Z80 its bus back:
+ * the Z80 does not run while the 68000 holds it. With timing, time passes by itself. */
 void rt_poll(Cpu *c, uint32_t at)
 {
     framelog_at(at);                                /* --frame-log, --input-game, --dump-at */
     if (timing) return;
-    if (at == 0x386) { sound_idle(); return; }
+    if (at == 0x38E) {
+        static int reported, last = -1;             /* rare: the owner's shop hang came through here */
+        if (reported < 10 && frame != last) { fprintf(stderr, "wbmw: QueueSound waited for the sound driver (frame %d)\n", frame); reported++; last = frame; }
+        sound_idle(); return;
+    }
     if (ram[0x8006] & 1) return;                    /* the interrupt already came this frame */
     maybe_save(c, at);                              /* the game waits for VBlank: a state can be taken */
     for (int l = 0; l < ACTIVE_LINES; l++) { vdp_line = l; vdp_render_line(l); }

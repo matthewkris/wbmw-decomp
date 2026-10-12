@@ -904,7 +904,8 @@ time, and the game never slows down. The owner asked for it to be optional.
   every routine (`"hand_ports": false`); they were proven equivalent anyway. That exposed one
   more idiom, a computed call through the stack (`pea R; move.l X,-(a7); rts` in the animation
   interpreter at `$88E`), which the translator now turns into a call of X that comes back at R.
-  QueueSound's retry is a poll point (`$386`), so untimed code still lets sound time pass there.
+  QueueSound's retry is a poll point (`$38E`, after the bus is given back; see "The shop
+  crash"), so untimed code still lets sound time pass there.
 * **The host.** `native/wbmw.c` reproduces the harness's loop. A scanline is 8 slices of 61
   cycles; an instruction's cycles are charged after it; a slice ends at the first instruction
   boundary at or past zero, and the overshoot is dropped (as `m68k_execute` does). Interrupts
@@ -1047,6 +1048,27 @@ difference as the intro text.
 From the inn state with yes answered, shadow mode reports zero mismatches. Replace mode matches
 the original's frames until the morning text, where the C is one letter ahead (the same timing
 difference as the intro).
+
+#### The shop crash (found by the owner, 2026-10-12)
+
+Buying the Hard Armor stopped `wbmw.exe` with `STUCK`, the recent targets all `$376`/`$390`:
+`QueueSound` retrying while the driver's busy flag (Z80 `$1C00`) was set. The native build's
+poll point for that retry was `$386`, which runs *before* the instruction there gives the Z80
+its bus back, so `sound_idle` found the bus held and let no Z80 cycle pass. The flag could never
+clear. The hand port (`port/kernel.c`) and the harness's own check (`hybrid.c`, at `$38E`)
+idle after the release and were right; only the native build's poll point was wrong.
+
+* **The fix.** The poll point is `$38E` (`analysis/native.json`, `rt_poll`), after the release.
+* **Why it was rare.** Untimed, the Z80 runs only at the end of each frame, and it holds the
+  flag for about a dozen instructions while it reads the queue (Z80 `$019C`-`$01C8`). A hang
+  needs a frame to end inside that window and a sound to be queued in the next frame.
+* **Checks.** Random input from `platform.state` (seeded by its frame number, 6,000 frames)
+  reproduces the hang with the old build; the new build waits once (frame 9,568) and plays on.
+  30 random runs of 5,000 frames from ten of the owner's states: no hang, three waits survived.
+  The owner's own purchase (`session5.state`) did not hang headless in 136 input timings with
+  the old build either, so its exact trigger was the owner's timing.
+* **A report.** The native build prints `QueueSound waited for the sound driver (frame N)` the
+  first ten times it takes that path, so a session that goes through it shows it.
 
 ### Platform layer
 
