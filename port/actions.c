@@ -275,6 +275,17 @@
 #define SOUND_MODE        0xFFFF9668u   /* byte: $12 keeps the music */
 #define BODY_W(e)     ((e) - 0x3500)   /* byte: its body's half width */
 #define BODY_H(e)     ((e) - 0x34FF)   /* byte: its body's half height */
+#define UPDATE_ANIM       0x80Eu
+#define PAIR_ANIM         0x179AAu  /* the pair's animations d0, d0+1 ($179C2), partner first */
+#define PAIR_TOUCH        0x179DEu  /* the partner takes its health; the player against it */
+#define PAIR_HOVER        0x179F8u  /* the body bobs to its height; the head on it */
+#define PAIR_ON_BODY      0x17A26u  /* a0 the partner; its y $2C above the partner's */
+#define PAIR_ALIGN_X      0x17A38u  /* the partner's x its own */
+#define PAIR_FALL         0x17B76u  /* the partner (a4) falls a frame; z: TIMER run out */
+#define PAIR_FALL_HERE    0x17B7Au  /* it falls a frame; z: TIMER run out */
+#define FADE_TILES        0x17C84u  /* a strip of its tiles faded, while TIMER2 < $11 */
+#define BREAK_UP_START    0x18290u  /* d2 tile rows marked in the scroll table */
+#define BREAK_UP          0x182AAu  /* tile d1 of d2 rows cleared in VRAM */
 #define APPLY_VEL_X       0xAB8u
 
 void EnemySetState(Cpu *);           /* enemies.c */
@@ -3426,6 +3437,293 @@ static void a178D0(Ent e)
     new_state(0);
 }
 
+/* ---- the two-part boss (batch 20) ----
+ * A head and a body, partners through MAKER. Its helpers step a4 to the partner and back
+ * (movea.w MAKER(a4),a4 twice), so after them the code goes on with whatever a4 then holds:
+ * c->a[4] read again, not the entity the action began with. */
+
+static Ent partner_of(Ent e) { return (uint32_t)(int32_t)(int16_t)rdw(MAKER(e)); }
+static void swap_a2_a4(void) { uint32_t t = c->a[2]; c->a[2] = c->a[4]; c->a[4] = t; }
+
+/* $179CC: touching the player, and the sword; hit, state 2, leaving past the action; else the
+ * partner's touch ($179DE) */
+static int pair_hit(void)
+{
+    call(PLAYER_CONTACT_ALL);
+    call(ENEMY_TAKE_HIT);
+    if (c->ccr & CC_N) { c->d[0] = 2; new_state(0); return 1; }
+    call(PAIR_TOUCH);
+    return 0;
+}
+
+/* $17DB8: VEL_X += ACCEL_X, moved across */
+static void push_x(Ent e)
+{
+    set_d0w(rdw(ACCEL_X(e)));
+    wrw(VEL_X(e), (uint16_t)(rdw(VEL_X(e)) + c->d[0]));
+    call(APPLY_VEL_X);
+}
+
+/* landed: a bounce at half the speed across, up at d0, for $20 frames (sound 57) */
+static void bounce_up(uint16_t vy)
+{
+    call_d0(QUEUE_SOUND, 57);
+    Ent e = c->a[4];
+    wrw(VEL_X(e), (uint16_t)((int16_t)rdw(VEL_X(e)) >> 1));
+    wrw(VEL_Y(e), vy);
+    wr8(TIMER(e), 0x20);
+}
+
+/* the pair leaps in: the body made (MAKE_PARTNER), both thrown up from $100 to the left
+ * ($17AD2) and landing twice, the body first; then the room's walls set ($9C16, $9962), the head
+ * on the body, and on to state 3 */
+static void a17A44(Ent e)
+{
+    if (begins(e)) {
+        wr8(0xFFFF9F05u, 4);
+        call(FIND_FREE_ENTITY);
+        wrw(X(e), (uint16_t)(rdw(X(e)) - 0x100));
+        call(MAKE_PARTNER);
+        wr8(TYPE(c->a[2]), 0xFF);
+        call_d0(PAIR_ANIM, 0);
+        call(UPDATE_ANIM);
+        swap_a2_a4(); call(UPDATE_ANIM); swap_a2_a4();
+        e = c->a[4];
+        Ent p = c->a[2];
+        c->d[0] = 8;
+        set8(ATTR(e), 8); set8(ATTR(p), 8);
+        c->d[0] = set_b(c->d[0], rd8(HALF_H(e))); wrw(Y(e), (uint16_t)(rdw(Y(e)) - c->d[0]));
+        c->d[0] = set_b(c->d[0], rd8(HALF_H(p))); wrw(Y(p), (uint16_t)(rdw(Y(p)) - c->d[0]));
+        uint32_t t = 0x17AD2u;
+        wr8(MOVE_FLAGS(e), rd8(t)); wr8(MOVE_FLAGS(p), rd8(t + 1));
+        wrw(SPEED_X(e), rdw(t + 2)); wrw(SPEED_Y(p), rdw(t + 4));
+        wr8(ANIM_RATE(e), rd8(t + 6)); wr8(ANIM_RATE(p), rd8(t + 7));
+        wrw(VEL_X(e), rdw(t + 8)); wrw(VEL_X(p), rdw(t + 8));
+        wrw(VEL_Y(e), rdw(t + 10)); wrw(VEL_Y(p), rdw(t + 10));
+        wr8(TIMER(e), rd8(t + 12)); wr8(TIMER(p), rd8(t + 12));
+        c->a[0] = t + 13;
+        c->d[0] = 64;
+        set8(ALIVE(e), 64); set8(ALIVE(p), 64);
+        return;
+    }
+    c->d[0] = rd8(PHASE(e));
+    c->a[0] = 0x17AF0u + (uint32_t)(int32_t)(int16_t)rdw(0x17AF0u + c->d[0]);
+    switch (c->d[0]) {
+    case 0:                                         /* the body falls; landed, it bounces */
+        call(PAIR_FALL);
+        if (!(c->ccr & CC_Z)) { c->a[4] = partner_of(c->a[4]); return; }
+        bounce_up(0xFB80);
+        c->a[4] = partner_of(c->a[4]);
+        break;
+    case 2:                                         /* the body falls; landed, it stops */
+        call(PAIR_FALL);
+        if (!(c->ccr & CC_Z)) { c->a[4] = partner_of(c->a[4]); return; }
+        call(STOP);
+        c->a[4] = partner_of(c->a[4]);
+        break;
+    case 4:                                         /* the head falls; landed, it bounces */
+        call(PAIR_FALL_HERE);
+        if (!(c->ccr & CC_Z)) return;
+        bounce_up(0xFA00);
+        break;
+    case 6:                                         /* the head lands: the walls; on the body */
+        call(PAIR_FALL_HERE);
+        if (!(c->ccr & CC_Z)) return;
+        wrw(0xFFFF9C16u, 0x68);
+        wrw(0xFFFF9962u, 8);
+        call(PAIR_ALIGN_X);
+        call(PAIR_ON_BODY);
+        break;
+    default:                                        /* 8 */
+        wr8(0xFFFF9F05u, 0);
+        set8(0xFFFF99DEu, 1);
+        c->d[0] = 3;
+        new_state(0);
+        return;
+    }
+    e = c->a[4];
+    wr8(PHASE(e), (uint8_t)(rd8(PHASE(e)) + 2));
+}
+
+/* the pair beaten: the music stopped, the room frozen, the head's tiles shown ($17C72), the
+ * screen's two strips cleared ($FF5200), the body's tiles fading ($17C84) and the head breaking
+ * up ($17C32, by $182AA) over $80 frames; then both gone (sound 19) */
+static void a17B8A(Ent e)
+{
+    if (begins(e)) {
+        if (rd8(SOUND_MODE) != 0x12) call(QUEUE_SOUND_FF);
+        call(FREEZE_ENEMIES);
+        set_d0w(rdw(X(e)));
+        c->d[1] = set_w(c->d[1], rdw(Y(e)));
+        c->d[2] = 32; c->d[3] = 16;
+        c->d[1] = set_w(c->d[1], c->d[1] + 16);
+        c->a[0] = 0x17C72u;
+        call(SHOW_TILES);
+        call_d0(PAIR_ANIM, 2);
+        e = c->a[4];
+        wrw(TIMER(e), 0x8000);
+        set8(0xFFFF99DEu, 2);
+        uint32_t a0 = 0xFF5200u;
+        for (int row = 0; row < 5; row++, a0 += 0x100)
+            for (int i = 0; i < 32; i++, a0 += 4) wr32(a0, 0);
+        c->a[0] = a0; c->d[0] = 0; c->d[1] = set_w(c->d[1], 0xFFFF); c->d[2] = set_w(c->d[2], 0xFFFF);
+        call(FADE_TILES);
+        c->d[0] = 0xFFFFFFFFu;
+        wrw(0xFFFF8E36u, 0xFFFF);
+        wrw(0xFFFF8EB6u, 0xFFFF);
+        c->d[2] = 13;
+        call(BREAK_UP_START);
+        return;
+    }
+    c->d[1] = set_w(c->d[1], 0x80);
+    c->d[1] = set_b(c->d[1], (uint8_t)(0x80 - rd8(TIMER(e))));
+    int odd = c->d[1] & 1;
+    c->d[1] = set_b(c->d[1], (c->d[1] & 0xFF) >> 1);
+    if (!odd) {
+        c->d[1] = set_b(c->d[1], rd8(0x17C32u + (c->d[1] & 0xFFFF)));
+        c->d[2] = 13;
+        call(BREAK_UP);
+    }
+    e = c->a[4];
+    wr8(VAR(e), (uint8_t)(rd8(VAR(e)) - 1));
+    if (!rd8(VAR(e))) call(FADE_TILES);
+    e = c->a[4];
+    wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+    if (rd8(TIMER(e))) return;
+    wrw(Y(e), (uint16_t)(rdw(Y(e)) + 0x20));
+    call(ENEMY_DEFEATED);
+    if (rd8(SOUND_MODE) != 0x12) call_d0(QUEUE_SOUND, 19);
+    e = c->a[4];
+    c->a[2] = partner_of(e);
+    wr8(ALIVE(e), 0);
+    wr8(ALIVE(c->a[2]), 0);
+}
+
+/* hurt: both knocked away from the sword at $400, slowing by $40 a frame for 16 frames, the head
+ * first, then the body; then state 3 */
+static void a17D22(Ent e)
+{
+    if (begins(e)) {
+        call(DAMAGE_ENEMY);
+        if (c->ccr & CC_Z) { c->d[0] = 1; new_state(0); return; }
+        call_d0(PAIR_ANIM, 4);
+        e = c->a[4];
+        set_d0w(0x400);
+        c->d[1] = 0xFFFFFFC0u;
+        if (!(rd8(TOUCH(e)) & 1)) {
+            set_d0w(-0x400);
+            c->d[1] = set_w(c->d[1], 0x40);
+        }
+        wrw(VEL_X(e), (uint16_t)c->d[0]);
+        wrw(ACCEL_X(e), (uint16_t)c->d[1]);
+        c->a[0] = partner_of(e);
+        wrw(VEL_X(c->a[0]), (uint16_t)c->d[0]);
+        wrw(ACCEL_X(c->a[0]), (uint16_t)c->d[1]);
+        c->d[0] = 16;
+        wr8(TIMER(e), 16);
+        wr8(TIMER(c->a[0]), 16);
+        wr8(TIMER2(e), 0);
+        return;
+    }
+    call(PLAYER_TOUCH);
+    call(ENEMY_TAKE_HIT);
+    if (c->ccr & CC_N) {
+        call(DAMAGE_ENEMY);
+        if (c->ccr & CC_Z) { c->d[0] = 1; new_state(0); return; }
+    }
+    call(PAIR_TOUCH);
+    e = c->a[4];
+    if (!rd8(TIMER2(e))) {
+        push_x(e);
+        e = c->a[4];
+        wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+        if (rd8(TIMER(e))) return;
+        wr8(TIMER2(e), (uint8_t)(rd8(TIMER2(e)) + 1));
+        call(STOP);
+        return;
+    }
+    c->a[4] = partner_of(e);
+    push_x(c->a[4]);
+    c->a[2] = partner_of(c->a[4]);
+    swap_a2_a4();
+    Ent b = c->a[2];
+    wr8(TIMER(b), (uint8_t)(rd8(TIMER(b)) - 1));
+    if (rd8(TIMER(b))) return;
+    wrw(VEL_X(b), 0);
+    c->d[0] = 3;
+    new_state(0);
+}
+
+/* $17DE6: a random while, doubled */
+static void long_delay(void)
+{
+    call(RANDOM_DELAY);
+    Ent e = c->a[4];
+    c->d[0] = set_b(c->d[0], rd8(TIMER2(e)));
+    wr8(TIMER2(e), (uint8_t)(rd8(TIMER2(e)) * 2));
+}
+
+/* the head on the body, rocking about its home: when near home and the while is up, on to a
+ * random state ($17E44), or another while */
+static void a17DC4(Ent e)
+{
+    if (begins(e)) {
+        call(PAIR_ALIGN_X);
+        call(PAIR_ON_BODY);
+        set_d0w((uint16_t)(rdw(Y(c->a[0])) - 0x2C));
+        e = c->a[4];
+        wrw(Y(e), (uint16_t)c->d[0]);
+        call_d0(PAIR_ANIM, 6);
+        long_delay();
+        return;
+    }
+    if (pair_hit()) return;
+    call(PAIR_HOVER);
+    e = c->a[4];
+    c->d[7] = set_w(c->d[7], (uint16_t)(rdw(HOME_X(e)) - 2));
+    if ((int16_t)rdw(VEL_X(e)) < 0) c->d[7] = set_w(c->d[7], c->d[7] + 4);
+    c->d[0] = 16;
+    uint16_t x = rdw(X(e)), d7 = (uint16_t)c->d[7];
+    c->d[7] = set_w(c->d[7], (uint16_t)(d7 - x));
+    if (d7 < x) {
+        c->d[7] = set_w(c->d[7], (uint16_t)-(c->d[7] & 0xFFFF));
+        c->d[0] = set_w(c->d[0], 0xFFF0);
+    }
+    wrw(ACCEL_X(e), (uint16_t)c->d[0]);
+    call(ACCEL_X_);
+    call(APPLY_VEL_X);
+    call(PAIR_ALIGN_X);
+    if ((c->d[7] & 0xFFFF) >= 0x10) return;
+    e = c->a[4];
+    wr8(TIMER2(e), (uint8_t)(rd8(TIMER2(e)) - 1));
+    if (rd8(TIMER2(e))) return;
+    call(RANDOM);
+    set_d0w(c->d[0] & 7);
+    c->d[0] = set_b(c->d[0], rd8(0x17E44u + (c->d[0] & 7)));
+    if (!(c->d[0] & 0xFF)) { long_delay(); return; }
+    new_state(0);
+}
+
+/* the head on the body, carried left: $80 past home, back to state 3 */
+static void a17E4C(Ent e)
+{
+    if (begins(e)) {
+        call_d0(PAIR_ANIM, 6);
+        wrw(ACCEL_X(c->a[4]), 0xFFF0);
+        return;
+    }
+    if (pair_hit()) return;
+    call(PAIR_HOVER);
+    call(ACCEL_X_);
+    call(APPLY_VEL_X);
+    call(PAIR_ALIGN_X);
+    e = c->a[4];
+    c->d[0] = set_w(0xFFFFFF80u, (uint16_t)(0xFF80 + rdw(HOME_X(e))));
+    if ((uint16_t)c->d[0] < (uint16_t)rdw(X(e))) return;
+    c->d[0] = 3;
+    new_state(0);
+}
+
 /* the actions, registered by their addresses (registry.c). call_68k leaves its mark in ret: it
  * is cleared unless the action went on elsewhere */
 #define ACTION(addr) void Act##addr(Cpu *cpu) { c = cpu; went_on = 0; a##addr((Ent)c->a[4]); if (!went_on) c->ret = 0; }
@@ -3447,3 +3745,4 @@ ACTION(16D70) ACTION(16ED0) ACTION(16F50) ACTION(16FF0)
 ACTION(17014) ACTION(1729A) ACTION(17310) ACTION(17362)
 ACTION(173AA) ACTION(1743C) ACTION(174E6) ACTION(17548) ACTION(17588) ACTION(1759A)
 ACTION(1771C) ACTION(1774E) ACTION(177D6) ACTION(17822) ACTION(17860) ACTION(178D0)
+ACTION(17A44) ACTION(17B8A) ACTION(17D22) ACTION(17DC4) ACTION(17E4C)

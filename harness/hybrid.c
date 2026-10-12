@@ -1338,6 +1338,18 @@ int hybrid_fuzz(const char *name, long count)
                         for (i = 0; i < n && i < 8; i++) if ((ram[0xA122 + 4 * i] << 8 | ram[0xA123 + 4 * i]) == kind) break;
                         if (i == n || i == 8) { i = n < 8 ? n : 6 + k; put_word(0xA122 + 4 * i, kind); if (n < 8) put_word(0xA142, n + 1); }
                     }
+                if (!strcmp(name, "Act17A44") || !strcmp(name, "Act17B8A") || !strcmp(name, "Act17D22") || !strcmp(name, "Act17DC4") || !strcmp(name, "Act17E4C")) {
+                    /* the two-part boss: a partner whose partner it is; the leap's phase even */
+                    uint32_t q = 0x40 + (rnd() % 16) * 4;
+                    if (q == e) q = (q + 4) & 0xFC;
+                    put_word(0xD302 + e, q); put_word(0xD302 + q, e);
+                    if (!strcmp(name, "Act17A44")) ram[0xCE01 + e] = (uint8_t)(2 * (rnd() % 5));
+                    if (!strcmp(name, "Act17B8A") && rnd() % 2) ram[0xD802 + e] = 1;   /* the fade's frame */
+                    if (rnd() % 2) ram[0xD800 + e] = (uint8_t)(1 + rnd() % 2);       /* the last frames */
+                    if (rnd() % 2) ram[0xD800 + q] = (uint8_t)(1 + rnd() % 2);
+                    if (rnd() % 2) ram[0xD801 + e] = (uint8_t)(rnd() % 2);
+                    if (!strcmp(name, "Act17E4C") && rnd() % 2) put_word(0xCA00 + e, 0);   /* at rest */
+                }
                 if (!strcmp(name, "Act1759A")) {                                  /* the target's sword out or not */
                     uint32_t t = (uint32_t)(ram[0xA11C] << 8 | ram[0xA11D]) & 0xFFFF;
                     if (t < 0x100) put_long(0xD600 + t, rnd() % 2 ? 0 : 0x10000 + rnd() % 0x60000);   /* boxes read from ROM: not the stack */
@@ -1418,6 +1430,8 @@ int hybrid_fuzz(const char *name, long count)
                 }
                 {   int32_t x = get_sword(0xC800 + e);                            /* home x: at it, or near */
                     put_word(0xDF00 + e, (uint32_t)(rnd() % 4 == 0 ? x : x + small(0x40))); }
+                if (!strcmp(name, "Act17E4C") && rnd() % 2)                       /* carried $80 past home */
+                    put_word(0xDF00 + e, (uint32_t)(get_sword(0xC800 + e) + 0x80 + (int32_t)(rnd() % 64)));
             }
             if (!strncmp(name, "Hnd", 3)) {
                 uint8_t begun = (uint8_t)(rnd() % 2 ? 0x80 : 0);

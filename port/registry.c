@@ -46,7 +46,8 @@ void Act140F2(Cpu *), Act140FC(Cpu *), Act1410E(Cpu *), Act14120(Cpu *), Act1416
      Act16D70(Cpu *), Act16ED0(Cpu *), Act16F50(Cpu *), Act16FF0(Cpu *),
      Act17014(Cpu *), Act1729A(Cpu *), Act17310(Cpu *), Act17362(Cpu *),
      Act173AA(Cpu *), Act1743C(Cpu *), Act174E6(Cpu *), Act17548(Cpu *), Act17588(Cpu *), Act1759A(Cpu *),
-     Act1771C(Cpu *), Act1774E(Cpu *), Act177D6(Cpu *), Act17822(Cpu *), Act17860(Cpu *), Act178D0(Cpu *);
+     Act1771C(Cpu *), Act1774E(Cpu *), Act177D6(Cpu *), Act17822(Cpu *), Act17860(Cpu *), Act178D0(Cpu *),
+     Act17A44(Cpu *), Act17B8A(Cpu *), Act17D22(Cpu *), Act17DC4(Cpu *), Act17E4C(Cpu *);
 void RunEnemies(Cpu *), EnemyDispatch(Cpu *), EnemySetState(Cpu *), EnemyNextState(Cpu *);   /* enemies.c */
 void MagicUsed(Cpu *), SlotEmptied(Cpu *), MagicMeter(Cpu *), HudRedraw(Cpu *), GoldDisplay(Cpu *);   /* hud.c */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
@@ -318,6 +319,11 @@ const PortRoutine port_routines[] = {
     {0x017822, 0x017860, "Act17822", Act17822, CT_SP},
     {0x017860, 0x0178C8, "Act17860", Act17860, CT_SP},
     {0x0178D0, 0x0179AA, "Act178D0", Act178D0, CT_SP},
+    {0x017A44, 0x017B8A, "Act17A44", Act17A44, CT_SP},           /* with the falls $17B76 */
+    {0x017B8A, 0x017D22, "Act17B8A", Act17B8A, CT_SP},           /* with the fade $17C84 */
+    {0x017D22, 0x017DC4, "Act17D22", Act17D22, CT_SP},
+    {0x017DC4, 0x017E44, "Act17DC4", Act17DC4, CT_SP},
+    {0x017E4C, 0x017E88, "Act17E4C", Act17E4C, CT_SP},
     {0x00EE70, 0x00EF12, "PlayerSwordTip", PlayerSwordTip, CT_SP},
     {0x011170, 0x01141A, "MagicStart", MagicStart, CT_SP},       /* magic.c; a potion may carry on at $F288 */
     {0x01141A, 0x0114C0, "MagicFrame", MagicFrame, CT_SP},       /* may carry on at $11590 or $11780 off a pass */
