@@ -226,7 +226,11 @@ That writes `work/map.json` and `work/code_000200_01D000.lst`. On Windows, where
 Owner's machine (Windows 11): Python 3.12.10 and capstone 5.0.7 in
 `%LOCALAPPDATA%\Programs\Python\Python312`. Assembler: vasm 2.0f (`vasmm68k_mot`, motorola
 syntax module 3.19f, official Win64 binary) in `%LOCALAPPDATA%\Programs\vasm`. Neither is on
-PATH, so prepend both before running tools. Other scripts:
+PATH, so prepend both before running tools (in Git Bash, through `cygpath -u "$LOCALAPPDATA"`:
+a Windows path in PATH breaks it). The machine has 12 cores: build with `make -j12` (the
+translated code is split into 12 files for this; harness about 80 s, native about 150 s from
+scratch). Per batch, build the harness and run `tools/accept.sh`; build and smoke-test the
+native build once at the end of a session (the owner's choice). Other scripts:
 
 - `tools/header.py ROM` prints vectors and header fields and checks the checksum.
 - `tools/dis.py ROM ADDR [COUNT]` does a quick linear disassembly from a hex address.
