@@ -23,6 +23,13 @@
  * ($144E8) it can be hit again, and after TIMER frames it goes on. $1436C and $14394 stand,
  * $143BC, $143F2 and $14420 are knocked back and fall, $14456 drifts in water.
  *
+ * Batch 9, walking, hovering and shooting ($14518-$14821): $14518 stands a random while,
+ * $1454C the same until $168 frames old, then three shots and gone; $145C4 hovers and swoops
+ * (state 7); $1463C walks; $14682 stands shooting; $146FC hops, shooting once per hop; $1476C
+ * rises $60 and waits for the player below. Most call EnemyCheckHit ($43BC) and
+ * DespawnIfOffscreen ($48C4), which leave past the action: hit() and despawned() do their
+ * tests in C and the action returns.
+ *
  * Spawn flags (-$2AFE): bit 7 puff on appearing, bit 1 the other puff, bit 2 turned over
  * (attribute bit 7), bit 0 not placed by its animation.
  *
@@ -60,6 +67,17 @@
 #define TIMER(e)      ((e) - 0x2800)
 #define TIMER2(e)     ((e) - 0x27FF)
 #define SAVED(e)      ((e) - 0x27FE)   /* word: the animation set while the puff shows */
+#define VAR(e)        ((e) - 0x27FE)   /* byte: a flag of the action's */
+#define SHOT(e)       ((e) - 0x27FD)   /* byte: bit 0, shot this hop */
+#define WORD_3DFE(e)  ((e) - 0x3DFE)
+#define VEL_X(e)      ((e) - 0x3600)
+#define VEL(e)        ((e) - 0x3600)   /* long: x, y */
+#define VEL_Y(e)      ((e) - 0x35FE)
+#define ACCEL_X(e)    ((e) - 0x3400)
+#define COLL(e)       ((e) - 0x3100)
+#define HOME_Y(e)     ((e) - 0x20FE)
+#define HOME_X(e)     ((e) - 0x2100)
+#define ANIM_ID(e)    ((e) - 0x3CFE)
 
 /* routines still called as they are */
 #define SET_ANIM          0x7E8u
@@ -88,6 +106,29 @@
 #define ENEMY_MOVE        0x46DAu
 #define PLAYER_TOUCH      0x4778u   /* the player (or the shield) against it */
 #define DAMAGE_ENEMY      0x4986u   /* z: beaten */
+#define APPLY_VEL         0xAB4u
+#define BOB_TOWARD        0x4274u   /* ACCEL_Y toward the height d0, give or take d1, by d2 */
+#define CONTACT_AND_MOVE  0x42C4u   /* touching the player, then falling and moving */
+#define RANDOM_TIMER      0x43CCu   /* TIMER: $40 + up to $7F */
+#define RANDOM_TIMER_32   0x43DEu   /* TIMER: $20 + up to $1F; d0 the random */
+#define RANDOM_DELAY      0x43F0u   /* TIMER2: $10 + up to $1F */
+#define FACE_VELOCITY     0x44A6u
+#define JUMP              0x44F4u   /* VEL_Y up by SPEED_Y + $80 */
+#define DIST_X_TO_ENTITY  0x4562u   /* d1: to a2 */
+#define DIST_Y_TO_TARGET  0x4576u   /* a2 = $FFA11C's entity; d1 = its y - this one's (flags of sub.w) */
+#define PLAYER_CONTACT_ALL 0x4792u  /* touching, and the sword */
+#define DESPAWN           0x4814u
+#define SHOOT             0x15182u
+#define APPLY_VEL_Y       0xAD6u
+#define MAYBE_BUBBLE      0x41F0u   /* in water, now and then */
+#define SHIELD_AND_MOVE   0x42CCu   /* the shield's touch, then falling and moving */
+#define BACK_OFF          0x437Eu   /* touched: VEL_X backwards at twice its speed */
+#define WALK_FORWARD      0x4492u
+#define FACE_X            0x44DEu   /* towards x d0 */
+#define DIST_Y_ABS_TARGET 0x4584u   /* a2 = $FFA11C's entity; d1 = |its y - this one's| */
+#define DIST_Y_ABS        0x4588u   /* the same to a2 */
+#define KIND_STATS        0x15A3Au  /* a1: its kind's record in $1381C */
+#define KIND_MOVES        0x15A76u  /* -$2900: its moves, by d0 */
 
 void EnemySetState(Cpu *);           /* enemies.c */
 
@@ -437,9 +478,256 @@ static void a14456(Ent e)
     wr8(STEP(e), (uint8_t)c->d[1]);
 }
 
+/* ---- walking, hovering, shooting (batch 9) ---- */
+
+/* $43BC, EnemyCheckHit: hit, so state 2 (hurt). The original drops this action's return and
+ * jumps to EnemySetState; here it answers 1 and the action returns */
+static int hit(void)
+{
+    call(ENEMY_TAKE_HIT);
+    if (!(c->ccr & CC_N)) return 0;
+    c->d[0] = 2;
+    new_state(0);
+    return 1;
+}
+
+/* $48C4, DespawnIfOffscreen (objects.c), which also leaves past the action */
+static int despawned(void) { return world_despawn_offscreen(c); }
+
+/* $15182: a shot (a2), turned as it is; mi if there was no room for one */
+static void shoot(void) { call(SHOOT); }
+
+/* $14518: stands for a random while, then on */
+static void stand_frame(Ent e)
+{
+    if (despawned()) return;
+    call(CONTACT_AND_MOVE);
+    if (hit()) return;
+    call(CHECK_GROUNDED);
+    if (!(c->ccr & CC_Z)) return;
+    wr8(TIMER2(e), (uint8_t)(rd8(TIMER2(e)) - 1));
+    if (!rd8(TIMER2(e))) call(ENEMY_NEXT_STATE);
+}
+
+static void a14518(Ent e)
+{
+    if (begins(e)) {
+        wrw(VEL_X(e), 0);
+        call_d0(SET_ANIM, 6);
+        call(RANDOM_DELAY);
+    }
+    stand_frame(e);
+}
+
+/* $1454C: stands, as $14518, until $168 frames after it appeared (LINK2); then a puff, three
+ * shots at once, and gone when the puff ends */
+static void a1454C(Ent e)
+{
+    if (begins(e)) {
+        wr8(VAR(e), 0);
+        wrw(VEL_X(e), 0);
+        call_d0(SET_ANIM, 6);
+        call(RANDOM_DELAY);
+    }
+    if (rd8(VAR(e)) & 0x80) {
+        if (!rd8(ANIM_BUSY(e))) call(DESPAWN);
+        return;
+    }
+    uint16_t age = (uint16_t)(rdw(FRAME) - rdw(LINK2(e)));
+    if (age & 0x8000) age = (uint16_t)-age;
+    set_d0w(age);
+    if (age < 0x168) { stand_frame(e); return; }
+    call(FACE_PLAYER);
+    wr8(VAR(e), 0xFF);
+    wrw(ANIM_SET(e), 0x1208);
+    set8(BLINK(e), 8);
+    call_d0(SET_ANIM, 0);
+    wr8(TIMER(e), 2);
+    do {
+        shoot();
+        if (c->ccr & CC_N) return;
+        Ent s = c->a[2];
+        wrw(WORD_3DFE(s), 0);
+        wr8(TIMER(s), rd8(TIMER(e)));
+        wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+    } while (!(rd8(TIMER(e)) & 0x80));
+}
+
+/* $145C4: hovers about its home height, facing the player; when the player is below within $60
+ * and $28 to the side, it swoops (state 7) */
+static void a145C4(Ent e)
+{
+    if (begins(e)) {
+        call_d0(SET_ANIM, 14);
+        call(RANDOM_DELAY);
+        c->d[0] = 0;
+        wrw(VEL_X(e), 0);
+        wrw(ACCEL_X(e), 0);
+        wrw(SPEED_Y(e), 0x100);
+    }
+    if (despawned()) return;
+    call(PLAYER_CONTACT_ALL);
+    if (hit()) return;
+    call(FACE_PLAYER);
+    call_d0(FRICTION_X, 16);
+    call(ACCEL_Y);
+    call(APPLY_VEL);
+    set_d0w(rdw(HOME_Y(e)));
+    c->d[1] = 4;
+    c->d[2] = set_w(c->d[2], 0x80);
+    call(BOB_TOWARD);
+    if (rd8(TIMER2(e))) {
+        wr8(TIMER2(e), (uint8_t)(rd8(TIMER2(e)) - 1));
+        if (rd8(TIMER2(e))) return;
+    }
+    call(DIST_Y_TO_TARGET);
+    if (c->ccr & CC_C) return;
+    if ((uint16_t)c->d[1] >= 0x60) return;
+    call(DIST_X_TO_ENTITY);
+    if ((uint16_t)c->d[1] > 0x28) return;
+    wr8(STEP(e), 7);
+}
+
+/* $1463C: walks, facing the player, choosing every TIMER2 frames whether to go on (1 in 4) */
+static void a1463C(Ent e)
+{
+    if (begins(e)) {
+        wrw(VEL_X(e), 0);
+        call_d0(SET_ANIM, 6);
+        call(RANDOM_DELAY);
+        wr8(TIMER(e), rd8(TIMER2(e)));
+    }
+    if (despawned()) return;
+    call(CONTACT_AND_MOVE);
+    if (hit()) return;
+    call(FACE_PLAYER);
+    wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+    if (rd8(TIMER(e))) return;
+    wr8(TIMER(e), rd8(TIMER2(e)));
+    call(RANDOM);
+    c->d[0] = set_w(c->d[0], c->d[0] & 3);
+    if (!(c->d[0] & 3)) call(ENEMY_NEXT_STATE);
+}
+
+/* $14682: stands still shooting, faster up at a player above it, and every other volley
+ * faster along */
+static void a14682(Ent e)
+{
+    if (begins(e)) {
+        call(RANDOM_TIMER);
+        wr8(TIMER2(e), 0);
+        call_d0(SET_ANIM, 6);
+    }
+    if (despawned()) return;
+    call(FACE_PLAYER);
+    call(PLAYER_CONTACT_ALL);
+    if (hit()) return;
+    wr8(COLL(e), 2);
+    if (rd8(TIMER(e))) {
+        wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+        if (rd8(TIMER(e))) return;
+    }
+    if (!(rd8(ALIVE(e)) & 1)) return;
+    shoot();
+    c->a[0] = (uint32_t)(int32_t)(int16_t)(c->a[2] & 0xFFFF);
+    call(DIST_Y_TO_TARGET);
+    if ((c->ccr & CC_N) && (int16_t)c->d[1] <= -0x40) {     /* well above it: faster up */
+        set_d0w((uint16_t)rdw(SPEED_Y(c->a[0])) >> 1);
+        wrw(SPEED_Y(c->a[0]), rdw(SPEED_Y(c->a[0])) + (int16_t)(c->d[0] & 0xFFFF));
+    }
+    c->a[2] = (uint32_t)(int32_t)(int16_t)(c->a[0] & 0xFFFF);
+    c->d[0] = rd8(TIMER2(e)) & 3;
+    if (c->d[0]) {
+        set_d0w((uint16_t)rdw(SPEED_X(c->a[2])) >> 1);
+        wrw(SPEED_X(c->a[2]), rdw(SPEED_X(c->a[2])) + (int16_t)(c->d[0] & 0xFFFF));
+    }
+    wr8(TIMER2(e), (uint8_t)(rd8(TIMER2(e)) + 1));
+    call(RANDOM_TIMER);
+}
+
+/* $146FC: hops (on the ground: a random wait, then a jump), shooting once per hop: on the
+ * ground, or (half of them) on the way down */
+static void a146FC(Ent e)
+{
+    if (begins(e)) {
+        call_d0(SET_ANIM, 6);
+        wrw(VAR(e), 0);
+        call(RANDOM_TIMER_32);
+        if (c->d[0] & 4) wr8(VAR(e), 0xFF);
+    }
+    if (despawned()) return;
+    call(FACE_PLAYER);
+    call(CONTACT_AND_MOVE);
+    if (hit()) return;
+    call(CHECK_GROUNDED);
+    if (c->ccr & CC_Z) {
+        wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+        if (!rd8(TIMER(e))) {
+            call(RANDOM_TIMER);
+            call(JUMP);
+            wr8(SHOT(e), 0);
+        }
+        if (rd8(VAR(e))) return;
+    } else {
+        if (!rd8(VAR(e))) return;
+        if (rdw(VEL_Y(e)) < 0) return;
+    }
+    if (!(rd8(ALIVE(e)) & 1)) return;
+    uint8_t s = rd8(SHOT(e));
+    wr8(SHOT(e), s | 1);
+    if (!(s & 1)) shoot();
+}
+
+/* $1476C: rises $60 above its home, then hangs facing the player until it is below (between
+ * $10 and $80 down, $10 to $C0 aside), checked every 8 frames */
+static void a1476C(Ent e)
+{
+    if (begins(e)) {
+        wr8(MOVE_FLAGS(e), 0x50);
+        c->d[0] = 1;
+        if (!rd32(VEL(e))) {
+            wr32(VEL(e), 0xFE80u);
+            call(FACE_PLAYER);
+            c->d[0] = 8;
+        }
+        wr8(TIMER(e), (uint8_t)c->d[0]);
+        set_d0w(rdw(HOME_Y(e)) - 0x60);
+        wrw(LINK2(e), (int)(c->d[0] & 0xFFFF));
+        call(RANDOM_DELAY);
+        call_d0(SET_ANIM, 14);
+    }
+    if (despawned()) return;
+    call(PLAYER_CONTACT_ALL);
+    if (hit()) return;
+    wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+    if (!rd8(TIMER(e))) { wr8(TIMER(e), 1); call(MOVE_WITH_PLATFORMS); }
+    if (rdw(VEL_Y(e))) {
+        if (rdw(VEL_X(e))) call(FACE_VELOCITY);
+        set_d0w(rdw(LINK2(e)));
+        if ((uint16_t)rdw(LINK2(e)) < (uint16_t)rdw(Y(e))) return;    /* not up there yet */
+    }
+    wr32(VEL(e), 0);
+    call(FACE_PLAYER);
+    if (rd8(TIMER2(e))) {
+        wr8(TIMER2(e), (uint8_t)(rd8(TIMER2(e)) - 1));
+        if (rd8(TIMER2(e))) return;
+    }
+    c->d[0] = (uint32_t)rdw(FRAME) & 7;
+    if (c->d[0]) return;
+    call(DIST_Y_TO_TARGET);
+    if (c->ccr & CC_N) return;
+    uint16_t dy = (uint16_t)c->d[1];
+    if (dy >= 0x80 || dy < 0x10) return;
+    call(DIST_X_TO_ENTITY);
+    uint16_t dx = (uint16_t)c->d[1];
+    if (dx >= 0xC0) return;
+    if (dx >= 0x10) call(ENEMY_NEXT_STATE);
+}
+
 /* the actions, registered by their addresses (registry.c). call_68k leaves its mark in ret: it
  * is cleared unless the action went on elsewhere */
 #define ACTION(addr) void Act##addr(Cpu *cpu) { c = cpu; went_on = 0; a##addr((Ent)c->a[4]); if (!went_on) c->ret = 0; }
 ACTION(140F2) ACTION(140FC) ACTION(1410E) ACTION(14120) ACTION(1416E) ACTION(141A4)
 ACTION(1429E) ACTION(142D6) ACTION(142E4) ACTION(142F6) ACTION(14308)
 ACTION(1436C) ACTION(14394) ACTION(143BC) ACTION(143F2) ACTION(14420) ACTION(14456)
+ACTION(14518) ACTION(1454C) ACTION(145C4) ACTION(1463C) ACTION(14682) ACTION(146FC) ACTION(1476C)

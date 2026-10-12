@@ -22,6 +22,10 @@ uint16_t world_type_at_pixel(Ent e, int16_t x, int16_t y);
  * not come back (it never should for the routines called this way). */
 void call_68k(Cpu *t, uint32_t addr);
 
+/* $48C4, DespawnIfOffscreen, for the enemy in a4 (objects.c): the original returns past its
+ * caller when it removes the enemy; this answers 1 then, and the caller must return */
+int world_despawn_offscreen(Cpu *c);
+
 /* Leave a rewritten routine the way the original does when it jumps away instead of returning
  * (into code not rewritten yet, e.g. one that resets the stack and yields): the caller carries on
  * at addr with c's registers and stack (m68k_rt.h, rt_after_hand). A routine that does this must

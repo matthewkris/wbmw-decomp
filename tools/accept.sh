@@ -6,7 +6,7 @@
 #
 #   tools/accept.sh OUTDIR NAME [NAME ...]
 #
-# Environment: PYTHON (python3), CASES (fuzz cases per routine and state, 5000), FUZZ_STATES
+# Environment: PYTHON (python3), LIMIT (seconds per harness run, 1200), CASES (fuzz cases per routine and state, 5000), FUZZ_STATES
 # (state names in work/, "castle platform after-boss2 boss2 thunder"), REPLACE_STATES (states
 # for replace mode, "boss2 thunder door-crash castle"), ROM. Each state's random input is
 # work/runs/inputs/STATE.txt, made once (3,000 frames of random buttons) and kept. Run from the
@@ -20,6 +20,7 @@ FUZZ_STATES="${FUZZ_STATES:-castle platform after-boss2 boss2 thunder}"
 REPLACE_STATES="${REPLACE_STATES:-boss2 thunder door-crash castle}"
 ROM="${ROM:-rom/Wonder Boy in Monster World (USA, Europe).md}"
 H=work/harness/harness.exe; [ -x "$H" ] || H=work/harness/harness
+T="timeout ${LIMIT:-1200}"        # a run that loops in C (no cycle budget) is cut off: exit 124
 mkdir -p "$OUT" work/runs/inputs
 
 frame() { od -A n -t u4 -j 8 -N 4 "work/$1.state" | tr -d ' '; }
@@ -39,7 +40,7 @@ echo "== fuzz ($CASES cases per routine and state: $FUZZ_STATES)"
 for s in $FUZZ_STATES; do
     f=$(frame "$s")
     for n in $NAMES; do
-        "$H" "$ROM" --load-state "work/$s.state" --frames $((f + 1)) --port shadow --fuzz "$n" "$CASES" \
+        $T "$H" "$ROM" --load-state "work/$s.state" --frames $((f + 1)) --port shadow --fuzz "$n" "$CASES" \
             --coverage "$OUT/fcov_${s}_$n.txt" --quiet > "$OUT/fz_${s}_$n.log" 2>&1 &
     done
     wait
@@ -47,11 +48,11 @@ done
 grep -h "^fuzz" "$OUT"/fz_*.log | awk '{c += $3; m += $6} END {print "cases", c, "mismatches", m}'
 
 echo "== shadow runs (the standard runs and every state)"
-"$H" "$ROM" --frames 4000 --input harness/inputs/newgame.txt --port shadow --coverage "$OUT/cov_newgame.txt" --quiet > "$OUT/run_newgame.log" 2>&1 &
-"$H" "$ROM" --frames 4000 --port shadow --coverage "$OUT/cov_demo.txt" --quiet > "$OUT/run_demo.log" 2>&1 &
+$T "$H" "$ROM" --frames 4000 --input harness/inputs/newgame.txt --port shadow --coverage "$OUT/cov_newgame.txt" --quiet > "$OUT/run_newgame.log" 2>&1 &
+$T "$H" "$ROM" --frames 4000 --port shadow --coverage "$OUT/cov_demo.txt" --quiet > "$OUT/run_demo.log" 2>&1 &
 for st in work/*.state; do
     s=$(basename "$st" .state); f=$(frame "$s"); in=$(input "$s")
-    "$H" "$ROM" --load-state "$st" --frames $((f + 3000)) --input "$in" --port shadow --coverage "$OUT/cov_$s.txt" --quiet > "$OUT/run_$s.log" 2>&1 &
+    $T "$H" "$ROM" --load-state "$st" --frames $((f + 3000)) --input "$in" --port shadow --coverage "$OUT/cov_$s.txt" --quiet > "$OUT/run_$s.log" 2>&1 &
 done
 wait
 grep -h "all:" "$OUT"/run_*.log | awk '{c += $2; m += $5} END {print "runs", NR, "calls", c, "mismatches", m}'
@@ -70,14 +71,14 @@ show "$OUT/coverage_play.txt" | grep -v -E "^ |  0/"
 echo "== self-test (each must report 100 mismatches)"
 s=castle; f=$(frame $s)
 for n in $NAMES; do
-    WBMW_PORT_BREAK="$n" "$H" "$ROM" --load-state "work/$s.state" --frames $((f + 1)) --port shadow --fuzz "$n" 100 --quiet 2>&1 | grep "^fuzz"
+    WBMW_PORT_BREAK="$n" $T "$H" "$ROM" --load-state "work/$s.state" --frames $((f + 1)) --port shadow --fuzz "$n" 100 --quiet 2>&1 | grep "^fuzz"
 done
 
 echo "== replace mode"
-"$H" "$ROM" --frames 4000 --input harness/inputs/newgame.txt --port replace --quiet > "$OUT/rep_newgame.log" 2>&1 &
+$T "$H" "$ROM" --frames 4000 --input harness/inputs/newgame.txt --port replace --quiet > "$OUT/rep_newgame.log" 2>&1 &
 for s in $REPLACE_STATES; do
     f=$(frame "$s"); in=$(input "$s")
-    "$H" "$ROM" --load-state "work/$s.state" --frames $((f + 3000)) --input "$in" --port replace --quiet > "$OUT/rep_$s.log" 2>&1 &
+    $T "$H" "$ROM" --load-state "work/$s.state" --frames $((f + 3000)) --input "$in" --port replace --quiet > "$OUT/rep_$s.log" 2>&1 &
 done
 wait
 for l in "$OUT"/rep_*.log; do echo "$(basename "$l"): $(grep -c -i -E 'error|stuck|did not|call_68k|\.c: ' "$l") problems"; done

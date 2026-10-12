@@ -30,7 +30,8 @@ void HndAreaMonster(Cpu *), HndHopperOr(Cpu *), HndGuardian(Cpu *), HndVanishing
      HndDarter(Cpu *), HndDiver(Cpu *), HndSeeker(Cpu *), HndGrower(Cpu *);
 void Act140F2(Cpu *), Act140FC(Cpu *), Act1410E(Cpu *), Act14120(Cpu *), Act1416E(Cpu *),   /* actions.c */
      Act141A4(Cpu *), Act1429E(Cpu *), Act142D6(Cpu *), Act142E4(Cpu *), Act142F6(Cpu *), Act14308(Cpu *),
-     Act1436C(Cpu *), Act14394(Cpu *), Act143BC(Cpu *), Act143F2(Cpu *), Act14420(Cpu *), Act14456(Cpu *);
+     Act1436C(Cpu *), Act14394(Cpu *), Act143BC(Cpu *), Act143F2(Cpu *), Act14420(Cpu *), Act14456(Cpu *),
+     Act14518(Cpu *), Act1454C(Cpu *), Act145C4(Cpu *), Act1463C(Cpu *), Act14682(Cpu *), Act146FC(Cpu *), Act1476C(Cpu *);
 void RunEnemies(Cpu *), EnemyDispatch(Cpu *), EnemySetState(Cpu *), EnemyNextState(Cpu *);   /* enemies.c */
 void MagicUsed(Cpu *), SlotEmptied(Cpu *), MagicMeter(Cpu *), HudRedraw(Cpu *), GoldDisplay(Cpu *);   /* hud.c */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
@@ -220,6 +221,13 @@ const PortRoutine port_routines[] = {
     {0x0143F2, 0x014420, "Act143F2", Act143F2, CT_SP},
     {0x014420, 0x014456, "Act14420", Act14420, CT_SP},
     {0x014456, 0x014518, "Act14456", Act14456, CT_SP},           /* with the hurt frame $144D4-$14516 */
+    {0x014518, 0x01454C, "Act14518", Act14518, CT_SP},           /* walking, hovering, shooting (batch 9) */
+    {0x01454C, 0x0145C4, "Act1454C", Act1454C, CT_SP},
+    {0x0145C4, 0x01463C, "Act145C4", Act145C4, CT_SP},
+    {0x01463C, 0x014682, "Act1463C", Act1463C, CT_SP},
+    {0x014682, 0x0146FC, "Act14682", Act14682, CT_SP},
+    {0x0146FC, 0x01476C, "Act146FC", Act146FC, CT_SP},
+    {0x01476C, 0x014822, "Act1476C", Act1476C, CT_SP},
     {0x00EE70, 0x00EF12, "PlayerSwordTip", PlayerSwordTip, CT_SP},
     {0x011170, 0x01141A, "MagicStart", MagicStart, CT_SP},       /* magic.c; a potion may carry on at $F288 */
     {0x01141A, 0x0114C0, "MagicFrame", MagicFrame, CT_SP},       /* may carry on at $11590 or $11780 off a pass */
