@@ -950,6 +950,30 @@ Results: 0 mismatches over the standard runs and every owner state (420,931 chec
 250,000 fuzz cases from five states, 0 mismatches, every instruction covered. Self-test caught
 100 in 100 for each. Replace mode plays the new-game script and four states.
 
+#### The monsters' actions, batch 11: patrolling and jumping ($14C50-$14FD1, 2026-10-12)
+
+Twelve actions in `port/actions.c`. The patrols walk for a while and turn round at walls
+(`$4428`), touches (`$4444`), the ends of floors and platforms (`$462A`, from `$4646` and
+`$4686`) and a random range from home (`$45DC`): `$14C50`, `$14CA2`, `$14CF0` (away from a
+player close by; at a wall it jumps up where there is room, `$45AC`), `$14D74`, `$14DC8` (with
+the shield), `$14E1A` (runs from a player `$50` away), `$14E6C` (charges until something is in
+the way). The jumps go on until landing: `$14EC8` (straight up), `$14EF4` (on platforms),
+`$14F28` (slow and high in water), `$14F54`, `$14F80` (with the shield).
+
+* **The turns** each drop the action's return when they turn the monster (`$448C`: the other
+  way; `$445C`: away from the touch); the C does the test, makes the same turn and returns.
+* **`$140E0`**, which `$14CF0` jumps to, makes a detour: the state in d0 now, the current one
+  pending in -$2200, for EnemyNextState to come back to.
+* **`bsr EnemyNextState`** in `$14DC8` and `$14F80` (a touch backs it off) returns into the
+  action, which carries on with its frame; the C calls it and carries on.
+
+Results: 0 mismatches over the standard runs and every owner state (420,931 checked calls);
+300,000 fuzz cases from five states, 0 mismatches, every instruction covered. Self-test caught
+every case that returned (`$14C50` hands over to the hurt state when hit, so its run stops
+early). Replace mode plays the new-game script and four states.
+
+So far the actions cover `$140F2`-`$14FD1`: 46 of the 135 entries.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

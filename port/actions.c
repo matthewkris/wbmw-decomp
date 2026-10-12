@@ -35,6 +35,13 @@
  * $14888 (with the shield), $1492A, $14974, $14AEA/$14AFA (a range of their own), $14B7E (water
  * rows); $149D0 walks home; $14A82 turns to a player it faces; $14C1A waits, then falls.
  *
+ * Batch 11, patrolling and jumping ($14C50-$14FD1): walks for a while, turning round at walls
+ * ($4428), touches ($4444), the ends of floors and platforms ($462A) and a range from home
+ * ($45DC), each of which leaves past the action when it turns: $14C50, $14CA2, $14CF0 (away
+ * from a player close by; jumps a wall where it can: state 5, the current one pending), $14D74,
+ * $14DC8 (with the shield), $14E1A (runs), $14E6C (charges until something is in the way);
+ * jumps until landing: $14EC8 (up), $14EF4, $14F28 (slow and high in water), $14F54, $14F80.
+ *
  * Spawn flags (-$2AFE): bit 7 puff on appearing, bit 1 the other puff, bit 2 turned over
  * (attribute bit 7), bit 0 not placed by its animation.
  *
@@ -83,6 +90,9 @@
 #define HOME_Y(e)     ((e) - 0x20FE)
 #define HOME_X(e)     ((e) - 0x2100)
 #define ANIM_ID(e)    ((e) - 0x3CFE)
+#define GRAVITY(e)    ((e) - 0x33FE)   /* word: its ACCEL_Y */
+#define TOUCH(e)      ((e) - 0x2AFD)
+#define NEXT_STATE(e) ((e) - 0x2200)   /* byte: a state to go to next, or $FF */
 
 /* routines still called as they are */
 #define SET_ANIM          0x7E8u
@@ -134,6 +144,18 @@
 #define DIST_Y_ABS        0x4588u   /* the same to a2 */
 #define KIND_STATS        0x15A3Au  /* a1: its kind's record in $1381C */
 #define KIND_MOVES        0x15A76u  /* -$2900: its moves, by d0 */
+#define ACCEL_X_          0xAF4u
+#define RANGE_40          0x4402u   /* WORD_31FE: $40 + up to $3F */
+#define RANGE_80          0x4414u   /* WORD_31FE: $80 + up to $7F */
+#define FACE_AWAY         0x445Cu   /* faces away from its touch, walks on */
+#define TURN              0x448Cu   /* reverses its facing, walks on */
+#define SET_VEL_X_FACING  0x4496u   /* VEL_X: d0, by its facing */
+#define SET_VEL_Y         0x4508u   /* VEL_Y: d0, off the ground */
+#define ROOM_ABOVE        0x45ACu   /* nz: room to jump up the wall ahead */
+#define PAST_RANGE        0x45F4u   /* cc: as far from home as d2 */
+#define TARGET_FROM_HOME  0x4616u   /* cs: $FFA11C's entity within d2 of its home */
+#define EDGE_AHEAD        0x4646u   /* its platform: 0 at its end, mi off one */
+#define GROUND_AHEAD      0x4686u   /* 0: no floor ahead */
 
 void EnemySetState(Cpu *);           /* enemies.c */
 
@@ -997,6 +1019,298 @@ static void a14C1A(Ent e)
     if (!rd8(TIMER(e))) call(ENEMY_NEXT_STATE);
 }
 
+/* ---- patrolling and jumping (batch 11) ---- */
+
+/* The library's turns: each drops this action's return when it turns the monster round (it is
+ * done for this frame); here they answer 1 and the action returns. $448C reverses its facing and
+ * walks on; $445C faces it away from what touched it */
+static int turned_at_wall(void)                     /* $4428: blocked ahead (COLL & $41 == 1) */
+{
+    c->d[0] = (uint8_t)((rd8(COLL((Ent)c->a[4])) & 0x41) - 1);
+    if (c->d[0]) return 0;
+    call(TURN);
+    return 1;
+}
+
+static int turned_by_touch(void)                    /* $4444: touched (TOUCH bit 2) */
+{
+    if (!(rd8(TOUCH((Ent)c->a[4])) & 4)) return 0;
+    call(FACE_AWAY);
+    return 1;
+}
+
+static int turned_at_range(Ent e)                   /* $45DC: as far from home as WORD_31FE */
+{
+    c->d[2] = set_w(c->d[2], (uint16_t)rdw(WORD_31FE(e)));
+    call(PAST_RANGE);
+    if (c->ccr & CC_C) return 0;
+    call(TURN);
+    return 1;
+}
+
+static int turned_at_edge(void)                     /* $462A: the end of its platform or floor */
+{
+    call(EDGE_AHEAD);
+    if (c->ccr & CC_N) call(GROUND_AHEAD);
+    if (!(c->ccr & CC_Z)) return 0;
+    call(TURN);
+    return 1;
+}
+
+/* $140E0: a state to go to now (d0), the one it was in pending (NEXT_STATE) */
+static void detour(Ent e)
+{
+    c->d[1] = set_b(c->d[1], rd8(STEP(e)) & 0x7F);
+    wr8(NEXT_STATE(e), (uint8_t)c->d[1]);
+    wr8(STEP(e), (uint8_t)c->d[0]);
+}
+
+/* the frame's walk: TIMER frames, then the next state (1); else 0 */
+static int walk_over(Ent e)
+{
+    if (despawned()) return 1;
+    call(CONTACT_AND_MOVE);
+    if (hit()) return 1;
+    wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+    if (!rd8(TIMER(e))) { call(ENEMY_NEXT_STATE); return 1; }
+    return 0;
+}
+
+/* $14C50, $14CA2: walks (mostly towards the player) for a random while, turning at walls,
+ * edges and touches; $14C50 also within a random range of home */
+static void patrol_start(Ent e)
+{
+    call_d0(SET_ANIM, 8);
+    call(RANDOM);
+    c->d[0] = set_w(c->d[0], c->d[0] & 7);
+    if (c->d[0] & 7) call(FACE_PLAYER);
+    call(WALK_FORWARD);
+    call(RANGE_40);
+    call(RANDOM_TIMER);
+}
+
+static void a14C50(Ent e)
+{
+    if (begins(e)) patrol_start(e);
+    if (walk_over(e)) return;
+    c->d[2] = set_w(c->d[2], (uint16_t)rdw(WORD_31FE(e)));
+    if (turned_at_range(e) || turned_at_wall() || turned_at_edge() || turned_by_touch()) return;
+}
+
+static void a14CA2(Ent e)
+{
+    if (begins(e)) patrol_start(e);
+    if (walk_over(e)) return;
+    c->d[2] = set_w(c->d[2], (uint16_t)rdw(WORD_31FE(e)));
+    if (turned_at_wall() || turned_at_edge() || turned_by_touch()) return;
+}
+
+/* walks away from a player close by (else towards); at a wall it jumps (state 5, then back)
+ * where there is room above, or turns */
+static void a14CF0(Ent e)
+{
+    if (begins(e)) {
+        call_d0(SET_ANIM, 8);
+        call(FACE_PLAYER);
+        call(DIST_X_TO_ENTITY);
+        if ((uint16_t)c->d[1] < 0x30) wr8(ATTR(e), rd8(ATTR(e)) ^ 8);
+        call(WALK_FORWARD);
+        call(RANGE_80);
+        call(RANDOM);
+        c->d[0] = set_w(c->d[0], ((c->d[0] & 0x1F) + 0x20) & 0xFFFF);
+        wr8(TIMER(e), (uint8_t)c->d[0]);
+    }
+    call(MAYBE_BUBBLE);
+    if (walk_over(e)) return;
+    uint8_t coll = rd8(COLL(e));
+    c->d[0] = set_b(c->d[0], coll);
+    c->d[1] = (uint8_t)((coll & 0x41) - 1);
+    if (!c->d[1]) {                                 /* a wall */
+        c->d[0] = set_b(c->d[0], (uint8_t)((coll & 0x0A) - 2));
+        if (!(uint8_t)c->d[0]) {                    /* on the ground: room to jump? */
+            call(ROOM_ABOVE);
+            if (!(c->ccr & CC_Z)) { c->d[0] = 5; detour(e); return; }
+        }
+        call(TURN);
+        return;
+    }
+    if (turned_by_touch()) return;
+    if (turned_at_range(e)) return;
+}
+
+/* walks towards the player when it is near and within its range of home, else ahead */
+static void a14D74(Ent e)
+{
+    if (begins(e)) {
+        call_d0(SET_ANIM, 8);
+        call(RANDOM_TIMER);
+        call(RANGE_80);
+        call(DIST_Y_ABS_TARGET);
+        if ((uint16_t)c->d[1] < 0x30) {
+            c->d[2] = set_w(c->d[2], (uint16_t)rdw(WORD_31FE(e)));
+            call(TARGET_FROM_HOME);
+            if (c->ccr & CC_C) call(FACE_PLAYER);
+        }
+        call(WALK_FORWARD);
+    }
+    if (walk_over(e)) return;
+    if (turned_at_wall()) return;
+    if (turned_at_range(e)) return;
+}
+
+/* with the shield, backing off a touch */
+static void a14DC8(Ent e)
+{
+    if (begins(e)) {
+        call_d0(SET_ANIM, 8);
+        call(FACE_PLAYER);
+        call(WALK_FORWARD);
+        call(RANGE_80);
+        call(RANDOM_TIMER_32);
+    }
+    if (despawned()) return;
+    call(SHIELD_AND_MOVE);
+    if (hit()) return;
+    call(BACK_OFF);
+    if (!(c->ccr & CC_Z)) call(ENEMY_NEXT_STATE);   /* bsr: and on with this frame */
+    wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+    if (!rd8(TIMER(e))) { call(ENEMY_NEXT_STATE); return; }
+    if (turned_at_edge() || turned_at_wall() || turned_by_touch() || turned_at_range(e)) return;
+}
+
+/* runs at twice its speed from a player $50 away or more */
+static void a14E1A(Ent e)
+{
+    if (begins(e)) {
+        call(RANDOM_TIMER_32);
+        call(RANGE_80);
+        call(DIST_X_TO_PLAYER);
+        set_d0w(rdw(SPEED_X(e)));
+        if ((uint16_t)c->d[1] >= 0x50) {
+            wrw(ANIM_STEP(e), 0x200);
+            set_d0w((int)((c->d[0] * 2) & 0xFFFF));
+        }
+        call(SET_VEL_X_FACING);
+        call_d0(SET_ANIM, 8);
+    }
+    call(CONTACT_AND_MOVE);
+    if (hit()) return;
+    wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+    if (!rd8(TIMER(e))) { call(ENEMY_NEXT_STATE); return; }
+    if (turned_at_edge() || turned_at_wall() || turned_at_range(e)) return;
+}
+
+/* charges at the player; anything in the way (a touch, a wall, an edge) ends it */
+static void a14E6C(Ent e)
+{
+    if (begins(e)) {
+        wrw(ANIM_STEP(e), 0x200);
+        call(FACE_PLAYER);
+        call(WALK_FORWARD);
+        call(RANDOM_TIMER_32);
+        call_d0(SET_ANIM, 8);
+    }
+    if (walk_over(e)) return;
+    if (rd8(TOUCH(e)) & 4) { call(ENEMY_NEXT_STATE); return; }
+    c->d[0] = (uint8_t)((rd8(COLL(e)) & 0x41) - 1);
+    if (!c->d[0]) { call(ENEMY_NEXT_STATE); return; }
+    call(EDGE_AHEAD);
+    if (c->ccr & CC_Z) { call(ENEMY_NEXT_STATE); return; }
+    call(GROUND_AHEAD);
+    if (c->ccr & CC_Z) call(ENEMY_NEXT_STATE);
+}
+
+/* jumps: on until it lands */
+static void landed(Ent e)
+{
+    (void)e;
+    call(CHECK_GROUNDED);
+    if (c->ccr & CC_Z) call(ENEMY_NEXT_STATE);
+}
+
+static void a14EC8(Ent e)                           /* straight up */
+{
+    if (begins(e)) {
+        call_d0(SET_ANIM, 10);
+        wrw(VEL_X(e), 0);
+        call(JUMP);
+    }
+    if (despawned()) return;
+    call(CONTACT_AND_MOVE);
+    if (hit()) return;
+    landed(e);
+}
+
+static void a14EF4(Ent e)                           /* forward, on platforms */
+{
+    if (begins(e)) {
+        call_d0(SET_ANIM, 10);
+        call(WALK_FORWARD);
+        call(JUMP);
+    }
+    if (despawned()) return;
+    call(PLAYER_CONTACT_ALL);
+    call(ACCEL_Y);
+    call(MOVE_WITH_PLATFORMS);
+    if (hit()) return;
+    landed(e);
+}
+
+/* $14F66: steered forward at a quarter of its speed, then the frame of a jump ($14FBC) */
+static void steered_jump(Ent e)
+{
+    int a = (uint16_t)rdw(SPEED_X(e)) >> 2;
+    set_d0w(a);
+    if (rd8(ATTR(e)) & 8) { a = -a; set_d0w(a); }
+    wrw(ACCEL_X(e), a);
+    call(ACCEL_X_);
+    if (despawned()) return;
+    call(CONTACT_AND_MOVE);
+    if (hit()) return;
+    landed(e);
+}
+
+static void a14F54(Ent e)
+{
+    if (begins(e)) {
+        call_d0(SET_ANIM, 10);
+        call(JUMP);
+    }
+    steered_jump(e);
+}
+
+/* in water: a slow high jump (four times its speed up, a quarter of it in gravity) */
+static void a14F28(Ent e)
+{
+    if (!(rd8(WORLD_FLAGS) & 1)) { a14F54(e); return; }
+    if (begins(e)) {
+        set_d0w(rdw(SPEED_Y(e)));
+        c->d[1] = set_w(c->d[1], (c->d[0] & 0xFFFF) >> 2);
+        wrw(GRAVITY(e), (int)(c->d[1] & 0xFFFF));
+        set_d0w((int)(-(int)((c->d[0] << 2) & 0xFFFF)) & 0xFFFF);
+        call(SET_VEL_Y);
+        call_d0(SET_ANIM, 10);
+    }
+    steered_jump(e);
+}
+
+/* with the shield: a jump forward, backing off a touch */
+static void a14F80(Ent e)
+{
+    if (begins(e)) {
+        wrw(ANIM_STEP(e), 0x100);
+        call_d0(SET_ANIM, 10);
+        call(JUMP);
+        call(WALK_FORWARD);
+    }
+    if (despawned()) return;
+    call(SHIELD_AND_MOVE);
+    if (hit()) return;
+    call(BACK_OFF);
+    if (!(c->ccr & CC_Z)) call(ENEMY_NEXT_STATE);   /* bsr: and on with this frame */
+    landed(e);
+}
+
 /* the actions, registered by their addresses (registry.c). call_68k leaves its mark in ret: it
  * is cleared unless the action went on elsewhere */
 #define ACTION(addr) void Act##addr(Cpu *cpu) { c = cpu; went_on = 0; a##addr((Ent)c->a[4]); if (!went_on) c->ret = 0; }
@@ -1006,3 +1320,5 @@ ACTION(1436C) ACTION(14394) ACTION(143BC) ACTION(143F2) ACTION(14420) ACTION(144
 ACTION(14518) ACTION(1454C) ACTION(145C4) ACTION(1463C) ACTION(14682) ACTION(146FC) ACTION(1476C)
 ACTION(14822) ACTION(14888) ACTION(1492A) ACTION(14974) ACTION(149D0) ACTION(14A82) ACTION(14AEA)
 ACTION(14AFA) ACTION(14B7E) ACTION(14C1A)
+ACTION(14C50) ACTION(14CA2) ACTION(14CF0) ACTION(14D74) ACTION(14DC8) ACTION(14E1A) ACTION(14E6C)
+ACTION(14EC8) ACTION(14EF4) ACTION(14F28) ACTION(14F54) ACTION(14F80)
