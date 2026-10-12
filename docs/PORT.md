@@ -1033,6 +1033,30 @@ Results: 0 mismatches over the standard runs and every owner state (420,931 chec
 unchanged. Self-test caught every case that returned. Replace mode plays the new-game script
 and four states. 73 of the 135 actions are C.
 
+#### The monsters' actions, batch 15: Gragg & Glagg ($15A86-$16029, 2026-10-12)
+
+Six actions of the boss's kind ($060): `$15A86` appears with its three companions (a group
+record from `$127FE`, three free entities), falls, lands with a shake, and in the boss room throws
+up four rocks, drops back and opens the fight (message `$67` the first time); `$15C9E` is
+defeated (the floor opened by `$2812`, its partner told, puffs for 16 x 4 frames, then gone with
+its companions); `$15DD2` is hurt; `$15E54` waits and fires in turn; `$15EE6` rises bringing up a
+companion object (kind `$800`) and sinks back; `$15FB0` rises and sinks when its group says.
+
+* **Two more helpers leave past the action**: `$15F9C` (its group calls it back: step 8) and
+  `$1600C` (the touch; outside the boss room it ends in `jmp EnemyCheckHit`). The group's other
+  helpers (`$15C84`, `$15DA4`, `$15E10`, `$15E2E`, the glide home `$1602A`) are called.
+* **Where the original waits for ever**, the C stops with a message: no free group record
+  (`$15AD2`) or entity (`$15AE4`).
+* **The fuzz found two holes in its own inputs**, not in the C: a sub-step of `$15B44` past the
+  table, and an enemy size of 0, which the puffs divide by (`RandomSigned`, `$4340`): a division
+  by zero stops the translated code. Sizes are now 4-31, as the animations give them. Kind
+  `$800` is put in the room's list and room made for the companions, as for the guardian handler.
+
+Results: 0 mismatches over the standard runs and every owner state (420,931 checked calls; the
+boss fight runs most of `$15EE6` and `$15FB0`); 150,000 fuzz cases from five states, 0
+mismatches, every instruction covered. Self-test caught 100 in 100 for each. Replace mode plays
+the new-game script and four states. 79 of the 135 actions are C.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
