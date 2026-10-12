@@ -1311,6 +1311,7 @@ int hybrid_fuzz(const char *name, long count)
                 /* its size, as its animation gives it: never 0 (the puffs about it divide by it,
                  * RandomSigned $4340, and a division by zero stops the translated code) */
                 ram[0xCB02 + e] = (uint8_t)(4 + rnd() % 28); ram[0xCB03 + e] = (uint8_t)(4 + rnd() % 28);
+                ram[0xCB00 + e] = (uint8_t)(4 + rnd() % 28); ram[0xCB01 + e] = (uint8_t)(4 + rnd() % 28);   /* its body (-$3500), the same */
                 /* its hit records (-$2A00, -$2900): none, as between its attacks (pointers; a
                  * random odd one is an address error for the original and not for the C) */
                 put_long(0xD600 + e, 0); put_long(0xD700 + e, 0);
@@ -1323,6 +1324,20 @@ int hybrid_fuzz(const char *name, long count)
                     for (i = 0; i < n && i < 8; i++) if ((ram[0xA122 + 4 * i] << 8 | ram[0xA123 + 4 * i]) == 0x16) break;
                     if (i == n || i == 8) { i = n < 8 ? n : 7; put_word(0xA122 + 4 * i, 0x16); if (n < 8) put_word(0xA142, n + 1); }
                 }
+                if (!strcmp(name, "Act1774E") || !strcmp(name, "Act17822") || !strcmp(name, "Act178D0")) {   /* the last frame */
+                    if (rnd() % 2) ram[0xD801 + e] = 1;
+                    if (rnd() % 2) ram[0xD800 + e] = (uint8_t)(rnd() % 3);
+                }
+                if (!strcmp(name, "Act178D0")) {                                  /* not laid yet; the frame marked */
+                    if (rnd() % 2) ram[0xD802 + e] = 0;
+                    if (rnd() % 2) ram[0xD400 + e] = (uint8_t)(1 + rnd() % 255);
+                }
+                if (!strcmp(name, "Act178D0"))                                    /* its young (8, 6) in the room's list */
+                    for (uint32_t k = 0; k < 2; k++) {
+                        uint32_t kind = k ? 6 : 8, n = (uint32_t)(ram[0xA142] << 8 | ram[0xA143]), i;
+                        for (i = 0; i < n && i < 8; i++) if ((ram[0xA122 + 4 * i] << 8 | ram[0xA123 + 4 * i]) == kind) break;
+                        if (i == n || i == 8) { i = n < 8 ? n : 6 + k; put_word(0xA122 + 4 * i, kind); if (n < 8) put_word(0xA142, n + 1); }
+                    }
                 if (!strcmp(name, "Act1759A")) {                                  /* the target's sword out or not */
                     uint32_t t = (uint32_t)(ram[0xA11C] << 8 | ram[0xA11D]) & 0xFFFF;
                     if (t < 0x100) put_long(0xD600 + t, rnd() % 2 ? 0 : 0x10000 + rnd() % 0x60000);   /* boxes read from ROM: not the stack */

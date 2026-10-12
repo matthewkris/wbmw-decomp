@@ -1113,6 +1113,28 @@ Results: 0 mismatches over the standard runs and every owner state (422,373 chec
 100 in 100 for each. Replace mode plays the new-game script and four states. 93 of the 135
 actions are C.
 
+#### The monsters' actions, batch 19: a boss and its brood ($1771C-$179A9, 2026-10-12)
+
+Six actions. `$1771C` raises a boss by its height and, a frame later, marks it the room's boss
+(`$9748`) and sends it to state 3. `$1774E` is that boss beaten: the music stopped (`$176E6`,
+unless `$9668` is `$12`), the room frozen, its tiles shown (`$177C4`), 20 puffs 4 frames apart,
+then it is gone (sound 19, `$9748` = `$FF`). `$177D6` stands a random while and then walks (4)
+or leaps (5); `$17822` walks, turning at walls; both leap at once when touched from behind
+(`$17704`, which leaves past the action, so it is C). `$17860` leaps at the target (or back from
+the player) and lands into a random state (`$178C8`). `$178D0` leaps away when five of the room's
+enemies are about; otherwise it stops and lays one young (kind 8 or 6, `$1793C`, by `$12650`)
+when its animation marks a frame.
+
+The fuzz now puts kinds 8 and 6 in the room's list (`$12650` looks for its kind there for ever),
+gives timers their last frame, clears `$178D0`'s laid flag (otherwise the saved animation set's
+high byte), and keeps the body size at -$3500/-$34FF above 0: the puffs divide by it, and a
+division by zero stops the translated code.
+
+Results: 0 mismatches over the standard runs and every owner state (422,373 checked calls);
+150,000 fuzz cases from five states, 0 mismatches, every instruction covered. Self-test caught
+100 in 100 for each. Replace mode plays the new-game script and four states. 99 of the 135
+actions are C.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
