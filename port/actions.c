@@ -53,6 +53,12 @@
  * with it if hit); $15464 shoots 8 (or 16) times; $15504 hops and turns to attack; $15576 dives to
  * the target's height and flies back up home.
  *
+ * Batch 14, swimming, flying and hopping ($155E2-$159F9): $155E2 swims after the target;
+ * $15630 swims about it (jumps out of the ground first, bites from just above); $15704 bobs
+ * about a moving height; $1577A stands 20 frames; $157A6 does nothing; $157A8 and $157E4 hop
+ * three times; $15830 flies back home; $1589A faces the player, then charges; $158E6 climbs up
+ * and down its thread; $15994 walks to a wall or a stop, then hops.
+ *
  * Spawn flags (-$2AFE): bit 7 puff on appearing, bit 1 the other puff, bit 2 turned over
  * (attribute bit 7), bit 0 not placed by its animation.
  *
@@ -100,6 +106,7 @@
 #define COLL(e)       ((e) - 0x3100)
 #define HOME_Y(e)     ((e) - 0x20FE)
 #define HOME_X(e)     ((e) - 0x2100)
+#define SPEED(e)      ((e) - 0x3300)   /* long: x, y speeds */
 #define ANIM_ID(e)    ((e) - 0x3CFE)
 #define GRAVITY(e)    ((e) - 0x33FE)   /* word: its ACCEL_Y */
 #define TOUCH(e)      ((e) - 0x2AFD)
@@ -178,6 +185,11 @@
 #define FRICTION_Y        0xBACu
 #define SHIELD_CONTACT    0x46F4u   /* touching the player, or the shield */
 #define TARGET_W          0xFFFFA11Cu
+#define VEL_TOWARD        0x1234u   /* VEL at speed d4 towards a2 */
+#define ACCEL_TOWARD      0x1248u   /* d0, d5: an acceleration d4 towards a2 */
+#define ACCEL_TO          0x127Au   /* d4, d5: an acceleration d2 along (d0, d1) */
+#define SWIM_LIMIT        0x425Cu   /* its speed held to SPEED (the original's $425C) */
+#define FLY_FACING        0x46BEu   /* ACCEL_X by its facing (the original's $46BE) */
 
 void EnemySetState(Cpu *);           /* enemies.c */
 
@@ -1781,6 +1793,319 @@ static void a15576(Ent e)
     if (home >= y) call(ENEMY_NEXT_STATE);          /* back up home */
 }
 
+/* ---- swimming, flying, hopping (batch 14) ---- */
+
+/* swims after the target, at its height or rising, until it reaches it */
+static void a155E2(Ent e)
+{
+    if (begins(e)) {
+        wr8(MOVE_FLAGS(e), 0x68);
+        c->d[4] = set_w(c->d[4], 0x200);
+        c->a[2] = (Ent)(int32_t)rdw(TARGET_W);
+        call(VEL_TOWARD);
+        call_d0(SET_ANIM, 14);
+    }
+    if (despawned()) return;
+    call(PLAYER_CONTACT_ALL);
+    call(MOVE_WITH_PLATFORMS);
+    if (hit()) return;
+    call(CHECK_GROUNDED);
+    if (!(c->ccr & CC_Z)) {
+        Ent t = (Ent)(int32_t)rdw(TARGET_W);
+        c->a[2] = t;
+        set_d0w((uint16_t)(rdw(Y(t)) - rdw(Y(e))));
+        if ((uint16_t)rdw(Y(t)) >= (uint16_t)rdw(Y(e))) return;
+    }
+    wrw(VEL_Y(e), -rdw(VEL_Y(e)));
+    call(ENEMY_NEXT_STATE);
+}
+
+/* swims about after the target, jumping up out of the ground first (VAR); off the ground, close
+ * above the player, it bites (step 6); on the ground level with it, step 3 */
+static void a15630(Ent e)
+{
+    if (begins(e)) {
+        call(RANDOM_DELAY);
+        wr8(TIMER(e), 1);
+        wr8(VAR(e), 0);
+        if (rd8(ANIM_ID(e)) != 0x0E) {
+            wr8(VAR(e), 0xFF);
+            call(CHECK_GROUNDED);
+            if (!(c->ccr & CC_Z)) {
+                set_d0w(rdw(SPEED_Y(e)));
+                c->d[1] = set_w(c->d[1], (c->d[0] & 0xFFFF) >> 2);
+                wrw(GRAVITY(e), (int)(c->d[1] & 0xFFFF));
+                set_d0w((int)(-(int)((c->d[0] << 2) & 0xFFFF)) & 0xFFFF);
+                call(SET_VEL_Y);
+            }
+        }
+    }
+    call(MAYBE_BUBBLE);
+    if (despawned()) return;
+    call(PLAYER_CONTACT_ALL);
+    call(MOVE_WITH_PLATFORMS);
+    if (hit()) return;
+    if (rd8(VAR(e))) {
+        call(ACCEL_XY);
+        if (rdw(VEL_Y(e)) < 0) return;
+        wr8(VAR(e), 0);
+        call_d0(SET_ANIM, 14);
+    }
+    wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+    if (!rd8(TIMER(e))) {
+        call(RANDOM_TIMER);
+        c->a[2] = (Ent)(int32_t)rdw(TARGET_W);
+        c->d[4] = 16;
+        call(ACCEL_TOWARD);
+        wrw(ACCEL_X(e), (int)(c->d[0] & 0xFFFF));
+        wrw(GRAVITY(e), (int)(c->d[5] & 0xFFFF));
+        call(FACE_PLAYER);
+    }
+    call(SWIM_LIMIT);
+    if (rd8(TIMER2(e))) {
+        wr8(TIMER2(e), (uint8_t)(rd8(TIMER2(e)) - 1));
+        if (rd8(TIMER2(e))) return;
+    }
+    call(RANDOM_DELAY);
+    call(CHECK_GROUNDED);
+    if (!(c->ccr & CC_Z)) {                         /* off the ground: a bite at a player just below */
+        call(DIST_Y_TO_TARGET);
+        if (c->ccr & CC_N) return;
+        if ((uint8_t)c->d[1] >= 0x10) return;       /* cmpi.b */
+        call(DIST_X_TO_ENTITY);
+        if ((uint16_t)c->d[1] >= 0x18) return;
+        wr8(STEP(e), 6);
+        return;
+    }
+    call(DIST_Y_ABS_TARGET);
+    if ((uint16_t)c->d[1] < 0x10) wr8(STEP(e), 3);
+}
+
+/* bobs about a height (LINK2) that moves now and then, facing the player */
+static void a15704(Ent e)
+{
+    if (begins(e)) {
+        clr8(ATTR(e), 0x10);
+        call(RANDOM_TIMER);
+        call(RANDOM_DELAY);
+        wrw(LINK2(e), rdw(Y(e)));
+        call(FACE_PLAYER);
+        call(FLY_FACING);
+        call_d0(SET_ANIM, 14);
+    }
+    if (despawned()) return;
+    call(PLAYER_CONTACT_ALL);
+    if (hit()) return;
+    wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+    if (!rd8(TIMER(e))) { call(ENEMY_NEXT_STATE); return; }
+    set_d0w(rdw(LINK2(e)));
+    c->d[1] = 4; c->d[2] = 64;
+    call(BOB_TOWARD);
+    call(ACCEL_XY);
+    call(APPLY_VEL);
+    wr8(TIMER2(e), (uint8_t)(rd8(TIMER2(e)) - 1));
+    if (rd8(TIMER2(e))) return;
+    call(RANDOM_DELAY);
+    call(RANDOM);
+    set_d0w((int)(((c->d[0] & 0x3F) + (uint16_t)rdw(HOME_Y(e))) & 0xFFFF));
+    wrw(LINK2(e), (int)(c->d[0] & 0xFFFF));
+    call(FACE_PLAYER);
+    call(FLY_FACING);
+}
+
+/* stands 20 frames */
+static void a1577A(Ent e)
+{
+    if (begins(e)) {
+        call_d0(SET_ANIM, 8);
+        wr8(TIMER(e), 0x14);
+        wrw(VEL_X(e), 0);
+    }
+    call(CONTACT_AND_MOVE);
+    if (hit()) return;
+    wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+    if (!rd8(TIMER(e))) call(ENEMY_NEXT_STATE);
+}
+
+static void a157A6(Ent e) { (void)e; }              /* nothing */
+
+/* three hops on the spot ($157D4: up $200, animation 12) */
+static void hop_up(int anim) { set_d0w(-0x200); call(SET_VEL_Y); call_d0(SET_ANIM, (uint32_t)anim); }
+
+static void a157A8(Ent e)
+{
+    if (begins(e)) {
+        wrw(ANIM_STEP(e), 0x100);
+        wr8(TIMER(e), 3);
+        hop_up(12);
+    }
+    call(CONTACT_AND_MOVE);
+    if (hit()) return;
+    call(CHECK_GROUNDED);
+    if (!(c->ccr & CC_Z)) return;
+    wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+    if (!rd8(TIMER(e))) { call(ENEMY_NEXT_STATE); return; }
+    hop_up(12);
+}
+
+/* the same with animation 10, its timer reset once on the way down */
+static void hop_10(Ent e) { wr8(TIMER2(e), 0); hop_up(10); }   /* $1581C */
+
+static void a157E4(Ent e)
+{
+    if (begins(e)) { wr8(TIMER(e), 3); hop_10(e); }
+    call(CONTACT_AND_MOVE);
+    if (hit()) return;
+    call(CHECK_GROUNDED);
+    if (!(c->ccr & CC_Z)) {
+        if (rdw(VEL_Y(e)) < 0) return;
+        uint8_t t = rd8(TIMER2(e));
+        wr8(TIMER2(e), t | 1);
+        if (!(t & 1)) call(RESET_ANIM_TIMER);
+        return;
+    }
+    wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+    if (!rd8(TIMER(e))) { call(ENEMY_NEXT_STATE); return; }
+    hop_10(e);
+}
+
+/* flies back towards home, on when it is within $10 below it */
+static void a15830(Ent e)
+{
+    if (begins(e)) {
+        wr8(MOVE_FLAGS(e), 0x43);
+        wr32(SPEED(e), 0x02000200u);
+        clr8(ATTR(e), 8);
+        set_d0w((uint16_t)(rdw(HOME_X(e)) - rdw(X(e))));
+        if ((uint16_t)rdw(HOME_X(e)) < (uint16_t)rdw(X(e))) set8(ATTR(e), 8);
+        c->d[1] = set_w(c->d[1], (uint16_t)(rdw(HOME_Y(e)) - rdw(Y(e))));
+        c->d[2] = set_w(c->d[2], 0x40);
+        call(ACCEL_TO);
+        wrw(ACCEL_X(e), (int)(c->d[4] & 0xFFFF));
+        wrw(GRAVITY(e), (int)(c->d[5] & 0xFFFF));
+    }
+    if (despawned()) return;
+    call(PLAYER_CONTACT_ALL);
+    if (hit()) return;
+    call(ACCEL_XY);
+    call(APPLY_VEL);
+    uint16_t lim = (uint16_t)(rdw(HOME_Y(e)) + 0x10);
+    set_d0w(lim);
+    if (lim >= (uint16_t)rdw(Y(e))) call(ENEMY_NEXT_STATE);
+}
+
+/* faces the player for a while, then charges at four times its speed; close by, on */
+static void a1589A(Ent e)
+{
+    if (begins(e)) {
+        call(RANDOM_TIMER_32);
+        call(FACE_PLAYER);
+        wrw(ANIM_STEP(e), 0x300);
+        call_d0(SET_ANIM, 8);
+    }
+    call(CONTACT_AND_MOVE);
+    if (hit()) return;
+    if (rd8(TIMER(e))) {
+        call(FACE_PLAYER);
+        wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+        if (rd8(TIMER(e))) return;
+        set_d0w((int)((rdw(SPEED_X(e)) << 2) & 0xFFFF));
+        call(SET_VEL_X_FACING);
+    }
+    call(DIST_X_TO_PLAYER);
+    if ((uint16_t)c->d[1] < 0x30) call(ENEMY_NEXT_STATE);
+}
+
+/* $1593C: TIMER, $18 + up to $3F; d0 the random */
+static void random_wait(Ent e)
+{
+    call(RANDOM);
+    set_d0w((int)(((c->d[0] & 0x3F) + 0x18) & 0xFFFF));
+    wr8(TIMER(e), (uint8_t)c->d[0]);
+}
+
+/* climbs up and down a thread from its partner (LINK2), which it draws stretched to it ($1594E);
+ * pausing at each turn */
+static void a158E6(Ent e)
+{
+    if (begins(e)) {
+        call_d0(SET_ANIM, 8);
+        wr8(TIMER2(e), 0);
+        wrw(VEL_Y(e), rdw(SPEED_Y(e)));
+        random_wait(e);
+        c->d[0] = set_w(c->d[0], c->d[0] & 7);
+        if (c->d[0] & 7) {
+            wrw(VEL_Y(e), rdw(VEL_Y(e)) << 1);
+            wrw(TIMER(e), (uint16_t)rdw(TIMER(e)) >> 1);
+        }
+    }
+    call(PLAYER_CONTACT_ALL);
+    if (hit()) return;
+    if (rd8(TIMER2(e))) { wr8(TIMER2(e), (uint8_t)(rd8(TIMER2(e)) - 1)); return; }
+    wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+    if (!rd8(TIMER(e))) {                           /* turns, and pauses */
+        wrw(VEL_Y(e), -rdw(VEL_Y(e)));
+        random_wait(e);
+        set_d0w((uint16_t)(c->d[0] & 0xFFFF) >> 1);
+        wr8(TIMER2(e), (uint8_t)c->d[0]);
+        return;
+    }
+    call(APPLY_VEL_Y);
+    Ent t = (Ent)(int32_t)rdw(LINK2(e));
+    c->a[2] = t;
+    uint16_t y = (uint16_t)rdw(Y(e)), top = (uint16_t)rdw(Y(t));
+    c->d[1] = set_w(c->d[1], top);
+    uint16_t d = (uint16_t)(y - top);
+    set_d0w(d);
+    if (d & 0x8000) {                               /* above the top: held there, thread hidden */
+        wrw(Y(e), (int16_t)top);
+        clr8(ALIVE(t), 0x40);
+        return;
+    }
+    if (d >= 0x58) {                                /* at the end of the thread */
+        c->d[0] = 87;
+        c->d[1] = set_w(c->d[1], (uint16_t)(top + 87));
+        wrw(Y(e), (int16_t)(top + 87));
+    }
+    set_d0w((int)((((c->d[0] & 0xFFFF) >> 3) * 2) & 0xFFFF));
+    uint8_t a = rd8(ALIVE(t));
+    wr8(ALIVE(t), a | 0x40);
+    if ((a & 0x40) && (uint8_t)c->d[0] == rd8(ANIM_ID(t))) return;
+    uint32_t s = c->a[4]; c->a[4] = c->a[2]; c->a[2] = s;   /* exg: the thread's animation */
+    call(SET_ANIM);
+    s = c->a[4]; c->a[4] = c->a[2]; c->a[2] = s;
+}
+
+/* turns, and walks until a wall or until it stops; then a hop (VAR), on when coming down */
+static void a15994(Ent e)
+{
+    if (begins(e)) {
+        wr8(VAR(e), 0);
+        wr8(ATTR(e), rd8(ATTR(e)) ^ 8);
+        wrw(ANIM_STEP(e), 0x300);
+    }
+    if (despawned()) return;
+    call(CONTACT_AND_MOVE);
+    call(ENEMY_MOVE);
+    if (hit()) return;
+    if (rd8(VAR(e))) {
+        if (rdw(VEL_Y(e)) >= 0) return;
+        wrw(ANIM_STEP(e), 0x100);
+        call(ENEMY_NEXT_STATE);
+        return;
+    }
+    call_d0(FRICTION_X, 8);
+    c->d[0] = (uint8_t)((rd8(COLL(e)) & 0x41) - 1);
+    if (c->d[0]) {
+        set_d0w(rdw(VEL_X(e)));
+        if (rdw(VEL_X(e))) return;
+    }
+    wrw(VEL_X(e), (int)(c->d[0] & 0xFFFF));
+    wr8(VAR(e), 0xFF);
+    set_d0w(-0x200);
+    call(SET_VEL_Y);
+}
+
 /* the actions, registered by their addresses (registry.c). call_68k leaves its mark in ret: it
  * is cleared unless the action went on elsewhere */
 #define ACTION(addr) void Act##addr(Cpu *cpu) { c = cpu; went_on = 0; a##addr((Ent)c->a[4]); if (!went_on) c->ret = 0; }
@@ -1795,3 +2120,5 @@ ACTION(14EC8) ACTION(14EF4) ACTION(14F28) ACTION(14F54) ACTION(14F80)
 ACTION(14FD2) ACTION(14FFE) ACTION(15010) ACTION(15066) ACTION(150D8) ACTION(15126) ACTION(151A0)
 ACTION(151D6) ACTION(152A0)
 ACTION(15352) ACTION(153BE) ACTION(153F0) ACTION(15464) ACTION(154B2) ACTION(15504) ACTION(15576)
+ACTION(155E2) ACTION(15630) ACTION(15704) ACTION(1577A) ACTION(157A6) ACTION(157A8) ACTION(157E4)
+ACTION(15830) ACTION(1589A) ACTION(158E6) ACTION(15994)
