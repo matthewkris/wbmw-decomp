@@ -1305,10 +1305,62 @@ int hybrid_fuzz(const char *name, long count)
                 if (!strcmp(name, "Act1454C") && rnd() % 4 == 0) ram[0xD802 + e] = (uint8_t)(rnd() % 2 ? 0xFF : 0);
                 if (rnd() % 4 == 0) put_long(0xCA00 + e, 0);                      /* standing still */
                 put_word(0xCE02 + e, rnd() % 4 ? 0x40 + rnd() % 0xC0 : rnd() % 0x40);   /* its range from home */
+                /* its size, as its animation gives it: never 0 (the puffs about it divide by it,
+                 * RandomSigned $4340, and a division by zero stops the translated code) */
+                ram[0xCB02 + e] = (uint8_t)(4 + rnd() % 28); ram[0xCB03 + e] = (uint8_t)(4 + rnd() % 28);
                 if (!strcmp(name, "Act15066") && rnd() % 2) {                     /* its last hop, on the ground */
                     ram[0xD800 + e] = 1; ram[0xD801 + e] = 1; ram[0xCF00 + e] = 2;
                 }
                 if (!strcmp(name, "Act151D6") && rnd() % 2) ram[0xD802 + e] = 0xFF;   /* attacking */
+                if (!strcmp(name, "Act15A86") || !strcmp(name, "Act15C9E") || !strcmp(name, "Act15DD2")
+                    || !strcmp(name, "Act15E54") || !strcmp(name, "Act15EE6") || !strcmp(name, "Act15FB0")) {
+                    /* Gragg & Glagg: its group record at $FFF800 (a flag byte, then its three
+                     * companions), the byte it sets when gone at $FFF810, the fight's state; free
+                     * room for $15A86's companions ($15AD2 and $15AE4 wait for ever without) and
+                     * kind $800 in the room's list ($4910 likewise) */
+                    put_word(0xD300 + e, 0xF800);
+                    ram[0xF800] = (uint8_t)rnd();
+                    for (uint32_t k3 = 1; k3 < 4; k3++) {
+                        uint32_t m = 0x40 + (rnd() % 16) * 4;
+                        if (m == e) m = p;
+                        put_word(0xF800 + 2 * k3, m);
+                    }
+                    put_word(0xD302 + e, 0xF810);
+                    ram[0xD801 + e] = (uint8_t)(rnd() % 4 || !strcmp(name, "Act15A86")      /* $15A86: its steps (0-8) */
+                                                ? ((rnd() % 5) * 2 | (rnd() % 2 ? 0x80 : 0)) : rnd() % 2 ? 0 : 0xFF);
+                    ram[0xA0E2] &= 0x7F;
+                    for (int k3 = 0, freed = 0; k3 < 16 && freed < 3; k3++) {
+                        uint32_t s = 0x40 + (uint32_t)k3 * 4;
+                        if (s != e && rnd() % 2) { ram[0xC000 + s] &= 0x7F; freed++; }
+                    }
+                    {   uint32_t n = (uint32_t)(ram[0xA142] << 8 | ram[0xA143]), i;
+                        for (i = 0; i < n && i < 8; i++) if ((ram[0xA122 + 4 * i] << 8 | ram[0xA123 + 4 * i]) == 0x800) break;
+                        if (i == n || i == 8) {
+                            i = n < 8 ? n : 7;
+                            put_word(0xA122 + 4 * i, 0x800);
+                            if (n < 8) put_word(0xA142, n + 1);
+                        }
+                    }
+                    if (!strcmp(name, "Act15A86")) {                              /* its counters at their ends */
+                        ram[0xD803 + e] = (uint8_t)(rnd() % 2 ? 1 : rnd() % 4);
+                        ram[0xD802 + e] = (uint8_t)(rnd() % 4);
+                    }
+                    if (!strcmp(name, "Act15C9E"))                                /* its last puff */
+                        ram[0xD801 + e] = (uint8_t)(rnd() % 2 ? 1 : 1 + rnd() % 16);
+                    if (!strcmp(name, "Act15EE6") && rnd() % 4 == 0)              /* no room for its object */
+                        for (uint32_t s = 0x40; s < 0x80; s += 4) ram[0xC000 + s] |= 0x80;
+                    ram[0xA10F] = (uint8_t)rnd();
+                    ram[0xA107] = (uint8_t)(rnd() % 2 ? 0 : rnd());
+                    ram[0xA111] = (uint8_t)(rnd() % 2 ? 0 : 1 + rnd() % 3);
+                    put_word(0xA112, rnd() % 2 ? e : 0x40 + (rnd() % 16) * 4);
+                    put_word(0xA10C, rnd() % 2 ? e : 0x40 + (rnd() % 16) * 4);
+                    ram[0xA106] = (uint8_t)(rnd() % 3);
+                    ram[0xA114] = (uint8_t)(rnd() % 3);
+                    put_word(0xA108, rnd() % 2 ? 0 : 0x40 + (rnd() % 16) * 4);
+                    put_word(0xA10A, rnd() % 2 ? 0 : 0x40 + (rnd() % 16) * 4);
+                    put_word(0xA102, rnd() % 2 ? 0 : e);
+                    put_word(0xDF02 + e, (uint32_t)(get_sword(0xC900 + e) + small(0x40)));   /* home height */
+                }
                 {   int32_t x = get_sword(0xC800 + e);                            /* home x: at it, or near */
                     put_word(0xDF00 + e, (uint32_t)(rnd() % 4 == 0 ? x : x + small(0x40))); }
             }

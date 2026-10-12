@@ -59,6 +59,12 @@
  * three times; $15830 flies back home; $1589A faces the player, then charges; $158E6 climbs up
  * and down its thread; $15994 walks to a wall or a stop, then hops.
  *
+ * Batch 15, Gragg & Glagg ($15A86-$16059): $15A86 appears with its companions and opens the
+ * fight; $15C9E is defeated; $15DD2 is hurt; $15E54 waits and fires; $15EE6 rises with an object
+ * and sinks back; $15FB0 rises and sinks when told. $15F9C (called back) and $1600C (the touch,
+ * hit outside the boss rooms) leave past the action; the group's other helpers are called.
+ * Where the original waits for ever (no free group record or entity), the C stops with a message.
+ *
  * Spawn flags (-$2AFE): bit 7 puff on appearing, bit 1 the other puff, bit 2 turned over
  * (attribute bit 7), bit 0 not placed by its animation.
  *
@@ -113,6 +119,10 @@
 #define NEXT_STATE(e) ((e) - 0x2200)   /* byte: a state to go to next, or $FF */
 #define STRENGTH(e)   ((e) - 0x2700)   /* word */
 #define STRENGTH2(e)  ((e) - 0x2400)   /* word: the strength of its attack */
+#define GOAL(e)       ((e) - 0x2D00)   /* word: the guardian's group record */
+#define MAKER(e)      ((e) - 0x2CFE)   /* word: a byte to set when it is gone */
+#define HALF_W(e)     ((e) - 0x34FE)
+#define DELAY(e)      ((e) - 0x25FE)
 
 /* routines still called as they are */
 #define SET_ANIM          0x7E8u
@@ -190,6 +200,32 @@
 #define ACCEL_TO          0x127Au   /* d4, d5: an acceleration d2 along (d0, d1) */
 #define SWIM_LIMIT        0x425Cu   /* its speed held to SPEED (the original's $425C) */
 #define FLY_FACING        0x46BEu   /* ACCEL_X by its facing (the original's $46BE) */
+#define CLEAR_ENTITY      0xA36u
+#define SET_MAP_BLOCKS    0x2812u   /* d0 x d1 blocks from d2 at (d6, d7) */
+#define SHOW_TILES        0x2DFEu
+#define PUFF_A            0x42D4u   /* a puff ($1208) about it, sound $3F; a2 */
+#define PUFF_B            0x42DAu   /* the same, $120A */
+#define FALL_AND_MOVE     0x46D6u
+#define FREEZE_ENEMIES    0x47D2u
+#define ROOM_KIND         0x4910u   /* a0: kind d1's entry in the room's list (waits for ever without) */
+#define SPAWN_ITEM_AT     0x10910u
+#define GROUP_SLOT        0x127FEu  /* a3: a free group record; mi: none */
+#define GROUP_TO_IT       0x15C84u  /* its first companion (a2) moved to it */
+#define PARTNER_DOWN      0x15DA4u  /* the entity d0 to step 6 */
+#define GROUP_BLINK       0x15E10u
+#define GROUP_UNBLINK     0x15E2Eu
+#define GLIDE_HOME        0x1602Au  /* z: at its home height */
+#define SPAWN_FROM_A394   0x1A438u  /* an enemy from the record at $FFA394; a2, mi: none */
+#define SHAKE             0xFFFF9738u
+#define G_COUNT6          0xFFFFA106u
+#define G_MODE            0xFFFFA107u
+#define G_LAST            0xFFFFA10Cu
+#define G_FLAGS           0xFFFFA10Fu
+#define G_OPEN            0xFFFFA111u
+#define G_WORD            0xFFFFA112u
+#define TEXT_BUSY         0xFFFF9962u
+#define MESSAGE           0xFFFF9C16u
+#define AREA              0xFFFF9668u
 
 void EnemySetState(Cpu *);           /* enemies.c */
 
@@ -2106,6 +2142,374 @@ static void a15994(Ent e)
     call(SET_VEL_Y);
 }
 
+/* ---- Gragg & Glagg (batch 15) ---- */
+
+static void stop(const char *what, Ent e)
+{
+    fprintf(stderr, "actions.c: %s (entity $%04X, step $%02X)\n", what, (unsigned)(e & 0xFFFF), rd8(STEP(e)));
+    exit(3);
+}
+
+static uint32_t group(Ent e) { return (uint32_t)(int32_t)rdw(GOAL(e)); }   /* -$2D00: its group's record */
+
+/* $1600C: touches; outside the boss rooms (WORLD_FLAGS bit 5) hit like any monster (EnemyCheckHit:
+ * 1, the action returns); in them, with the shield while it blinks (TIMER) */
+static int guard_touch(Ent e)
+{
+    if (!(rd8(WORLD_FLAGS) & 0x20)) { call(PLAYER_CONTACT_ALL); return hit(); }
+    call(rd8(TIMER(e)) ? PLAYER_TOUCH : PLAYER_CONTACT_ALL);
+    return 0;
+}
+
+/* $15F9C: its group calls it back (bit 1 of the record): step 8, and the original leaves past the
+ * action: 1 */
+static int called_back(Ent e)
+{
+    c->a[3] = group(e);
+    uint8_t g = rd8(c->a[3]);
+    wr8(c->a[3], g & (uint8_t)~2);
+    if (!(g & 2)) return 0;
+    wr8(STEP(e), 8);
+    return 1;
+}
+
+/* $1602A: towards its home height (VEL_Y), $30 above it at most; z when there */
+static int glided_home(void) { call(GLIDE_HOME); return (c->ccr & CC_Z) != 0; }
+
+/* $15A86: Gragg (or Glagg) appears with its three companions (a group record from $127FE, three
+ * free entities, its own drawing), falls, lands with a shake, its companions shown; in the boss
+ * rooms it then throws up four rocks ($212) and drops back to the floor, and opens the fight
+ * (message $67 the first time). Steps of its own in TIMER2 (0-8) */
+static void a15A86(Ent e)
+{
+    if (begins(e)) {
+        wr8(ANIM_RATE(e), 0x0C);
+        wr32(TIMER(e), 0);
+        call(FACE_PLAYER);
+        if (rd8(WORLD_FLAGS) & 0x20) {
+            set8(0xFFFF9858u, 8);
+            wr8(0xFFFF9F05u, 8);
+            wrw(VEL_X(c->a[2]), 0);
+            wr8(0xFFFFA14Au, 0xFF);
+            c->a[0] = 0xFFFFA102u;
+            if (rdw(c->a[0])) c->a[0] += 2;
+            wrw(c->a[0], (int)(c->a[4] & 0xFFFF));
+            wrw(MAKER(e), (int)(c->a[0] & 0xFFFF));
+            wr8(0xFFFFA114u, (uint8_t)(rd8(0xFFFFA114u) + 1));
+        }
+        call(GROUP_SLOT);
+        if (c->ccr & CC_N) stop("no free group record ($15AD2 waits for ever)", e);
+        set8(c->a[3], 0x80);
+        wrw(GOAL(e), (int)(c->a[3] & 0xFFFF));
+        c->d[1] = 3;
+        do {
+            call(FIND_FREE_ENTITY);
+            if (c->ccr & CC_N) stop("no free entity ($15AE4 waits for ever)", e);
+            uint32_t t = c->a[4]; c->a[4] = c->a[2]; c->a[2] = t;
+            call(CLEAR_ENTITY);
+            t = c->a[4]; c->a[4] = c->a[2]; c->a[2] = t;
+            Ent m = c->a[2];
+            set8(ALIVE(m), 0x80);
+            wr8(TYPE(m), 0xFF);
+            wrw(GOAL(m), (int)(c->a[4] & 0xFFFF));
+            wrw(WORD_3DFE(m), rdw(WORD_3DFE(e)));
+            wrw(ANIM_SET(m), rdw(ANIM_SET(e)));
+            wrw(X(m), rdw(X(e)));
+            c->d[0] = rd8(ATTR(e)) & 8;
+            wr8(ATTR(m), (uint8_t)c->d[0]);
+            c->d[0] = set_w(3, (3 - (c->d[1] & 0xFFFF)) & 0xFFFF);
+            c->a[0] = 0x15C9Au;
+            wr8(ANIM_RATE(m), rd8(0x15C9Au + (uint32_t)(int32_t)(int16_t)(c->d[0] & 0xFFFF)));
+            c->d[0] = set_w(c->d[0], (c->d[0] * 2) & 0xFFFF);
+            wrw(c->a[3] + 2 + (uint32_t)(int32_t)(int16_t)(c->d[0] & 0xFFFF), (int)(m & 0xFFFF));
+            c->d[1] = set_b(c->d[1], (uint8_t)(c->d[1] - 1));
+        } while ((uint8_t)c->d[1]);
+        call_d0(SET_ANIM, 0);
+        set8(ALIVE(e), 0x40);
+        set8(MOVE_FLAGS(e), 3);
+    }
+    uint8_t sub = rd8(TIMER2(e)) & 0x7F;
+    c->d[0] = sub;
+    if (sub > 8 || (sub & 1)) stop("a step of $15B44 past its table", e);
+    c->a[0] = 0x15B54u + (uint32_t)(int32_t)rdw(0x15B54u + sub);
+    switch (sub) {
+    case 0:                                         /* falling */
+        call(FALL_AND_MOVE);
+        call(CHECK_GROUNDED);
+        if (!(c->ccr & CC_Z)) return;
+        call_d0(QUEUE_SOUND, 57);
+        wrw(SHAKE, -5);
+        wrw(HOME_X(e), rdw(X(e)));
+        wrw(HOME_Y(e), rdw(Y(e)));
+        wr8(TIMER2(e), 2);
+        call_d0(SET_ANIM, 2);
+        return;
+    case 2:                                         /* landed: its companions shown */
+        if (rd8(ANIM_BUSY(e))) return;
+        call_d0(SET_ANIM, 4);
+        call(GROUP_TO_IT);
+        {
+            uint32_t t = c->a[4]; c->a[4] = c->a[2]; c->a[2] = t;
+            call_d0(SET_ANIM, 6);
+            set8(ALIVE(c->a[4]), 0x40);
+            set8(ATTR(c->a[4]), 0x80);
+            t = c->a[4]; c->a[4] = c->a[2]; c->a[2] = t;
+        }
+        if (!(rd8(WORLD_FLAGS) & 0x20)) { call(ENEMY_NEXT_STATE); return; }
+        wrw(HOME_Y(e), rdw(HOME_Y(e)) + 0x10);
+        wr8(TIMER2(e), 4);
+        wrw(VAR(e), 0x0301);
+        return;
+    case 4:                                         /* four rocks, one every other frame */
+        wr8(SHOT(e), (uint8_t)(rd8(SHOT(e)) - 1));
+        if (rd8(SHOT(e))) return;
+        wr8(SHOT(e), 2);
+        c->d[2] = rd8(HALF_H(e));
+        c->d[2] = set_w(c->d[2], (c->d[2] - 0x10 + (uint16_t)rdw(HOME_Y(e))) & 0xFFFF);
+        c->d[1] = rd8(VAR(e));
+        if (rd8(ATTR(e)) & 8) c->d[1] = set_w(c->d[1], (c->d[1] + 4) & 0xFFFF);
+        c->d[1] = set_b(c->d[1], rd8(0x15C18u + (c->d[1] & 0xFFFF)));
+        c->d[1] = ext_w(c->d[1]);
+        c->d[1] = set_w(c->d[1], (c->d[1] + (uint16_t)rdw(HOME_X(e))) & 0xFFFF);
+        set_d0w(0x212);
+        call(SPAWN_ITEM_AT);
+        wr8(VAR(e), (uint8_t)(rd8(VAR(e)) - 1));
+        if (!(rd8(VAR(e)) & 0x80)) return;
+        wr8(TIMER2(e), 6);
+        /* fall through */
+    case 6:                                         /* back down to the floor */
+        call(ACCEL_Y);
+        call(APPLY_VEL_Y);
+        set_d0w(rdw(HOME_Y(e)));
+        if ((uint16_t)rdw(HOME_Y(e)) > (uint16_t)rdw(Y(e))) { call(GROUP_TO_IT); return; }
+        wrw(Y(e), (int)(c->d[0] & 0xFFFF));
+        call(GROUP_TO_IT);
+        wrw(SHAKE, -5);
+        wr8(TIMER2(e), 8);
+        call_d0(QUEUE_SOUND, 57);
+        return;
+    case 8: {                                       /* 10 frames, then the fight */
+        uint8_t t = rd8(TIMER2(e));
+        wr8(TIMER2(e), t | 0x80);
+        if (!(t & 0x80)) wr8(SHOT(e), 0x0A);
+        wr8(SHOT(e), (uint8_t)(rd8(SHOT(e)) - 1));
+        if (rd8(SHOT(e))) return;
+        uint8_t f = rd8(G_FLAGS);
+        wr8(G_FLAGS, f | 2);
+        if (f & 2) {
+            wr8(0xFFFF9F05u, 0);
+            wrw(TEXT_BUSY, 8);
+            wrw(MESSAGE, 0x67);
+        }
+        call(ENEMY_NEXT_STATE);
+        return;
+    }
+    }
+}
+
+/* $15C9E: defeated: blinking, puffs from its body for 16 x 4 frames (in the boss room the floor
+ * is opened, $2812, and its partner told), then EnemyDefeated, and gone with its companions */
+static void a15C9E(Ent e)
+{
+    if (begins(e)) {
+        call(GROUP_BLINK);
+        wrw(TIMER(e), 0x0810);
+        if (rd8(WORLD_FLAGS) & 0x20) {
+            c->a[0] = group(e);
+            c->a[0] = (uint32_t)(int32_t)rdw(c->a[0] + 2);
+            c->d[6] = set_w(c->d[6], (uint16_t)(rdw(X(c->a[0])) - 0x20));
+            c->d[7] = set_w(c->d[7], (uint16_t)(rdw(Y(c->a[0])) + 0x10));
+            c->d[6] = set_w(c->d[6], (c->d[6] & 0xFFFF) >> 4);
+            c->d[7] = set_w(c->d[7], ((c->d[7] & 0xFFF0) << 2) & 0xFFFF);
+            c->d[0] = 4; c->d[1] = 1;
+            c->d[2] = set_w(c->d[2], 0x297);
+            call(SET_MAP_BLOCKS);
+            if (rd8(G_MODE)) {
+                call(FREEZE_ENEMIES);
+                set_d0w(rdw(X(e)));
+                c->d[1] = set_w(c->d[1], (uint16_t)rdw(Y(e)));
+                c->d[2] = 16; c->d[3] = 8;
+                c->a[0] = 0x15DC0u;
+                call(SHOW_TILES);
+                set_d0w(rdw(0xFFFFA108u));
+                if (c->d[0] & 0xFFFF) call(PARTNER_DOWN);
+                set_d0w(rdw(0xFFFFA10Au));
+                if (c->d[0] & 0xFFFF) call(PARTNER_DOWN);
+            }
+            c->a[3] = (uint32_t)(int32_t)rdw(MAKER(e));
+            wr8(c->a[3], 0xFF);
+            wr8(G_MODE, 0xFF);
+            c->a[3] = group(e);
+            wrw(c->a[3], 0);
+            wr8(G_OPEN, 0);
+        }
+    }
+    wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+    if (rd8(TIMER(e))) return;
+    wr8(TIMER2(e), (uint8_t)(rd8(TIMER2(e)) - 1));
+    if (rd8(TIMER2(e))) {
+        wr8(TIMER(e), 4);
+        c->d[4] = rd8(HALF_W(e));
+        c->d[5] = rd8(HALF_H(e));
+        call(RANDOM);
+        c->d[0] = set_b(c->d[0], c->d[0] & 3);
+        call(c->d[0] & 3 ? PUFF_B : PUFF_A);
+        wr8(ANIM_RATE(c->a[2]), 8);
+        return;
+    }
+    call(ENEMY_DEFEATED);
+    wr8(0xFFFFA114u, (uint8_t)(rd8(0xFFFFA114u) - 1));
+    if (!rd8(0xFFFFA114u)) {
+        if (rd8(AREA) != 0x12) call_d0(QUEUE_SOUND, 19);
+        wr8(0xFFFFA14Au, 0);
+    }
+    c->a[3] = group(e);
+    for (int k = 2; k <= 6; k += 2) {
+        c->a[2] = (uint32_t)(int32_t)rdw(c->a[3] + (uint32_t)k);
+        wrw(ALIVE(c->a[2]), 0);
+    }
+    wrw(ALIVE(e), 0);
+}
+
+/* $15DD2: hurt: the damage (beaten: state 1), the group blinking, hit again meanwhile */
+static void a15DD2(Ent e)
+{
+    if (begins(e)) {
+        call(DAMAGE_ENEMY);
+        if (c->ccr & CC_Z) { c->d[0] = 1; new_state(0); return; }
+        call(GROUP_BLINK);
+    }
+    call(PLAYER_TOUCH);
+    call(ENEMY_TAKE_HIT);
+    if (c->ccr & CC_N) {
+        call(DAMAGE_ENEMY);
+        if (c->ccr & CC_Z) { c->d[0] = set_b(c->d[0], 1); new_state(0); return; }
+    }
+    wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+    if (rd8(TIMER(e))) return;
+    call(GROUP_UNBLINK);
+    call(ENEMY_NEXT_STATE);
+}
+
+/* $15E54: waits on the floor; in the boss room it fires when the fight lets it ($FFA111, taking
+ * turns: $FFA112) and the player is more than $48 away, and now and then (one in four, two at a
+ * time at most: $FFA106) goes to step 6 */
+static void a15E54(Ent e)
+{
+    if (begins(e)) {
+        wr8(NEXT_STATE(e), 0xFF);
+        call(RANDOM_DELAY);
+    }
+    if (guard_touch(e)) return;
+    if ((rd8(WORLD_FLAGS) & 0x20) && rd8(G_OPEN)
+        && (rd8(G_MODE) || (int32_t)(int16_t)rdw(G_WORD) != (int32_t)c->a[4])) {
+        wr8(G_OPEN, (uint8_t)(rd8(G_OPEN) - 1));
+        wrw(G_WORD, (int)(c->a[4] & 0xFFFF));
+        uint16_t d = (uint16_t)(rdw(X(c->a[2])) - rdw(X(e)));
+        if (d & 0x8000) d = (uint16_t)-d;
+        set_d0w(d);
+        if (d > 0x48) shoot();
+    }
+    if (called_back(e)) return;
+    if (rd8(TIMER2(e))) {
+        wr8(TIMER2(e), (uint8_t)(rd8(TIMER2(e)) - 1));
+        if (rd8(TIMER2(e))) return;
+    }
+    call(RANDOM);
+    c->d[0] = set_w(c->d[0], c->d[0] & 3);
+    if (c->d[0] & 3) return;
+    if (rd8(WORLD_FLAGS) & 0x20) {
+        if (rd8(G_COUNT6) >= 2) return;
+        if (!(rd8(G_MODE) & 0x80) && (int32_t)(int16_t)rdw(G_LAST) == (int32_t)c->a[4]) return;
+        wr8(G_COUNT6, (uint8_t)(rd8(G_COUNT6) + 1));
+        wrw(G_LAST, (int)(c->a[4] & 0xFFFF));
+    }
+    wr8(STEP(e), 6);
+}
+
+/* $15EE6: rises from the floor bringing up a companion object (kind $800, $1A438), waits 30
+ * frames at the top (its group told: record bit 0), and sinks back (step 3) */
+static void a15EE6(Ent e)
+{
+    if (begins(e)) {
+        wr8(TIMER2(e), 0xFF);
+        c->d[1] = set_w(c->d[1], 0x800);
+        call(ROOM_KIND);                            /* a0: kind $800's entry in the room's list */
+        c->a[1] = 0xFFFFA394u;
+        wrw(c->a[1], (int)(c->d[1] & 0xFFFF));
+        wrw(c->a[1] + 2, rdw(X(e)));
+        wrw(c->a[1] + 4, rdw(HOME_Y(e)));
+        wrw(c->a[1] + 6, rdw(c->a[0]));
+        c->a[1] += 6;
+        int made;
+        if (!(rd8(WORLD_FLAGS) & 0x20)) {
+            call(SPAWN_FROM_A394);
+            made = !(c->ccr & CC_N);
+        } else {
+            call(SPAWN_FROM_A394);
+            if (c->ccr & CC_N) { wr8(G_COUNT6, (uint8_t)(rd8(G_COUNT6) - 1)); made = 0; }
+            else {
+                Ent o = c->a[2];
+                wrw(GOAL(o), rdw(GOAL(e)));
+                c->d[0] = rdw(0xFFFFA108u) ? 2 : 0;
+                wr8(DELAY(o), (uint8_t)c->d[0]);
+                c->a[3] = 0xFFFFA108u;
+                wrw(c->a[3] + c->d[0], (int)(o & 0xFFFF));
+                made = 1;
+            }
+        }
+        if (made) wr8(TIMER2(e), 0);
+    }
+    if (guard_touch(e)) return;
+    wr8(NEXT_STATE(e), rd8(STEP(e)));
+    if (guard_touch(e)) return;
+    uint8_t t = rd8(TIMER2(e));
+    if (t & 0x80) {                                 /* sinking */
+        if (called_back(e)) return;
+        wrw(VEL_Y(e), 0x200);
+        if (!glided_home()) return;
+        wr8(STEP(e), 3);
+        return;
+    }
+    if (!t) {                                       /* rising */
+        wrw(VEL_Y(e), -0x200);
+        if (!glided_home()) return;
+        wr8(TIMER2(e), 0x1E);
+        c->a[3] = group(e);
+        set8(c->a[3], 1);
+        return;
+    }
+    if (called_back(e)) return;                     /* at the top */
+    wr8(TIMER2(e), (uint8_t)(rd8(TIMER2(e)) - 1));
+    if (rd8(TIMER2(e))) return;
+    wr8(TIMER2(e), 0xFF);
+}
+
+/* $15FB0: rises, and sinks back when its group says (record bit 2) */
+static void a15FB0(Ent e)
+{
+    if (begins(e)) wr8(TIMER2(e), 0);
+    wr8(NEXT_STATE(e), rd8(STEP(e)));
+    if (guard_touch(e)) return;
+    c->a[3] = group(e);
+    uint8_t t = rd8(TIMER2(e));
+    if (!(t & 0x80)) {
+        if (!t) {
+            wrw(VEL_Y(e), -0x200);
+            if (!glided_home()) return;
+            wr8(TIMER2(e), 1);
+        }
+        uint8_t g = rd8(c->a[3]);
+        wr8(c->a[3], g & (uint8_t)~4);
+        if (!(g & 4)) { wr8(c->a[3], rd8(c->a[3]) & 0xFD); return; }
+        wr8(TIMER2(e), 0xFF);
+    }
+    if (called_back(e)) return;
+    wrw(VEL_Y(e), 0x200);
+    if (!glided_home()) return;
+    wr8(STEP(e), 3);
+}
+
 /* the actions, registered by their addresses (registry.c). call_68k leaves its mark in ret: it
  * is cleared unless the action went on elsewhere */
 #define ACTION(addr) void Act##addr(Cpu *cpu) { c = cpu; went_on = 0; a##addr((Ent)c->a[4]); if (!went_on) c->ret = 0; }
@@ -2122,3 +2526,4 @@ ACTION(151D6) ACTION(152A0)
 ACTION(15352) ACTION(153BE) ACTION(153F0) ACTION(15464) ACTION(154B2) ACTION(15504) ACTION(15576)
 ACTION(155E2) ACTION(15630) ACTION(15704) ACTION(1577A) ACTION(157A6) ACTION(157A8) ACTION(157E4)
 ACTION(15830) ACTION(1589A) ACTION(158E6) ACTION(15994)
+ACTION(15A86) ACTION(15C9E) ACTION(15DD2) ACTION(15E54) ACTION(15EE6) ACTION(15FB0)
