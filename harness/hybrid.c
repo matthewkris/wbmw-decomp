@@ -1340,7 +1340,8 @@ int hybrid_fuzz(const char *name, long count)
                     }
                 if (!strcmp(name, "Act17A44") || !strcmp(name, "Act17B8A") || !strcmp(name, "Act17D22") || !strcmp(name, "Act17DC4") || !strcmp(name, "Act17E4C")
                     || !strcmp(name, "Act17E88") || !strcmp(name, "Act183E0") || !strcmp(name, "Act184C4")
-                    || !strcmp(name, "Act18584") || !strcmp(name, "Act185EC")) {
+                    || !strcmp(name, "Act18584") || !strcmp(name, "Act185EC")
+                    || !strcmp(name, "Act186D6") || !strcmp(name, "Act18710") || !strcmp(name, "Act187AC") || !strcmp(name, "Act18ADE")) {
                     /* the two-part boss: a partner whose partner it is; the leap's phase even */
                     uint32_t q = 0x40 + (rnd() % 16) * 4;
                     if (q == e) q = (q + 4) & 0xFC;
@@ -1352,6 +1353,13 @@ int hybrid_fuzz(const char *name, long count)
                     if (rnd() % 2) ram[0xD801 + e] = (uint8_t)(rnd() % 2);
                     if (!strcmp(name, "Act183E0")) ram[0xD801 + e] = (uint8_t)(rnd() % 3);   /* falling, landed, on */
                     if (!strcmp(name, "Act183E0") && rnd() % 2) put_word(0x9738, 0);      /* the shake over */
+                    if (!strcmp(name, "Act187AC")) {                              /* the volley: its first shot; no room */
+                        if (rnd() % 2) ram[0xD801 + e] = 1;
+                        if (rnd() % 3 == 0) ram[0xD800 + e] = 6;
+                        if (rnd() % 3 == 0)
+                            for (uint32_t k3 = 0, b = (uint32_t)(ram[0xA11A] << 8 | ram[0xA11B]); k3 < 16; k3++)
+                                ram[(0xC000 + b + 4 * k3) & 0xFFFF] |= 0x80;
+                    }
                     if (!strcmp(name, "Act184C4") && rnd() % 2) ram[0xD803 + e] = 1;      /* the puff's frame */
                     if (!strcmp(name, "Act185EC")) ram[0xDE00 + e] = (uint8_t)(rnd() % 2 ? 0 : 0xFF);   /* pending */
                     if (!strcmp(name, "Act185EC") && rnd() % 2) ram[0xD800 + e] = 0;

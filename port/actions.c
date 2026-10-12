@@ -292,6 +292,13 @@
 #define MOUNT_TOUCH       0x1839Cu  /* the mount takes its health; the player against it */
 #define MOUNT_GROUNDED    0x183BAu  /* a2 the mount; z: on the ground (COLL & 10 is 2) */
 #define SHAKE_SCREEN      0x183D4u  /* the screen shaken ($9738), sound 57 */
+#define FACE_PLAYER_AND_WALK 0x44D0u
+#define MOUNT_BLOCKED     0x183C8u  /* a2 the mount; nz: blocked (COLL bit 0) */
+#define ANGLE_OF          0x109Cu   /* d3: the angle of (d0, d1) */
+#define VEL_OF_ANGLE      0xFA8u    /* d0, d5: angle d3 at speed d4 */
+#define COPY_TO_A2        0x41AAu   /* a2 cleared and given its position, home and looks */
+#define RIDE_PLACE        0x18A3Eu  /* on its partner, facing as it does, Y_OFFSET above */
+#define Y_OFFSET(e)   ((e) - 0x36FD)   /* byte: its height on its partner */
 #define APPLY_VEL_X       0xAB8u
 
 void EnemySetState(Cpu *);           /* enemies.c */
@@ -4008,6 +4015,225 @@ static void a185EC(Ent e)
     ride_on();
 }
 
+/* ---- the rider and its mount, on (batch 22) ---- */
+
+/* the mount walks at the player a random while, until blocked; then state 3 */
+static void a186D6(Ent e)
+{
+    if (begins(e)) {
+        c->a[4] = partner_of(e);
+        call(FACE_PLAYER_AND_WALK);
+        c->a[4] = partner_of(c->a[4]);
+        call_d0(MOUNT_ANIM, 2);
+        call(RANDOM_TIMER);
+        return;
+    }
+    call(MOUNT_FALL);
+    if (pair_hit(MOUNT_TOUCH)) return;
+    call(MOUNT_BLOCKED);
+    if (c->ccr & CC_Z) {
+        e = c->a[4];
+        wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+        if (rd8(TIMER(e))) return;
+    }
+    c->d[0] = 3;
+    new_state(0);
+}
+
+/* the mount leaps: away (a pending state, or near the player three times in four) at $200, or at
+ * the player, 8 times its distance up to $300; landed or blocked, a shake and state 3 */
+static void a18710(Ent e)
+{
+    if (begins(e)) {
+        call_d0(MOUNT_ANIM, 4);
+        c->a[0] = (uint32_t)(int32_t)(int16_t)rdw(TARGET_W);
+        Ent m = c->a[4] = partner_of(c->a[4]);
+        wrw(VEL_Y(m), 0xFC00);
+        uint16_t d = (uint16_t)(rdw(X(c->a[0])) - rdw(X(m)));
+        int ahead = (int16_t)d >= 0;
+        c->d[1] = set_b(c->d[1], ahead ? 0xFF : 0);
+        if (!ahead) d = (uint16_t)-d;
+        set_d0w(d);
+        c->d[2] = set_b(c->d[2], rd8(NEXT_STATE(m)));
+        wr8(NEXT_STATE(m), 0);
+        int run = (c->d[2] & 0xFF) != 0;
+        if (!run && d < 0x40) {
+            c->d[2] = set_w(c->d[2], d);
+            call(RANDOM);
+            uint32_t t = c->d[0]; c->d[0] = c->d[2]; c->d[2] = t;
+            c->d[2] = set_w(c->d[2], c->d[2] & 3);
+            run = (c->d[2] & 3) != 0;
+        }
+        ahead = (c->d[1] & 0xFF) != 0;              /* d1 as Random left it */
+        if (run) {
+            set_d0w(ahead ? 0xFE00 : 0x0200);
+        } else {
+            uint16_t v = (uint16_t)((c->d[0] & 0xFFFF) << 3);
+            if (v > 0x300) v = 0x300;
+            clr8(ATTR(m), 0x08);
+            if (!ahead) { v = (uint16_t)-v; set8(ATTR(m), 8); }
+            set_d0w(v);
+        }
+        wrw(VEL_X(m), (uint16_t)c->d[0]);
+        c->a[4] = partner_of(m);
+        return;
+    }
+    call(MOUNT_FALL);
+    if (pair_hit(MOUNT_TOUCH)) return;
+    call(MOUNT_BLOCKED);
+    if (c->ccr & CC_Z) {
+        call(MOUNT_GROUNDED);
+        if (!(c->ccr & CC_Z)) return;
+    }
+    call(SHAKE_SCREEN);
+    c->d[0] = 3;
+    new_state(0);
+}
+
+/* the rider turns both to the player and aims at it, level or down ($1890C: the muzzle), the
+ * angle held to its side ($109C, $FA8: the shot's velocity at $200); then up to 6 shots of kind
+ * $21A, 4 frames apart, after $20 frames; then state 3 */
+static void a187AC(Ent e)
+{
+    if (begins(e)) {
+        c->a[2] = (uint32_t)(int32_t)(int16_t)rdw(TARGET_W);
+        Ent m = c->a[0] = partner_of(e);
+        c->d[0] = 0xFFFFFFF7u;
+        clr8(ATTR(e), 0x08); clr8(ATTR(m), 0x08);
+        set_d0w(rdw(X(c->a[2])));
+        if ((uint16_t)rdw(X(c->a[2])) < (uint16_t)rdw(X(m))) {
+            c->d[0] = 8;
+            set8(ATTR(e), 8); set8(ATTR(m), 8);
+        }
+        c->d[1] = set_w(c->d[1], rdw(Y(c->a[2])));
+        c->d[0] = 6; c->d[2] = 0;
+        if ((uint16_t)rdw(Y(c->a[2])) < (uint16_t)rdw(Y(m))) { c->d[0] = 8; c->d[2] = 2; }
+        wr8(VAR(e), (uint8_t)c->d[2]);
+        c->a[4] = m;
+        call(SET_ANIM_NOW);
+        c->a[4] = partner_of(c->a[4]);
+        call(MOUNT_PLACE);
+        e = c->a[4];
+        c->d[2] = rd8(VAR(e));
+        c->a[1] = 0x1890Cu;
+        c->d[0] = rd8(c->a[1] + c->d[2]);
+        c->d[1] = rd8(c->a[1] + c->d[2] + 1);
+        if (rd8(ATTR(e)) & 8) set_d0w(-(int)c->d[0]);
+        set_d0w(c->d[0] + rdw(X(e)));
+        c->d[1] = set_w(c->d[1], c->d[1] + rdw(Y(e)));
+        c->a[2] = (uint32_t)(int32_t)(int16_t)rdw(TARGET_W);
+        set_d0w(rdw(X(c->a[2])) - c->d[0]);
+        c->d[1] = set_w(c->d[1], rdw(Y(c->a[2])) - c->d[1]);
+        call(ANGLE_OF);
+        e = c->a[4];
+        int down = rd8(VAR(e)) != 0, left = rd8(ATTR(e)) & 8;
+        int neg = (int16_t)c->d[3] < 0;
+        uint16_t lim = 0;
+        int clamp = 0;                              /* 1: at most lim; 2: at least lim */
+        if (!down && !left) { if (neg) c->d[3] = 0; else { lim = 0x3000; clamp = 1; } }
+        else if (!down)     { if (neg) c->d[3] = set_w(c->d[3], 0x8000); else { lim = 0x5000; clamp = 2; } }
+        else if (!left)     { if (!neg) c->d[3] = 0; else { lim = 0xD000; clamp = 2; } }
+        else                { if (!neg) c->d[3] = set_w(c->d[3], 0x8000); else { lim = 0xB000; clamp = 1; } }
+        if (clamp) {
+            set_d0w(lim);
+            uint16_t a = (uint16_t)c->d[3];
+            if (clamp == 1 ? a > lim : a <= lim) c->d[3] = set_w(c->d[3], lim);
+        }
+        c->d[4] = set_w(c->d[4], 0x200);
+        call(VEL_OF_ANGLE);
+        e = c->a[4];
+        wrw(ACCEL_X(e), (uint16_t)c->d[0]);
+        wrw(GRAVITY(e), (uint16_t)c->d[5]);
+        wrw(TIMER(e), 0x0620);
+        return;
+    }
+    if (pair_hit(MOUNT_TOUCH)) return;
+    e = c->a[4];
+    wr8(TIMER2(e), (uint8_t)(rd8(TIMER2(e)) - 1));
+    if (rd8(TIMER2(e))) return;
+    if (!rd8(TIMER(e))) { c->d[0] = 3; new_state(0); return; }
+    set_d0w(0x21A);
+    c->d[1] = rd8(VAR(e));
+    c->a[0] = 0x1890Cu + c->d[1];
+    call(SHOT_AT);
+    e = c->a[4];
+    if (c->ccr & CC_N) {
+        wr8(TIMER(e), 0);
+        c->d[0] = 32;
+    } else {
+        Ent s = c->a[2];
+        wrw(VEL_X(s), rdw(ACCEL_X(e)));
+        wrw(VEL_Y(s), rdw(GRAVITY(e)));
+        if (rd8(TIMER(e)) == 6) { call_d0(QUEUE_SOUND, 55); e = c->a[4]; s = c->a[2]; }
+        c->a[0] = partner_of(e);
+        c->d[0] = 8 & rd8(ATTR(c->a[0]));
+        wr8(ATTR(s), (uint8_t)c->d[0]);
+        c->d[0] = 4;
+        wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+        if (!rd8(TIMER(e))) c->d[0] = 32;
+    }
+    wr8(TIMER2(e), (uint8_t)c->d[0]);
+}
+
+/* a party of four set up at once: a mount (MAKE_PARTNER) under this rider, and two followers
+ * (kinds +2, +4, $41AA) chained by GOAL, each with its own pending state and delay; the rider
+ * placed on the mount ($18A3E) and on to state 3 */
+static void a18ADE(Ent e)
+{
+    call(FIND_FREE_ENTITY);
+    call(MAKE_PARTNER);
+    swap_a2_a4();
+    Ent m = c->a[4];
+    call_d0(SET_ANIM_NOW, 0);
+    c->d[0] = rd8(HALF_H(m));
+    wrw(Y(m), (uint16_t)(rdw(Y(m)) - c->d[0]));
+    call(FACE_PLAYER);
+    m = c->a[4];
+    wr8(TYPE(m), 0xFF);
+    wrw(SPEED_Y(m), 0x800);
+    wrw(GRAVITY(m), 0x40);
+    c->a[0] = (uint32_t)(int32_t)(int16_t)m;
+    e = c->a[4] = partner_of(m);
+    wr8(NEXT_STATE(e), 0x0E);
+    wrw(DELAY(e), 0x1007);
+    call(FIND_FREE_ENTITY);
+    call(COPY_TO_A2);
+    e = c->a[4];
+    Ent f = c->a[2];
+    c->d[0] = set_b(0xFFFFFFFFu, (uint8_t)(rd8(TYPE(e) + 1) + 2));
+    wrw(TYPE(f), (uint16_t)c->d[0]);
+    wr8(NEXT_STATE(f), 0x14);
+    wrw(DELAY(f), 0x1604);
+    wrw(GOAL(e), (uint16_t)f);
+    wrw(MAKER(f), (uint16_t)c->a[0]);
+    c->a[1] = (uint32_t)(int32_t)(int16_t)f;
+    call(FIND_FREE_ENTITY);
+    call(COPY_TO_A2);
+    e = c->a[4];
+    Ent g = c->a[2];
+    c->d[0] = set_b(0xFFFFFFFFu, (uint8_t)(rd8(TYPE(e) + 1) + 4));
+    wrw(TYPE(g), (uint16_t)c->d[0]);
+    wr8(NEXT_STATE(g), 0x20);
+    wrw(GOAL(c->a[1]), (uint16_t)g);
+    wrw(MAKER(g), (uint16_t)c->a[0]);
+    wr8(GOAL(g), 0xFF);
+    wr8(ANIM_RATE(c->a[0]), 0x0E);
+    c->d[0] = 16;
+    wr8(ANIM_RATE(c->a[1]), 16);
+    wr8(ANIM_RATE(g), 16);
+    wr8(ANIM_RATE(e), 0x0C);
+    wr8(Y_OFFSET(e), 0xE3);
+    call(RIDE_PLACE);
+    call_d0(SET_ANIM, 14);
+    e = c->a[4];
+    c->a[2] = partner_of(e);
+    wr8(MOVE_FLAGS(c->a[2]), 3);
+    wr32(HIT_B(c->a[2]), 0x18BB8u);
+    c->d[0] = 64;
+    set8(ALIVE(e), 64); set8(ALIVE(c->a[2]), 64);
+    wr8(STEP(e), 3);
+}
+
 /* the actions, registered by their addresses (registry.c). call_68k leaves its mark in ret: it
  * is cleared unless the action went on elsewhere */
 #define ACTION(addr) void Act##addr(Cpu *cpu) { c = cpu; went_on = 0; a##addr((Ent)c->a[4]); if (!went_on) c->ret = 0; }
@@ -4031,3 +4257,4 @@ ACTION(173AA) ACTION(1743C) ACTION(174E6) ACTION(17548) ACTION(17588) ACTION(175
 ACTION(1771C) ACTION(1774E) ACTION(177D6) ACTION(17822) ACTION(17860) ACTION(178D0)
 ACTION(17A44) ACTION(17B8A) ACTION(17D22) ACTION(17DC4) ACTION(17E4C) ACTION(17E88)
 ACTION(183E0) ACTION(184C4) ACTION(18584) ACTION(185EC)
+ACTION(186D6) ACTION(18710) ACTION(187AC) ACTION(18ADE)
