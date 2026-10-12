@@ -1073,6 +1073,24 @@ Results: 0 mismatches over the standard runs and every owner state (420,931 chec
 (built once, at the end of the session) plays four of the owner's states. 83 of the 135 actions
 are C.
 
+#### The monsters' actions, batch 17: the hopper and the chain ($17014-$173A9, 2026-10-12)
+
+Four actions. `$17014` (kind `$42`) waits about its home height and, with the player ahead within
+`$60` and below the right height, crouches (TIMER: the height / 3, a `divu` of the whole of d0)
+and springs, then swings about for `$15B` frames. The chain of kinds `$2E`/`$34` moves through
+`$17132`: a follower traces the link ahead of it two frames late (the offsets in -$2A00/-$2900);
+the head wanders about its home by its own offsets, every 16 frames towards the target, grows
+the chain (kind `$2E`, up to 5 links) and, when no link is on the screen, removes the whole chain
+and leaves past the action, so `$17132` is C. `$1729A` (a link defeated: the chain closes up, or
+the next link becomes the head with its looks copied, `$1730A`) then goes on as `$142E4`;
+`$17310` is a link hurt; `$17362` a link moving. The fuzz builds chains that end (a loop of links
+goes round for ever in the original too) and puts kind `$2E` in the room's list.
+
+Results: 0 mismatches over the standard runs and every owner state (422,373 checked calls);
+100,000 fuzz cases from five states, 0 mismatches, every instruction covered. Self-test caught
+100 in 100 for each. Replace mode plays the new-game script and four states. 87 of the 135
+actions are C.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

@@ -69,6 +69,11 @@
  * $16F50 swims burning what it touches and leaps at the player; $16FF0 is the leap. $16E8E (the
  * touch, which hurts the player by 20 less its armour, and the hit) leaves past the action.
  *
+ * Batch 17, the hopper and the chain ($17014-$173A9): $17014 crouches and springs at the player;
+ * the chain of kinds $2E/$34 ($17132: followers trace the link ahead, the head wanders, grows the
+ * chain and removes it when it is all off the screen, leaving past the action): $1729A a link
+ * defeated (the chain closes up), $17310 hurt, $17362 moving.
+ *
  * Spawn flags (-$2AFE): bit 7 puff on appearing, bit 1 the other puff, bit 2 turned over
  * (attribute bit 7), bit 0 not placed by its animation.
  *
@@ -128,6 +133,10 @@
 #define HALF_W(e)     ((e) - 0x34FE)
 #define DELAY(e)      ((e) - 0x25FE)
 #define ARMOUR(e)     ((e) - 0x26FE)   /* word: the player's armour */
+#define PHASE(e)      ((e) - 0x31FF)   /* byte: an action's own phase; a chain link's number */
+#define FLASH(e)      ((e) - 0x3900)   /* word */
+#define CHAIN_A(e)    ((e) - 0x30FF)   /* byte: a link set up */
+#define CHAIN_B(e)    ((e) - 0x30FE)   /* byte: a link with a leader */
 
 /* routines still called as they are */
 #define SET_ANIM          0x7E8u
@@ -242,6 +251,11 @@
 #define TURN_IN_RANGE     0x16FD8u  /* turns at $20 from home; a new wait */
 #define PLAYER_HARM       0xFFFF9856u
 #define PLAYER_W          0xFFFF9EEEu
+#define TO_X              0x16E56u  /* ACCEL_X towards x d0 */
+#define HOPPER_START      0x17118u  /* $17014's start: speeds $100, phase 0, animation 6, a wait */
+#define SWING_X           0x170F4u
+#define SWING_Y           0x170EEu
+#define COPY_FIELDS       0x1730Au  /* fields from a4 to a2, by the list of offsets at a0 */
 #define APPLY_VEL_X       0xAB8u
 
 void EnemySetState(Cpu *);           /* enemies.c */
@@ -2700,6 +2714,288 @@ static void a16FF0(Ent e)
     if (!rdw(WORD_31FE(e))) call(ENEMY_NEXT_STATE);
 }
 
+/* ---- the hopper and the chain (batch 17) ---- */
+
+/* $17014: waits about its home height facing the player; with the player ahead within $60 and
+ * below the right height, it crouches (TIMER: the height / 3) and springs, then swings about for
+ * $15B frames ($170F4, $170EE) before it starts again ($17118). Phases in -$31FF */
+static void a17014(Ent e)
+{
+    if (begins(e)) call(HOPPER_START);
+    if (despawned()) return;
+    call(APPLY_VEL);
+    call(PLAYER_CONTACT_ALL);
+    if (hit()) return;
+    uint8_t ph = rd8(PHASE(e));
+    c->d[0] = set_b(c->d[0], ph);
+    if (ph == 0) {
+        set_d0w(rdw(HOME_Y(e)));
+        call(TO_HEIGHT);
+        call_d0(FRICTION_X, 7);
+        wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+        if (rd8(TIMER(e))) return;
+        call(FACE_PLAYER);
+        uint16_t d = (uint16_t)c->d[0];
+        if (d & 0x8000) { d = (uint16_t)-d; set_d0w(d); }
+        if (d >= 0x60) { call(RANDOM_TIMER_32); return; }
+        int16_t h = (int16_t)(rdw(Y(c->a[2])) - 0x3C);
+        set_d0w(h);
+        if (h < 0) {
+            h = (int16_t)(h + 8);
+            set_d0w(h);
+            if (h < 0) { call(RANDOM_TIMER_32); return; }
+            c->d[0] = 1;
+        } else {
+            h = (int16_t)(h - rdw(Y(e)));
+            set_d0w(h);
+            if (h < 0 || (uint16_t)h >= 0x80) { call(RANDOM_TIMER_32); return; }
+            c->d[1] = 3;
+            uint32_t q = c->d[0] / 3;                   /* divu.w #3 of the whole of d0 */
+            if (q <= 0xFFFF) c->d[0] = (c->d[0] % 3) << 16 | q;
+            c->d[0] = set_b(c->d[0], (uint8_t)(c->d[0] + 1));
+        }
+        wr8(TIMER(e), (uint8_t)c->d[0]);
+        set_d0w(0x180);
+        wrw(SPEED_X(e), 0x180);
+        wrw(SPEED_Y(e), 0x180);
+        wrw(VEL_X(e), 0);
+        wrw(VEL_Y(e), 0x300);
+        wrw(GRAVITY(e), -0x18);
+        wr8(PHASE(e), 1);
+        call_d0(SET_ANIM, 14);
+        return;
+    }
+    c->d[0] = set_b(c->d[0], (uint8_t)(ph - 1));
+    if (ph == 1) {                                  /* crouching */
+        wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+        if (!rd8(TIMER(e))) wr8(PHASE(e), 2);
+        return;
+    }
+    c->d[0] = set_b(c->d[0], (uint8_t)(ph - 2));
+    if (ph == 2) {                                  /* springing up */
+        call(ACCEL_Y);
+        set_d0w(rdw(SPEED_Y(e)));
+        if ((uint16_t)rdw(SPEED_Y(e)) < (uint16_t)rdw(VEL_Y(e))) return;
+        wr8(PHASE(e), 3);
+        wrw(WORD_31FE(e), 0x15B);
+        wrw(GRAVITY(e), rdw(GRAVITY(e)) >> 1);
+        call_d0(ACCEL_FACING, 12);
+        return;
+    }
+    call(SWING_X);
+    call(SWING_Y);
+    wrw(WORD_31FE(e), rdw(WORD_31FE(e)) - 1);
+    if (!rdw(WORD_31FE(e))) call(HOPPER_START);
+}
+
+/* $17132: a link of the chain. A follower (GOAL: the link ahead) moves as that link moved two
+ * frames ago (the offsets in HIT_A/HIT_B); the head wanders about its home by its own offsets
+ * (VAR, SHOT), every 16 frames towards the target, and grows the chain (kind $2E, up to 5 links,
+ * DELAY frames apart). When no link is on the screen (checked every 16 frames) the head removes
+ * the whole chain: the original leaves past the action then: 1 */
+static int chain_link(Ent e)
+{
+    int16_t ahead = rdw(GOAL(e));
+    set_d0w(ahead);
+    if (ahead >= 0) {
+        c->a[2] = (uint32_t)(int32_t)ahead;
+        Ent a = c->a[2];
+        c->d[1] = rd32(HIT_A(e));
+        wr32(HIT_A(e), rd32(HIT_B(e)));
+        uint16_t dx = (uint16_t)(rdw(X(a)) - rdw(X(e))), dy = (uint16_t)(rdw(Y(a)) - rdw(Y(e)));
+        c->d[0] = (uint32_t)dx << 16 | dy;
+        wr32(HIT_B(e), c->d[0]);
+        c->d[0] = 4;
+        c->d[1] = set_w(c->d[1], ((c->d[1] & 0xFFFF) << 4) & 0xFFFF);
+        wrw(VEL_Y(e), (int)(c->d[1] & 0xFFFF));
+        c->d[1] = (c->d[1] << 16) | (c->d[1] >> 16);
+        c->d[1] = set_w(c->d[1], ((c->d[1] & 0xFFFF) << 4) & 0xFFFF);
+        wrw(VEL_X(e), (int)(c->d[1] & 0xFFFF));
+    } else {
+        c->d[0] = (uint32_t)rdw(FRAME) & 15;
+        int wander = 1;
+        if (!c->d[0]) {                             /* is any link on the screen? */
+            c->d[1] = set_w(c->d[1], c->a[4] & 0xFFFF);
+            do {
+                c->a[0] = (uint32_t)(int32_t)(int16_t)(c->d[1] & 0xFFFF);
+                c->d[0] = set_b(c->d[0], (uint8_t)c->d[0] | rd8(ALIVE(c->a[0])));
+                c->d[1] = set_w(c->d[1], (uint16_t)rdw(MAKER(c->a[0])));
+            } while (!(c->d[1] & 0x8000));
+            int seen = c->d[0] & 1;
+            c->d[0] = set_b(c->d[0], (uint8_t)c->d[0] >> 1);
+            if (!seen) {
+                c->a[0] = c->a[4];
+                for (;;) {
+                    c->d[1] = set_w(c->d[1], (uint16_t)rdw(MAKER(c->a[0])));
+                    if (c->d[1] & 0x8000) break;
+                    c->a[0] = (uint32_t)(int32_t)(int16_t)(c->d[1] & 0xFFFF);
+                    wr8(ALIVE(c->a[0]), 0);
+                }
+                call(DESPAWN);
+                return 1;
+            }
+        }
+        if (wander) {
+            c->d[0] = set_b(c->d[0], rd8(VAR(e))); c->d[0] = ext_w(c->d[0]);
+            set_d0w((int)((c->d[0] + (uint16_t)rdw(HOME_X(e))) & 0xFFFF));
+            call(TO_X);
+            c->d[0] = set_b(c->d[0], rd8(SHOT(e))); c->d[0] = ext_w(c->d[0]);
+            set_d0w((int)((c->d[0] + (uint16_t)rdw(HOME_Y(e))) & 0xFFFF));
+            call(TO_HEIGHT);
+        }
+    }
+    call(APPLY_VEL);
+    call(FACE_VELOCITY);
+    c->d[0] = (uint8_t)((((rd8(ATTR(e)) & 8) >> 2) + 0x0C) & 0xFF);
+    wr8(ANIM_RATE(e), (uint8_t)c->d[0]);
+    if (rdw(MAKER(e)) < 0 && rd8(DELAY(e))) {       /* the last link: time for another? */
+        wr8(DELAY(e), (uint8_t)(rd8(DELAY(e)) - 1));
+        if (!rd8(DELAY(e))) {
+            if (rd8(PHASE(e)) >= 5) return 0;
+            c->a[0] = 0xFFFFA394u;
+            wrw(c->a[0], 0x2E);
+            wr32(c->a[0] + 2, rd32(HOME_X(e)));
+            wrw(c->a[0] + 6, rdw(WORD_3DFE(e)));
+            c->a[0] += 6;
+            call(SPAWN_FROM_A394);
+            if (c->ccr & CC_N) { wr8(DELAY(e), (uint8_t)(rd8(DELAY(e)) + 1)); return 0; }
+            Ent n = c->a[2];
+            c->d[1] = set_w(c->d[1], (uint16_t)rdw(TYPE(n)));
+            call(ROOM_KIND);
+            wrw(WORD_3DFE(n), rdw(c->a[0]));
+            wr32(HOME_X(n), rd32(HOME_X(e)));
+            wrw(MAKER(e), (int)(n & 0xFFFF));
+            wrw(GOAL(n), (int)(c->a[4] & 0xFFFF));
+            wr8(MAKER(n), 0xFF);
+            wr8(LINK(n), 0xFF);
+            wr8(CHAIN_B(n), 0xFF);
+            wr8(MOVE_FLAGS(n), 3);
+            wr32(HIT_A(e), 0);
+            wr32(HIT_B(e), 0);
+            c->d[0] = set_b(c->d[0], (uint8_t)(rd8(PHASE(e)) + 1));
+            wr8(PHASE(n), (uint8_t)c->d[0]);
+        }
+    }
+    if (rdw(GOAL(e)) >= 0) return 0;
+    wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));    /* the head: every 16 frames towards the target */
+    if (rd8(TIMER(e))) return 0;
+    wr8(TIMER(e), 0x10);
+    Ent t = (Ent)(int32_t)rdw(TARGET_W);
+    c->a[2] = t;
+    c->d[1] = 16;
+    set_d0w(rdw(X(t)));
+    if ((uint16_t)rdw(X(t)) < (uint16_t)rdw(X(e))) c->d[1] = set_b(c->d[1], 0xF0);
+    {
+        int8_t v = (int8_t)rd8(VAR(e)), s = (int8_t)(uint8_t)c->d[1];
+        int r = v + s;
+        wr8(VAR(e), (uint8_t)r);
+        if (r > 127 || r < -128) {                  /* overflow: back the other way */
+            c->d[1] = set_b(c->d[1], (uint8_t)(s * 2));
+            wr8(VAR(e), (uint8_t)(rd8(VAR(e)) - (uint8_t)c->d[1]));
+        }
+    }
+    c->d[1] = 16;
+    set_d0w(rdw(Y(t)));
+    if ((uint16_t)rdw(Y(t)) < (uint16_t)rdw(Y(e))) c->d[1] = set_b(c->d[1], 0xF0);
+    wr8(SHOT(e), (uint8_t)(rd8(SHOT(e)) + (uint8_t)c->d[1]));
+    if ((int8_t)rd8(SHOT(e)) > (int8_t)0xE0) {      /* not higher than $E0 above home */
+        c->d[1] = set_b(c->d[1], (uint8_t)(c->d[1] * 2));
+        wr8(SHOT(e), (uint8_t)(rd8(SHOT(e)) - (uint8_t)c->d[1]));
+    }
+    return 0;
+}
+
+/* $1729A: a link defeated; the chain closes up behind it (the next link takes its place, or as
+ * the head its looks), then as $142E4 */
+static void a1729A(Ent e)
+{
+    if (!(rd8(STEP(e)) & 0x80)) {
+        int16_t ahead = rdw(GOAL(e));
+        set_d0w(ahead);
+        int restart = 0;
+        if (ahead < 0) {                            /* the head: the next link becomes the head */
+            int16_t nx = rdw(MAKER(e));
+            set_d0w(nx);
+            if (nx >= 0) {
+                c->a[2] = (uint32_t)(int32_t)nx;
+                Ent n = c->a[2];
+                wr8(LINK(e), 0xFF);
+                wr8(GOAL(n), 0xFF);
+                wr8(TIMER(n), 0x10);
+                c->a[0] = 0x172CEu;
+                call(COPY_FIELDS);
+                clr8(BLINK(n), 0x81);
+                restart = 1;
+            }
+        } else {                                    /* the links on either side joined */
+            c->a[2] = (uint32_t)(int32_t)ahead;
+            Ent a = c->a[2];
+            int16_t nx = rdw(MAKER(e));
+            set_d0w(nx);
+            wrw(MAKER(a), nx);
+            if (nx >= 0) {
+                c->a[0] = (uint32_t)(int32_t)nx;
+                wrw(GOAL(c->a[0]), (int)(a & 0xFFFF));
+            } else if (rdw(GOAL(a)) < 0) restart = 1;
+        }
+        if (restart) {                              /* a new chain grows from it */
+            wr8(DELAY(c->a[2]), 0x78);
+            wr8(PHASE(c->a[2]), 0);
+        }
+    }
+    a142E4(e);
+}
+
+/* $17310: a link hurt (flashing), the chain moving on */
+static void a17310(Ent e)
+{
+    if (begins(e)) {
+        call(DAMAGE_ENEMY);
+        if (c->ccr & CC_Z) { c->d[0] = 1; new_state(0); return; }
+        set8(BLINK(e), 0x40);
+        wrw(FLASH(e), 0x2101);
+        wr8(TIMER2(e), 0x1E);
+        call_d0(SET_ANIM, 4);
+        return;
+    }
+    if (chain_link(e)) return;
+    call(PLAYER_TOUCH);
+    call(ENEMY_TAKE_HIT);
+    if (c->ccr & CC_N) {
+        call(DAMAGE_ENEMY);
+        if (c->ccr & CC_Z) { c->d[0] = 1; new_state(0); return; }
+    }
+    wr8(TIMER2(e), (uint8_t)(rd8(TIMER2(e)) - 1));
+    if (rd8(TIMER2(e))) return;
+    clr8(BLINK(e), 0x40);
+    call(ENEMY_NEXT_STATE);
+}
+
+/* $17362: a link moving with the chain; the first time, a link without a leader becomes a head */
+static void a17362(Ent e)
+{
+    if (begins(e)) {
+        if (!rd8(CHAIN_A(e))) {
+            wr8(CHAIN_A(e), 0xFF);
+            uint8_t lead = rd8(CHAIN_B(e));
+            c->d[0] = set_b(c->d[0], lead);
+            if (!lead) {
+                wr8(GOAL(e), 0xFF);
+                wr8(MAKER(e), 0xFF);
+                wr8(PHASE(e), 0);
+                wr8(SHOT(e), 0xE0);
+            }
+            c->d[0] = 16;
+            wr8(TIMER(e), 16);
+            wr8(DELAY(e), 16);
+        }
+        call_d0(SET_ANIM, 14);
+    }
+    if (chain_link(e)) return;
+    call(PLAYER_CONTACT_ALL);
+    hit();
+}
+
 /* the actions, registered by their addresses (registry.c). call_68k leaves its mark in ret: it
  * is cleared unless the action went on elsewhere */
 #define ACTION(addr) void Act##addr(Cpu *cpu) { c = cpu; went_on = 0; a##addr((Ent)c->a[4]); if (!went_on) c->ret = 0; }
@@ -2718,3 +3014,4 @@ ACTION(155E2) ACTION(15630) ACTION(15704) ACTION(1577A) ACTION(157A6) ACTION(157
 ACTION(15830) ACTION(1589A) ACTION(158E6) ACTION(15994)
 ACTION(15A86) ACTION(15C9E) ACTION(15DD2) ACTION(15E54) ACTION(15EE6) ACTION(15FB0)
 ACTION(16D70) ACTION(16ED0) ACTION(16F50) ACTION(16FF0)
+ACTION(17014) ACTION(1729A) ACTION(17310) ACTION(17362)

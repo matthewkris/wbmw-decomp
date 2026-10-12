@@ -43,7 +43,8 @@ void Act140F2(Cpu *), Act140FC(Cpu *), Act1410E(Cpu *), Act14120(Cpu *), Act1416
      Act155E2(Cpu *), Act15630(Cpu *), Act15704(Cpu *), Act1577A(Cpu *), Act157A6(Cpu *), Act157A8(Cpu *),
      Act157E4(Cpu *), Act15830(Cpu *), Act1589A(Cpu *), Act158E6(Cpu *), Act15994(Cpu *),
      Act15A86(Cpu *), Act15C9E(Cpu *), Act15DD2(Cpu *), Act15E54(Cpu *), Act15EE6(Cpu *), Act15FB0(Cpu *),
-     Act16D70(Cpu *), Act16ED0(Cpu *), Act16F50(Cpu *), Act16FF0(Cpu *);
+     Act16D70(Cpu *), Act16ED0(Cpu *), Act16F50(Cpu *), Act16FF0(Cpu *),
+     Act17014(Cpu *), Act1729A(Cpu *), Act17310(Cpu *), Act17362(Cpu *);
 void RunEnemies(Cpu *), EnemyDispatch(Cpu *), EnemySetState(Cpu *), EnemyNextState(Cpu *);   /* enemies.c */
 void MagicUsed(Cpu *), SlotEmptied(Cpu *), MagicMeter(Cpu *), HudRedraw(Cpu *), GoldDisplay(Cpu *);   /* hud.c */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
@@ -299,6 +300,10 @@ const PortRoutine port_routines[] = {
     {0x016ED0, 0x016F24, "Act16ED0", Act16ED0, CT_SP},           /* $16E56-$16ECE, $16F24-$16F4F: helpers */
     {0x016F50, 0x016FD8, "Act16F50", Act16F50, CT_SP},
     {0x016FF0, 0x017014, "Act16FF0", Act16FF0, CT_SP},
+    {0x017014, 0x0170EE, "Act17014", Act17014, CT_SP},           /* the hopper and the chain (batch 17); $170EE-$17131 are called */
+    {0x01729A, 0x017302, "Act1729A", Act1729A, CT_SP},           /* $17302-$1730F (COPY_FIELDS) is called */
+    {0x017310, 0x017362, "Act17310", Act17310, CT_SP},           /* $17132 (the link) is C */
+    {0x017362, 0x0173AA, "Act17362", Act17362, CT_SP},
     {0x00EE70, 0x00EF12, "PlayerSwordTip", PlayerSwordTip, CT_SP},
     {0x011170, 0x01141A, "MagicStart", MagicStart, CT_SP},       /* magic.c; a potion may carry on at $F288 */
     {0x01141A, 0x0114C0, "MagicFrame", MagicFrame, CT_SP},       /* may carry on at $11590 or $11780 off a pass */
