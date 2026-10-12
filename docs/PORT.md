@@ -831,6 +831,29 @@ Replace mode plays the new-game script and four states, the boss fight among the
 
 Left: 4 handlers (table slots 19, 24, 25, 33), then the monsters' actions.
 
+#### The enemies, batch 6: the last four handlers (2026-10-12)
+
+`port/handlers.c` again: 19 ($17EE6, fired off backwards, then aimed at `$FFA11C`'s entity), 24
+($19C86, waits, then chases the player's height and bursts), 25 ($1A0B0, flies at its angle and
+turns an eighth towards the player once) and 33 ($19544, falls, grows, stays, shrinks). Every
+one of the 35 handlers is now C; what is left of the enemies is the monsters' action routines.
+
+* **The burst** (`$19D60`/`$19D64`: kind `$218` with animation 0 or 2) is shared: 24 falls into
+  it, 25 jumps to it, and `$19C72` and `$19F2E` (actions) call it. The C does it itself; the
+  original stays translated for the actions.
+* **Handler 25's table** at `$1A196` holds longs at 6-byte steps by its angle in eighths
+  (multiples of `$20`); another angle would be an odd address and an address error on the
+  68000, so the fuzz keeps to eighths, as the game does.
+
+Results: 0 mismatches over the standard runs and every owner state (26 runs, 424,231 checked
+calls, `thunder.state` among them); 300,000 fuzz cases for the twelve handlers of the file from
+five states, and 25,000 more for handler 19 aimed on the frame its wait ends; 0 mismatches,
+every one of the 465 instructions covered. Self-test caught 100 in 100. Replace mode plays the
+new-game script and four states.
+
+Left of the enemies: the monsters' action routines, 135 entries at `$140F2`-`$1A3E4` (about
+7,000 instructions; 73 under 30 instructions, 49 under 100, 13 larger, the largest about 900).
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

@@ -26,7 +26,8 @@ void ObjLobbed(Cpu *), ObjThrown(Cpu *), ObjStanding(Cpu *), ObjFlying(Cpu *), O
 void PplStanding(Cpu *), PplWanderer(Cpu *), PplSpeaker(Cpu *), PplTownsperson(Cpu *),   /* people.c */
      PplStandingStill(Cpu *), PplFlagged(Cpu *), PplPlacedBreakable(Cpu *), PplBreakable(Cpu *), PplScene(Cpu *);
 void HndAreaMonster(Cpu *), HndHopperOr(Cpu *), HndGuardian(Cpu *), HndVanishing(Cpu *),   /* handlers.c */
-     HndFlyer(Cpu *), HndThrownLater(Cpu *), HndCarried(Cpu *), HndPacer(Cpu *);
+     HndFlyer(Cpu *), HndThrownLater(Cpu *), HndCarried(Cpu *), HndPacer(Cpu *),
+     HndDarter(Cpu *), HndDiver(Cpu *), HndSeeker(Cpu *), HndGrower(Cpu *);
 void RunEnemies(Cpu *), EnemyDispatch(Cpu *), EnemySetState(Cpu *), EnemyNextState(Cpu *);   /* enemies.c */
 void MagicUsed(Cpu *), SlotEmptied(Cpu *), MagicMeter(Cpu *), HudRedraw(Cpu *), GoldDisplay(Cpu *);   /* hud.c */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
@@ -195,6 +196,10 @@ const PortRoutine port_routines[] = {
     {0x0194AA, 0x019544, "HndThrownLater", HndThrownLater, CT_SP},
     {0x01766C, 0x0176E6, "HndCarried", HndCarried, CT_SP},
     {0x019810, 0x01985A, "HndPacer", HndPacer, CT_SP},
+    {0x017EE6, 0x017FEC, "HndDarter", HndDarter, CT_SP},           /* batch 6 */
+    {0x019C86, 0x019D82, "HndDiver", HndDiver, CT_SP},             /* with the burst $19D60 */
+    {0x01A0B0, 0x01A196, "HndSeeker", HndSeeker, CT_SP},
+    {0x019544, 0x019612, "HndGrower", HndGrower, CT_SP},
     {0x00EE70, 0x00EF12, "PlayerSwordTip", PlayerSwordTip, CT_SP},
     {0x011170, 0x01141A, "MagicStart", MagicStart, CT_SP},       /* magic.c; a potion may carry on at $F288 */
     {0x01141A, 0x0114C0, "MagicFrame", MagicFrame, CT_SP},       /* may carry on at $11590 or $11780 off a pass */
