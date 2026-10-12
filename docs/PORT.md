@@ -1280,6 +1280,26 @@ Results: 0 mismatches over the standard runs and every owner state (422,373 chec
 100 in 100 for each. Replace mode plays the new-game script and four states. 125 of the 135
 actions are C.
 
+#### The monsters' actions, batch 26: a creature that walks between five nodes ($19EAE-$1A025, 2026-10-12)
+
+Five actions of one creature that moves a pixel a frame between five places (`$19DA6`). NODE
+(-$37FD) is the node it is at, NEXT_NODE (-$36FD) the one it heads for, and TAKEN (`$FFA112`, a
+byte a node) marks a node someone already heads for; VAR is its heading, SHOT the heading it turns
+to, DELAY's first byte its direction. `$19EAE` appears (its kind by `$1274A`) and steps on for 32
+frames; `$19F6A`, at a node, turns to heading `$40` and every 8 frames picks one of the node's
+exits at random (`$19D82`: a count, then node and direction pairs; a `divu` by the count) that is
+not taken; `$19FE6` walks to it and frees the old node; `$19F32` is the creature hurt; `$19F00`
+the creature beaten, its nodes freed and a pause set for its spawn point before it becomes a
+puff. Its touch (`$19DD2`) tests the player a little ahead of it, by its heading.
+
+The fuzz gives it one of the five nodes (or none), a next node, a direction, the five marks, its
+place at or beside the next node, and its heading turned or not.
+
+Results: 0 mismatches over the standard runs and every owner state (422,373 checked calls);
+125,000 fuzz cases from five states, 0 mismatches, every instruction covered. Self-test caught
+100 in 100 for each. Replace mode plays the new-game script and four states. 130 of the 135
+actions are C.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

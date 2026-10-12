@@ -1406,6 +1406,18 @@ int hybrid_fuzz(const char *name, long count)
                     if (rnd() % 2) ram[0xD802 + e] = 0xFF;                       /* its 256th turn */
                     if (rnd() % 2) { put_word(0xC800 + e, 0x1080 + rnd() % 0x100); put_word(0xC900 + e, 0x1000 + rnd() % 0x90); }
                 }
+                if (!strncmp(name, "Act19E", 6) || !strncmp(name, "Act19F", 6)) {   /* the node walker */
+                    ram[0xC803 + e] = (uint8_t)(rnd() % 4 ? rnd() % 5 : 0xFF);   /* its node: one of five, or none */
+                    uint32_t nx = rnd() % 5;
+                    ram[0xC903 + e] = (uint8_t)(rnd() % 3 ? nx : 0xFF);          /* the next */
+                    ram[0xDA02 + e] = (uint8_t)(rnd() % 4);                       /* its direction */
+                    for (uint32_t k3 = 0; k3 < 5; k3++) ram[0xA112 + k3] = (uint8_t)(rnd() % 2 ? 0 : 0xFF);
+                    if (rnd() % 2) {                                              /* at the next node's place, or by it */
+                        put_word(0xC800 + e, (uint32_t)(bus_read16(0x19DA6 + 4 * nx) + (rnd() % 2 ? 0 : small(1))));
+                        put_word(0xC900 + e, (uint32_t)(bus_read16(0x19DA8 + 4 * nx) + (rnd() % 2 ? 0 : small(1))));
+                    }
+                    if (rnd() % 2) ram[0xD803 + e] = ram[0xD802 + e];             /* turned to its heading */
+                }
                 if (!strcmp(name, "Act1916A")) {                                  /* falling, lying, rising */
                     ram[0xCE01 + e] = (uint8_t)(rnd() % 3);
                     if (rnd() % 2) ram[0xD800 + e] = 1;
