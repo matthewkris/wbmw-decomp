@@ -44,7 +44,8 @@ void Act140F2(Cpu *), Act140FC(Cpu *), Act1410E(Cpu *), Act14120(Cpu *), Act1416
      Act157E4(Cpu *), Act15830(Cpu *), Act1589A(Cpu *), Act158E6(Cpu *), Act15994(Cpu *),
      Act15A86(Cpu *), Act15C9E(Cpu *), Act15DD2(Cpu *), Act15E54(Cpu *), Act15EE6(Cpu *), Act15FB0(Cpu *),
      Act16D70(Cpu *), Act16ED0(Cpu *), Act16F50(Cpu *), Act16FF0(Cpu *),
-     Act17014(Cpu *), Act1729A(Cpu *), Act17310(Cpu *), Act17362(Cpu *);
+     Act17014(Cpu *), Act1729A(Cpu *), Act17310(Cpu *), Act17362(Cpu *),
+     Act173AA(Cpu *), Act1743C(Cpu *), Act174E6(Cpu *), Act17548(Cpu *), Act17588(Cpu *), Act1759A(Cpu *);
 void RunEnemies(Cpu *), EnemyDispatch(Cpu *), EnemySetState(Cpu *), EnemyNextState(Cpu *);   /* enemies.c */
 void MagicUsed(Cpu *), SlotEmptied(Cpu *), MagicMeter(Cpu *), HudRedraw(Cpu *), GoldDisplay(Cpu *);   /* hud.c */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
@@ -304,6 +305,12 @@ const PortRoutine port_routines[] = {
     {0x01729A, 0x017302, "Act1729A", Act1729A, CT_SP},           /* $17302-$1730F (COPY_FIELDS) is called */
     {0x017310, 0x017362, "Act17310", Act17310, CT_SP},           /* $17132 (the link) is C */
     {0x017362, 0x0173AA, "Act17362", Act17362, CT_SP},
+    {0x0173AA, 0x017418, "Act173AA", Act173AA, CT_SP},           /* bouncers, a shooter, a dodger (batch 18) */
+    {0x01743C, 0x0174B0, "Act1743C", Act1743C, CT_SP},           /* $17418-$1743B, $174B0-$174E5 are called */
+    {0x0174E6, 0x017546, "Act174E6", Act174E6, CT_SP},
+    {0x017548, 0x017588, "Act17548", Act17548, CT_SP},
+    {0x017588, 0x01759A, "Act17588", Act17588, CT_SP},
+    {0x01759A, 0x01766C, "Act1759A", Act1759A, CT_SP},           /* with the dodge $17652 */
     {0x00EE70, 0x00EF12, "PlayerSwordTip", PlayerSwordTip, CT_SP},
     {0x011170, 0x01141A, "MagicStart", MagicStart, CT_SP},       /* magic.c; a potion may carry on at $F288 */
     {0x01141A, 0x0114C0, "MagicFrame", MagicFrame, CT_SP},       /* may carry on at $11590 or $11780 off a pass */

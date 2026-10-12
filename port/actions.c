@@ -74,6 +74,10 @@
  * chain and removes it when it is all off the screen, leaving past the action): $1729A a link
  * defeated (the chain closes up), $17310 hurt, $17362 moving.
  *
+ * Batch 18, bouncers, a shooter and a dodger ($173AA-$1765F): $173AA drifts and bounces; $1743C
+ * flies at the target and bounces; $174E6 fires three times; $17548 aims a shot and $17588 flies
+ * it; $1759A swims burning and dodges the player's sword.
+ *
  * Spawn flags (-$2AFE): bit 7 puff on appearing, bit 1 the other puff, bit 2 turned over
  * (attribute bit 7), bit 0 not placed by its animation.
  *
@@ -137,6 +141,7 @@
 #define FLASH(e)      ((e) - 0x3900)   /* word */
 #define CHAIN_A(e)    ((e) - 0x30FF)   /* byte: a link set up */
 #define CHAIN_B(e)    ((e) - 0x30FE)   /* byte: a link with a leader */
+#define ACCEL(e)      ((e) - 0x3400)   /* long: x, y */
 
 /* routines still called as they are */
 #define SET_ANIM          0x7E8u
@@ -256,6 +261,13 @@
 #define SWING_X           0x170F4u
 #define SWING_Y           0x170EEu
 #define COPY_FIELDS       0x1730Au  /* fields from a4 to a2, by the list of offsets at a0 */
+#define STOP              0xC2Eu    /* VEL 0; d0 0 */
+#define VEL_AT_COARSE     0xFC0u    /* d0, d5: the velocity at angle d3, speed d4 */
+#define SET_VEL_AT        0x1208u   /* VEL at angle d3, speed d4 */
+#define FACE_ENTITY       0x44DAu   /* faces a2; d0: the distance */
+#define BOUNCE            0x17420u  /* off walls (COLL): VEL reversed */
+#define AIM_LEVEL         0x174B0u  /* d3: the angle to a2, kept within an eighth of level */
+#define SHOT_AT           0x18256u  /* an enemy d0 at the offsets at a0 (by its facing); a2, mi: none */
 #define APPLY_VEL_X       0xAB8u
 
 void EnemySetState(Cpu *);           /* enemies.c */
@@ -2996,6 +3008,205 @@ static void a17362(Ent e)
     hit();
 }
 
+/* ---- bouncers, a shooter, a dodger (batch 18) ---- */
+
+/* $17418: |d0| / 64 (a word; the caller's own move.w sets the flags it tests) */
+static void slow_of(int16_t v) { uint16_t a = (uint16_t)v; if (v < 0) a = (uint16_t)-a; set_d0w(a >> 6); }
+
+/* drifts as it was thrown, slowing, bouncing off walls ($17420), for 60 frames; then on, or
+ * (kind $18, one time in two) step 6 */
+static void a173AA(Ent e)
+{
+    if (begins(e)) {
+        slow_of(rdw(VEL_X(e)));
+        wrw(ACCEL_X(e), (int)(c->d[0] & 0xFFFF));
+        slow_of(rdw(VEL_Y(e)));
+        wrw(GRAVITY(e), (int)(c->d[0] & 0xFFFF));
+        wr8(TIMER(e), 0x3C);
+        call_d0(SET_ANIM, 6);
+    }
+    if (despawned()) return;
+    set_d0w(rdw(ACCEL_X(e)));
+    call(FRICTION_X);
+    set_d0w(rdw(GRAVITY(e)));
+    call(FRICTION_Y);
+    call(ENEMY_MOVE);
+    call(PLAYER_CONTACT_ALL);
+    if (hit()) return;
+    call(BOUNCE);
+    wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+    if (rd8(TIMER(e))) return;
+    if ((uint16_t)rdw(TYPE(e)) == 0x18) {
+        call(RANDOM);
+        int carry = c->d[0] & 1;
+        c->d[0] = set_b(c->d[0], (uint8_t)c->d[0] >> 1);
+        if (!carry) { wr8(STEP(e), 6); return; }
+    }
+    call(ENEMY_NEXT_STATE);
+}
+
+/* flies at the target within an eighth of a turn of level ($174B0), speeding up to $100, bouncing
+ * off walls, for 32 frames */
+static void a1743C(Ent e)
+{
+    if (begins(e)) {
+        wr8(MOVE_FLAGS(e), 0x7F);
+        c->a[2] = (Ent)(int32_t)rdw(TARGET_W);
+        call(FACE_PLAYER);
+        call(AIM_LEVEL);
+        c->d[4] = set_w(c->d[4], 0x100);
+        call(VEL_AT_COARSE);
+        uint16_t v = (uint16_t)c->d[0];
+        c->d[1] = set_w(c->d[1], v);
+        if (v & 0x8000) c->d[1] = set_w(c->d[1], (uint16_t)-v);
+        wrw(SPEED_X(e), (int)(c->d[1] & 0xFFFF));
+        v = (uint16_t)c->d[5];
+        c->d[1] = set_w(c->d[1], v);
+        if (v & 0x8000) c->d[1] = set_w(c->d[1], (uint16_t)-v);
+        wrw(SPEED_Y(e), (int)(c->d[1] & 0xFFFF));
+        set_d0w((int16_t)c->d[0] >> 4);
+        wrw(ACCEL_X(e), (int)(c->d[0] & 0xFFFF));
+        c->d[5] = set_w(c->d[5], (uint16_t)((int16_t)c->d[5] >> 4));
+        wrw(GRAVITY(e), (int)(c->d[5] & 0xFFFF));
+        wr8(TIMER(e), 0x20);
+        call_d0(SET_ANIM, 8);
+    }
+    if (despawned()) return;
+    call(ACCEL_X_);
+    call(ACCEL_Y);
+    call(ENEMY_MOVE);
+    call(PLAYER_CONTACT_ALL);
+    if (hit()) return;
+    call(BOUNCE);
+    wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+    if (!rd8(TIMER(e))) call(ENEMY_NEXT_STATE);
+}
+
+/* stands firing three times ($16 shots from $17546), when the animation marks it */
+static void a174E6(Ent e)
+{
+    if (begins(e)) {
+        call(FACE_PLAYER);
+        call(STOP);
+        wr32(ACCEL(e), c->d[0]);
+        clr8(ATTR(e), 3);
+        wr8(TIMER(e), 3);
+        call_d0(SET_ANIM_NOW, 12);
+    }
+    if (despawned()) return;
+    call(CONTACT_AND_MOVE);
+    uint8_t a = rd8(ATTR(e));
+    wr8(ATTR(e), a & (uint8_t)~1);
+    if (a & 1) {
+        set_d0w(0x16);
+        c->a[0] = 0x17546u;
+        call(SHOT_AT);
+        if (c->ccr & CC_N) return;
+        c->d[0] = rd8(ATTR(e)) & 8;
+        wr8(ATTR(c->a[2]), (uint8_t)c->d[0]);
+        return;
+    }
+    if (rd8(ANIM_BUSY(e))) return;
+    wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+    if (!rd8(TIMER(e))) { call(ENEMY_NEXT_STATE); return; }
+    call_d0(SET_ANIM_NOW, 12);
+}
+
+/* a shot set off at the target, give or take a random angle, at $180 (its graphics from the
+ * room's list, $4910) */
+static void a17548(Ent e)
+{
+    set8(ALIVE(e), 0x40);
+    call_d0(SET_ANIM_NOW, 0);
+    call_d0(SET_ANIM, 8);
+    c->d[1] = set_w(c->d[1], (uint16_t)rdw(TYPE(e)));
+    call(ROOM_KIND);
+    wrw(WORD_3DFE(e), rdw(c->a[0]));
+    c->a[2] = (Ent)(int32_t)rdw(TARGET_W);
+    call(AIM_LEVEL);
+    call(RANDOM);
+    c->d[0] = set_w(c->d[0], ((c->d[0] & 0xFFF) - 0x800) & 0xFFFF);
+    c->d[3] = set_w(c->d[3], (c->d[3] + c->d[0]) & 0xFFFF);
+    c->d[4] = set_w(c->d[4], 0x180);
+    call(SET_VEL_AT);
+    call(ENEMY_NEXT_STATE);
+}
+
+/* the shot flying */
+static void a17588(Ent e)
+{
+    (void)e;
+    call(APPLY_VEL);
+    call(PLAYER_CONTACT_ALL);
+    if (hit()) return;
+    despawned();
+}
+
+/* $17652: dodging the player's sword: back, at half its speed, for 16 frames (PHASE set) */
+static void dodge(Ent e)
+{
+    wr8(PHASE(e), 0xFF);
+    wr8(TIMER(e), 0x10);
+    int16_t v = rdw(VEL_X(e));
+    set_d0w(v);
+    if (v >= 0) { v = (int16_t)-v; set_d0w(v); }
+    set_d0w(v >> 1);
+    call(SET_VEL_X_FACING);
+}
+
+/* burning, it swims at the player about its home height and slows near it; when the player
+ * faces it with the sword out (the target's hit records), it dodges back */
+static void a1759A(Ent e)
+{
+    if (begins(e)) {
+        wr8(MOVE_FLAGS(e), 0x77);
+        set8(BLINK(e), 0x40);
+        wrw(FLASH(e), 1);
+        call(FACE_PLAYER);
+        call_d0(SET_ANIM, 14);
+        wr8(TIMER(e), 0);
+    }
+    if (despawned()) return;
+    if (burns(e)) return;
+    set_d0w(rdw(HOME_Y(e)));
+    call(TO_HEIGHT);
+    Ent t = (Ent)(int32_t)rdw(TARGET_W);
+    c->a[2] = t;
+    if (rd8(TIMER(e))) {
+        wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+        c->d[0] = 0xFFFFFFE0u;                      /* -32: backing off */
+        if (!rd8(PHASE(e))) {
+            c->d[1] = set_b(c->d[1], rd8(ATTR(t)));
+            c->d[2] = set_b(c->d[2], rd8(ATTR(e)));
+            c->d[1] = set_b(c->d[1], (uint8_t)(c->d[1] ^ c->d[2]));
+            if ((c->d[1] & 8) && rd32(HIT_A(t))) dodge(e);
+            else c->d[0] = 32;
+        }
+        call(ACCEL_FACING);
+        call(ACCEL_X_);
+        call(APPLY_VEL);
+        return;
+    }
+    int16_t s = (int16_t)(rdw(VEL_X(e)) >> 4);
+    if (!s) s = 1;
+    set_d0w(s);
+    if (s == 1 && (rdw(VEL_X(e)) >> 4) == 0) c->d[0] = 1;
+    wrw(VEL_X(e), rdw(VEL_X(e)) - s);
+    call(APPLY_VEL);
+    call(FACE_ENTITY);
+    uint16_t d = (uint16_t)c->d[0];
+    if (d & 0x8000) { d = (uint16_t)-d; set_d0w(d); }
+    if (d >= 0x40) return;
+    wr8(PHASE(e), 0);
+    wr8(TIMER(e), 0x10);
+    if (!rd32(HIT_A(t))) return;
+    c->d[0] = set_b(c->d[0], rd8(ATTR(t)));
+    c->d[1] = set_b(c->d[1], rd8(ATTR(e)));
+    c->d[0] = set_b(c->d[0], (uint8_t)(c->d[0] ^ c->d[1]));
+    if (!(c->d[0] & 8)) return;
+    dodge(e);
+}
+
 /* the actions, registered by their addresses (registry.c). call_68k leaves its mark in ret: it
  * is cleared unless the action went on elsewhere */
 #define ACTION(addr) void Act##addr(Cpu *cpu) { c = cpu; went_on = 0; a##addr((Ent)c->a[4]); if (!went_on) c->ret = 0; }
@@ -3015,3 +3226,4 @@ ACTION(15830) ACTION(1589A) ACTION(158E6) ACTION(15994)
 ACTION(15A86) ACTION(15C9E) ACTION(15DD2) ACTION(15E54) ACTION(15EE6) ACTION(15FB0)
 ACTION(16D70) ACTION(16ED0) ACTION(16F50) ACTION(16FF0)
 ACTION(17014) ACTION(1729A) ACTION(17310) ACTION(17362)
+ACTION(173AA) ACTION(1743C) ACTION(174E6) ACTION(17548) ACTION(17588) ACTION(1759A)
