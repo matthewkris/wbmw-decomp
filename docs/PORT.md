@@ -1091,6 +1091,28 @@ Results: 0 mismatches over the standard runs and every owner state (422,373 chec
 100 in 100 for each. Replace mode plays the new-game script and four states. 87 of the 135
 actions are C.
 
+#### The monsters' actions, batch 18: bouncers, a shooter, a dodger ($173AA-$1766B, 2026-10-12)
+
+Six actions. `$173AA` drifts as it was thrown, slowing (`$17418`, |velocity| / 64) and bouncing
+off walls (`$17420`) for 60 frames, then goes on (kind `$18`, one time in two, to step 6).
+`$1743C` flies at the target within an eighth of a turn of level (`$174B0`), speeding up to
+`$100`, for 32 frames. `$174E6` stands and fires three shots (kind `$16`, `$17546`) when its
+animation marks a frame; `$17548` is such a shot set off at the target, give or take a random
+angle, at `$180`, its graphics from the room's list (`$4910`); `$17588` the shot flying.
+`$1759A` burns (`$16E8E`, which leaves past the action when hit) and swims at the player about
+its home height; when the player faces it with the sword out (the target's hit records) it
+dodges back (`$17652`) at half its speed for 16 frames.
+
+The fuzz gave the target a random attack-box pointer, and one case pointed it at the stack
+(RAM `$09F0`, a 256-box list read through the `$FD0000` mirror): the original's stack holds its
+return addresses there and the C version's does not, so the two saw different boxes. The pointer
+now lands in ROM. `WBMW_FUZZ_TRACE=N` prints every instruction the original runs in fuzz case N.
+
+Results: 0 mismatches over the standard runs and every owner state (422,373 checked calls);
+150,000 fuzz cases from five states, 0 mismatches, every instruction covered. Self-test caught
+100 in 100 for each. Replace mode plays the new-game script and four states. 93 of the 135
+actions are C.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

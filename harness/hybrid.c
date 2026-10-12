@@ -346,8 +346,11 @@ static void trace_at(unsigned pc)
         }
 }
 
+static long ft_case = -2, ft_k = -1;           /* WBMW_FUZZ_TRACE=N: every instruction of fuzz case N */
 int md_instr_hook(unsigned int pc)
 {
+    if (ft_case == -2) { const char *f = getenv("WBMW_FUZZ_TRACE"); ft_case = f ? atol(f) : -1; }
+    if (fuzzing && ft_k == ft_case) fprintf(stderr, "ft %06X d0 %08X d1 %08X a0 %08X a2 %08X a7 %08X\n", pc, m68k_get_reg(NULL, M68K_REG_D0), m68k_get_reg(NULL, M68K_REG_D1), m68k_get_reg(NULL, M68K_REG_A0), m68k_get_reg(NULL, M68K_REG_A2), m68k_get_reg(NULL, M68K_REG_SP));
     if (tr_n) trace_at(pc);
     framelog_at(pc);
     if (watch) watch_step(pc);                     /* registers a C rewrite left different: still dead? */
@@ -681,7 +684,7 @@ int hybrid_fuzz(const char *name, long count)
     long before = stats[idx].bad;
     fuzzing = 1;
     for (long k = 0; k < count; k++) {
-        md_restore(base, n);
+        md_restore(base, n); ft_k = k + 1;
         for (int i = 0; i < 8; i++) m68k_set_reg(M68K_REG_D0 + i, rnd() << 16 ^ rnd());
         m68k_set_reg(M68K_REG_A4, (rnd() & 63) * 4);
         m68k_set_reg(M68K_REG_SR, (m68k_get_reg(NULL, M68K_REG_SR) & ~0x1Fu) | (rnd() & 0x1F));
@@ -1308,10 +1311,22 @@ int hybrid_fuzz(const char *name, long count)
                 /* its size, as its animation gives it: never 0 (the puffs about it divide by it,
                  * RandomSigned $4340, and a division by zero stops the translated code) */
                 ram[0xCB02 + e] = (uint8_t)(4 + rnd() % 28); ram[0xCB03 + e] = (uint8_t)(4 + rnd() % 28);
+                /* its hit records (-$2A00, -$2900): none, as between its attacks (pointers; a
+                 * random odd one is an address error for the original and not for the C) */
+                put_long(0xD600 + e, 0); put_long(0xD700 + e, 0);
                 if (!strcmp(name, "Act15066") && rnd() % 2) {                     /* its last hop, on the ground */
                     ram[0xD800 + e] = 1; ram[0xD801 + e] = 1; ram[0xCF00 + e] = 2;
                 }
                 if (!strcmp(name, "Act151D6") && rnd() % 2) ram[0xD802 + e] = 0xFF;   /* attacking */
+                if (!strcmp(name, "Act17548")) {                                  /* its kind ($16) in the room's list */
+                    uint32_t n = (uint32_t)(ram[0xA142] << 8 | ram[0xA143]), i;
+                    for (i = 0; i < n && i < 8; i++) if ((ram[0xA122 + 4 * i] << 8 | ram[0xA123 + 4 * i]) == 0x16) break;
+                    if (i == n || i == 8) { i = n < 8 ? n : 7; put_word(0xA122 + 4 * i, 0x16); if (n < 8) put_word(0xA142, n + 1); }
+                }
+                if (!strcmp(name, "Act1759A")) {                                  /* the target's sword out or not */
+                    uint32_t t = (uint32_t)(ram[0xA11C] << 8 | ram[0xA11D]) & 0xFFFF;
+                    if (t < 0x100) put_long(0xD600 + t, rnd() % 2 ? 0 : 0x10000 + rnd() % 0x60000);   /* boxes read from ROM: not the stack */
+                }
                 if (!strcmp(name, "Act17014")) {                                  /* its phases; a player high up */
                     ram[0xCE01 + e] = (uint8_t)(rnd() % 5);
                     if (rnd() % 4 == 0) put_word(0xC900 + p, 0x34 + rnd() % 8);
