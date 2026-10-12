@@ -130,8 +130,9 @@ F2 overwrites the same file each time.
    and thunder are coroutine loops, their resume addresses registered entries (docs/PORT.md,
    "Magic"). The hearts display ($8AA2, `port/hud.c`), the item and effect spawner ($1090C/$10910,
    `port/effects.c`) and the sword's tip ($EE70) are C too. Next (show the owner a checklist):
-   other subsystems (the HUD's magic and inventory display, $7600-$8900). The angle maths
-   ($EE2-$1278, `port/maths.c`, exact) are C too. The items and effects each frame ($10A1E, `port/items.c`), the big items
+   other subsystems (the rest of the text system: status screen, shops, dialogue,
+   $7600-$8900; enemies). The angle maths ($EE2-$1278, `port/maths.c`, exact) and the HUD
+   bar (magic name and uses, meter, slot icons, gold: `port/hud.c`) are C too. The items and effects each frame ($10A1E, `port/items.c`), the big items
    ($B42A) and exact kernel helpers (ClearEntity, Freeze/UnfreezeEntities, FindFreeEffect,
    CheckGrounded, in `port/entity.c`) are C too. Readable C
    calls what is not rewritten yet through `call_68k` (`port/world.c`). Fuzz

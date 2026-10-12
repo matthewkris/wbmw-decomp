@@ -1025,6 +1025,28 @@ int hybrid_fuzz(const char *name, long count)
             m68k_set_reg(M68K_REG_D0, rnd() % 4 ? (rnd() << 16) | (uint32_t)(dx & 0xFFFF) : rnd());
             m68k_set_reg(M68K_REG_D1, rnd() % 4 ? (rnd() << 16) | (uint32_t)(dy & 0xFFFF) : rnd());
         }
+        if (!strcmp(name, "MagicUsed") || !strcmp(name, "SlotEmptied") || !strcmp(name, "MagicMeter") || !strcmp(name, "HudRedraw")
+            || !strcmp(name, "GoldDisplay")) {     /* the HUD bar's state */
+            uint32_t k = rnd() % 13;
+            if (!strcmp(name, "MagicUsed")) m68k_set_reg(M68K_REG_D0, (rnd() << 16) | k);
+            if (!strcmp(name, "SlotEmptied")) {     /* a special action or an item kind ($28, $2B up) */
+                static const uint8_t ks[] = {0, 3, 7, 12, 0x28, 0x2B, 0x2C, 0x2F, 0x29, 0x2A};
+                k = ks[rnd() % 10];
+                m68k_set_reg(M68K_REG_D0, (rnd() << 16) | (rnd() << 8 & 0xFF00) | k);
+            }
+            if (!strcmp(name, "MagicMeter")) m68k_set_reg(M68K_REG_D0, (rnd() << 16) | (rnd() % 4 ? rnd() % 0x2001 : rnd() & 0xFFFF));
+            for (uint32_t i = 0; i < 13; i++) ram[0x95B8 + i] = (uint8_t)(rnd() % 3 ? 1 + rnd() % 3 : rnd());
+            ram[0x9F10] = (uint8_t)(rnd() % 4 ? rnd() % 13 : 0xFF); ram[0x9F11] = (uint8_t)(rnd() % 4 ? rnd() % 13 : 0xFF);
+            if (rnd() % 2) ram[0x9F10 + rnd() % 2] = (uint8_t)k;
+            ram[0x95DC] = (uint8_t)(rnd() % 2 ? ram[0x9F10] : rnd() % 13); ram[0x95DD] = (uint8_t)(rnd() % 2 ? ram[0x9F11] : rnd() % 13);
+            put_word(0x95F8, rnd() % 2 ? (rnd() % 0x21) << 8 : rnd());
+            put_long(0x962C, rnd() % 3 ? rnd() % 1000000 : rnd() % 2 ? rnd() : rnd() % 10);
+            if (!strcmp(name, "SlotEmptied")) {     /* often in a slot, as its special action */
+                uint8_t as = (uint8_t)(k == 0x28 ? 12 : k >= 0x2B ? k - 0x23 : k);
+                if (rnd() % 2) ram[0x9F10] = as;
+                if (rnd() % 2) ram[0x9F11] = as;
+            }
+        }
         if (!strcmp(name, "RunItems")) {
             /* the item slots: kinds of the table at every step, begun or not, near the player,
              * timers near their ends; the attacker ($9F30) and its spark state */
