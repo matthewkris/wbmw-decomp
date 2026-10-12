@@ -57,6 +57,11 @@ grep -h "all:" "$OUT"/run_*.log | awk '{c += $2; m += $5} END {print "runs", NR,
 
 echo "== problems (logs naming a mismatch, contract, hang or failed call)"
 grep -l -E "MISMATCH|CONTRACT|did not|call_68k|STUCK|\.c: " "$OUT"/*.log || echo "none"
+# a name #defined twice in one file: the later value silently wins for the code after it
+for f in port/*.c; do
+    d=$(sed -n 's/^#define \([A-Za-z_0-9]*\).*/\1/p' "$f" | sort | uniq -d | tr '\n' ' ')
+    [ -n "$d" ] && echo "$f defines twice: $d"
+done
 
 echo "== coverage (fuzz and runs)"
 "$PY" -I tools/coverage.py work/map.json "$OUT"/fcov_*.txt "$OUT"/cov_*.txt > "$OUT/coverage.txt" 2>&1

@@ -1185,6 +1185,12 @@ Results: 0 mismatches over the standard runs and every owner state (422,373 chec
 100 in 100 for each. Replace mode plays the new-game script and four states. 109 of the 135
 actions are C.
 
+A slip found after the commit: batch 21 defined `SHAKE` (`$183D4`) where `SHAKE` (`$9738`, the
+shake counter) already existed, so `$15A86` wrote its shake to ROM. The fuzz of `$15A86` catches
+it, but acceptance only fuzzes the batch it is given. The routine is now `SHAKE_SCREEN`, batch 15
+and batch 21 pass again (275,000 fuzz cases, 0 mismatches), and `tools/accept.sh` reports any name
+`#define`d twice in one `port/` file among its problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
