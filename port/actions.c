@@ -292,6 +292,8 @@
 #define MOUNT_TOUCH       0x1839Cu  /* the mount takes its health; the player against it */
 #define MOUNT_GROUNDED    0x183BAu  /* a2 the mount; z: on the ground (COLL & 10 is 2) */
 #define SHAKE_SCREEN      0x183D4u  /* the screen shaken ($9738), sound 57 */
+#define ENEMY_MAX_HEALTH  0x4928u   /* d0: its kind's health */
+#define HEALTH(e)     ((e) - 0x2600)   /* word */
 #define RIDE_ANIM         0x18A24u  /* the beast's animation d0 */
 #define RIDE_FALL         0x18A32u  /* the beast falls and moves a frame; then RIDE_PLACE */
 #define BLINK_BOTH        0x18A74u  /* the beast and the rider start blinking */
@@ -4566,6 +4568,160 @@ static void a18FC2(Ent e)
     new_state(0);
 }
 
+/* ---- the third pair's throw, and its followers (batch 24) ---- */
+
+/* the rider throws a shot of kind $220 ($190C6) and holds it (WORD_31FE) while the beast's
+ * animation runs; the beast's marks (its ATTR bits 0, 1) step the shot on; hit, the shot is gone
+ * and state 2 */
+static void a19026(Ent e)
+{
+    if (begins(e)) {
+        c->a[4] = partner_of(e);
+        call(FACE_PLAYER);
+        clr8(ATTR(c->a[4]), 0x03);
+        c->a[4] = partner_of(c->a[4]);
+        call(RIDE_PLACE);
+        set_d0w(0x220);
+        c->a[0] = 0x190C6u;
+        call(SHOT_AT);
+        if (c->ccr & CC_N) { c->d[0] = 3; new_state(0); return; }
+        e = c->a[4];
+        c->d[0] = 8 & rd8(ATTR(e));
+        wr8(ATTR(c->a[2]), (uint8_t)c->d[0]);
+        wrw(WORD_31FE(e), (uint16_t)c->a[2]);
+        call_d0(RIDE_ANIM, 12);
+        return;
+    }
+    call(PLAYER_CONTACT_ALL);
+    call(ENEMY_TAKE_HIT);
+    e = c->a[4];
+    if (c->ccr & CC_N) {
+        set_d0w(rdw(WORD_31FE(e)));
+        if ((int16_t)c->d[0] >= 0) {
+            c->a[0] = (uint32_t)(int32_t)(int16_t)c->d[0];
+            wr8(ALIVE(c->a[0]), 0);
+        }
+        c->d[0] = 2;
+        new_state(0);
+        return;
+    }
+    call(RIDE_TOUCH);
+    e = c->a[4];
+    Ent b = c->a[2] = partner_of(e);
+    uint8_t marks = rd8(ATTR(b));
+    if (marks & 1) {
+        wr8(ATTR(b), marks & 0xFE);
+        c->a[0] = (uint32_t)(int32_t)rdw(WORD_31FE(e));
+        wr8(STEP(c->a[0]), (uint8_t)(rd8(STEP(c->a[0])) + 1));
+    }
+    marks = rd8(ATTR(b));
+    if (marks & 2) {
+        wr8(ATTR(b), marks & 0xFD);
+        c->a[0] = (uint32_t)(int32_t)rdw(WORD_31FE(e));
+        wr8(STEP(c->a[0]), (uint8_t)(rd8(STEP(c->a[0])) + 1));
+        wr8(WORD_31FE(e), 0xFF);
+    }
+    c->a[0] = partner_of(e);
+    if (rd8(ANIM_BUSY(c->a[0]))) return;
+    c->d[0] = 3;
+    new_state(0);
+}
+
+/* a follower readied: speeds $180, $400; flags $13; no health yet; state 3 */
+static void a190C8(Ent e)
+{
+    wr32(SPEED(e), 0x01800400u);
+    wr8(MOVE_FLAGS(e), 0x13);
+    wr8(PHASE(e), 0);
+    wrw(HEALTH(e), 0);
+    c->d[0] = 3;
+    new_state(0);
+}
+
+/* a follower hidden as a puff (kind $218, the $120A set) */
+static void a190E4(Ent e)
+{
+    clr8(ALIVE(e), 0x20);
+    wrw(TYPE(e), 0x218);
+    set8(BLINK(e), 8);
+    wrw(ANIM_SET(e), 0x120A);
+    call_d0(SET_ANIM, 0);
+}
+
+/* a follower hurt: knocked from the sword at $400, blinking and frozen; then its next state
+ * (DELAY's second byte; its animation the first); beaten, state 3 */
+static void a19102(Ent e)
+{
+    if (begins(e)) {
+        clr8(ATTR(e), 0x10);
+        call(DAMAGE_ENEMY);
+        if (c->ccr & CC_Z) { c->d[0] = 3; new_state(0); return; }
+        e = c->a[4];
+        set_d0w(0x400);
+        if (!(rd8(TOUCH(e)) & 1)) set_d0w(-0x400);
+        wrw(VEL_X(e), (uint16_t)c->d[0]);
+        wrw(GRAVITY(e), 0x40);
+        c->d[0] = set_b(c->d[0], rd8(DELAY(e)));
+        call(SET_ANIM);
+        call(START_BLINK_FROZEN);
+        return;
+    }
+    call_d0(FRICTION_X, 32);
+    call(ENEMY_MOVE);
+    call(PLAYER_TOUCH);
+    e = c->a[4];
+    wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+    if (rd8(TIMER(e))) return;
+    clr8(ALIVE(e), 0x20);
+    clr8(BLINK(e), 0x40);
+    c->d[0] = set_b(c->d[0], rd8(DELAY(e) + 1));
+    new_state(0);
+}
+
+/* a follower thrown off: up at $300 and away from the sword at $180, upside down while falling;
+ * landed, $78 frames lying, $1E more, then its health back and state 8 */
+static void a1916A(Ent e)
+{
+    if (begins(e)) {
+        clr8(ATTR(e), 0x10);
+        wrw(VEL_Y(e), 0xFD00);
+        wrw(GRAVITY(e), 0x40);
+        wrw(SPEED_Y(e), 0x800);
+        set_d0w(0x180);
+        if (!(rd8(TOUCH(e)) & 1)) set_d0w(-0x180);
+        wrw(VEL_X(e), (uint16_t)c->d[0]);
+        wr8(PHASE(e), 0);
+        c->d[0] = set_b(c->d[0], rd8(NEXT_STATE(e)));
+        call(SET_ANIM);
+        return;
+    }
+    c->d[0] = set_b(c->d[0], rd8(PHASE(e)));
+    if (!(c->d[0] & 0xFF)) {
+        call(FALL_AND_MOVE);
+        e = c->a[4];
+        if ((int16_t)rdw(VEL_Y(e)) >= 0) set8(ATTR(e), 0x10);
+        call(CHECK_GROUNDED);
+        if (!(c->ccr & CC_Z)) return;
+        e = c->a[4];
+        wr8(TIMER(e), 0x78);
+        wr8(PHASE(e), (uint8_t)(rd8(PHASE(e)) + 1));
+        return;
+    }
+    c->d[0] = set_b(c->d[0], c->d[0] - 1);
+    wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+    if (rd8(TIMER(e))) return;
+    if (!(c->d[0] & 0xFF)) {
+        wr8(PHASE(e), (uint8_t)(rd8(PHASE(e)) + 1));
+        wr8(TIMER(e), 0x1E);
+        clr8(ATTR(e), 0x10);
+        return;
+    }
+    call(ENEMY_MAX_HEALTH);
+    wrw(HEALTH(c->a[4]), (uint16_t)c->d[0]);
+    c->d[0] = 8;
+    new_state(0);
+}
+
 /* the actions, registered by their addresses (registry.c). call_68k leaves its mark in ret: it
  * is cleared unless the action went on elsewhere */
 #define ACTION(addr) void Act##addr(Cpu *cpu) { c = cpu; went_on = 0; a##addr((Ent)c->a[4]); if (!went_on) c->ret = 0; }
@@ -4591,3 +4747,4 @@ ACTION(17A44) ACTION(17B8A) ACTION(17D22) ACTION(17DC4) ACTION(17E4C) ACTION(17E
 ACTION(183E0) ACTION(184C4) ACTION(18584) ACTION(185EC)
 ACTION(186D6) ACTION(18710) ACTION(187AC) ACTION(18ADE)
 ACTION(18BBE) ACTION(18E3A) ACTION(18F62) ACTION(18FC2)
+ACTION(19026) ACTION(190C8) ACTION(190E4) ACTION(19102) ACTION(1916A)

@@ -1341,7 +1341,7 @@ int hybrid_fuzz(const char *name, long count)
                 if (!strcmp(name, "Act17A44") || !strcmp(name, "Act17B8A") || !strcmp(name, "Act17D22") || !strcmp(name, "Act17DC4") || !strcmp(name, "Act17E4C")
                     || !strcmp(name, "Act17E88") || !strcmp(name, "Act183E0") || !strcmp(name, "Act184C4")
                     || !strcmp(name, "Act18584") || !strcmp(name, "Act185EC")
-                    || !strcmp(name, "Act18BBE") || !strcmp(name, "Act18E3A") || !strcmp(name, "Act18F62") || !strcmp(name, "Act18FC2")
+                    || !strcmp(name, "Act18BBE") || !strcmp(name, "Act18E3A") || !strcmp(name, "Act18F62") || !strcmp(name, "Act18FC2") || !strcmp(name, "Act19026")
                     || !strcmp(name, "Act186D6") || !strcmp(name, "Act18710") || !strcmp(name, "Act187AC") || !strcmp(name, "Act18ADE")) {
                     /* the two-part boss: a partner whose partner it is; the leap's phase even */
                     uint32_t q = 0x40 + (rnd() % 16) * 4;
@@ -1365,6 +1365,13 @@ int hybrid_fuzz(const char *name, long count)
                         ram[0xCE01 + e] = (uint8_t)(rnd() % 4);
                         if (rnd() % 2) ram[0xC903 + e] = (uint8_t)(0xDF + rnd() % 7);
                     }
+                    if (!strcmp(name, "Act19026") && rnd() % 2) put_word(0xCE02 + e, 0x40 + (rnd() % 16) * 4);   /* its shot */
+                    if (!strcmp(name, "Act19026")) {                              /* the beast's marks; no room */
+                        ram[0xC002 + q] = (uint8_t)((ram[0xC002 + q] & 0xFC) | rnd() % 4);
+                        if (rnd() % 3 == 0)
+                            for (uint32_t k3 = 0, b = (uint32_t)(ram[0xA11A] << 8 | ram[0xA11B]); k3 < 16; k3++)
+                                ram[(0xC000 + b + 4 * k3) & 0xFFFF] |= 0x80;
+                    }
                     if (!strcmp(name, "Act187AC")) {                              /* the volley: its first shot; no room */
                         if (rnd() % 2) ram[0xD801 + e] = 1;
                         if (rnd() % 3 == 0) ram[0xD800 + e] = 6;
@@ -1377,6 +1384,10 @@ int hybrid_fuzz(const char *name, long count)
                     if (!strcmp(name, "Act185EC") && rnd() % 2) ram[0xD800 + e] = 0;
                     if (!strcmp(name, "Act185EC") && rnd() % 2) ram[0xCF00 + q] = (uint8_t)(rnd() % 2 ? 2 : rnd());   /* the mount's floor */
                     if (!strcmp(name, "Act17E4C") && rnd() % 2) put_word(0xCA00 + e, 0);   /* at rest */
+                }
+                if (!strcmp(name, "Act1916A")) {                                  /* falling, lying, rising */
+                    ram[0xCE01 + e] = (uint8_t)(rnd() % 3);
+                    if (rnd() % 2) ram[0xD800 + e] = 1;
                 }
                 if (!strcmp(name, "Act1759A")) {                                  /* the target's sword out or not */
                     uint32_t t = (uint32_t)(ram[0xA11C] << 8 | ram[0xA11D]) & 0xFFFF;
