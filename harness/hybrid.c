@@ -1294,6 +1294,9 @@ int hybrid_fuzz(const char *name, long count)
                 ram[0xD400 + e] = (uint8_t)rnd();                                 /* its animation's frame count */
                 ram[0xDE00 + e] = (uint8_t)(rnd() % 2 ? 0xFF : rnd());            /* the pending state (-$2200) */
                 if (rnd() % 2) ram[0x966B] ^= 1;                                  /* in water */
+                ram[0xDE01 + e] = (uint8_t)rnd();                                 /* the magic hit (-$21FF) */
+                put_word(0xDA00 + e, rnd() % 2 ? rnd() % 0x40 : rnd() % 0x800);   /* health: beaten by a hit, or not */
+                if (rnd() % 4 == 0) ram[0xD800 + e] = 0;                          /* a timer already run out */
             }
             if (!strncmp(name, "Hnd", 3)) {
                 uint8_t begun = (uint8_t)(rnd() % 2 ? 0x80 : 0);
