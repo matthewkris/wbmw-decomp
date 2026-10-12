@@ -17,6 +17,7 @@ void PlayerState(Cpu *), PlayerStartFrame(Cpu *), PlayerInput(Cpu *), PlayerBoun
      PlayerAnimate(Cpu *), PlayerSword(Cpu *), PlayerSpecial(Cpu *),
      PlayerDamage(Cpu *), PlayerGold(Cpu *), PlayerItem(Cpu *), PlayerHeart(Cpu *), PlayerUpdate(Cpu *);
 void TaskCallSystem(Cpu *), TaskCallUser(Cpu *);
+void Cosine(Cpu *), Sine(Cpu *), VelocityAt(Cpu *), VelocityAtCoarse(Cpu *), Direction16To(Cpu *), Direction16(Cpu *), DirectionTo(Cpu *), Direction(Cpu *), SetVelocityAt(Cpu *), VelocityTo(Cpu *), SetVelocityToCoarse(Cpu *), SetVelocityAtCoarse(Cpu *), VelocityToCoarse(Cpu *), Distance(Cpu *);   /* maths.c: exact */
 void RunItems(Cpu *);   /* items.c */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
      FindFreeEffect(Cpu *), CheckGrounded(Cpu *);
@@ -48,6 +49,20 @@ const PortRoutine port_routines[] = {
     {0x000A8E, 0x000AB4, "UnfreezeEntities", UnfreezeEntities},
     {0x0027E6, 0x0027FA, "FindFreeEffect", FindFreeEffect},
     {0x004362, 0x00436C, "CheckGrounded", CheckGrounded},
+    {0x000EE2, 0x000EE6, "Cosine", Cosine},
+    {0x000EE6, 0x000FA8, "Sine", Sine},
+    {0x000FA8, 0x000FC0, "VelocityAt", VelocityAt},
+    {0x000FC0, 0x001032, "VelocityAtCoarse", VelocityAtCoarse},
+    {0x001032, 0x001042, "Direction16To", Direction16To},
+    {0x001042, 0x00108C, "Direction16", Direction16},
+    {0x00108C, 0x00109C, "DirectionTo", DirectionTo},
+    {0x00109C, 0x001208, "Direction", Direction},
+    {0x001208, 0x001216, "SetVelocityAt", SetVelocityAt},
+    {0x001216, 0x001220, "VelocityTo", VelocityTo},
+    {0x001234, 0x00123A, "SetVelocityToCoarse", SetVelocityToCoarse},
+    {0x00123A, 0x001248, "SetVelocityAtCoarse", SetVelocityAtCoarse},
+    {0x001248, 0x001252, "VelocityToCoarse", VelocityToCoarse},
+    {0x001252, 0x00127A, "Distance", Distance},
     {0x000B92, 0x000BAC, "FrictionX", FrictionX},
     {0x000BAC, 0x000BC6, "FrictionY", FrictionY},
     {0x000AF4, 0x000B42, "AccelX", AccelX},

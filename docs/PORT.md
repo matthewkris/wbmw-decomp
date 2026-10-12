@@ -660,6 +660,18 @@ Also in this batch:
 * Fuzzing items needs real animation sets (from the kinds' table): with a random one the
   animation interpreter loops forever.
 
+#### The angle maths (2026-10-11)
+
+`port/maths.c` ($EE2-$1278), exact (no contract: every register and flag compared, since
+callers read d0-d6 and the flags): sine and cosine interpolated from a quarter-wave table
+($EE6, $EE2); a velocity at an angle (`VelocityAt` $FA8, and 32-direction `VelocityAtCoarse`
+$FC0: speed * sin, by `muls`, `asl.l #2`, `swap`); the direction from a4 to a2, 16-way
+(`Direction16To` $1032) or to 1/1024 of a turn by a binary search of a tangent table
+(`DirectionTo` $108C; at exactly 45 degrees its `divu` overflows and leaves d1 as it was); the
+wrappers that store or return a velocity towards a2 ($1208-$1248); and `Distance` ($1252). The
+fuzzer covers quarter and eighth angles, zero offsets and exact diagonals. Everything ran;
+0 mismatches; a run with fire spirits (which steer with these) matches in replace mode.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
