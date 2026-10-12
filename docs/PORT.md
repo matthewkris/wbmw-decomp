@@ -1235,6 +1235,25 @@ Results: 0 mismatches over the standard runs and every owner state (422,373 chec
 100 in 100 for each. Replace mode plays the new-game script and four states. 117 of the 135
 actions are C.
 
+#### The monsters' actions, batch 24: the third pair's throw, and its followers ($19026-$191FF, 2026-10-12)
+
+Five actions. `$19026` is the rider throwing: it turns the beast to the player, throws a shot of
+kind `$220` (`$190C6`) and holds it in WORD_31FE while the beast's animation runs; the beast's
+marks (its ATTR bits 0 and 1, cleared as they are seen) step the shot on; hit, the shot is gone and
+state 2. The other four are the followers': `$190C8` readies one (speeds, flags, no health yet),
+`$190E4` hides one as a puff (kind `$218`), `$19102` is one hurt (knocked from the sword at `$400`,
+its animation and next state from DELAY's two bytes), and `$1916A` is one thrown off: up and away,
+upside down while falling, `$78` frames lying and `$1E` more, then its health back and state 8.
+
+The fuzz gives `$19026` a held shot, the beast's marks and, one time in three, no free entity,
+and gives `$1916A` its phases. The self-test of `$19102` stopped at its fifth case (caught 4 in
+4): the known early stop of an action that goes on to another state after the deliberately broken
+run.
+
+Results: 0 mismatches over the standard runs and every owner state (422,373 checked calls);
+125,000 fuzz cases from five states, 0 mismatches, every instruction covered. Replace mode plays
+the new-game script and four states. 122 of the 135 actions are C.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
