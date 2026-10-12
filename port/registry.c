@@ -23,6 +23,8 @@ void RunSpawnPoints(Cpu *);   /* spawns.c */
 void ObjLobbed(Cpu *), ObjThrown(Cpu *), ObjStanding(Cpu *), ObjFlying(Cpu *), ObjWalker(Cpu *),   /* objects.c */
      ObjCrawler(Cpu *), ObjCrawlerStill(Cpu *), ObjAimed(Cpu *), ObjBouncer(Cpu *), ObjHopper(Cpu *),
      ObjFloater(Cpu *), ObjColumn(Cpu *), ObjEdgeCrawler(Cpu *);
+void PplStanding(Cpu *), PplWanderer(Cpu *), PplSpeaker(Cpu *), PplTownsperson(Cpu *),   /* people.c */
+     PplStandingStill(Cpu *), PplFlagged(Cpu *), PplPlacedBreakable(Cpu *), PplBreakable(Cpu *), PplScene(Cpu *);
 void RunEnemies(Cpu *), EnemyDispatch(Cpu *), EnemySetState(Cpu *), EnemyNextState(Cpu *);   /* enemies.c */
 void MagicUsed(Cpu *), SlotEmptied(Cpu *), MagicMeter(Cpu *), HudRedraw(Cpu *), GoldDisplay(Cpu *);   /* hud.c */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
@@ -174,6 +176,15 @@ const PortRoutine port_routines[] = {
     {0x01A84E, 0x01A8BA, "ObjFloater", ObjFloater, CT_SP},
     {0x01A8BA, 0x01A99A, "ObjColumn", ObjColumn, CT_SP},
     {0x01A99A, 0x01AA3C, "ObjEdgeCrawler", ObjEdgeCrawler, CT_SP},
+    {0x0163AA, 0x0163C8, "PplStanding", PplStanding, CT_SP},     /* people.c: nine handlers (ranges to the next) */
+    {0x0163C8, 0x01646E, "PplWanderer", PplWanderer, CT_SP},
+    {0x01646E, 0x01652A, "PplSpeaker", PplSpeaker, CT_SP},       /* with the talk test $164B8 and $1649C */
+    {0x01652A, 0x0166CA, "PplTownsperson", PplTownsperson, CT_SP},
+    {0x0166CA, 0x0166DA, "PplStandingStill", PplStandingStill, CT_SP},
+    {0x0166DA, 0x016712, "PplFlagged", PplFlagged, CT_SP},
+    {0x016712, 0x01676C, "PplPlacedBreakable", PplPlacedBreakable, CT_SP},
+    {0x01676C, 0x0167DC, "PplBreakable", PplBreakable, CT_SP},   /* with $1678A, the breaking */
+    {0x0167DC, 0x0168E8, "PplScene", PplScene, CT_SP},
     {0x00EE70, 0x00EF12, "PlayerSwordTip", PlayerSwordTip, CT_SP},
     {0x011170, 0x01141A, "MagicStart", MagicStart, CT_SP},       /* magic.c; a potion may carry on at $F288 */
     {0x01141A, 0x0114C0, "MagicFrame", MagicFrame, CT_SP},       /* may carry on at $11590 or $11780 off a pass */

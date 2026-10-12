@@ -133,8 +133,9 @@ F2 overwrites the same file each time.
    the enemies, in batches (docs/PORT.md, "The enemies"): the framework is done
    (`port/enemies.c`: $133B2, the state machine $13582), and the spawn points
    (`port/spawns.c`, $12A70; kinds 8, 11, 12, 14 still need save states in their rooms for
-   coverage), and thirteen handlers, the objects at $1A464-$1AA3B (`port/objects.c`, batch 3);
-   next the other 21 handlers small to large. Then the rest of the text system (status screen, shops,
+   coverage), and thirteen handlers, the objects at $1A464-$1AA3B (`port/objects.c`, batch 3),
+   and nine more, the townspeople at $163AA-$168E7 (`port/people.c`, batch 4); next the other
+   12 handlers small to large. Then the rest of the text system (status screen, shops,
    dialogue, $7600-$8900). The angle maths ($EE2-$1278, `port/maths.c`, exact) and the HUD
    bar (magic name and uses, meter, slot icons, gold: `port/hud.c`) are C too. The items and effects each frame ($10A1E, `port/items.c`), the big items
    ($B42A) and exact kernel helpers (ClearEntity, Freeze/UnfreezeEntities, FindFreeEffect,

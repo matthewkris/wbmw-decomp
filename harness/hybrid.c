@@ -685,7 +685,7 @@ int hybrid_fuzz(const char *name, long count)
         for (int i = 0; i < 8; i++) m68k_set_reg(M68K_REG_D0 + i, rnd() << 16 ^ rnd());
         m68k_set_reg(M68K_REG_A4, (rnd() & 63) * 4);
         m68k_set_reg(M68K_REG_SR, (m68k_get_reg(NULL, M68K_REG_SR) & ~0x1Fu) | (rnd() & 0x1F));
-        if (strncmp(name, "Obj", 3))                /* the objects keep the state's entities (below) */
+        if (strncmp(name, "Obj", 3) && strncmp(name, "Ppl", 3))   /* these keep the state's entities (below) */
             for (uint32_t a = 0xC000; a < 0xE000; a++) ram[a] = (uint8_t)rnd();
         for (uint32_t a = 0x8A52; a < 0x8A56; a++) ram[a] = (uint8_t)(rnd() & (k & 1 ? 0xFF : 0));  /* seed 0 half the time */
         if (!strcmp(name, "SetGfxSlots")) {         /* a random valid slot list in scratch RAM */
@@ -1199,26 +1199,36 @@ int hybrid_fuzz(const char *name, long count)
             uint32_t at = items[rnd() % (unsigned)ni];
             for (int k2 = 0; k2 < 4; k2++) { ram[0xC400 + e + k2] = (uint8_t)(at >> (24 - 8 * k2)); ram[0xC500 + e + k2] = (uint8_t)(script >> (24 - 8 * k2)); }
         }
-        if (!strncmp(name, "Obj", 3)) {
-            /* one of objects.c's handlers: an enemy slot set up by the game's own routine for one
-             * of the handler's kinds ($12684: animation set, stats), then its fields at the values
-             * each step reads: on the first frame or later, near the player or the screen's edge,
-             * timers near their ends, touched or not, counted at a spawn point or not */
+        if (!strncmp(name, "Obj", 3) || !strncmp(name, "Ppl", 3)) {
+            /* one of objects.c's or people.c's handlers: an enemy slot set up by the game's own
+             * routine for one of the handler's kinds ($12684: animation set, stats), then its
+             * fields at the values each step reads: on the first frame or later, near the player
+             * or the screen's edge, timers near their ends, touched or not, counted at a spawn
+             * point or not */
             static const struct { const char *n; uint16_t kinds[3]; } objs[] = {
                 {"ObjLobbed", {0x208}}, {"ObjThrown", {0x20A, 0x20C, 0x22A}}, {"ObjStanding", {0x226}},
                 {"ObjFlying", {0x214}}, {"ObjWalker", {0x21C}}, {"ObjCrawler", {0x212, 0x21E, 0x230}},
                 {"ObjCrawlerStill", {0x232}}, {"ObjAimed", {0x22C}}, {"ObjBouncer", {0x22E}},
                 {"ObjHopper", {0x802}}, {"ObjFloater", {0x804}}, {"ObjColumn", {0x806}}, {"ObjEdgeCrawler", {0x808}},
+                {"PplScene", {0x400}}, {"PplStanding", {0x402}}, {"PplBreakable", {0x404}},
+                {"PplTownsperson", {0x406, 0x416, 0x468}}, {"PplStandingStill", {0x412}}, {"PplWanderer", {0x438}},
+                {"PplFlagged", {0x43A}}, {"PplPlacedBreakable", {0x46A}}, {"PplSpeaker", {0x600}},
             };
             uint16_t kind = 0;
             for (unsigned i = 0; i < sizeof objs / sizeof *objs; i++)
                 if (!strcmp(name, objs[i].n)) { int nk = objs[i].kinds[2] ? 3 : objs[i].kinds[1] ? 2 : 1; kind = objs[i].kinds[rnd() % (unsigned)nk]; }
+            if (kind == 0x416) {                    /* any of group 4's people (handler 11's kinds) */
+                kind = (uint16_t)(0x406 + 2 * (rnd() % 49));
+                if (kind == 0x412 || kind == 0x438 || kind == 0x43A) kind = 0x406;
+            }
             uint32_t e = 0x40 + (rnd() % 16) * 4;
             m68k_set_reg(M68K_REG_A4, e);
             for (uint32_t row = 0xC000; row < 0xE000; row += 0x100)          /* every field, at random */
                 for (uint32_t b = 0; b < 4; b++) ram[row + e + b] = (uint8_t)rnd();
-            {   Cpu t = {0}; t.a[2] = t.a[4] = e; t.d[1] = kind; t.a[7] = 0xFFFF4F00u;
-                call_68k(&t, 0x12684); }
+            if (kind >> 8 != 6) {                   /* $126D4 has no entry for group 6 */
+                Cpu t = {0}; t.a[2] = t.a[4] = e; t.d[1] = kind; t.a[7] = 0xFFFF4F00u;
+                call_68k(&t, 0x12684);
+            }
             uint32_t p = (uint32_t)(int32_t)(int16_t)(ram[0x9EEE] << 8 | ram[0x9EEF]);
             int32_t px = get_sword(0xC800 + p), py = get_sword(0xC900 + p);
             int32_t cx = get_sword(0x9758), cy = get_sword(0x975A);
@@ -1248,6 +1258,74 @@ int hybrid_fuzz(const char *name, long count)
             put_word(0xA11C, rnd() % 2 ? p : 0x40 + (rnd() % 16) * 4);
             ram[0xA10E] = (uint8_t)(rnd() % 4);
             if (rnd() % 8 == 0) ram[0x966B] ^= 0x20;
+            if (!strncmp(name, "Ppl", 3)) {
+                /* the steps of their tables (0-8), begun or not; a broken thing's $FF */
+                ram[0xD401 + e] = (uint8_t)((rnd() % 5) * 2 | (rnd() % 2 ? 0x80 : 0));
+                if (strstr(name, "Breakable") && rnd() % 3 == 0) ram[0xD401 + e] = 0xFF;
+                ram[0xD503 + e] = (uint8_t)(rnd() % 2 ? 0x80 | rnd() : rnd() & 0x7F);   /* the sword's touch */
+                put_word(0x9962, rnd() % 3 ? 0 : 8);                            /* text running */
+                {   /* talking: level with the player and within reach, on the ground, up alone */
+                    uint8_t reach = (uint8_t)(rnd() % 2 ? 16 + rnd() % 32 : rnd());
+                    ram[0xCB00 + e] = reach;
+                    if (rnd() % 2) {
+                        put_word(0xC800 + e, (uint32_t)(px + small(reach + 4)));
+                        put_word(0xC900 + e, (uint32_t)(py + small(ram[0xCB03 + e] + ram[0xCB03 + p] + 4)));
+                    }
+                    if (rnd() % 2) ram[0x9F02] |= 0x40; else ram[0x9F02] = (uint8_t)rnd();
+                    ram[0x9F0B] = (uint8_t)(rnd() % 2 ? 0 : rnd());
+                    ram[0x9F0D] = (uint8_t)(rnd() % 2 ? 1 : rnd() % 16);
+                    ram[0xCF00 + p] = (uint8_t)(rnd() % 2 ? 2 | (rnd() & 0xF5) : rnd());
+                }
+                {   /* a script of commands 0-4, and jumps that land on one, in scratch RAM. At home
+                     * already, no walks home: walks home that are already there and jumps could go
+                     * round for ever, in the original as well */
+                    int at_home = rnd() % 4 == 0;
+                    uint32_t s = 0x4E00, at[16], jumps[16]; int n = 0, nj = 0;
+                    for (int i = 0; i < 12; i++) {
+                        at[n++] = s;
+                        int cmd = (int)(rnd() % 6);
+                        if (cmd == 5 && n > 1) {
+                            uint32_t to = at[rnd() % (unsigned)(n - 1)];
+                            int16_t off = (int16_t)(to - (s + 3) + 2);
+                            jumps[nj++] = s;
+                            ram[s++] = 5; ram[s++] = (uint8_t)(off >> 8); ram[s++] = (uint8_t)off;
+                            at[n - 1] = to;                                         /* never a jump's target */
+                            continue;
+                        }
+                        if (cmd == 5) cmd = 4;
+                        if (cmd == 2 && at_home) cmd = 0;
+                        ram[s++] = (uint8_t)cmd;
+                        if (cmd == 0) ram[s++] = (uint8_t)(rnd() % 4 ? 1 + rnd() % 3 : rnd());
+                        if (cmd == 1) ram[s++] = (uint8_t)small(40);
+                        if (cmd == 3) { ram[s++] = (uint8_t)rnd(); ram[s++] = (uint8_t)rnd(); }
+                    }
+                    ram[s++] = 0; ram[s++] = 1;                                     /* the end: a wait */
+                    put_long(0xD900 + e, 0xFFFF0000u | (nj && rnd() % 4 == 0 ? jumps[rnd() % (unsigned)nj] : at[rnd() % (unsigned)n]));
+                    ram[0xCE00 + e] = (uint8_t)(rnd() % 2 ? 0 : 1 + rnd() % 255);    /* it walks a script */
+                    int32_t x = get_sword(0xC800 + e);
+                    put_word(0xD300 + e, rnd() % 2 ? (uint32_t)(x + small(40)) : (uint32_t)((rnd() % 4) << 8 | rnd()));
+                    if (rnd() % 4 == 0) put_word(0xD300 + e, (uint32_t)x);
+                    if ((ram[0xD401 + e] & 0x7F) == 2 && rnd() % 2) ram[0xD300 + e] = 1;   /* a wait's last frame */
+                    put_word(0xDF00 + e, (uint32_t)(at_home ? x : x + (rnd() % 2 ? 1 : -1) * (int32_t)(1 + rnd() % 40)));
+                    if (rnd() % 2) put_word(0xD800 + e, rnd());                      /* else the timer near its end */
+                }
+                if (!strcmp(name, "PplScene")) {    /* the player about the scene's lines; the dimming; the attack */
+                    put_word(0xC800 + p, 0x10D0 + rnd() % 0x90);
+                    put_word(0x9734, rnd() % 3 ? rnd() % 0x52 : 0);
+                    put_word(0x9F32, rnd() % 2 ? rnd() & 0x7FFF : 0x8000 | rnd());
+                    uint32_t a = rnd() % 2 ? p : 0x40 + (rnd() % 16) * 4;
+                    if (a == e) a = p;                                              /* another entity */
+                    put_word(0x9F30, a);
+                    ram[0xD401 + a] = (uint8_t)(rnd() % 2 ? 0x0C | (rnd() & 0x80) : rnd());
+                }
+                if (!strcmp(name, "PplWanderer")) {
+                    if (rnd() % 2) put_word(0xC800 + e, 0x11A0 + rnd() % 0x70);
+                    put_word(0x965A, rnd() % 2 ? rnd() & ~63u : rnd());
+                }
+                for (uint32_t a = 0x9992; a < 0x99A2; a++) ram[a] = (uint8_t)rnd();   /* the game flags */
+                ram[0x9668] = (uint8_t)(rnd() % 4 ? rnd() % 16 : 0x0F);
+                put_word(0xD802 + e, rnd());                                        /* its flag; the scene's message */
+            }
         }
         uint32_t sp = m68k_get_reg(NULL, M68K_REG_SP) - 4;
         bus_write16(sp, 0x0000); bus_write16(sp + 2, 0x0200);   /* return to an address the check recognises */
