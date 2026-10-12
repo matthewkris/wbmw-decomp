@@ -30,6 +30,11 @@
  * DespawnIfOffscreen ($48C4), which leave past the action: hit() and despawned() do their
  * tests in C and the action returns.
  *
+ * Batch 10, choosing ($14822-$14C4F): standing until its wait is over ($42AA, which leaves past
+ * the action otherwise), then a step from a table by how near the player is ($428C): $14822,
+ * $14888 (with the shield), $1492A, $14974, $14AEA/$14AFA (a range of their own), $14B7E (water
+ * rows); $149D0 walks home; $14A82 turns to a player it faces; $14C1A waits, then falls.
+ *
  * Spawn flags (-$2AFE): bit 7 puff on appearing, bit 1 the other puff, bit 2 turned over
  * (attribute bit 7), bit 0 not placed by its animation.
  *
@@ -724,6 +729,274 @@ static void a1476C(Ent e)
     if (dx >= 0x10) call(ENEMY_NEXT_STATE);
 }
 
+/* ---- choosing what to do next (batch 10) ---- */
+
+/* $42AA: standing on the ground, facing the player, its wait (TIMER2) over: 0. Otherwise the
+ * original drops this action's return (it is done for this frame): 1, and the action returns.
+ * The ground test is $4356's, whose flags come from FrictionX when it is on the ground */
+static int still_waiting(Ent e)
+{
+    call(SLOW_ON_GROUND);
+    if (!(c->ccr & CC_Z)) return 1;
+    call(FACE_PLAYER);
+    if (!rd8(TIMER2(e))) return 0;
+    wr8(TIMER2(e), (uint8_t)(rd8(TIMER2(e)) - 1));
+    return rd8(TIMER2(e)) != 0;
+}
+
+/* $428C: the next step from a table, at d2 (the row: how near the player is) plus a random 0-7:
+ * 0 stays, negative goes on to the next state, else that step */
+static void pick_step(Ent e, uint32_t table)
+{
+    c->a[0] = table;
+    call(RANDOM);
+    c->d[0] = set_w(c->d[0], ((c->d[0] & 7) + c->d[2]) & 0xFFFF);
+    uint8_t s = rd8(table + (uint32_t)(int32_t)(int16_t)(c->d[0] & 0xFFFF));
+    c->d[0] = set_b(c->d[0], s);
+    if (!s) return;
+    if (s & 0x80) { call(ENEMY_NEXT_STATE); return; }
+    wr8(STEP(e), s);
+}
+
+/* the player within $30 up or down and less than `dx` aside: the rows of the tables below */
+static int near_target(uint16_t dx)
+{
+    call(DIST_Y_ABS_TARGET);
+    if ((uint16_t)c->d[1] >= 0x30) return 0;
+    call(DIST_X_TO_ENTITY);
+    return (uint16_t)c->d[1] < dx;
+}
+
+static void a14822(Ent e)
+{
+    if (begins(e)) {
+        wrw(ANIM_STEP(e), 0x100);
+        call(RANDOM_DELAY);
+        call_d0(SET_ANIM, 6);
+    }
+    if (despawned()) return;
+    call(CONTACT_AND_MOVE);
+    if (hit()) return;
+    if (still_waiting(e)) return;
+    if (!near_target(0x80)) { wr8(STEP(e), 4); return; }
+    c->d[2] = (uint16_t)c->d[1] < 0x30 ? 8 : 0;
+    pick_step(e, 0x14878);
+}
+
+/* with the shield's touch and its own moves (from its kind's stats, $15A3A, $15A76) */
+static void a14888(Ent e)
+{
+    if (begins(e)) {
+        wr32(HIT_A(e), 0);
+        call(KIND_STATS);
+        c->d[0] = set_b(c->d[0], rd8(c->a[1] + 7));
+        wr8(TIMER(e), (uint8_t)c->d[0]);
+        call(KIND_MOVES);
+        call(RANDOM_DELAY);
+        call(FACE_PLAYER);
+        call_d0(SET_ANIM, 6);
+    }
+    if (despawned()) return;
+    call(SHIELD_AND_MOVE);
+    if (hit()) return;
+    call(BACK_OFF);
+    call(SLOW_ON_GROUND);
+    if (rd8(TIMER2(e))) {
+        wr8(TIMER2(e), (uint8_t)(rd8(TIMER2(e)) - 1));
+        if (rd8(TIMER2(e))) return;
+    }
+    call(CHECK_GROUNDED);
+    if (!(c->ccr & CC_Z)) return;
+    call(FACE_PLAYER);
+    call(DIST_Y_ABS_TARGET);
+    if ((uint16_t)c->d[1] >= 0x30) { wr8(STEP(e), 4); return; }
+    call(DIST_X_TO_PLAYER);
+    if ((uint16_t)c->d[1] >= 0x80) { wr8(STEP(e), 4); return; }
+    c->d[2] = 0;
+    if ((uint16_t)c->d[1] < 0x60) c->d[2] = (uint16_t)c->d[1] < 0x28 ? 16 : 8;
+    pick_step(e, 0x14912);
+}
+
+static void a1492A(Ent e)
+{
+    if (begins(e)) {
+        wrw(ANIM_STEP(e), 0x100);
+        call(RANDOM_DELAY);
+        call_d0(SET_ANIM, 6);
+    }
+    call(CONTACT_AND_MOVE);
+    if (hit()) return;
+    if (still_waiting(e)) return;
+    call(DIST_X_TO_PLAYER);
+    c->d[2] = (uint16_t)c->d[1] < 0x60 ? 8 : 0;
+    pick_step(e, 0x14964);
+}
+
+static void a14974(Ent e)
+{
+    if (begins(e)) {
+        call(RANDOM_DELAY);
+        call_d0(SET_ANIM, 6);
+    }
+    if (despawned()) return;
+    call(CONTACT_AND_MOVE);
+    if (hit()) return;
+    if (still_waiting(e)) return;
+    c->d[2] = 0;
+    call(DIST_Y_ABS_TARGET);
+    if ((uint16_t)c->d[1] < 0x30) {
+        c->d[2] = 8;
+        call(DIST_X_TO_ENTITY);
+        if ((uint16_t)c->d[1] >= 0x60) c->d[2] = 16;
+    }
+    pick_step(e, 0x149B8);
+}
+
+/* walks back to its home x, then stands facing the player; near the player (within $20 up or
+ * down, $40 aside) it goes to step 4 */
+static void a149D0(Ent e)
+{
+    if (begins(e)) {
+        wr8(TIMER(e), 0xFF);
+        wrw(ANIM_STEP(e), 0x200);
+        call(RANDOM_DELAY);
+        set_d0w(rdw(HOME_X(e)));
+        if (rdw(HOME_X(e)) == rdw(X(e))) { wrw(VEL_X(e), 0); c->d[0] = 0; }
+        else { call(FACE_X); call(WALK_FORWARD); c->d[0] = 8; }
+        call(SET_ANIM);
+    }
+    if (despawned()) return;
+    call(CONTACT_AND_MOVE);
+    if (hit()) return;
+    set_d0w(rdw(HOME_X(e)));
+    int16_t v = rdw(VEL_X(e));
+    if (v) {
+        uint16_t home = (uint16_t)rdw(HOME_X(e)), x = (uint16_t)rdw(X(e));
+        set_d0w((uint16_t)(home - x));
+        int there = v < 0 ? home >= x : home < x;   /* reached or passed it */
+        if (there) {
+            wrw(VEL_X(e), 0);
+            if (rd8(ANIM_ID(e))) {
+                call(FACE_PLAYER);
+                call_d0(SET_ANIM, 6);
+                wr8(TIMER(e), 0x1E);
+            }
+        }
+    }
+    if (!(rd8(TIMER(e)) & 0x80)) {
+        wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+        if (rd8(TIMER(e)) & 0x80) call_d0(SET_ANIM, 0);
+    }
+    if (rd8(TIMER2(e))) {
+        wr8(TIMER2(e), (uint8_t)(rd8(TIMER2(e)) - 1));
+        if (rd8(TIMER2(e))) return;
+    }
+    call(DIST_Y_ABS_TARGET);
+    if ((uint8_t)c->d[1] >= 0x20) return;           /* cmpi.b: the low byte */
+    call(DIST_X_TO_ENTITY);
+    if ((uint16_t)c->d[1] >= 0x40) return;
+    wr8(STEP(e), 4);
+}
+
+/* turns to the player (on to the next state) when facing it, close by */
+static void a14A82(Ent e)
+{
+    if (begins(e)) {
+        call(RANDOM_DELAY);
+        call_d0(SET_ANIM, 6);
+    }
+    if (despawned()) return;
+    call(CONTACT_AND_MOVE);
+    if (hit()) return;
+    if (still_waiting(e)) return;
+    call(DIST_Y_ABS_TARGET);
+    if ((uint16_t)c->d[1] >= 0x30) { wr8(STEP(e), 4); return; }
+    call(DIST_X_TO_ENTITY);                         /* d0: 8 if the player is to the left */
+    if ((uint16_t)c->d[1] < 0x30) {
+        c->d[1] = rd8(ATTR(e)) & 8;
+        if ((uint8_t)c->d[0] == (uint8_t)c->d[1]) { call(ENEMY_NEXT_STATE); return; }
+    }
+    call(RANDOM);
+    c->d[0] = set_w(c->d[0], c->d[0] & 7);
+    c->d[0] = set_b(c->d[0], rd8(0x14AE2u + (c->d[0] & 7)));
+    if ((uint8_t)c->d[0]) wr8(STEP(e), (uint8_t)c->d[0]);
+}
+
+/* $14AEA and $14AFA: as $14974, the near row by a distance of their own (VAR: $28 or $40) */
+static void near_by_range(Ent e)
+{
+    if (despawned()) return;
+    call(CONTACT_AND_MOVE);
+    if (hit()) return;
+    if (still_waiting(e)) return;
+    c->d[2] = 0;
+    call(DIST_Y_ABS_TARGET);
+    if ((uint16_t)c->d[1] < 0x30) {
+        c->d[2] = 8;
+        call(DIST_X_TO_ENTITY);
+        if ((uint16_t)c->d[1] < (uint16_t)rdw(VAR(e))) c->d[2] = 16;
+    }
+    pick_step(e, 0x14B44);
+}
+
+static void ranged_start(Ent e, int range)
+{
+    wrw(VAR(e), range);
+    call_d0(SET_ANIM, 6);
+    call(RANDOM_DELAY);
+}
+
+static void a14AEA(Ent e) { if (begins(e)) ranged_start(e, 0x28); near_by_range(e); }
+static void a14AFA(Ent e) { if (begins(e)) ranged_start(e, 0x40); near_by_range(e); }
+
+/* in water or on land; off the ground it goes to step 7. Its table's rows: near, middle, far,
+ * and the same again in water */
+static void a14B7E(Ent e)
+{
+    if (!begins(e)) {                               /* the original's test is this way round */
+        call_d0(SET_ANIM, 6);
+        call(RANDOM_DELAY);
+    }
+    call(MAYBE_BUBBLE);
+    if (despawned()) return;
+    call(PLAYER_CONTACT_ALL);
+    call(MOVE_WITH_PLATFORMS);
+    if (hit()) return;
+    call(SLOW_ON_GROUND);
+    call(CHECK_GROUNDED);
+    if (!(c->ccr & CC_Z)) { wr8(STEP(e), 7); return; }
+    call(DIST_X_TO_PLAYER);
+    c->d[2] = 0;
+    int check_y = 1;
+    if ((uint16_t)c->d[1] >= 0x30) {
+        c->d[2] = 8;
+        if ((uint16_t)c->d[1] < 0x60) check_y = 0;
+    }
+    if (check_y) {
+        call(DIST_Y_ABS);
+        if ((uint16_t)c->d[1] >= 0x28) c->d[2] = 16;
+    }
+    if (rd8(WORLD_FLAGS) & 1) c->d[2] = set_w(c->d[2], (c->d[2] + 0x18) & 0xFFFF);
+    pick_step(e, 0x14BEA);
+}
+
+/* waits for the player within $40, then falls for 30 frames */
+static void a14C1A(Ent e)
+{
+    if (!(rd8(STEP(e)) & 0x80)) {
+        call(DIST_X_TO_PLAYER);
+        if ((uint16_t)c->d[1] >= 0x40) return;
+        set8(STEP(e), 0x80);
+        wr8(TIMER(e), 0x1E);
+    }
+    call(PLAYER_CONTACT_ALL);
+    if (hit()) return;
+    call(ACCEL_Y);
+    call(APPLY_VEL_Y);
+    wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+    if (!rd8(TIMER(e))) call(ENEMY_NEXT_STATE);
+}
+
 /* the actions, registered by their addresses (registry.c). call_68k leaves its mark in ret: it
  * is cleared unless the action went on elsewhere */
 #define ACTION(addr) void Act##addr(Cpu *cpu) { c = cpu; went_on = 0; a##addr((Ent)c->a[4]); if (!went_on) c->ret = 0; }
@@ -731,3 +1004,5 @@ ACTION(140F2) ACTION(140FC) ACTION(1410E) ACTION(14120) ACTION(1416E) ACTION(141
 ACTION(1429E) ACTION(142D6) ACTION(142E4) ACTION(142F6) ACTION(14308)
 ACTION(1436C) ACTION(14394) ACTION(143BC) ACTION(143F2) ACTION(14420) ACTION(14456)
 ACTION(14518) ACTION(1454C) ACTION(145C4) ACTION(1463C) ACTION(14682) ACTION(146FC) ACTION(1476C)
+ACTION(14822) ACTION(14888) ACTION(1492A) ACTION(14974) ACTION(149D0) ACTION(14A82) ACTION(14AEA)
+ACTION(14AFA) ACTION(14B7E) ACTION(14C1A)

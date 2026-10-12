@@ -31,7 +31,9 @@ void HndAreaMonster(Cpu *), HndHopperOr(Cpu *), HndGuardian(Cpu *), HndVanishing
 void Act140F2(Cpu *), Act140FC(Cpu *), Act1410E(Cpu *), Act14120(Cpu *), Act1416E(Cpu *),   /* actions.c */
      Act141A4(Cpu *), Act1429E(Cpu *), Act142D6(Cpu *), Act142E4(Cpu *), Act142F6(Cpu *), Act14308(Cpu *),
      Act1436C(Cpu *), Act14394(Cpu *), Act143BC(Cpu *), Act143F2(Cpu *), Act14420(Cpu *), Act14456(Cpu *),
-     Act14518(Cpu *), Act1454C(Cpu *), Act145C4(Cpu *), Act1463C(Cpu *), Act14682(Cpu *), Act146FC(Cpu *), Act1476C(Cpu *);
+     Act14518(Cpu *), Act1454C(Cpu *), Act145C4(Cpu *), Act1463C(Cpu *), Act14682(Cpu *), Act146FC(Cpu *), Act1476C(Cpu *),
+     Act14822(Cpu *), Act14888(Cpu *), Act1492A(Cpu *), Act14974(Cpu *), Act149D0(Cpu *), Act14A82(Cpu *),
+     Act14AEA(Cpu *), Act14AFA(Cpu *), Act14B7E(Cpu *), Act14C1A(Cpu *);
 void RunEnemies(Cpu *), EnemyDispatch(Cpu *), EnemySetState(Cpu *), EnemyNextState(Cpu *);   /* enemies.c */
 void MagicUsed(Cpu *), SlotEmptied(Cpu *), MagicMeter(Cpu *), HudRedraw(Cpu *), GoldDisplay(Cpu *);   /* hud.c */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
@@ -228,6 +230,16 @@ const PortRoutine port_routines[] = {
     {0x014682, 0x0146FC, "Act14682", Act14682, CT_SP},
     {0x0146FC, 0x01476C, "Act146FC", Act146FC, CT_SP},
     {0x01476C, 0x014822, "Act1476C", Act1476C, CT_SP},
+    {0x014822, 0x014888, "Act14822", Act14822, CT_SP},           /* choosing (batch 10) */
+    {0x014888, 0x01492A, "Act14888", Act14888, CT_SP},
+    {0x01492A, 0x014974, "Act1492A", Act1492A, CT_SP},
+    {0x014974, 0x0149D0, "Act14974", Act14974, CT_SP},
+    {0x0149D0, 0x014A82, "Act149D0", Act149D0, CT_SP},
+    {0x014A82, 0x014AEA, "Act14A82", Act14A82, CT_SP},
+    {0x014AEA, 0x014AFA, "Act14AEA", Act14AEA, CT_SP},
+    {0x014AFA, 0x014B7E, "Act14AFA", Act14AFA, CT_SP},
+    {0x014B7E, 0x014C1A, "Act14B7E", Act14B7E, CT_SP},
+    {0x014C1A, 0x014C50, "Act14C1A", Act14C1A, CT_SP},
     {0x00EE70, 0x00EF12, "PlayerSwordTip", PlayerSwordTip, CT_SP},
     {0x011170, 0x01141A, "MagicStart", MagicStart, CT_SP},       /* magic.c; a potion may carry on at $F288 */
     {0x01141A, 0x0114C0, "MagicFrame", MagicFrame, CT_SP},       /* may carry on at $11590 or $11780 off a pass */
