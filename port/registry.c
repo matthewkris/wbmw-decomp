@@ -33,7 +33,9 @@ void Act140F2(Cpu *), Act140FC(Cpu *), Act1410E(Cpu *), Act14120(Cpu *), Act1416
      Act1436C(Cpu *), Act14394(Cpu *), Act143BC(Cpu *), Act143F2(Cpu *), Act14420(Cpu *), Act14456(Cpu *),
      Act14518(Cpu *), Act1454C(Cpu *), Act145C4(Cpu *), Act1463C(Cpu *), Act14682(Cpu *), Act146FC(Cpu *), Act1476C(Cpu *),
      Act14822(Cpu *), Act14888(Cpu *), Act1492A(Cpu *), Act14974(Cpu *), Act149D0(Cpu *), Act14A82(Cpu *),
-     Act14AEA(Cpu *), Act14AFA(Cpu *), Act14B7E(Cpu *), Act14C1A(Cpu *);
+     Act14AEA(Cpu *), Act14AFA(Cpu *), Act14B7E(Cpu *), Act14C1A(Cpu *),
+     Act14C50(Cpu *), Act14CA2(Cpu *), Act14CF0(Cpu *), Act14D74(Cpu *), Act14DC8(Cpu *), Act14E1A(Cpu *),
+     Act14E6C(Cpu *), Act14EC8(Cpu *), Act14EF4(Cpu *), Act14F28(Cpu *), Act14F54(Cpu *), Act14F80(Cpu *);
 void RunEnemies(Cpu *), EnemyDispatch(Cpu *), EnemySetState(Cpu *), EnemyNextState(Cpu *);   /* enemies.c */
 void MagicUsed(Cpu *), SlotEmptied(Cpu *), MagicMeter(Cpu *), HudRedraw(Cpu *), GoldDisplay(Cpu *);   /* hud.c */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
@@ -240,6 +242,18 @@ const PortRoutine port_routines[] = {
     {0x014AFA, 0x014B7E, "Act14AFA", Act14AFA, CT_SP},
     {0x014B7E, 0x014C1A, "Act14B7E", Act14B7E, CT_SP},
     {0x014C1A, 0x014C50, "Act14C1A", Act14C1A, CT_SP},
+    {0x014C50, 0x014CA2, "Act14C50", Act14C50, CT_SP},           /* patrolling and jumping (batch 11) */
+    {0x014CA2, 0x014CF0, "Act14CA2", Act14CA2, CT_SP},
+    {0x014CF0, 0x014D74, "Act14CF0", Act14CF0, CT_SP},
+    {0x014D74, 0x014DC8, "Act14D74", Act14D74, CT_SP},
+    {0x014DC8, 0x014E1A, "Act14DC8", Act14DC8, CT_SP},
+    {0x014E1A, 0x014E6C, "Act14E1A", Act14E1A, CT_SP},
+    {0x014E6C, 0x014EC8, "Act14E6C", Act14E6C, CT_SP},
+    {0x014EC8, 0x014EF4, "Act14EC8", Act14EC8, CT_SP},
+    {0x014EF4, 0x014F28, "Act14EF4", Act14EF4, CT_SP},
+    {0x014F28, 0x014F54, "Act14F28", Act14F28, CT_SP},
+    {0x014F54, 0x014F80, "Act14F54", Act14F54, CT_SP},           /* with the steered jump $14F66 */
+    {0x014F80, 0x014FD2, "Act14F80", Act14F80, CT_SP},           /* with the jump's frame $14FBC */
     {0x00EE70, 0x00EF12, "PlayerSwordTip", PlayerSwordTip, CT_SP},
     {0x011170, 0x01141A, "MagicStart", MagicStart, CT_SP},       /* magic.c; a potion may carry on at $F288 */
     {0x01141A, 0x0114C0, "MagicFrame", MagicFrame, CT_SP},       /* may carry on at $11590 or $11780 off a pass */
