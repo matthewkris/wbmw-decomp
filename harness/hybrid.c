@@ -1312,6 +1312,31 @@ int hybrid_fuzz(const char *name, long count)
                     ram[0xD800 + e] = 1; ram[0xD801 + e] = 1; ram[0xCF00 + e] = 2;
                 }
                 if (!strcmp(name, "Act151D6") && rnd() % 2) ram[0xD802 + e] = 0xFF;   /* attacking */
+                if (!strcmp(name, "Act17014")) {                                  /* its phases; a player high up */
+                    ram[0xCE01 + e] = (uint8_t)(rnd() % 5);
+                    if (rnd() % 4 == 0) put_word(0xC900 + p, 0x34 + rnd() % 8);
+                }
+                if (!strcmp(name, "Act1729A") || !strcmp(name, "Act17310") || !strcmp(name, "Act17362")) {
+                    /* a link of the chain: ahead of it (GOAL) a link or none, behind it (MAKER) a
+                     * link that ends the chain or none (a loop of links goes round for ever, in the
+                     * original too), and kind $2E in the room's list for the head to grow it */
+                    uint32_t a = 0x40 + (rnd() % 16) * 4, b = 0x40 + (rnd() % 16) * 4;
+                    if (a == e) a = 0x40 + ((a - 0x40 + 4) & 0x3C);
+                    if (b == e || b == a) b = 0x40 + ((e - 0x40 + 8) & 0x3C);
+                    if (b == a || b == e) b = p;
+                    put_word(0xD300 + e, rnd() % 2 ? 0xFF00 | rnd() % 256 : a);
+                    put_word(0xD302 + e, rnd() % 2 ? 0xFF00 | rnd() % 256 : b);
+                    put_word(0xD300 + b, e); put_word(0xD302 + b, 0xFF00);
+                    put_word(0xD300 + a, 0xFF00); put_word(0xD302 + a, e);
+                    ram[0xCE01 + e] = (uint8_t)(rnd() % 7);                       /* its number */
+                    ram[0xDA02 + e] = (uint8_t)(rnd() % 3 ? 1 + rnd() % 2 : rnd());   /* the next link's wait */
+                    ram[0xCF01 + e] = (uint8_t)(rnd() % 2 ? 0 : rnd());           /* -$30FF, -$30FE */
+                    ram[0xCF02 + e] = (uint8_t)(rnd() % 2 ? 0 : rnd());
+                    put_word(0x965A, rnd() % 2 ? rnd() & ~15u : rnd());          /* the head's 16-frame check */
+                    uint32_t n = (uint32_t)(ram[0xA142] << 8 | ram[0xA143]), i;
+                    for (i = 0; i < n && i < 8; i++) if ((ram[0xA122 + 4 * i] << 8 | ram[0xA123 + 4 * i]) == 0x2E) break;
+                    if (i == n || i == 8) { i = n < 8 ? n : 7; put_word(0xA122 + 4 * i, 0x2E); if (n < 8) put_word(0xA142, n + 1); }
+                }
                 if (!strcmp(name, "Act15A86") || !strcmp(name, "Act15C9E") || !strcmp(name, "Act15DD2")
                     || !strcmp(name, "Act15E54") || !strcmp(name, "Act15EE6") || !strcmp(name, "Act15FB0")) {
                     /* Gragg & Glagg: its group record at $FFF800 (a flag byte, then its three
