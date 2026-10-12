@@ -65,6 +65,10 @@
  * hit outside the boss rooms) leave past the action; the group's other helpers are called.
  * Where the original waits for ever (no free group record or entity), the C stops with a message.
  *
+ * Batch 16, on the water ($16D70-$17013): $16D70 swims along the surface; $16ED0 is hurt;
+ * $16F50 swims burning what it touches and leaps at the player; $16FF0 is the leap. $16E8E (the
+ * touch, which hurts the player by 20 less its armour, and the hit) leaves past the action.
+ *
  * Spawn flags (-$2AFE): bit 7 puff on appearing, bit 1 the other puff, bit 2 turned over
  * (attribute bit 7), bit 0 not placed by its animation.
  *
@@ -123,6 +127,7 @@
 #define MAKER(e)      ((e) - 0x2CFE)   /* word: a byte to set when it is gone */
 #define HALF_W(e)     ((e) - 0x34FE)
 #define DELAY(e)      ((e) - 0x25FE)
+#define ARMOUR(e)     ((e) - 0x26FE)   /* word: the player's armour */
 
 /* routines still called as they are */
 #define SET_ANIM          0x7E8u
@@ -226,6 +231,18 @@
 #define TEXT_BUSY         0xFFFF9962u
 #define MESSAGE           0xFFFF9C16u
 #define AREA              0xFFFF9668u
+#define BODY_VS_ATTACK    0xD76u
+#define BODY_OVERLAP      0xE9Au    /* ls: touching a2 */
+#define TILE_ATTR_AT      0x30DAu
+#define PAST_RANGE_80     0x45F0u   /* cc: $80 or more from home */
+#define ACCEL_FACING      0x46C6u   /* ACCEL_X d0, by its facing */
+#define TO_HEIGHT         0x16E72u  /* ACCEL_Y towards the height d0 */
+#define FACE_BY_D0        0x16F24u  /* faces left (and d2 negated) if d0's low byte is negative */
+#define BURNING           0x16F3Au  /* its burning look (flashing), animation d0 */
+#define TURN_IN_RANGE     0x16FD8u  /* turns at $20 from home; a new wait */
+#define PLAYER_HARM       0xFFFF9856u
+#define PLAYER_W          0xFFFF9EEEu
+#define APPLY_VEL_X       0xAB8u
 
 void EnemySetState(Cpu *);           /* enemies.c */
 
@@ -2510,6 +2527,179 @@ static void a15FB0(Ent e)
     wr8(STEP(e), 3);
 }
 
+/* ---- on the water (batch 16) ---- */
+
+/* $16E8E: the sword; hit, state 2 (the original leaves past the action: 1). Touching the player
+ * hurts it: 20 less the player's armour (-$26FE), a quarter for kind $26, at least 1 */
+static int burns(Ent e)
+{
+    c->a[2] = (Ent)(int32_t)rdw(PLAYER_W);
+    call(BODY_VS_ATTACK);
+    call(ENEMY_TAKE_HIT);
+    if (c->ccr & CC_N) { c->d[0] = set_b(c->d[0], 2); new_state(0); return 1; }
+    call(BODY_OVERLAP);
+    if (!(c->ccr & (CC_C | CC_Z))) return 0;        /* bhi: apart */
+    int16_t harm = (int16_t)(20 - rdw(ARMOUR(c->a[2])));
+    c->d[0] = (uint16_t)harm;
+    if (harm >= 0) {
+        if ((uint16_t)rdw(TYPE(e)) == 0x26) harm = (int16_t)((uint16_t)harm >> 2);
+        set_d0w(harm);
+    }
+    if (harm <= 0) { c->d[0] = 1; harm = 1; }
+    wrw(PLAYER_HARM, harm);
+    set8(0xFFFF9854u, 2);
+    return 0;
+}
+
+/* swims along the surface (a height from the map, in WORD_31FE), turning at walls, at touches
+ * from behind and at its range; facing the player $10-$6F away it goes on */
+static void a16D70(Ent e)
+{
+    if (begins(e)) {
+        wr8(MOVE_FLAGS(e), 0x77);
+        call_d0(SET_ANIM, 14);
+        set_d0w(rdw(Y(e)) & 0xFFF0);
+        wrw(WORD_31FE(e), (int)(c->d[0] & 0xFFFF));
+        wr8(VAR(e), 0xFF);
+        call(RANDOM_TIMER_32);
+    }
+    if (despawned()) return;
+    c->d[6] = set_w(c->d[6], (uint16_t)rdw(X(e)) & 0xFFF0);
+    if ((uint16_t)(c->d[6] & 0xFFFF) != (uint16_t)rdw(VAR(e))) {   /* a new column: the surface's height */
+        c->d[7] = 16;
+        c->d[7] = set_w(c->d[7], (c->d[7] + (uint16_t)rdw(WORD_31FE(e))) & 0xFFFF);
+        call(TYPE_AT_PIXEL);
+        c->d[2] = set_w(c->d[2], ((c->d[2] * 2) & 0x10));
+        wrw(WORD_31FE(e), rdw(WORD_31FE(e)) - (int16_t)(c->d[2] & 0xFFFF));
+        c->d[7] = set_w(c->d[7], (c->d[7] + 0x40) & 0xFFFF);
+        call(TILE_ATTR_AT);
+        int carry = (c->d[2] >> 2) & 1;
+        c->d[2] = set_w(c->d[2], (c->d[2] & 0xFFFF) >> 3);
+        if (!carry) wrw(WORD_31FE(e), rdw(WORD_31FE(e)) + 0x10);
+    }
+    set_d0w(rdw(WORD_31FE(e)));
+    call(TO_HEIGHT);
+    call_d0(ACCEL_FACING, 16);
+    call(ACCEL_X_);
+    call(PLAYER_CONTACT_ALL);
+    if (hit()) return;
+    call(ENEMY_MOVE);
+    int turn = 0, back = 0;                         /* back: reversed as well */
+    c->d[0] = (uint8_t)((rd8(COLL(e)) & 0x41) - 1);
+    if (!c->d[0]) back = 1;
+    else {
+        uint8_t t = rd8(TOUCH(e));
+        c->d[0] = set_b(c->d[0], t);
+        if (t & 4) {                                /* touched: from behind, it turns */
+            c->d[0] = set_b(c->d[0], (uint8_t)(t >> 1));
+            if (t & 1) back = (rd8(ATTR(e)) & 8) != 0;
+            else back = !(rd8(ATTR(e)) & 8);
+        }
+    }
+    if (!back) {
+        wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+        if (rd8(TIMER(e))) return;
+        call(PAST_RANGE_80);
+        if (!(c->ccr & CC_C)) turn = 1;
+        else {
+            call(FACE_PLAYER);
+            uint16_t d = (uint16_t)c->d[0];
+            if (d & 0x8000) { d = (uint16_t)-d; set_d0w(d); }
+            if (d >= 0x10 && d < 0x70) {
+                wrw(GRAVITY(e), 0);
+                wrw(VEL_Y(e), 0);
+                call(ENEMY_NEXT_STATE);
+                return;
+            }
+            call(RANDOM_TIMER_32);
+            return;
+        }
+    }
+    if (back) wrw(VEL_X(e), -rdw(VEL_X(e)));
+    if (back || turn) wr8(ATTR(e), rd8(ATTR(e)) ^ 8);
+    call(RANDOM_TIMER_32);
+}
+
+/* $16EDE: the damage (beaten: state 1), knocked away from the side it was hit on */
+static void knocked_by_hit(Ent e)
+{
+    call(DAMAGE_ENEMY);
+    if (c->ccr & CC_Z) { c->d[0] = 1; new_state(0); return; }
+    wrw(VEL_Y(e), 0);
+    c->d[2] = set_w(c->d[2], 0x200);
+    c->d[0] = set_b(c->d[0], rd8(TOUCH(e)) & 1 ? 0 : 0xFF);   /* seq */
+    call(FACE_BY_D0);
+    wrw(VEL_X(e), (int)(c->d[2] & 0xFFFF));
+    call_d0(SET_ANIM, 4);
+}
+
+/* hurt: knocked away, slowing; hit again meanwhile */
+static void a16ED0(Ent e)
+{
+    if (begins(e)) { clr8(BLINK(e), 0x40); knocked_by_hit(e); return; }
+    call(APPLY_VEL_X);
+    call(ENEMY_TAKE_HIT);
+    if (c->ccr & CC_N) {
+        call(DAMAGE_ENEMY);
+        if (c->ccr & CC_Z) { knocked_by_hit(e); return; }   /* beq $16EDE: the damage again */
+    }
+    call_d0(FRICTION_X, 16);
+    if (c->ccr & CC_Z) call(ENEMY_NEXT_STATE);      /* stopped */
+}
+
+/* swims about its home height, burning what it touches; now and then, the player $10-$5F aside
+ * and up to $5F below, it leaps at it (on, with WORD_31FE the leap's time) */
+static void a16F50(Ent e)
+{
+    if (begins(e)) {
+        call_d0(BURNING, 6);
+        call(TURN_IN_RANGE);
+    }
+    if (despawned()) return;
+    call(ACCEL_X_);
+    set_d0w(rdw(HOME_Y(e)));
+    call(TO_HEIGHT);
+    call(APPLY_VEL);
+    if (burns(e)) return;
+    wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+    if (rd8(TIMER(e))) return;
+    Ent t = (Ent)(int32_t)rdw(TARGET_W);
+    c->a[2] = t;
+    int16_t dx = (int16_t)(rdw(X(t)) - rdw(X(e)));
+    c->d[2] = set_w(c->d[2], (uint16_t)dx);
+    c->d[3] = set_w(c->d[3], (uint16_t)dx);
+    c->d[0] = set_b(c->d[0], dx < 0 ? 0xFF : 0);   /* smi */
+    call(FACE_BY_D0);                               /* d2: the distance */
+    uint16_t d = (uint16_t)c->d[2];
+    if (d < 0x10 || d >= 0x60) { call(TURN_IN_RANGE); return; }
+    call(RANDOM);
+    int carry = c->d[0] & 1;
+    set_d0w((c->d[0] & 0xFFFF) >> 1);
+    if (!carry) { call(TURN_IN_RANGE); return; }
+    int16_t dy = (int16_t)(rdw(Y(t)) - rdw(Y(e)));
+    c->d[1] = set_w(c->d[1], (uint16_t)dy);
+    if (dy < 0 || (uint16_t)dy >= 0x60) { call(TURN_IN_RANGE); return; }
+    set_d0w((int)(c->d[3] & 0xFFFF));
+    c->d[2] = set_w(c->d[2], 0x200);
+    call(ACCEL_TO);
+    wrw(VEL_X(e), (int)(c->d[4] & 0xFFFF));
+    wrw(VEL_Y(e), (int)(c->d[5] & 0xFFFF));
+    c->d[2] = set_w(c->d[2], (((c->d[2] & 0xFFFF) >> 1) + 1) & 0xFFFF);
+    wrw(WORD_31FE(e), (int)(c->d[2] & 0xFFFF));
+    call(ENEMY_NEXT_STATE);
+}
+
+/* the leap: burning, for WORD_31FE frames */
+static void a16FF0(Ent e)
+{
+    if (begins(e)) call_d0(BURNING, 14);
+    if (despawned()) return;
+    if (burns(e)) return;
+    call(APPLY_VEL);
+    wrw(WORD_31FE(e), rdw(WORD_31FE(e)) - 1);
+    if (!rdw(WORD_31FE(e))) call(ENEMY_NEXT_STATE);
+}
+
 /* the actions, registered by their addresses (registry.c). call_68k leaves its mark in ret: it
  * is cleared unless the action went on elsewhere */
 #define ACTION(addr) void Act##addr(Cpu *cpu) { c = cpu; went_on = 0; a##addr((Ent)c->a[4]); if (!went_on) c->ret = 0; }
@@ -2527,3 +2717,4 @@ ACTION(15352) ACTION(153BE) ACTION(153F0) ACTION(15464) ACTION(154B2) ACTION(155
 ACTION(155E2) ACTION(15630) ACTION(15704) ACTION(1577A) ACTION(157A6) ACTION(157A8) ACTION(157E4)
 ACTION(15830) ACTION(1589A) ACTION(158E6) ACTION(15994)
 ACTION(15A86) ACTION(15C9E) ACTION(15DD2) ACTION(15E54) ACTION(15EE6) ACTION(15FB0)
+ACTION(16D70) ACTION(16ED0) ACTION(16F50) ACTION(16FF0)

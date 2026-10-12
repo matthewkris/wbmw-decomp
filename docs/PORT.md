@@ -1057,6 +1057,22 @@ boss fight runs most of `$15EE6` and `$15FB0`); 150,000 fuzz cases from five sta
 mismatches, every instruction covered. Self-test caught 100 in 100 for each. Replace mode plays
 the new-game script and four states. 79 of the 135 actions are C.
 
+#### The monsters' actions, batch 16: on the water ($16D70-$17013, 2026-10-12)
+
+Four actions of kinds `$1E`, `$26` and `$3C`: `$16D70` swims along the surface (its height read
+from the map column by column), turning at walls, at touches from behind and at its range, and
+goes on when the player is `$10`-`$6F` away in front; `$16ED0` is hurt, knocked away from the side
+it was hit on (hit again while sliding, the damage is taken again); `$16F50` swims about its
+home height burning what it touches and now and then leaps at a player below; `$16FF0` is the
+leap. `$16E8E` (the sword's hit: state 2, leaving past the action; the touch hurts the player by
+20 less its armour, a quarter for kind `$26`, at least 1) is C; the other helpers are called.
+
+Results: 0 mismatches over the standard runs and every owner state (420,931 checked calls);
+100,000 fuzz cases from five states, 0 mismatches, every instruction covered. Self-test caught
+100 in 100 for each. Replace mode plays the new-game script and four states. The native build
+(built once, at the end of the session) plays four of the owner's states. 83 of the 135 actions
+are C.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
