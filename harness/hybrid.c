@@ -1305,6 +1305,10 @@ int hybrid_fuzz(const char *name, long count)
                 if (!strcmp(name, "Act1454C") && rnd() % 4 == 0) ram[0xD802 + e] = (uint8_t)(rnd() % 2 ? 0xFF : 0);
                 if (rnd() % 4 == 0) put_long(0xCA00 + e, 0);                      /* standing still */
                 put_word(0xCE02 + e, rnd() % 4 ? 0x40 + rnd() % 0xC0 : rnd() % 0x40);   /* its range from home */
+                if (!strcmp(name, "Act15066") && rnd() % 2) {                     /* its last hop, on the ground */
+                    ram[0xD800 + e] = 1; ram[0xD801 + e] = 1; ram[0xCF00 + e] = 2;
+                }
+                if (!strcmp(name, "Act151D6") && rnd() % 2) ram[0xD802 + e] = 0xFF;   /* attacking */
                 {   int32_t x = get_sword(0xC800 + e);                            /* home x: at it, or near */
                     put_word(0xDF00 + e, (uint32_t)(rnd() % 4 == 0 ? x : x + small(0x40))); }
             }
