@@ -730,6 +730,44 @@ The rest of the enemies, in order: the small handlers (about 20, under 70
 instructions each); the medium ones; the large ones and the monsters' action routines
 ($14000-$1A000).
 
+#### The enemies, batch 3: the objects ($1A464-$1AA3B, 2026-10-12)
+
+`port/objects.c`: thirteen of the 35 handlers, the family at $1A464 that shares the off-screen
+test $1A796 and the removal $1A784. They are group 2's kinds ($208-$232: things enemies throw,
+fire and drop) and group 8's kinds 2-8 (a hopper, a floater, a rising column, a crawler that
+drops at a floor's end); the table in the file's header names each. Each handler is a C
+function over named fields, registered at its own address with the range to the next one, so
+the shared code is counted under the handler that reaches it.
+
+* **Two routines leave past their caller.** $1A796 pops its caller's return when the object has
+  left the screen: in C it answers 1 and the handler returns. `DespawnIfOffscreen` ($48C4) does
+  the same when it removes an enemy; `call_68k` cannot follow that, so its tests are C here
+  (the off-screen routines it calls, then `Despawn`).
+* **`call_68k` leaves its mark in `ret`.** A handler that ends on a call hands back
+  `$FFFFFE` unless it clears `ret`, as `RunEnemies` does. The first gameplay runs showed it in
+  the boss fight (`boss2.state`): the handlers run inside `TaskCallSystem`'s checks, not as
+  calls of their own, so the mismatch was reported against the task. Fixed in `HANDLER`.
+* **`m68k2c.py` reads named calls.** The rewrite's files call through `#define NAME 0x...`;
+  the scan for routines the C still calls now resolves those names, so a routine only the C
+  calls is still translated.
+* **Fuzzing them** (`hybrid.c`, names starting `Obj`): the state's entities are kept, and one
+  enemy slot is set up by the game's own `$12684` for one of the handler's kinds (animation set
+  and stats, so the animation interpreter sees real scripts), then given positions by the
+  player and the screen's edges, timers near their ends, touches, collisions, a spawn point or
+  none, and random attributes (after `$12684`, which clears them).
+
+Results: 0 mismatches over the standard runs (the new-game script, now kept in
+`harness/inputs/newgame.txt`, and the demo) and 3,000 random-input frames from each of the
+owner's 17 states (373,271 checked calls; the boss fight reaches `ObjFlying` and `ObjBouncer`);
+325,000 fuzz cases (5,000 per handler from each of five states), 0 mismatches, and every one of
+the 433 instructions of the thirteen originals covered. The self-test (`WBMW_PORT_BREAK=ObjColumn`)
+is caught 100 times in 100. Registers left different are the condition codes, and for the four
+handlers that move with the rewritten movement code, what that code leaves (it is allowed to);
+none is read before it is written in the gameplay runs. Replace mode plays the new-game script
+and four states.
+
+Left: 21 handlers (table slots 1, 8-17, 19-21, 23-26, 28, 33, 34), then the monsters' actions.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

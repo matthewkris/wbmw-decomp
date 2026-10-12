@@ -82,12 +82,20 @@ if CONFIG.get('hand_ports', True) is False: HAND = {}
 # what the rewritten C calls in code not rewritten yet (call_68k and its wrappers, or hands over
 # to with port_continue_at) must be an entry, even when no generated code calls it any more
 C_CALL = re.compile(r'\b(?:call_68k|with_player|call_with_d0|with_entity|call_at|call_d0|call|port_continue_at)\s*\([^;]*?\b0x([0-9A-Fa-f]{3,6})\b')
+# the same through a name the file defines (#define SET_ANIM 0x7E8u)
+C_DEFINE = re.compile(r'^\s*#define\s+(\w+)\s+0x([0-9A-Fa-f]{3,6})u?\b')
+C_CALL_NAMED = re.compile(r'\b(?:call_68k|with_player|call_with_d0|with_entity|call_at|call_d0|call|port_continue_at)\s*\(\s*(?:\w+\s*,\s*)?([A-Z_][A-Z0-9_]*)\b')
 for name in sorted(os.listdir(os.path.join(os.path.dirname(__file__), '..', 'port'))):
     if name.endswith('.c'):
-        for line in open(os.path.join(os.path.dirname(__file__), '..', 'port', name), encoding='utf-8'):
+        lines = open(os.path.join(os.path.dirname(__file__), '..', 'port', name), encoding='utf-8').read().splitlines()
+        named = {mm.group(1): int(mm.group(2), 16) for mm in map(C_DEFINE.match, lines) if mm}
+        for line in lines:
             for mm in C_CALL.finditer(line):
                 a = int(mm.group(1), 16)
                 if a not in ROOTS: ROOTS.append(a)
+            for mm in C_CALL_NAMED.finditer(line):
+                a = named.get(mm.group(1))
+                if a is not None and a in INS and a not in ROOTS: ROOTS.append(a)
 
 # indirect sites with known targets: auto tables, hint tables and bra tables
 SITE_TARGETS = {}
