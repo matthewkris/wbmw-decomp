@@ -802,6 +802,35 @@ Replace mode plays the new-game script and four states, three of them in town.
 
 Left: 12 handlers (table slots 1, 16, 17, 19-21, 23-25, 28, 33, 34), then the monsters' actions.
 
+#### The enemies, batch 5: eight small handlers (2026-10-12)
+
+`port/handlers.c`: the dispatchers next to the framework ($135AE-$136A5: slots 1, 16, 17, 20)
+and four small ones elsewhere (21 $18910, 23 $194AA, 28 $1766C, 34 $19810); the file's header
+names each. Slot 17 ($060) is the Gragg & Glagg fight: the state machine, then a watch on the
+place at ($1100, $1050) that opens it when the entity in `$FFA11C` stands there for 48 frames,
+and the hits that blink it and its three companions (`$15E10`, `$15E2E`).
+
+* **Three of them go on into other code** (`port_continue_at`), as their `bra` does: slot 1 to
+  `$16908` in area 6 room 5, slot 16 to `$160E8` or the hopper. Slot 17 calls the state machine
+  first (`bsr`), through `call_68k`, which follows `EnemyDispatch`'s own hand-over.
+* **The boss state found a bug in the first draft.** Slot 16 chose its target with `?:` inside
+  one `port_continue_at`; the scan for what the C calls (`m68k2c.py`) only read a name in first
+  place, so `$160E8` was not translated and `call_68k` stopped. The C now makes one call per
+  target, and the scan reads every defined name in a call's arguments.
+* **Fuzzing them** (`hybrid.c`, names starting `Hnd`): as the objects, with valid steps for each
+  table (including `$16908`'s in area 6 room 5, and the guardian's second-level table at
+  `$15B44`, which jumps through whatever follows it otherwise), the guardian's flags, counts and
+  target by its place, and its companions in a list at `$FFF800`. Two of its paths loop for ever
+  in the original as well, and the generator keeps out of them: kind `$800` missing from the
+  room's list (`$4910`, from step 6), and step 0's first frame without three free entities.
+
+Results: 0 mismatches over the standard runs and every owner state (25 runs, 402,685 checked
+calls; the boss fight runs 49 of the guardian's 60 instructions); 200,000 fuzz cases from five
+states, 0 mismatches, every one of the 192 instructions covered. Self-test caught 100 in 100.
+Replace mode plays the new-game script and four states, the boss fight among them.
+
+Left: 4 handlers (table slots 19, 24, 25, 33), then the monsters' actions.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

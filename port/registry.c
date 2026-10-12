@@ -25,6 +25,8 @@ void ObjLobbed(Cpu *), ObjThrown(Cpu *), ObjStanding(Cpu *), ObjFlying(Cpu *), O
      ObjFloater(Cpu *), ObjColumn(Cpu *), ObjEdgeCrawler(Cpu *);
 void PplStanding(Cpu *), PplWanderer(Cpu *), PplSpeaker(Cpu *), PplTownsperson(Cpu *),   /* people.c */
      PplStandingStill(Cpu *), PplFlagged(Cpu *), PplPlacedBreakable(Cpu *), PplBreakable(Cpu *), PplScene(Cpu *);
+void HndAreaMonster(Cpu *), HndHopperOr(Cpu *), HndGuardian(Cpu *), HndVanishing(Cpu *),   /* handlers.c */
+     HndFlyer(Cpu *), HndThrownLater(Cpu *), HndCarried(Cpu *), HndPacer(Cpu *);
 void RunEnemies(Cpu *), EnemyDispatch(Cpu *), EnemySetState(Cpu *), EnemyNextState(Cpu *);   /* enemies.c */
 void MagicUsed(Cpu *), SlotEmptied(Cpu *), MagicMeter(Cpu *), HudRedraw(Cpu *), GoldDisplay(Cpu *);   /* hud.c */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
@@ -185,6 +187,14 @@ const PortRoutine port_routines[] = {
     {0x016712, 0x01676C, "PplPlacedBreakable", PplPlacedBreakable, CT_SP},
     {0x01676C, 0x0167DC, "PplBreakable", PplBreakable, CT_SP},   /* with $1678A, the breaking */
     {0x0167DC, 0x0168E8, "PplScene", PplScene, CT_SP},
+    {0x0135AE, 0x0135BC, "HndAreaMonster", HndAreaMonster, CT_SP},   /* handlers.c: eight handlers; */
+    {0x0135BC, 0x0135CA, "HndHopperOr", HndHopperOr, CT_SP},         /* these two carry on elsewhere */
+    {0x0135CA, 0x01369A, "HndGuardian", HndGuardian, CT_SP},
+    {0x01369A, 0x0136A6, "HndVanishing", HndVanishing, CT_SP},
+    {0x018910, 0x01898C, "HndFlyer", HndFlyer, CT_SP},
+    {0x0194AA, 0x019544, "HndThrownLater", HndThrownLater, CT_SP},
+    {0x01766C, 0x0176E6, "HndCarried", HndCarried, CT_SP},
+    {0x019810, 0x01985A, "HndPacer", HndPacer, CT_SP},
     {0x00EE70, 0x00EF12, "PlayerSwordTip", PlayerSwordTip, CT_SP},
     {0x011170, 0x01141A, "MagicStart", MagicStart, CT_SP},       /* magic.c; a potion may carry on at $F288 */
     {0x01141A, 0x0114C0, "MagicFrame", MagicFrame, CT_SP},       /* may carry on at $11590 or $11780 off a pass */
