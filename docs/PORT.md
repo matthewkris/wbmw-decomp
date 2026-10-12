@@ -768,6 +768,40 @@ and four states.
 
 Left: 21 handlers (table slots 1, 8-17, 19-21, 23-26, 28, 33, 34), then the monsters' actions.
 
+#### The enemies, batch 4: the townspeople ($163AA-$168E7, 2026-10-12)
+
+`port/people.c`: nine handlers, group 4 (people and props in town) and group 6's one kind. The
+table in the file's header names each: people who stand, a speaker, townspeople who walk a
+script, an animal that wanders between two x positions, a pose by game flag 56, two breakable
+things that set their game flag when the sword hits them, and a scene (the screen dims as the
+player walks past x $10E0, it speaks, and `$168E8`, left as it is, runs when the text ends).
+
+* **Talking** ($164B8, then $1649C): no text running, the player level with the speaker and
+  within its reach (-$3500), on the ground, up pressed alone; then the player stops and turns
+  (animation 12, through `exg a4,a2`), and the message is TIMER's high byte.
+* **The townspeople's scripts** (-$2700, when -$3200 is set; $16598): commands 0 wait, 1 walk a
+  signed distance, 2 walk home (-$2100), 3 speak (a word into TIMER; it waits while text runs,
+  without moving on), 4 the speak step without a new message, 5 jump. Each sets a step (0-8) of
+  the table at $16578, and a step that ends runs the table again in the same frame.
+* **Where the original would crash or hang, the C stops with a message**: a step or command past
+  its table (the original jumps through whatever follows it), or a script that only jumps.
+* **`btst #0,-$3800(a4)` tests bit 8 of x**, the high byte; the first draft read the low byte.
+  Fuzzing would have caught it; reading the 68000's byte order caught it first.
+* **Fuzzing them** (`hybrid.c`, names starting `Ppl`): as the objects, with each family's
+  inputs: the talk conditions about the player, random valid scripts in scratch RAM (jumps
+  only land on commands; a person already at home gets no walks home, which with jumps could go
+  round for ever, in the original as well), the scene's player positions, dimming and attack,
+  the game flags and area 15's flag word. `$12684` has no entry for group 6, so the speaker
+  keeps its random fields.
+
+Results: 0 mismatches over the standard runs and 3,000 random-input frames from each of the
+owner's 17 states (373,271 checked calls; the speaker is fully run by talking in the shop and
+at the inn, the townsperson partly); 225,000 fuzz cases (5,000 per handler from each of five
+states), 0 mismatches, every one of the 383 instructions covered. Self-test caught 100 in 100.
+Replace mode plays the new-game script and four states, three of them in town.
+
+Left: 12 handlers (table slots 1, 16, 17, 19-21, 23-25, 28, 33, 34), then the monsters' actions.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
