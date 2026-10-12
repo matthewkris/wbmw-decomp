@@ -286,6 +286,12 @@
 #define FADE_TILES        0x17C84u  /* a strip of its tiles faded, while TIMER2 < $11 */
 #define BREAK_UP_START    0x18290u  /* d2 tile rows marked in the scroll table */
 #define BREAK_UP          0x182AAu  /* tile d1 of d2 rows cleared in VRAM */
+#define MOUNT_ANIM        0x18314u  /* the mount's animation d0 */
+#define MOUNT_FALL        0x18322u  /* the mount falls and moves a frame; then MOUNT_PLACE */
+#define MOUNT_PLACE       0x18332u  /* the rider on its mount, by the mount's animation ($18372) */
+#define MOUNT_TOUCH       0x1839Cu  /* the mount takes its health; the player against it */
+#define MOUNT_GROUNDED    0x183BAu  /* a2 the mount; z: on the ground (COLL & 10 is 2) */
+#define SHAKE             0x183D4u  /* the screen shaken ($9738), sound 57 */
 #define APPLY_VEL_X       0xAB8u
 
 void EnemySetState(Cpu *);           /* enemies.c */
@@ -3445,14 +3451,14 @@ static void a178D0(Ent e)
 static Ent partner_of(Ent e) { return (uint32_t)(int32_t)(int16_t)rdw(MAKER(e)); }
 static void swap_a2_a4(void) { uint32_t t = c->a[2]; c->a[2] = c->a[4]; c->a[4] = t; }
 
-/* $179CC: touching the player, and the sword; hit, state 2, leaving past the action; else the
- * partner's touch ($179DE) */
-static int pair_hit(void)
+/* $179CC, $1838A: touching the player, and the sword; hit, state 2, leaving past the action;
+ * else the partner's touch (PAIR_TOUCH, MOUNT_TOUCH) */
+static int pair_hit(uint32_t touch)
 {
     call(PLAYER_CONTACT_ALL);
     call(ENEMY_TAKE_HIT);
     if (c->ccr & CC_N) { c->d[0] = 2; new_state(0); return 1; }
-    call(PAIR_TOUCH);
+    call(touch);
     return 0;
 }
 
@@ -3677,7 +3683,7 @@ static void a17DC4(Ent e)
         long_delay();
         return;
     }
-    if (pair_hit()) return;
+    if (pair_hit(PAIR_TOUCH)) return;
     call(PAIR_HOVER);
     e = c->a[4];
     c->d[7] = set_w(c->d[7], (uint16_t)(rdw(HOME_X(e)) - 2));
@@ -3712,7 +3718,7 @@ static void a17E4C(Ent e)
         wrw(ACCEL_X(c->a[4]), 0xFFF0);
         return;
     }
-    if (pair_hit()) return;
+    if (pair_hit(PAIR_TOUCH)) return;
     call(PAIR_HOVER);
     call(ACCEL_X_);
     call(APPLY_VEL_X);
@@ -3722,6 +3728,284 @@ static void a17E4C(Ent e)
     if ((uint16_t)c->d[0] < (uint16_t)rdw(X(e))) return;
     c->d[0] = 3;
     new_state(0);
+}
+
+/* the head off the body, shooting: up to five shots of kind $16 (by $18256, the offsets at
+ * $17EE4), 30 frames apart; then state 3 */
+static void a17E88(Ent e)
+{
+    if (begins(e)) {
+        call_d0(PAIR_ANIM, 8);
+        e = c->a[4];
+        c->a[0] = partner_of(e);
+        c->d[0] = set_w(0xFFFFFFF0u, (uint16_t)(0xFFF0 + rdw(X(c->a[0]))));
+        wrw(X(e), (uint16_t)c->d[0]);
+        c->d[0] = set_w(0xFFFFFFE0u, (uint16_t)(0xFFE0 + rdw(Y(c->a[0]))));
+        wrw(Y(e), (uint16_t)c->d[0]);
+        wrw(TIMER(e), 0x053C);
+        call(STOP);
+        return;
+    }
+    if (pair_hit(PAIR_TOUCH)) return;
+    e = c->a[4];
+    wr8(TIMER2(e), (uint8_t)(rd8(TIMER2(e)) - 1));
+    if (rd8(TIMER2(e))) return;
+    wr8(TIMER2(e), 0x1E);
+    set_d0w(0x216);
+    c->a[0] = 0x17EE4u;
+    call(SHOT_AT);
+    if (!(c->ccr & CC_N)) {
+        e = c->a[4];
+        wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+        if (rd8(TIMER(e))) return;
+    }
+    c->d[0] = 3;
+    new_state(0);
+}
+
+/* ---- the rider and its mount (batch 21) ----
+ * Another pair through MAKER: the rider (a4) on its mount, placed by the mount's frame ($18332). */
+
+/* the pair drops in from $100 above: the mount made (MAKE_PARTNER), the rider marked the room's
+ * boss; $20 frames falling, then landed (the screen shaken, $183D4), the walls set when the
+ * shake ends ($9C16, $9962), and state 3 */
+static void a183E0(Ent e)
+{
+    if (begins(e)) {
+        wrw(BOSS_MARK, (uint16_t)e);
+        wrw(0xFFFF974Au, 0);
+        wr8(NEXT_STATE(e), 0);
+        call(FIND_FREE_ENTITY);
+        call(MAKE_PARTNER);
+        swap_a2_a4();
+        call_d0(SET_ANIM_NOW, 0);
+        c->a[1] = c->a[2];
+        call(FACE_PLAYER);
+        c->a[2] = c->a[1];
+        swap_a2_a4();
+        e = c->a[4];
+        Ent m = c->a[2];
+        c->d[0] = rd8(HALF_H(m));
+        set_d0w(c->d[0] + 0x100);
+        wrw(Y(m), (uint16_t)(rdw(Y(m)) - c->d[0]));
+        wr8(ANIM_RATE(m), 0x0C);
+        wr8(MOVE_FLAGS(m), 0x43);
+        wrw(GRAVITY(m), 0x40);
+        wr32(SPEED(m), 0x01000800u);
+        wr8(BLINK(e), 0x13);
+        wr8(ANIM_BUSY(e), 0);
+        wr8(TYPE(m), 0xFF);
+        call(MOUNT_PLACE);
+        e = c->a[4];
+        wrw(TIMER(e), 0x2000);
+        set8(ALIVE(e), 0x42);
+        set8(ALIVE(c->a[2]), 0x40);
+        c->d[0] = 8;
+        wr8(0xFFFF9F05u, 8);
+        set8(0xFFFF9858u, 8);
+        return;
+    }
+    c->d[0] = set_b(c->d[0], rd8(TIMER2(e)));
+    if (!(c->d[0] & 0xFF)) {
+        if (rd8(TIMER(e))) {
+            wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+            c->a[4] = partner_of(e);
+            call(ACCEL_Y);
+            call(APPLY_VEL_Y);
+            c->a[4] = partner_of(c->a[4]);
+            call(MOUNT_PLACE);
+            return;
+        }
+        call(MOUNT_FALL);
+        call(MOUNT_GROUNDED);
+        if (!(c->ccr & CC_Z)) return;
+        e = c->a[4];
+        wr8(TIMER2(e), (uint8_t)(rd8(TIMER2(e)) + 1));
+        call(SHAKE);
+        return;
+    }
+    c->d[0] = set_b(c->d[0], c->d[0] - 1);
+    if (!(c->d[0] & 0xFF)) {
+        if (rdw(0xFFFF9738u)) return;
+        wr8(TIMER2(e), (uint8_t)(rd8(TIMER2(e)) + 1));
+        wrw(0xFFFF9C16u, 0x69);
+        wrw(0xFFFF9962u, 8);
+        return;
+    }
+    wr8(0xFFFF9F05u, 0);
+    c->d[0] = 3;
+    new_state(0);
+}
+
+/* the pair beaten: the music stopped, the room frozen, the rider's tiles shown ($18572), the
+ * mount breaking up ($182AA, every other frame) and $20 puffs 3 frames apart, over $80 frames;
+ * then both gone (sound 19) */
+static void a184C4(Ent e)
+{
+    if (begins(e)) {
+        if (rd8(SOUND_MODE) != 0x12) call(QUEUE_SOUND_FF);
+        call(FREEZE_ENEMIES);
+        set_d0w(rdw(X(e)));
+        c->d[1] = set_w(c->d[1], rdw(Y(e)));
+        c->d[2] = 32; c->d[3] = 16;
+        c->d[1] = set_w(c->d[1], c->d[1] + 16);
+        c->a[0] = 0x18572u;
+        call(SHOW_TILES);
+        call_d0(MOUNT_ANIM, 10);
+        wr32(TIMER(c->a[4]), 0x80142001u);
+        c->d[2] = 11;
+        call(BREAK_UP_START);
+        return;
+    }
+    if (rd8(TIMER(e)) & 1) {
+        c->d[1] = rd8(TIMER2(e));
+        c->d[0] = set_b(c->d[0], (uint8_t)c->d[1]);
+        c->d[1] = set_b(c->d[1], (uint8_t)(c->d[1] ^ 0x15));
+        c->d[0] = set_b(c->d[0], (uint8_t)(c->d[0] + 0x25));
+        set_d0w(c->d[0] & 0x3F);
+        wr8(TIMER2(e), (uint8_t)c->d[0]);
+        c->d[2] = 11;
+        call(BREAK_UP);
+    }
+    e = c->a[4];
+    if (rd8(VAR(e))) {
+        wr8(SHOT(e), (uint8_t)(rd8(SHOT(e)) - 1));
+        if (!rd8(SHOT(e))) {
+            wr8(SHOT(e), 3);
+            c->d[4] = 24; c->d[5] = 40;
+            wrw(Y(e), (uint16_t)(rdw(Y(e)) + 24));
+            call(PUFF_B);
+            e = c->a[4];
+            wrw(Y(e), (uint16_t)(rdw(Y(e)) - 0x18));
+            wr8(VAR(e), (uint8_t)(rd8(VAR(e)) - 1));
+        }
+    }
+    wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+    if (rd8(TIMER(e))) return;
+    wrw(Y(e), (uint16_t)(rdw(Y(e)) + 0x30));
+    call(ENEMY_DEFEATED);
+    wr8(BOSS_MARK, 0xFF);
+    if (rd8(SOUND_MODE) != 0x12) call_d0(QUEUE_SOUND, 19);
+    e = c->a[4];
+    c->a[2] = partner_of(e);
+    wr8(ALIVE(e), 0);
+    wr8(ALIVE(c->a[2]), 0);
+}
+
+/* hurt: the mount knocked away from the sword at $200, slowing, for $20 frames; then state 3 */
+static void a18584(Ent e)
+{
+    if (begins(e)) {
+        call(DAMAGE_ENEMY);
+        if (c->ccr & CC_Z) { c->d[0] = 1; new_state(0); return; }
+        call_d0(MOUNT_ANIM, 10);
+        e = c->a[4];
+        set_d0w(0x200);
+        if (!(rd8(TOUCH(e)) & 1)) set_d0w(-0x200);
+        c->a[0] = partner_of(e);
+        wrw(VEL_X(c->a[0]), (uint16_t)c->d[0]);
+        wr8(TIMER(e), 0x20);
+        return;
+    }
+    c->a[4] = partner_of(e);
+    call_d0(FRICTION_X, 32);
+    c->a[4] = partner_of(c->a[4]);
+    call(MOUNT_FALL);
+    call(PLAYER_TOUCH);
+    call(ENEMY_TAKE_HIT);
+    if (c->ccr & CC_N) {
+        call(DAMAGE_ENEMY);
+        if (c->ccr & CC_Z) { c->d[0] = 1; new_state(0); return; }
+    }
+    call(MOUNT_TOUCH);
+    e = c->a[4];
+    wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+    if (rd8(TIMER(e))) return;
+    c->d[0] = 3;
+    new_state(0);
+}
+
+/* $186BC: the next state d0, the pending one cleared */
+static void ride_on(void)
+{
+    wr8(NEXT_STATE(c->a[4]), 0);
+    new_state(0);
+}
+
+/* $18620, $18630: the mount turned to the player (d0 0, d1 0), or not; TIMER d1, the pair's
+ * animation d0, placed, a random while */
+static void ride_settle(int face)
+{
+    if (face) {
+        c->a[4] = partner_of(c->a[4]);
+        call(FACE_PLAYER);
+        c->a[4] = partner_of(c->a[4]);
+        c->d[0] = 0; c->d[1] = 0;
+    }
+    wr8(TIMER(c->a[4]), (uint8_t)c->d[1]);
+    call(MOUNT_ANIM);
+    call(MOUNT_PLACE);
+    call(RANDOM_DELAY);
+}
+
+/* riding about: stands a random while (the mount slowing), then on by the player's distance
+ * ($186C6); in the air it lands with a shake; touched from behind, it runs (5); a pending state
+ * from before decides its first frame */
+static void a185EC(Ent e)
+{
+    if (begins(e)) {
+        c->d[2] = set_b(c->d[2], rd8(NEXT_STATE(e)));
+        wr8(NEXT_STATE(e), 0xFF);
+        call(MOUNT_GROUNDED);
+        if (!(c->ccr & CC_Z)) {
+            c->d[0] = 4;
+            if (!(c->d[2] & 0xFF)) { ride_settle(0); return; }
+            c->d[0] = 5; ride_on(); return;
+        }
+        if (!(c->d[2] & 0xFF)) { ride_settle(1); return; }
+        call(RANDOM);
+        int odd = c->d[0] & 1;
+        c->d[0] = set_b(c->d[0], (c->d[0] & 0xFF) >> 1);
+        c->d[0] = odd ? 6 : 5;
+        ride_on();
+        return;
+    }
+    call(MOUNT_FALL);
+    if (pair_hit(MOUNT_TOUCH)) return;
+    e = c->a[4];
+    c->a[0] = partner_of(e);
+    c->d[0] = set_b(c->d[0], (uint8_t)((rd8(TOUCH(c->a[0])) | rd8(TOUCH(e))) & 4));
+    if (c->d[0] & 0xFF) {
+        wr8(NEXT_STATE(e), 0xFF);
+        c->d[0] = 5;
+        ride_on();
+        return;
+    }
+    if (rd8(TIMER(e))) {
+        call(MOUNT_GROUNDED);
+        if (!(c->ccr & CC_Z)) return;
+        call(SHAKE);
+        ride_settle(1);
+        return;
+    }
+    c->a[4] = partner_of(e);
+    call_d0(FRICTION_X, 112);
+    c->a[4] = partner_of(c->a[4]);
+    e = c->a[4];
+    wr8(TIMER2(e), (uint8_t)(rd8(TIMER2(e)) - 1));
+    if (rd8(TIMER2(e))) return;
+    c->a[0] = partner_of(e);
+    c->a[2] = (uint32_t)(int32_t)(int16_t)rdw(TARGET_W);
+    call(RANDOM);
+    set_d0w(c->d[0] & 7);
+    c->a[1] = 0x186C6u;
+    uint16_t d = (uint16_t)(rdw(X(c->a[2])) - rdw(X(c->a[0])));
+    if ((int16_t)d < 0) d = (uint16_t)-d;
+    c->d[1] = set_w(c->d[1], d);
+    if (d >= 0x40 && d < 0xB0) c->a[1] += 8;
+    c->d[0] = set_b(c->d[0], rd8(c->a[1] + (c->d[0] & 0xFFFF)));
+    if (!(c->d[0] & 0xFF)) { ride_settle(1); return; }
+    ride_on();
 }
 
 /* the actions, registered by their addresses (registry.c). call_68k leaves its mark in ret: it
@@ -3745,4 +4029,5 @@ ACTION(16D70) ACTION(16ED0) ACTION(16F50) ACTION(16FF0)
 ACTION(17014) ACTION(1729A) ACTION(17310) ACTION(17362)
 ACTION(173AA) ACTION(1743C) ACTION(174E6) ACTION(17548) ACTION(17588) ACTION(1759A)
 ACTION(1771C) ACTION(1774E) ACTION(177D6) ACTION(17822) ACTION(17860) ACTION(178D0)
-ACTION(17A44) ACTION(17B8A) ACTION(17D22) ACTION(17DC4) ACTION(17E4C)
+ACTION(17A44) ACTION(17B8A) ACTION(17D22) ACTION(17DC4) ACTION(17E4C) ACTION(17E88)
+ACTION(183E0) ACTION(184C4) ACTION(18584) ACTION(185EC)

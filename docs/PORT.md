@@ -1160,6 +1160,31 @@ Results: 0 mismatches over the standard runs and every owner state (422,373 chec
 100 in 100 for each. Replace mode plays the new-game script and four states. 104 of the 135
 actions are C.
 
+#### The monsters' actions, batch 21: the head's shots, the rider and its mount ($17E88-$186C5, 2026-10-12)
+
+Five actions. `$17E88` is the two-part boss's head off the body, shooting: up to five shots
+(by `$18256`, offsets `$17EE4`) 30 frames apart. The other four are a second pair, a rider on
+its mount, partners through MAKER like the first and handled the same way (`c->a[4]` read again
+after each helper that steps to the partner and back). `$183E0` makes the mount, marks the rider
+the room's boss and drops both from `$100` above: `$20` frames falling, then landed with the
+screen shaken (`$183D4`), the walls set when the shake ends, and state 3. `$184C4` is the pair
+beaten: the rider's tiles shown (`$18572`), the mount broken up every other frame (`$182AA`) and
+`$20` puffs 3 frames apart over `$80` frames. `$18584` is the pair hurt, the mount knocked from
+the sword at `$200`. `$185EC` rides about: it stands a random while, the mount slowing, then picks
+the next state by the player's distance (`$186C6`, a second row between `$40` and `$B0`); in the
+air it lands with a shake; touched from behind it runs (5); a pending state from before (-$2200)
+decides its first frame. `$1838A`, which leaves past the action when hit, is the same C as
+`$179CC` with the mount's touch (`$1839C`) in place of the head's.
+
+The fuzz gives these a partner that points back, the drop's three phases, the shake over or not,
+a pending state or none, and the mount on the ground or not.
+The fuzz also gives `$184C4` its puff's frame.
+
+Results: 0 mismatches over the standard runs and every owner state (422,373 checked calls);
+125,000 fuzz cases from five states, 0 mismatches, every instruction covered. Self-test caught
+100 in 100 for each. Replace mode plays the new-game script and four states. 109 of the 135
+actions are C.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
