@@ -1341,6 +1341,7 @@ int hybrid_fuzz(const char *name, long count)
                 if (!strcmp(name, "Act17A44") || !strcmp(name, "Act17B8A") || !strcmp(name, "Act17D22") || !strcmp(name, "Act17DC4") || !strcmp(name, "Act17E4C")
                     || !strcmp(name, "Act17E88") || !strcmp(name, "Act183E0") || !strcmp(name, "Act184C4")
                     || !strcmp(name, "Act18584") || !strcmp(name, "Act185EC")
+                    || !strcmp(name, "Act18BBE") || !strcmp(name, "Act18E3A") || !strcmp(name, "Act18F62") || !strcmp(name, "Act18FC2")
                     || !strcmp(name, "Act186D6") || !strcmp(name, "Act18710") || !strcmp(name, "Act187AC") || !strcmp(name, "Act18ADE")) {
                     /* the two-part boss: a partner whose partner it is; the leap's phase even */
                     uint32_t q = 0x40 + (rnd() % 16) * 4;
@@ -1353,6 +1354,17 @@ int hybrid_fuzz(const char *name, long count)
                     if (rnd() % 2) ram[0xD801 + e] = (uint8_t)(rnd() % 2);
                     if (!strcmp(name, "Act183E0")) ram[0xD801 + e] = (uint8_t)(rnd() % 3);   /* falling, landed, on */
                     if (!strcmp(name, "Act183E0") && rnd() % 2) put_word(0x9738, 0);      /* the shake over */
+                    if (!strcmp(name, "Act18BBE")) {                              /* its phase; the fall's step */
+                        ram[0xCE01 + e] = (uint8_t)(rnd() % 6);
+                        put_word(0xCE02 + e, (uint32_t)(5 * (rnd() % 16) - 5));
+                        ram[0xD802 + e] = (uint8_t)rnd();                         /* which half of the step */
+                        if (rnd() % 4 == 0) {                                     /* the last step: thrown off */
+                            ram[0xCE01 + e] = 1; put_word(0xCE02 + e, 70); ram[0xD800 + e] = 1; ram[0xD801 + e] = 1; ram[0xD802 + e] |= 1; }
+                    }
+                    if (!strcmp(name, "Act18E3A")) {                              /* its phase; the rider's height */
+                        ram[0xCE01 + e] = (uint8_t)(rnd() % 4);
+                        if (rnd() % 2) ram[0xC903 + e] = (uint8_t)(0xDF + rnd() % 7);
+                    }
                     if (!strcmp(name, "Act187AC")) {                              /* the volley: its first shot; no room */
                         if (rnd() % 2) ram[0xD801 + e] = 1;
                         if (rnd() % 3 == 0) ram[0xD800 + e] = 6;

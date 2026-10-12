@@ -1,0 +1,7 @@
+# Instructions inside a ported routine's address range that are not part of the routine, so
+# tools/coverage.py does not count them: one hex address per line, with the reason.
+018D72  # an unreachable rts in $18BBE (after its tail jump to QueueSound)
+018DB8  # $18BBE stores the address of these two little routines at $9F22 for another to call
+018DBE
+018DC0
+018DC6

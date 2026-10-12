@@ -8,7 +8,8 @@ lists the ones that never did: those paths of the C version are unchecked.
 
 A hand-ported routine is every instruction in its address range. A translated routine is the
 instructions tools/m68k2c.py put in it, read from gen/bodies.json next to the map: its range can
-span neighbouring routines that are not part of it.
+span neighbouring routines that are not part of it. Addresses listed in analysis/coverage_skip.txt
+(code inside a range that is not the routine's: an orphan, another routine's) are not counted.
 """
 import sys, json, os
 
@@ -19,6 +20,10 @@ def main():
     bodies = {}
     if os.path.exists(bodies_path):
         bodies = {k: [int(a, 16) for a in v] for k, v in json.load(open(bodies_path)).items()}
+    skip = set()
+    skip_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'analysis', 'coverage_skip.txt')
+    if os.path.exists(skip_path):
+        skip = {int(l.split()[0], 16) for l in open(skip_path) if l.strip() and not l.startswith('#')}
     seen, ranges = {}, {}
     for path in sys.argv[2:]:
         for line in open(path):
@@ -28,7 +33,7 @@ def main():
             seen.setdefault(name, set()).update(int(x, 16) for x in f[3:])
     full = 0
     for name, (lo, hi) in ranges.items():
-        starts = bodies[name] if name in bodies else [a for a in sorted(insn) if lo <= a < hi]
+        starts = bodies[name] if name in bodies else [a for a in sorted(insn) if lo <= a < hi and a not in skip]
         missed = [a for a in starts if a not in seen[name]]
         full += not missed
         print('%-16s %3d/%-3d instructions%s' % (name, len(starts) - len(missed), len(starts),
