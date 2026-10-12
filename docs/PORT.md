@@ -854,6 +854,33 @@ new-game script and four states.
 Left of the enemies: the monsters' action routines, 135 entries at `$140F2`-`$1A3E4` (about
 7,000 instructions; 73 under 30 instructions, 49 under 100, 13 larger, the largest about 900).
 
+#### The monsters' actions, batch 7: appearing and defeated ($140F2-$1436B, 2026-10-12)
+
+`port/actions.c`, named by address (`Act140F2`, ...): six appearing actions (state 0 of most
+kinds) with their shared wait and set-up ($14250, $14228, $14208, $14202), and five defeated
+ones with the fade ($1432C). The file's header describes each.
+
+* **How an action is entered.** EnemyDispatch jumps to it with d0 = the action number * 4, d1 =
+  the state * 2, a0 = the action. The fuzz sets exactly that, for a kind and state the tables
+  at `$13B70`/`$13DA4` actually map to the action (`$142D6` is in the table at `$13DB6` but no
+  kind's row uses it: any kind, any state).
+* **Helpers that drop their caller.** Much of the enemy library pops the action's return
+  address and goes elsewhere: `EnemyCheckHit` ($43BC: hit, so `EnemySetState` with state 2),
+  and `$436C`, `$4428`, `$4444`, `$4474`, `$4592`, `$45DC`, `$462A` on their own tests.
+  `call_68k` cannot follow that, so an action that calls one does the test in C and goes on as
+  the original does (`go_on`, then returns). This batch calls none of them; the next ones will.
+* **`bra EnemyNextState`** and **`jmp EnemyDefeated`** return normally to the action's caller,
+  so the C calls them and returns.
+* **`tools/accept.sh`** now runs the whole acceptance for a list of routines: fuzzing from
+  five states with coverage, the standard runs and every save in shadow mode, coverage, the
+  self-test and replace mode. Each state's random input is made once and kept in
+  `work/runs/inputs/`.
+
+Results: 0 mismatches over the standard runs and every owner state (26 runs, 420,931 checked
+calls; play reaches four of the eleven); 275,000 fuzz cases from five states, 0 mismatches,
+every one of the 170 instructions covered. Self-test caught every time. Replace mode plays the
+new-game script and four states.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

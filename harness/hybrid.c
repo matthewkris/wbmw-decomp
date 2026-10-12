@@ -685,7 +685,7 @@ int hybrid_fuzz(const char *name, long count)
         for (int i = 0; i < 8; i++) m68k_set_reg(M68K_REG_D0 + i, rnd() << 16 ^ rnd());
         m68k_set_reg(M68K_REG_A4, (rnd() & 63) * 4);
         m68k_set_reg(M68K_REG_SR, (m68k_get_reg(NULL, M68K_REG_SR) & ~0x1Fu) | (rnd() & 0x1F));
-        if (strncmp(name, "Obj", 3) && strncmp(name, "Ppl", 3) && strncmp(name, "Hnd", 3))   /* these keep the state's entities (below) */
+        if (strncmp(name, "Obj", 3) && strncmp(name, "Ppl", 3) && strncmp(name, "Hnd", 3) && strncmp(name, "Act", 3))   /* these keep the state's entities (below) */
             for (uint32_t a = 0xC000; a < 0xE000; a++) ram[a] = (uint8_t)rnd();
         for (uint32_t a = 0x8A52; a < 0x8A56; a++) ram[a] = (uint8_t)(rnd() & (k & 1 ? 0xFF : 0));  /* seed 0 half the time */
         if (!strcmp(name, "SetGfxSlots")) {         /* a random valid slot list in scratch RAM */
@@ -1199,7 +1199,7 @@ int hybrid_fuzz(const char *name, long count)
             uint32_t at = items[rnd() % (unsigned)ni];
             for (int k2 = 0; k2 < 4; k2++) { ram[0xC400 + e + k2] = (uint8_t)(at >> (24 - 8 * k2)); ram[0xC500 + e + k2] = (uint8_t)(script >> (24 - 8 * k2)); }
         }
-        if (!strncmp(name, "Obj", 3) || !strncmp(name, "Ppl", 3) || !strncmp(name, "Hnd", 3)) {
+        if (!strncmp(name, "Obj", 3) || !strncmp(name, "Ppl", 3) || !strncmp(name, "Hnd", 3) || !strncmp(name, "Act", 3)) {
             /* one of objects.c's or people.c's handlers: an enemy slot set up by the game's own
              * routine for one of the handler's kinds ($12684: animation set, stats), then its
              * fields at the values each step reads: on the first frame or later, near the player
@@ -1221,6 +1221,21 @@ int hybrid_fuzz(const char *name, long count)
             uint16_t kind = 0;
             for (unsigned i = 0; i < sizeof objs / sizeof *objs; i++)
                 if (!strcmp(name, objs[i].n)) { int nk = objs[i].kinds[2] ? 3 : objs[i].kinds[1] ? 2 : 1; kind = objs[i].kinds[rnd() % (unsigned)nk]; }
+            int act_state = -1, act_num = 0;
+            if (!strncmp(name, "Act", 3)) {         /* a monster kind and state whose action this is */
+                uint32_t want = R(idx)->addr, pairs[64]; int np = 0;
+                for (uint32_t kd = 0; kd < 0x74; kd += 2) {
+                    uint32_t row = 0x13B70 + (uint32_t)(int32_t)(int16_t)bus_read16(0x13B70 + kd);
+                    for (uint32_t st = 0; st < 9; st++) {
+                        uint32_t an = bus_read8(row + st);
+                        uint32_t lst = 0x13DA4 + (uint32_t)(int32_t)(int16_t)bus_read16(0x13DA4 + 2 * st);
+                        uint32_t tg = (uint32_t)bus_read16(lst + 4 * an) << 16 | bus_read16(lst + 4 * an + 2);
+                        if (tg == want && np < 64) pairs[np++] = kd << 16 | st << 8 | an;
+                    }
+                }
+                if (np) { uint32_t pr = pairs[rnd() % (unsigned)np]; kind = (uint16_t)(pr >> 16); act_state = (int)(pr >> 8 & 0xFF); act_num = (int)(pr & 0xFF); }
+                else { kind = (uint16_t)(2 * (rnd() % 58)); act_state = (int)(rnd() % 9); }   /* in the table, used by no kind */
+            }
             if (kind == 0x416) {                    /* any of group 4's people (handler 11's kinds) */
                 kind = (uint16_t)(0x406 + 2 * (rnd() % 49));
                 if (kind == 0x412 || kind == 0x438 || kind == 0x43A) kind = 0x406;
@@ -1262,6 +1277,24 @@ int hybrid_fuzz(const char *name, long count)
             put_word(0xA11C, rnd() % 2 ? p : 0x40 + (rnd() % 16) * 4);
             ram[0xA10E] = (uint8_t)(rnd() % 4);
             if (rnd() % 8 == 0) ram[0x966B] ^= 0x20;
+            if (!strncmp(name, "Act", 3)) {
+                /* as EnemyDispatch leaves it: the state (begun or not), d0 = action * 4,
+                 * d1 = state * 2, a0 = the action; the spawn flags; its partner an entity;
+                 * the animation saved under a puff a real one (a random one runs the animation
+                 * interpreter round for ever) */
+                ram[0xD401 + e] = (uint8_t)(act_state | (rnd() % 2 ? 0x80 : 0));
+                m68k_set_reg(M68K_REG_D0, (uint32_t)act_num * 4);
+                m68k_set_reg(M68K_REG_D1, (rnd() << 16) | (uint32_t)act_state * 2);
+                m68k_set_reg(M68K_REG_A0, R(idx)->addr);
+                ram[0xDA03 + e] = (uint8_t)(rnd() % 4 ? rnd() % 24 : rnd());    /* the variant */
+                ram[0xD502 + e] = (uint8_t)rnd();                                 /* spawn flags */
+                put_word(0xD302 + e, rnd() % 2 ? p : 0x40 + (rnd() % 16) * 4);    /* partner */
+                put_word(0xD802 + e, rnd() % 4 ? (uint32_t)(ram[0xC300 + e] << 8 | ram[0xC301 + e]) : (rnd() % 2 ? 0x1208 : 0x120A));
+                ram[0xD801 + e] = (uint8_t)(rnd() % 2 ? rnd() : rnd() & 0x80);
+                ram[0xD400 + e] = (uint8_t)rnd();                                 /* its animation's frame count */
+                ram[0xDE00 + e] = (uint8_t)(rnd() % 2 ? 0xFF : rnd());            /* the pending state (-$2200) */
+                if (rnd() % 2) ram[0x966B] ^= 1;                                  /* in water */
+            }
             if (!strncmp(name, "Hnd", 3)) {
                 uint8_t begun = (uint8_t)(rnd() % 2 ? 0x80 : 0);
                 ram[0xDA03 + e] = (uint8_t)(rnd() % 4 ? rnd() % 24 : rnd());    /* the monsters' variant */
