@@ -1213,6 +1213,28 @@ Results: 0 mismatches over the standard runs and every owner state (422,373 chec
 100 in 100 for each. Replace mode plays the new-game script and four states. 113 of the 135
 actions are C.
 
+#### The monsters' actions, batch 23: a third pair, a rider and its beast ($18BBE-$19025, 2026-10-12)
+
+Four actions of a third pair, partners through MAKER, with their own helpers (`$18A24`-`$18AD2`,
+the same shapes as the mount's). `$18BBE` is the pair beaten, in six phases through a jump table:
+`$20` puffs about the rider; the rider thrown off the beast step by step, a table of five bytes a
+step (`$18C94`, from WORD_31FE) giving each half-step's frames and the beast's looks (`$18D74`);
+then the rider alone, game flag 17 set and a routine left at `$9F22` for another to call; the
+room's walls; a jump and gone. `$18E3A` is the pair hurt (the beast knocked from the sword at
+`$400`); beaten, a follower (GOAL) takes the rider's place (`$18E4C`) and, in phases 1-3, becomes
+its kind (`$1274A`), rises to a height of `$E0` and settles at `$E4`. `$18F62` stands the beast a
+random while; `$18FC2` walks it at the player, turning back past x `$1140` or `$10C0`.
+
+The fuzz gives `$18BBE` and `$18E3A` their phases, the step index (and, one time in four, the
+last step), the half-step bit and the rider's height. `analysis/coverage_skip.txt` lists code
+inside a ported range that is not the routine's, which `tools/coverage.py` no longer counts:
+here an unreachable `rts` and the two little routines `$18BBE` leaves at `$9F22`.
+
+Results: 0 mismatches over the standard runs and every owner state (422,373 checked calls);
+100,000 fuzz cases from five states, 0 mismatches, every instruction covered. Self-test caught
+100 in 100 for each. Replace mode plays the new-game script and four states. 117 of the 135
+actions are C.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

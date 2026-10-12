@@ -292,6 +292,15 @@
 #define MOUNT_TOUCH       0x1839Cu  /* the mount takes its health; the player against it */
 #define MOUNT_GROUNDED    0x183BAu  /* a2 the mount; z: on the ground (COLL & 10 is 2) */
 #define SHAKE_SCREEN      0x183D4u  /* the screen shaken ($9738), sound 57 */
+#define RIDE_ANIM         0x18A24u  /* the beast's animation d0 */
+#define RIDE_FALL         0x18A32u  /* the beast falls and moves a frame; then RIDE_PLACE */
+#define BLINK_BOTH        0x18A74u  /* the beast and the rider start blinking */
+#define RIDE_TOUCH        0x18A96u  /* the beast takes its health; the player against it */
+#define RIDE_GROUNDED     0x18AC2u  /* a2 the beast; z: on the ground (COLL & 10 is 2) */
+#define RIDE_BLOCKED      0x18AD2u  /* a2 the beast; nz: blocked (COLL bit 0) */
+#define START_EFFECT      0x5658u   /* an effect slot ($8C58) started: d0 */
+#define GAME_FLAG_BIT     0x2758u   /* flag d0: bit d0 of byte d1 at a0 ($9992) */
+#define BECOME_KIND       0x1274Au  /* made kind d1 (group, kind) */
 #define FACE_PLAYER_AND_WALK 0x44D0u
 #define MOUNT_BLOCKED     0x183C8u  /* a2 the mount; nz: blocked (COLL bit 0) */
 #define ANGLE_OF          0x109Cu   /* d3: the angle of (d0, d1) */
@@ -4234,6 +4243,329 @@ static void a18ADE(Ent e)
     wr8(STEP(e), 3);
 }
 
+/* ---- the third pair: a rider and its beast (batch 23) ---- */
+
+/* $18D74: the beast's looks for a step of the rider's fall (d1: 0 its own, 1 or 2 the rider's
+ * $1620 set, animation 6 or 8) */
+static void beast_looks(void)
+{
+    c->a[2] = partner_of(c->a[4]);
+    swap_a2_a4();
+    Ent b = c->a[4], r = c->a[2];
+    if (!(c->d[1] & 0xFF)) {
+        clr8(BLINK(r), 0x10);
+        clr8(BLINK(b), 0x08);
+        wrw(ANIM_SET(b), rdw(ANIM_SET(r)));
+        set_d0w(2);
+    } else {
+        set8(BLINK(r), 0x10);
+        set8(BLINK(b), 0x08);
+        wrw(ANIM_SET(b), 0x1620);
+        c->d[0] = 6;
+        c->d[1] = set_b(c->d[1], c->d[1] - 1);
+        if (c->d[1] & 0xFF) c->d[0] = 8;
+    }
+    call(SET_ANIM);
+    swap_a2_a4();
+}
+
+/* $18D74's table ($18C94): five bytes a step, from WORD_31FE */
+static uint8_t fall_byte(Ent e, uint32_t at) { return rd8(at + (uint32_t)(int32_t)(int16_t)rdw(WORD_31FE(e))); }
+
+/* the pair beaten, in phases: $20 puffs about the rider; then the rider thrown off the beast step
+ * by step ($18C94); then the rider alone, a game flag set (17), the room's walls, a jump and gone */
+static void a18BBE(Ent e)
+{
+    if (begins(e)) {
+        call(QUEUE_SOUND_FF);
+        call(FREEZE_ENEMIES);
+        call_d0(START_EFFECT, 16);
+        wr8(Y_OFFSET(c->a[4]), 0xE4);
+        call(RIDE_PLACE);
+        call(BLINK_BOTH);
+        e = c->a[4];
+        wr8(PHASE(e), 0);
+        wrw(TIMER(e), 0x2001);
+        call_d0(RIDE_ANIM, 2);
+        return;
+    }
+    c->d[0] = rd8(PHASE(e)) * 2;
+    c->a[0] = 0x18C06u + (uint32_t)(int32_t)(int16_t)rdw(0x18C06u + c->d[0]);
+    switch (c->d[0] >> 1) {
+    case 0:                                         /* puffs */
+        wr8(TIMER2(e), (uint8_t)(rd8(TIMER2(e)) - 1));
+        if (rd8(TIMER2(e))) return;
+        if (!rd8(TIMER(e))) {
+            c->a[2] = partner_of(e);
+            c->d[0] = 0xFFFFFFBFu;
+            clr8(BLINK(e), 0x40); clr8(BLINK(c->a[2]), 0x40);
+            call_d0(QUEUE_SOUND, 69);
+            e = c->a[4];
+            wr8(PHASE(e), (uint8_t)(rd8(PHASE(e)) + 1));
+            wrw(TIMER(e), 0x0101);
+            wrw(WORD_31FE(e), 0xFFFB);
+            wr8(VAR(e), 1);
+            wr8(0xFFFF9F05u, 8);
+            return;
+        }
+        c->d[4] = 32; c->d[5] = 48;
+        wrw(Y(e), (uint16_t)(rdw(Y(e)) + 0x18));
+        call(PUFF_B);
+        e = c->a[4];
+        wrw(Y(e), (uint16_t)(rdw(Y(e)) - 0x18));
+        c->d[0] = 4;
+        wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+        if (!rd8(TIMER(e))) c->d[0] = 16;
+        wr8(TIMER2(e), (uint8_t)c->d[0]);
+        return;
+    case 1: {                                       /* thrown off, a step at a time */
+        wr8(TIMER2(e), (uint8_t)(rd8(TIMER2(e)) - 1));
+        if (rd8(TIMER2(e))) return;
+        uint8_t v = rd8(VAR(e));
+        wr8(VAR(e), v ^ 1);
+        if (!(v & 1)) {
+            set_d0w(rdw(WORD_31FE(e)));
+            wr8(TIMER2(e), fall_byte(e, 0x18C97u));
+            c->d[1] = set_b(c->d[1], fall_byte(e, 0x18C98u));
+            beast_looks();
+            return;
+        }
+        wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+        if (!rd8(TIMER(e))) {
+            set_d0w(rdw(WORD_31FE(e)) + 5);
+            wrw(WORD_31FE(e), (uint16_t)c->d[0]);
+            wr8(TIMER(e), fall_byte(e, 0x18C94u));
+            if (!rd8(TIMER(e))) {                   /* off: the rider alone */
+                wr8(PHASE(e), (uint8_t)(rd8(PHASE(e)) + 1));
+                c->a[2] = partner_of(e);
+                wrw(X(e), rdw(X(c->a[2])));
+                wrw(Y(e), rdw(Y(c->a[2])));
+                wrw(HALF_W(e), rdw(HALF_W(c->a[2])));
+                wr8(ALIVE(c->a[2]), 0);
+                call(FACE_PLAYER);
+                e = c->a[4];
+                clr8(BLINK(e), 0x10);
+                wr8(0xFFFF9F05u, 6);
+                c->a[0] = rd8(ATTR(e)) & 8 ? 0x18DB8u : 0x18DC0u;
+                wr32(0xFFFF9F22u, c->a[0]);
+                call_d0(GAME_FLAG_BIT, 17);
+                uint32_t at = c->a[0] + (uint32_t)(int32_t)(int16_t)c->d[1];
+                wr8(at, (uint8_t)(rd8(at) | 1 << (c->d[0] & 7)));
+                e = c->a[4];
+                wrw(ANIM_SET(e), 0x1620);
+                set8(BLINK(e), 8);
+                call_d0(SET_ANIM, 0);
+                wr8(TIMER(c->a[4]), 0x1E);
+                call_d0(QUEUE_SOUND, 20);
+                return;
+            }
+        }
+        set_d0w(rdw(WORD_31FE(e)));
+        wr8(TIMER2(e), fall_byte(e, 0x18C95u));
+        c->d[1] = set_b(c->d[1], fall_byte(e, 0x18C96u));
+        beast_looks();
+        return;
+    }
+    case 2:                                         /* the walls */
+        wr8(0xFFFF9F05u, 8);
+        wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+        if (rd8(TIMER(e))) return;
+        wr8(PHASE(e), (uint8_t)(rd8(PHASE(e)) + 1));
+        c->d[0] = 8;
+        wr8(TIMER(e), 8);
+        wrw(0xFFFF9962u, 8);
+        wrw(0xFFFF9C16u, 0x6F);
+        return;
+    case 3:
+        wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+        if (rd8(TIMER(e))) return;
+        wr8(PHASE(e), (uint8_t)(rd8(PHASE(e)) + 1));
+        wr8(TIMER(e), 3);
+        call_d0(SET_ANIM, 2);
+        return;
+    case 4:                                         /* the jump */
+        wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+        if (rd8(TIMER(e))) return;
+        wr8(PHASE(e), (uint8_t)(rd8(PHASE(e)) + 1));
+        wrw(VEL_Y(e), 0xE000);
+        call_d0(QUEUE_SOUND, 60);
+        call_d0(SET_ANIM, 4);
+        return;
+    default:                                        /* 5: up and off the screen, gone */
+        call(APPLY_VEL_Y);
+        e = c->a[4];
+        if (rd8(ALIVE(e)) & 1) return;
+        wr8(ALIVE(e), 0);
+        wr8(0xFFFF9F05u, 0);
+        wrw(Y(e), (uint16_t)(rdw(Y(e)) + 0x80));
+        call(ENEMY_DEFEATED);
+        return;
+    }
+}
+
+/* $18E4C: the rider beaten; a follower (GOAL) takes its place on the beast (step 2, phase 1,
+ * its kind), or, with none, state 1 */
+static void rider_beaten(Ent e)
+{
+    set_d0w(rdw(GOAL(e)));
+    if ((int16_t)c->d[0] < 0) { c->d[0] = 1; new_state(0); return; }
+    c->a[0] = (uint32_t)(int32_t)(int16_t)c->d[0];
+    Ent f = c->a[0];
+    wr8(STEP(f), 0x82);
+    wr8(PHASE(f), 1);
+    c->d[0] = rd8(TYPE(f) + 1);
+    wrw(TYPE(f), rdw(TYPE(e)));
+    c->a[2] = partner_of(e);
+    wrw(MAKER(c->a[2]), (uint16_t)f);
+    wr8(TIMER(f), 0x3C);
+    wr8(ANIM_RATE(e), (uint8_t)(rd8(ANIM_RATE(e)) - 2));
+    wrw(TYPE(e), (uint16_t)c->d[0]);
+    c->d[0] = 0;
+    new_state(0);
+}
+
+/* $18F28: on the beast, and its touch */
+static void ride_and_touch(void) { call(RIDE_PLACE); call(RIDE_TOUCH); }
+
+/* hurt: the beast knocked from the sword at $400, slowing; then on (3 or 6). Phases 1-3 are a
+ * follower mounting: it becomes its kind ($1274A), rises to $E0 and settles at $E4 */
+static void a18E3A(Ent e)
+{
+    if (begins(e)) {
+        wr8(PHASE(e), 0);
+        call(DAMAGE_ENEMY);
+        if (c->ccr & CC_Z) { rider_beaten(c->a[4]); return; }
+        e = c->a[4];
+        c->a[2] = partner_of(e);
+        set_d0w(0x400);
+        if (!(rd8(TOUCH(e)) & 1)) set_d0w(-0x400);
+        wrw(VEL_X(c->a[2]), (uint16_t)c->d[0]);
+        call(BLINK_BOTH);
+        call_d0(RIDE_ANIM, 4);
+        return;
+    }
+    c->d[0] = set_b(c->d[0], rd8(PHASE(e)));
+    if (!(c->d[0] & 0xFF)) {
+        call(PLAYER_TOUCH);
+        call(ENEMY_TAKE_HIT);
+        if (c->ccr & CC_N) {
+            call(DAMAGE_ENEMY);
+            if (c->ccr & CC_Z) { rider_beaten(c->a[4]); return; }
+        }
+        c->a[4] = partner_of(c->a[4]);
+        call_d0(FRICTION_X, 64);
+        c->a[4] = partner_of(c->a[4]);
+        call(RIDE_FALL);
+        call(RIDE_TOUCH);
+        e = c->a[4];
+        wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+        if (rd8(TIMER(e))) return;
+        c->d[0] = 0xFFFFFFBFu;
+        clr8(BLINK(e), 0x40);
+        c->a[0] = partner_of(e);
+        clr8(BLINK(c->a[0]), 0x40);
+        call(RANDOM);
+        c->d[0] = c->d[0] & 1 ? 3 : 6;
+        new_state(0);
+        return;
+    }
+    c->d[0] = set_b(c->d[0], c->d[0] - 1);
+    if (!(c->d[0] & 0xFF)) {                        /* the follower becomes its kind */
+        wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+        if (rd8(TIMER(e))) { call(RIDE_TOUCH); return; }
+        c->d[1] = set_w(c->d[1], rdw(TYPE(e)));
+        call(BECOME_KIND);
+        e = c->a[4];
+        wr8(PHASE(e), (uint8_t)(rd8(PHASE(e)) + 1));
+        wr8(Y_OFFSET(e), 0);
+        c->d[0] = set_b(c->d[0], rd8(NEXT_STATE(e)));
+        call(SET_ANIM);
+        set8(ALIVE(c->a[4]), 0x40);
+        ride_and_touch();
+        return;
+    }
+    c->d[0] = set_b(c->d[0], c->d[0] - 1);
+    e = c->a[4];
+    if (!(c->d[0] & 0xFF)) {                        /* rising */
+        wr8(Y_OFFSET(e), (uint8_t)(rd8(Y_OFFSET(e)) - 1));
+        ride_and_touch();
+        e = c->a[4];
+        if ((int8_t)rd8(Y_OFFSET(e)) > (int8_t)0xE0) return;
+        wr8(PHASE(e), (uint8_t)(rd8(PHASE(e)) + 1));
+        wr8(ANIM_RATE(e), 0x0C);
+        return;
+    }
+    wr8(Y_OFFSET(e), (uint8_t)(rd8(Y_OFFSET(e)) + 1));  /* settling */
+    ride_and_touch();
+    if ((int8_t)rd8(Y_OFFSET(c->a[4])) < (int8_t)0xE4) return;
+    c->d[0] = 3;
+    new_state(0);
+}
+
+/* $18F70: the beast turned to the player, the rider on it, a random while */
+static void beast_settle(void)
+{
+    c->a[4] = partner_of(c->a[4]);
+    call(FACE_PLAYER);
+    c->a[4] = partner_of(c->a[4]);
+    call(RIDE_PLACE);
+    call(RANDOM_DELAY);
+}
+
+/* the beast stands a random while, slowing, then on ($18FBA), or another while */
+static void a18F62(Ent e)
+{
+    if (begins(e)) {
+        call_d0(RIDE_ANIM, 6);
+        beast_settle();
+        return;
+    }
+    call(RIDE_FALL);
+    if (pair_hit(RIDE_TOUCH)) return;
+    call(RIDE_GROUNDED);
+    if (!(c->ccr & CC_Z)) return;
+    c->a[4] = partner_of(c->a[4]);
+    call_d0(FRICTION_X, 64);
+    c->a[4] = partner_of(c->a[4]);
+    e = c->a[4];
+    wr8(TIMER2(e), (uint8_t)(rd8(TIMER2(e)) - 1));
+    if (rd8(TIMER2(e))) return;
+    call(RANDOM);
+    set_d0w(c->d[0] & 7);
+    c->d[0] = set_b(c->d[0], rd8(0x18FBAu + (c->d[0] & 7)));
+    if (!(c->d[0] & 0xFF)) { beast_settle(); return; }
+    new_state(0);
+}
+
+/* the beast walks at the player at $100, turned back past x $1140 (right) or $10C0 (left), for
+ * a random while or until blocked; then state 3 */
+static void a18FC2(Ent e)
+{
+    if (begins(e)) {
+        Ent b = c->a[4] = partner_of(e);
+        wrw(SPEED_X(b), 0x100);
+        call(FACE_PLAYER_AND_WALK);
+        b = c->a[2] = (uint32_t)(int32_t)(int16_t)c->a[4];
+        c->a[4] = partner_of(c->a[4]);
+        uint16_t x = (uint16_t)rdw(X(b));
+        if (rd8(ATTR(b)) & 8 ? x < 0x10C0 : x > 0x1140) wrw(VEL_X(b), (uint16_t)-rdw(VEL_X(b)));
+        call_d0(RIDE_ANIM, 8);
+        call(RIDE_PLACE);
+        call(RANDOM_TIMER_32);
+        return;
+    }
+    call(RIDE_FALL);
+    if (pair_hit(RIDE_TOUCH)) return;
+    call(RIDE_BLOCKED);
+    if (c->ccr & CC_Z) {
+        e = c->a[4];
+        wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+        if (rd8(TIMER(e))) return;
+    }
+    c->d[0] = 3;
+    new_state(0);
+}
+
 /* the actions, registered by their addresses (registry.c). call_68k leaves its mark in ret: it
  * is cleared unless the action went on elsewhere */
 #define ACTION(addr) void Act##addr(Cpu *cpu) { c = cpu; went_on = 0; a##addr((Ent)c->a[4]); if (!went_on) c->ret = 0; }
@@ -4258,3 +4590,4 @@ ACTION(1771C) ACTION(1774E) ACTION(177D6) ACTION(17822) ACTION(17860) ACTION(178
 ACTION(17A44) ACTION(17B8A) ACTION(17D22) ACTION(17DC4) ACTION(17E4C) ACTION(17E88)
 ACTION(183E0) ACTION(184C4) ACTION(18584) ACTION(185EC)
 ACTION(186D6) ACTION(18710) ACTION(187AC) ACTION(18ADE)
+ACTION(18BBE) ACTION(18E3A) ACTION(18F62) ACTION(18FC2)
