@@ -1001,6 +1001,20 @@ reaches most of `$15126`); 225,000 fuzz cases from five states, 0 mismatches, ev
 covered. Self-test caught every case that returned. Replace mode plays the new-game script and
 four states. 55 of the 135 actions are C.
 
+#### The monsters' actions, batch 13: more attacks, a dive ($15352-$155E1, 2026-10-12)
+
+Seven actions: `$15352` and `$154B2` attack with their kind's hit records frame by frame (with
+the shield's touch, `$46F4`); `$153BE` plays its animation and goes on; `$153F0` fires a shot it
+keeps for 60 frames, and if it is hit meanwhile removes the shot before going to state 2 (its
+own `EnemyTakeHitFlag`, not `EnemyCheckHit`); `$15464` shoots 8 times (16 one time in 64);
+`$15504` hops forward and turns to attack on the way down, until it faces away from the player
+or meets a wall; `$15576` dives to `$10` above the target's height and flies back up home.
+
+Results: 0 mismatches over the standard runs and every owner state (420,931 checked calls);
+175,000 fuzz cases from five states, 0 mismatches, every instruction covered, the generator
+unchanged. Self-test caught 100 in 100 for each. Replace mode plays the new-game script and
+four states. 62 of the 135 actions are C.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

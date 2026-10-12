@@ -48,6 +48,11 @@
  * bit 0); $151D6 walks at the player with the shield and attacks close by; $152A0 hops 4-7
  * times.
  *
+ * Batch 13, more attacks and a dive ($15352-$155E1): $15352 and $154B2 attack with their kind's
+ * hit records ($15A4E); $153BE plays its animation; $153F0 fires a shot it keeps 60 frames (gone
+ * with it if hit); $15464 shoots 8 (or 16) times; $15504 hops and turns to attack; $15576 dives to
+ * the target's height and flies back up home.
+ *
  * Spawn flags (-$2AFE): bit 7 puff on appearing, bit 1 the other puff, bit 2 turned over
  * (attribute bit 7), bit 0 not placed by its animation.
  *
@@ -168,6 +173,11 @@
 #define TURN_AT_WALL      0x4438u   /* turns at a wall, and returns (no leaving past) */
 #define HOP               0x4500u   /* VEL_Y up by half SPEED_Y */
 #define ATTACK_FRAME      0x15A4Eu  /* -$2A00: the hit records of its attack d0, by animation frame */
+#define QUEUE_SOUND       0x366u
+#define ACCEL_XY          0xB42u
+#define FRICTION_Y        0xBACu
+#define SHIELD_CONTACT    0x46F4u   /* touching the player, or the shield */
+#define TARGET_W          0xFFFFA11Cu
 
 void EnemySetState(Cpu *);           /* enemies.c */
 
@@ -1569,6 +1579,208 @@ static void a152A0(Ent e)
     if (!rd8(TIMER2(e))) call(ENEMY_NEXT_STATE);
 }
 
+/* ---- more attacks, a dive (batch 13) ---- */
+
+/* an attack's set-up: its strength, and its attack number from its kind's stats (TIMER2) */
+static void attack_start(Ent e)
+{
+    wrw(STRENGTH2(e), rdw(STRENGTH(e)));
+    call(KIND_STATS);
+    wr8(TIMER2(e), rd8(c->a[1] + 6));
+}
+
+/* this frame's hit records of the attack */
+static void attack_frame(Ent e)
+{
+    c->d[0] = set_b(c->d[0], rd8(TIMER2(e)));
+    call(ATTACK_FRAME);
+}
+
+/* an attack drifting to a stop, with the shield; then step 3, or 7 off the ground in water */
+static void a15352(Ent e)
+{
+    if (begins(e)) {
+        wrw(HIT_B(e), 0);
+        call_d0(SET_ANIM, 12);
+        attack_start(e);
+    }
+    call(MAYBE_BUBBLE);
+    if (despawned()) return;
+    call_d0(FRICTION_X, 8);
+    call_d0(FRICTION_Y, 8);
+    call(SHIELD_CONTACT);
+    call(MOVE_WITH_PLATFORMS);
+    if (hit()) return;
+    attack_frame(e);
+    if (rd8(ANIM_BUSY(e))) return;
+    c->d[1] = 3;
+    if (rd8(WORLD_FLAGS) & 1) {
+        call(CHECK_GROUNDED);
+        if (!(c->ccr & CC_Z)) c->d[1] = 7;
+    }
+    wr8(STEP(e), (uint8_t)c->d[1]);
+    wr32(HIT_A(e), 0);
+}
+
+/* an animation (12), slowing on the ground, then on */
+static void a153BE(Ent e)
+{
+    if (begins(e)) {
+        wrw(ANIM_STEP(e), 0x100);
+        call_d0(SET_ANIM_NOW, 12);
+    }
+    call(CONTACT_AND_MOVE);
+    if (hit()) return;
+    call(CHECK_GROUNDED);
+    if (c->ccr & CC_Z) call_d0(FRICTION_X, 64);
+    if (!rd8(ANIM_BUSY(e))) call(ENEMY_NEXT_STATE);
+}
+
+/* $15456: the shot it holds (VAR, a word: an entity, or negative for none) removed */
+static void drop_shot(Ent e)
+{
+    set_d0w(rdw(VAR(e)));
+    if (rdw(VAR(e)) < 0) return;
+    c->a[2] = (uint32_t)(int32_t)rdw(VAR(e));
+    wrw(ALIVE(c->a[2]), 0);
+}
+
+/* fires a shot it keeps for 60 frames (sound $37); hit meanwhile, the shot goes too */
+static void a153F0(Ent e)
+{
+    if (begins(e)) {
+        wr8(VAR(e), 0xFF);
+        wr8(TIMER(e), 0);
+        wrw(VEL_X(e), 0);
+        clr8(ATTR(e), 3);
+        call_d0(SET_ANIM_NOW, 12);
+    }
+    if (despawned()) return;
+    call(CONTACT_AND_MOVE);
+    call(ENEMY_TAKE_HIT);
+    if (c->ccr & CC_N) { drop_shot(e); c->d[0] = 2; new_state(0); return; }
+    if (!rd8(TIMER(e))) {
+        uint8_t a = rd8(ATTR(e));
+        wr8(ATTR(e), a & (uint8_t)~1);
+        if (!(a & 1)) return;
+        shoot();
+        wrw(VAR(e), (int)(c->a[2] & 0xFFFF));
+        wr8(TIMER(e), 0x3C);
+        call_d0(QUEUE_SOUND, 55);
+        return;
+    }
+    wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+    if (rd8(TIMER(e))) return;
+    drop_shot(e);
+    call(ENEMY_NEXT_STATE);
+}
+
+/* stands shooting 8 shots (16 one time in 64), one every 4 frames once its animation ends */
+static void a15464(Ent e)
+{
+    if (begins(e)) {
+        wrw(TIMER(e), 0x0801);
+        call(RANDOM);
+        c->d[0] = set_w(c->d[0], c->d[0] & 0x3F);
+        if (!(c->d[0] & 0x3F)) wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) + 8));
+        call(FACE_PLAYER);
+        call_d0(SET_ANIM, 12);
+    }
+    call(PLAYER_CONTACT_ALL);
+    if (hit()) return;
+    if (rd8(ANIM_BUSY(e))) return;
+    wr8(TIMER2(e), (uint8_t)(rd8(TIMER2(e)) - 1));
+    if (rd8(TIMER2(e))) return;
+    wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+    if (!rd8(TIMER(e))) { call(ENEMY_NEXT_STATE); return; }
+    wr8(TIMER2(e), 4);
+    shoot();
+}
+
+/* an attack while falling and moving, with the shield */
+static void a154B2(Ent e)
+{
+    if (begins(e)) {
+        wrw(HIT_B(e), 0);
+        call_d0(SET_ANIM_NOW, 12);
+        attack_start(e);
+    }
+    if (despawned()) return;
+    call(ACCEL_Y);
+    call(SHIELD_CONTACT);
+    call(ENEMY_MOVE);
+    if (hit()) return;
+    call(SLOW_ON_GROUND);
+    attack_frame(e);
+    if (rd8(ANIM_BUSY(e))) return;
+    wr32(HIT_A(e), 0);
+    call(ENEMY_NEXT_STATE);
+}
+
+/* hops forward; on the way down it turns to attack (12), on until it faces away from the player,
+ * its time is up, or it meets a wall */
+static void a15504(Ent e)
+{
+    if (begins(e)) {
+        call(FACE_PLAYER);
+        wr8(VAR(e), 0);
+        call_d0(SET_ANIM, 10);
+        call(RANDOM_TIMER_32);
+        call(WALK_FORWARD);
+        set_d0w(-0x300);
+        call(SET_VEL_Y);
+    }
+    if (despawned()) return;
+    call(CONTACT_AND_MOVE);
+    call(ENEMY_MOVE);
+    if (hit()) return;
+    int check = 1;
+    if (!rd8(VAR(e))) {
+        if (rdw(VEL_Y(e)) < 0) check = 0;
+        else { c->d[0] = 12; wr8(VAR(e), 12); call(SET_ANIM); }
+    }
+    if (check) {
+        call(DIST_X_TO_PLAYER);                     /* d0: 8 if the player is to the left */
+        c->d[1] = (uint8_t)((rd8(ATTR(e)) & 8) - (uint8_t)c->d[0]);
+        if (c->d[1]) { call(ENEMY_NEXT_STATE); return; }
+        wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+        if (!rd8(TIMER(e))) { call(ENEMY_NEXT_STATE); return; }
+    }
+    c->d[0] = (uint8_t)((rd8(COLL(e)) & 0x41) - 1);
+    if (!c->d[0]) call(ENEMY_NEXT_STATE);
+}
+
+/* dives down to $10 above the target's height, then flies back up home, sideways */
+static void a15576(Ent e)
+{
+    if (begins(e)) {
+        wrw(GRAVITY(e), 0);
+        wrw(VEL_Y(e), 0x300);
+        wrw(SPEED_Y(e), 0x400);
+    }
+    if (despawned()) return;
+    call(PLAYER_CONTACT_ALL);
+    if (hit()) return;
+    call(ACCEL_XY);
+    call(APPLY_VEL);
+    Ent t = (Ent)(int32_t)rdw(TARGET_W);
+    c->a[2] = t;
+    if (!rdw(GRAVITY(e))) {                         /* diving */
+        uint16_t goal = (uint16_t)(rdw(Y(t)) - 0x10), y = (uint16_t)rdw(Y(e));
+        set_d0w((uint16_t)(goal - y));
+        if (goal > y) return;                       /* bhi: not there yet */
+        wrw(GRAVITY(e), -0x40);
+        int a = 0x40;
+        if (rd8(ATTR(e)) & 8) a = -a;
+        set_d0w(a);
+        wrw(ACCEL_X(e), a);
+        return;
+    }
+    uint16_t home = (uint16_t)rdw(HOME_Y(e)), y = (uint16_t)rdw(Y(e));
+    set_d0w((uint16_t)(home - y));
+    if (home >= y) call(ENEMY_NEXT_STATE);          /* back up home */
+}
+
 /* the actions, registered by their addresses (registry.c). call_68k leaves its mark in ret: it
  * is cleared unless the action went on elsewhere */
 #define ACTION(addr) void Act##addr(Cpu *cpu) { c = cpu; went_on = 0; a##addr((Ent)c->a[4]); if (!went_on) c->ret = 0; }
@@ -1582,3 +1794,4 @@ ACTION(14C50) ACTION(14CA2) ACTION(14CF0) ACTION(14D74) ACTION(14DC8) ACTION(14E
 ACTION(14EC8) ACTION(14EF4) ACTION(14F28) ACTION(14F54) ACTION(14F80)
 ACTION(14FD2) ACTION(14FFE) ACTION(15010) ACTION(15066) ACTION(150D8) ACTION(15126) ACTION(151A0)
 ACTION(151D6) ACTION(152A0)
+ACTION(15352) ACTION(153BE) ACTION(153F0) ACTION(15464) ACTION(154B2) ACTION(15504) ACTION(15576)
