@@ -178,6 +178,16 @@ static int despawned_offscreen(Ent e)
     return 1;
 }
 
+/* the same for the other files (world.h): 1 if it removed the enemy (the caller returns) */
+int world_despawn_offscreen(Cpu *cpu)
+{
+    Cpu *outer = c;
+    c = cpu;
+    int gone = despawned_offscreen((Ent)cpu->a[4]);
+    c = outer;
+    return gone;
+}
+
 /* $1A518: launched at (vx, vy) with its first animation; 180 frames to live */
 static void launch(Ent e, int vx, int vy)
 {

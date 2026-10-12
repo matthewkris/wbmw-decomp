@@ -1297,6 +1297,13 @@ int hybrid_fuzz(const char *name, long count)
                 ram[0xDE01 + e] = (uint8_t)rnd();                                 /* the magic hit (-$21FF) */
                 put_word(0xDA00 + e, rnd() % 2 ? rnd() % 0x40 : rnd() % 0x800);   /* health: beaten by a hit, or not */
                 if (rnd() % 4 == 0) ram[0xD800 + e] = 0;                          /* a timer already run out */
+                put_word(0x965A, rnd());                                          /* the frame counter */
+                if (!strcmp(name, "Act1454C") && rnd() % 2)                       /* the frame it appeared: young or old */
+                    put_word(0xD302 + e, (uint32_t)((ram[0x965A] << 8 | ram[0x965B]) - (int32_t)(rnd() % 0x300)));
+                /* $1454C's flag; for the others this byte is the saved animation set's, and a bad
+                 * one sends the animation interpreter round for ever */
+                if (!strcmp(name, "Act1454C") && rnd() % 4 == 0) ram[0xD802 + e] = (uint8_t)(rnd() % 2 ? 0xFF : 0);
+                if (rnd() % 4 == 0) put_long(0xCA00 + e, 0);                      /* standing still */
             }
             if (!strncmp(name, "Hnd", 3)) {
                 uint8_t begun = (uint8_t)(rnd() % 2 ? 0x80 : 0);

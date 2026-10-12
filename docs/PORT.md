@@ -903,6 +903,31 @@ runs and every owner state (420,931 checked calls; play reaches `$143BC` in full
 `$14456`); 425,000 fuzz cases from five states, 0 mismatches, every instruction of the seventeen
 covered (118 of them this batch). Replace mode plays the new-game script and four states.
 
+#### The monsters' actions, batch 9: walking, hovering, shooting ($14518-$14821, 2026-10-12)
+
+Seven actions in `port/actions.c`: `$14518` stands a random while; `$1454C` the same until it is
+`$168` frames old, then three shots and gone; `$145C4` hovers about its home height and swoops
+(state 7) on a player below; `$1463C` walks; `$14682` stands shooting; `$146FC` hops, shooting
+once per hop; `$1476C` rises `$60` and waits for the player below. Shots come from `$15182`
+(`$15A28`, `$159FA`, `$1A438`: set up by `$12684`, no room-list lookup).
+
+* **The first actions to call the library helpers that leave past them**: `EnemyCheckHit`
+  (`hit()`: state 2 through `new_state`, the action returns) and `DespawnIfOffscreen`
+  (`despawned()`, the C of `objects.c`, now shared through `world_despawn_offscreen`).
+* **A hang in the fuzz, not in the game.** Randomising the action's flag byte at `-$27FE`
+  gave the appearing actions a bad saved animation set there (the same byte), and the
+  animation interpreter, which is C, went round for ever: no cycle budget stops C. The flag is
+  now set only for `$1454C`, and `tools/accept.sh` gives every harness run a time limit
+  (`LIMIT`, 1,200 seconds) so such a loop ends the run instead of stalling it.
+* **The frame counter** is random in the actions' fuzz now: every one of the five states had a
+  frame number with bits 0-2 set, so `$1476C`'s every-eighth-frame check never ran before.
+
+Results (batches 7-9 together, the fuzz having changed): 0 mismatches over the standard runs
+and every owner state (420,931 checked calls); 600,000 fuzz cases from five states, 0
+mismatches, every instruction of the twenty-four covered. Self-test caught every case that
+returned (`$1436C` and `$14682` hand over to other actions, so their runs stop early). Replace
+mode plays the new-game script and four states.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
