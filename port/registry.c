@@ -35,7 +35,9 @@ void Act140F2(Cpu *), Act140FC(Cpu *), Act1410E(Cpu *), Act14120(Cpu *), Act1416
      Act14822(Cpu *), Act14888(Cpu *), Act1492A(Cpu *), Act14974(Cpu *), Act149D0(Cpu *), Act14A82(Cpu *),
      Act14AEA(Cpu *), Act14AFA(Cpu *), Act14B7E(Cpu *), Act14C1A(Cpu *),
      Act14C50(Cpu *), Act14CA2(Cpu *), Act14CF0(Cpu *), Act14D74(Cpu *), Act14DC8(Cpu *), Act14E1A(Cpu *),
-     Act14E6C(Cpu *), Act14EC8(Cpu *), Act14EF4(Cpu *), Act14F28(Cpu *), Act14F54(Cpu *), Act14F80(Cpu *);
+     Act14E6C(Cpu *), Act14EC8(Cpu *), Act14EF4(Cpu *), Act14F28(Cpu *), Act14F54(Cpu *), Act14F80(Cpu *),
+     Act14FD2(Cpu *), Act14FFE(Cpu *), Act15010(Cpu *), Act15066(Cpu *), Act150D8(Cpu *), Act15126(Cpu *),
+     Act151A0(Cpu *), Act151D6(Cpu *), Act152A0(Cpu *);
 void RunEnemies(Cpu *), EnemyDispatch(Cpu *), EnemySetState(Cpu *), EnemyNextState(Cpu *);   /* enemies.c */
 void MagicUsed(Cpu *), SlotEmptied(Cpu *), MagicMeter(Cpu *), HudRedraw(Cpu *), GoldDisplay(Cpu *);   /* hud.c */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
@@ -254,6 +256,15 @@ const PortRoutine port_routines[] = {
     {0x014F28, 0x014F54, "Act14F28", Act14F28, CT_SP},
     {0x014F54, 0x014F80, "Act14F54", Act14F54, CT_SP},           /* with the steered jump $14F66 */
     {0x014F80, 0x014FD2, "Act14F80", Act14F80, CT_SP},           /* with the jump's frame $14FBC */
+    {0x014FD2, 0x014FFE, "Act14FD2", Act14FD2, CT_SP},           /* leaping and attacking (batch 12) */
+    {0x014FFE, 0x015010, "Act14FFE", Act14FFE, CT_SP},
+    {0x015010, 0x015066, "Act15010", Act15010, CT_SP},           /* with the leap $15020 */
+    {0x015066, 0x0150D8, "Act15066", Act15066, CT_SP},
+    {0x0150D8, 0x015126, "Act150D8", Act150D8, CT_SP},
+    {0x015126, 0x0151A0, "Act15126", Act15126, CT_SP},           /* $15182 (the shot) is not an action: translated */
+    {0x0151A0, 0x0151D6, "Act151A0", Act151A0, CT_SP},
+    {0x0151D6, 0x0152A0, "Act151D6", Act151D6, CT_SP},
+    {0x0152A0, 0x015352, "Act152A0", Act152A0, CT_SP},
     {0x00EE70, 0x00EF12, "PlayerSwordTip", PlayerSwordTip, CT_SP},
     {0x011170, 0x01141A, "MagicStart", MagicStart, CT_SP},       /* magic.c; a potion may carry on at $F288 */
     {0x01141A, 0x0114C0, "MagicFrame", MagicFrame, CT_SP},       /* may carry on at $11590 or $11780 off a pass */

@@ -974,6 +974,33 @@ early). Replace mode plays the new-game script and four states.
 
 So far the actions cover `$140F2`-`$14FD1`: 46 of the 135 entries.
 
+#### Faster builds and acceptance (2026-10-12)
+
+The translated routines were one C file of 11 MB (harness) or 15 MB (native), which GCC
+compiles on one core: about 5 and 10-12 minutes, every batch. `m68k2c.py` now writes them in 12
+parts (`gen_00.c`-`gen_11.c`, declared in `gen.h`; `"parts"` in the config), and the Makefiles
+compile the parts in parallel: with `make -j12` about 80 s for the harness and 150 s for the
+native build from scratch, and nothing when the translation did not change (one stamp per
+translation, so a parallel make runs `m68k2c.py` once). `tools/accept.sh` runs every fuzz run at
+once, `JOBS` (12) at a time: a batch's whole acceptance takes about a minute and a half. The
+native build is built and smoke-tested once at the end of a session, not per batch.
+
+#### The monsters' actions, batch 12: leaping and attacking ($14FD2-$15351, 2026-10-12)
+
+Nine actions: `$14FD2` floats at the top of a jump; `$14FFE` and `$15010` leap at the player,
+farther the farther it is (`$15020`, sometimes twice as far by the bits of `$15064`); `$15066`
+hops three times on the spot, then leaps; `$150D8`, `$15126` and `$151A0` attack (jumping,
+hopping, standing) and fire the shot `$15182` on the frame the animation marks (attribute bit
+0); `$151D6` walks or hops at the player with the shield and attacks close by, its hit records
+from its kind's attacks frame by frame (`$15A4E`); `$152A0` hops 4-7 times. `$4438` turns at a
+wall by a branch, not by leaving past its caller, so it is called as it is. The jump's frame
+(`$14FBC`, `$14FC0`) is shared with batch 11 (`jump_frame`).
+
+Results: 0 mismatches over the standard runs and every owner state (420,931 checked calls; play
+reaches most of `$15126`); 225,000 fuzz cases from five states, 0 mismatches, every instruction
+covered. Self-test caught every case that returned. Replace mode plays the new-game script and
+four states. 55 of the 135 actions are C.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
