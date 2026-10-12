@@ -1015,6 +1015,24 @@ Results: 0 mismatches over the standard runs and every owner state (420,931 chec
 unchanged. Self-test caught 100 in 100 for each. Replace mode plays the new-game script and
 four states. 62 of the 135 actions are C.
 
+#### The monsters' actions, batch 14: swimming, flying, hopping ($155E2-$159F9, 2026-10-12)
+
+Eleven actions: `$155E2` swims after the target until level with it; `$15630` swims about it,
+jumping out of the ground first, biting (step 6) from just above the player or going to step 3
+level with it on the ground; `$15704` bobs about a height that moves now and then; `$1577A`
+stands 20 frames; `$157A6` is a bare `rts`; `$157A8` and `$157E4` hop three times on the spot;
+`$15830` flies back home; `$1589A` faces the player, then charges at four times its speed;
+`$158E6` climbs up and down a thread hanging from its partner (LINK2), giving the thread the
+animation of its length (`exg a4,a2` around SetAnim); `$15994` walks to a wall or a stop, then
+hops. `$157A6` and `$15830` are in the table but in no kind's row (fuzzed on any kind and state).
+`$15994`'s range ends at its own code (`$159FA`): the shot's helpers after it are reached only
+through `$15182`.
+
+Results: 0 mismatches over the standard runs and every owner state (420,931 checked calls);
+275,000 fuzz cases from five states, 0 mismatches, every instruction covered, the generator
+unchanged. Self-test caught every case that returned. Replace mode plays the new-game script
+and four states. 73 of the 135 actions are C.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
