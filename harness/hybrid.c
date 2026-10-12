@@ -1216,6 +1216,7 @@ int hybrid_fuzz(const char *name, long count)
                 {"HndAreaMonster", {0x058}}, {"HndHopperOr", {0x800}}, {"HndGuardian", {0x060}},
                 {"HndVanishing", {0x218}}, {"HndFlyer", {0x21A}}, {"HndThrownLater", {0x220}},
                 {"HndCarried", {0x228}}, {"HndPacer", {0x80C}},
+                {"HndDarter", {0x216}}, {"HndDiver", {0x222}}, {"HndSeeker", {0x224}}, {"HndGrower", {0x80A}},
             };
             uint16_t kind = 0;
             for (unsigned i = 0; i < sizeof objs / sizeof *objs; i++)
@@ -1314,6 +1315,33 @@ int hybrid_fuzz(const char *name, long count)
                 if (!strcmp(name, "HndCarried") || !strcmp(name, "HndVanishing") || !strcmp(name, "HndHopperOr"))
                     ram[0xD401 + e] = (uint8_t)(rnd() % 4 | begun);
                 if (!strcmp(name, "HndCarried")) ram[0xC003 + e] = (uint8_t)rnd();   /* BLINK's bit 2 */
+                {   /* batch 6: phases (-$31FF), its maker (-$2CFE) an entity, timers near their ends */
+                    uint32_t mk = rnd() % 2 ? p : 0x40 + (rnd() % 16) * 4;
+                    ram[0xCE01 + e] = (uint8_t)(rnd() % 3);
+                    if (!strcmp(name, "HndDarter")) {
+                        ram[0xD401 + e] = (uint8_t)(begun | (rnd() % 2));
+                        if (rnd() % 2) ram[0x9F03] ^= 0x40;
+                        if (rnd() % 2) ram[0xD800 + e] = 1;                       /* aimed this frame */
+                    }
+                    if (!strcmp(name, "HndDiver")) {
+                        ram[0xD401 + e] = (uint8_t)(rnd() % 5);
+                        put_word(0xD302 + e, mk);
+                        if (rnd() % 2) put_word(0xC900 + p, (uint32_t)(0x1068 + small(8)));
+                        put_word(0xDA00 + p, rnd() % 2 ? 0x2F0 + rnd() % 0x20 : rnd() % 0x1000);   /* the player's health */
+                        ram[0x99ED] = (uint8_t)(rnd() % 4 ? rnd() : 0xFF);
+                    }
+                    if (!strcmp(name, "HndSeeker")) {
+                        put_word(0xD302 + e, mk);
+                        ram[0xD802 + e] = (uint8_t)((rnd() % 8) * 0x20);         /* the angle: eighths (a table of longs) */
+                        ram[0xD803 + e] = (uint8_t)(rnd() % 2 ? 0 : 0xFF);
+                        ram[0xDA02 + e] = (uint8_t)(rnd() % 3 ? rnd() % 3 : rnd());
+                    }
+                    if (!strcmp(name, "HndGrower")) {
+                        ram[0xD401 + e] = (uint8_t)((rnd() % 5) * 2);
+                        ram[0xD802 + e] = (uint8_t)(rnd() % 4 ? (rnd() % 5) * 2 : rnd());
+                        ram[0xD803 + e] = (uint8_t)(rnd() % 3 ? 1 + rnd() % 2 : rnd());
+                    }
+                }
                 put_word(0xCE02 + e, rnd() % 3 ? 1 + rnd() % 3 : rnd());          /* frames to live */
                 if (rnd() % 2) ram[0x966B] ^= 0x20;
             }

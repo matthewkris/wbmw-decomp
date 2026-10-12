@@ -95,7 +95,9 @@ and "The gameplay task"). Only the frame loop, the scheduler and the VBlank inte
 
 Owner save states in `work/` (not committed): `platform.state` (area 1 room 2, floating
 platforms), `inn2.state` (at an innkeeper's question; answering yes found the `$C262` hang),
-`owner2.state` (Sega logo after a game over), `castle.state` (inside a castle, frame 29,683), `ocarina.state` (on a note block, frame 35,051; the tunes are in `docs/NOTES.md`), `beforedeath.state` (past the ocarina doors, 2 of 4 hearts, frame 48,363), `fullhp2.state` (the same, health refilled with `--call Hearts`), `after-boss.state` (a cave past the boss, frame 83,367), `after-boss2.state` (a forest with hanging spiders, frame 166,373), `boss2.state` (the Gragg & Glagg boss intro, 4 hearts, frame 287,023), `after-boss3.state` (a forest town with an inn after beating them, 4 hearts, frame 298,964; `after-boss3-14hp.state` is the same with the 14 hearts it was played at). Edit hearts with `harness --load-state S --poke FF9F00=0E00 --poke FFDA00=0E00 --call Hearts --frames F+1 --save-state-at F+1 OUT` (maximum, then health; whole hearts in the high byte). Copy `play.state`/F2 states to their own names:
+`owner2.state` (Sega logo after a game over), `castle.state` (inside a castle, frame 29,683), `ocarina.state` (on a note block, frame 35,051; the tunes are in `docs/NOTES.md`), `beforedeath.state` (past the ocarina doors, 2 of 4 hearts, frame 48,363), `fullhp2.state` (the same, health refilled with `--call Hearts`), `after-boss.state` (a cave past the boss, frame 83,367), `after-boss2.state` (a forest with hanging spiders, frame 166,373), `boss2.state` (the Gragg & Glagg boss intro, 4 hearts, frame 287,023), `after-boss3.state` (a forest town with an inn after beating them, 4 hearts, frame 298,964; `after-boss3-14hp.state` is the same with the 14 hearts it was played at), `door-crash.state`
+(before the castle door that found the `lea` gap, frame 305,313), `thunder.state` (a new area
+with the thunder spell, frame 384,572: right + A casts thunder, left + A the other slot). Edit hearts with `harness --load-state S --poke FF9F00=0E00 --poke FFDA00=0E00 --call Hearts --frames F+1 --save-state-at F+1 OUT` (maximum, then health; whole hearts in the high byte). Copy `play.state`/F2 states to their own names:
 F2 overwrites the same file each time.
 
 1. Coverage, from play (53% so far): the owner plays with `play.exe --state S --load --port shadow --coverage FILE` (any
@@ -135,8 +137,9 @@ F2 overwrites the same file each time.
    (`port/spawns.c`, $12A70; kinds 8, 11, 12, 14 still need save states in their rooms for
    coverage), and thirteen handlers, the objects at $1A464-$1AA3B (`port/objects.c`, batch 3),
    and nine more, the townspeople at $163AA-$168E7 (`port/people.c`, batch 4), and eight small
-   ones (`port/handlers.c`, batch 5); next the last 4 handlers (slots 19, 24, 25, 33), then the
-   monsters' action routines. Then the rest of the text system (status screen, shops,
+   ones and the last four (`port/handlers.c`, batches 5 and 6): all 35 handlers are C. Next the
+   monsters' action routines (135 entries at $140F2-$1A3E4, about 7,000 instructions), small
+   to large, in batches of related routines. Then the rest of the text system (status screen, shops,
    dialogue, $7600-$8900). The angle maths ($EE2-$1278, `port/maths.c`, exact) and the HUD
    bar (magic name and uses, meter, slot icons, gold: `port/hud.c`) are C too. The items and effects each frame ($10A1E, `port/items.c`), the big items
    ($B42A) and exact kernel helpers (ClearEntity, Freeze/UnfreezeEntities, FindFreeEffect,
