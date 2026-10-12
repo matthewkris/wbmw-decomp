@@ -672,6 +672,26 @@ wrappers that store or return a velocity towards a2 ($1208-$1248); and `Distance
 fuzzer covers quarter and eighth angles, zero offsets and exact diagonals. Everything ran;
 0 mismatches; a run with fire spirits (which steer with these) matches in replace mode.
 
+#### The HUD bar (2026-10-11)
+
+`port/hud.c`, the parts of the text system ($7600-$8900) that run during play: the window
+plane's text position ($83B0, column in the high byte, row in the low), filling with a tile
+($8762), strings as tiles ($786A), a string's length ($1B004). On top of them:
+
+* `MagicUsed` ($8778): one use of a special action gone; at none left it leaves its A +
+  left/right slot (`SlotEmptied`, $882C, also called when an item is used up); its name is
+  shown centred in the bar's ten columns (the odd column on the left).
+* `MagicMeter` ($87CE): eight cells of $400, full, half or empty, drawn only when the level's
+  high byte changes.
+* `HudRedraw` ($76C4): the name rows cleared, the two slots' icons (their graphics copied in by
+  `CopyRawTiles` when the slot's special action changed) and the picture between them.
+* `GoldDisplay` ($85A8): the gold right-aligned in six columns, at most 999,999.
+
+The rest of the text system (the status screen, shops, dialogue) is not rewritten yet.
+Checked like the others: 0 mismatches, every instruction of these routines run (the entries
+$8666 and $875C belong to the status screen), the self-test caught, and replace mode matches
+in casting runs that redraw the bar.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

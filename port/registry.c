@@ -19,6 +19,7 @@ void PlayerState(Cpu *), PlayerStartFrame(Cpu *), PlayerInput(Cpu *), PlayerBoun
 void TaskCallSystem(Cpu *), TaskCallUser(Cpu *);
 void Cosine(Cpu *), Sine(Cpu *), VelocityAt(Cpu *), VelocityAtCoarse(Cpu *), Direction16To(Cpu *), Direction16(Cpu *), DirectionTo(Cpu *), Direction(Cpu *), SetVelocityAt(Cpu *), VelocityTo(Cpu *), SetVelocityToCoarse(Cpu *), SetVelocityAtCoarse(Cpu *), VelocityToCoarse(Cpu *), Distance(Cpu *);   /* maths.c: exact */
 void RunItems(Cpu *);   /* items.c */
+void MagicUsed(Cpu *), SlotEmptied(Cpu *), MagicMeter(Cpu *), HudRedraw(Cpu *), GoldDisplay(Cpu *);   /* hud.c */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
      FindFreeEffect(Cpu *), CheckGrounded(Cpu *);
 void Hearts(Cpu *), SpawnItem(Cpu *), SpawnItemAt(Cpu *), PlayerSwordTip(Cpu *);   /* hud.c, effects.c, player.c */
@@ -141,7 +142,12 @@ const PortRoutine port_routines[] = {
     {0x00F1EC, 0x00F256, "PlayerGold", PlayerGold, CT_SP},       /* pickups: reached from $F1B0's table */
     {0x00F256, 0x00F262, "PlayerItem", PlayerItem, CT_SP},
     {0x00F262, 0x00F282, "PlayerHeart", PlayerHeart, CT_SP},
-    {0x008AA2, 0x008B62, "Hearts", Hearts, CT_SP | CT_A0 << 4},   /* hud.c: leaves a4 the player */
+    {0x008AA2, 0x008B62, "Hearts", Hearts, CT_SP | CT_A0 << 4},
+    {0x008778, 0x0087CE, "MagicUsed", MagicUsed, CT_SP},          /* hud.c: the HUD bar */
+    {0x0087CE, 0x00882C, "MagicMeter", MagicMeter, CT_SP},
+    {0x00882C, 0x00885A, "SlotEmptied", SlotEmptied, CT_SP},      /* also from using up an item ($24E8) */
+    {0x0076C4, 0x0076E8, "HudRedraw", HudRedraw, CT_SP},
+    {0x0085A8, 0x0085CC, "GoldDisplay", GoldDisplay, CT_SP},   /* hud.c: leaves a4 the player */
     {0x01090C, 0x010910, "SpawnItem", SpawnItem},                 /* effects.c: every register as the original */
     {0x010910, 0x010A1E, "SpawnItemAt", SpawnItemAt},
     {0x010A1E, 0x011094, "RunItems", RunItems, CT_SP},           /* items.c: every item and effect, each frame */
