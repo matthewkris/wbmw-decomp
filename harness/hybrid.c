@@ -1338,7 +1338,9 @@ int hybrid_fuzz(const char *name, long count)
                         for (i = 0; i < n && i < 8; i++) if ((ram[0xA122 + 4 * i] << 8 | ram[0xA123 + 4 * i]) == kind) break;
                         if (i == n || i == 8) { i = n < 8 ? n : 6 + k; put_word(0xA122 + 4 * i, kind); if (n < 8) put_word(0xA142, n + 1); }
                     }
-                if (!strcmp(name, "Act17A44") || !strcmp(name, "Act17B8A") || !strcmp(name, "Act17D22") || !strcmp(name, "Act17DC4") || !strcmp(name, "Act17E4C")) {
+                if (!strcmp(name, "Act17A44") || !strcmp(name, "Act17B8A") || !strcmp(name, "Act17D22") || !strcmp(name, "Act17DC4") || !strcmp(name, "Act17E4C")
+                    || !strcmp(name, "Act17E88") || !strcmp(name, "Act183E0") || !strcmp(name, "Act184C4")
+                    || !strcmp(name, "Act18584") || !strcmp(name, "Act185EC")) {
                     /* the two-part boss: a partner whose partner it is; the leap's phase even */
                     uint32_t q = 0x40 + (rnd() % 16) * 4;
                     if (q == e) q = (q + 4) & 0xFC;
@@ -1348,6 +1350,12 @@ int hybrid_fuzz(const char *name, long count)
                     if (rnd() % 2) ram[0xD800 + e] = (uint8_t)(1 + rnd() % 2);       /* the last frames */
                     if (rnd() % 2) ram[0xD800 + q] = (uint8_t)(1 + rnd() % 2);
                     if (rnd() % 2) ram[0xD801 + e] = (uint8_t)(rnd() % 2);
+                    if (!strcmp(name, "Act183E0")) ram[0xD801 + e] = (uint8_t)(rnd() % 3);   /* falling, landed, on */
+                    if (!strcmp(name, "Act183E0") && rnd() % 2) put_word(0x9738, 0);      /* the shake over */
+                    if (!strcmp(name, "Act184C4") && rnd() % 2) ram[0xD803 + e] = 1;      /* the puff's frame */
+                    if (!strcmp(name, "Act185EC")) ram[0xDE00 + e] = (uint8_t)(rnd() % 2 ? 0 : 0xFF);   /* pending */
+                    if (!strcmp(name, "Act185EC") && rnd() % 2) ram[0xD800 + e] = 0;
+                    if (!strcmp(name, "Act185EC") && rnd() % 2) ram[0xCF00 + q] = (uint8_t)(rnd() % 2 ? 2 : rnd());   /* the mount's floor */
                     if (!strcmp(name, "Act17E4C") && rnd() % 2) put_word(0xCA00 + e, 0);   /* at rest */
                 }
                 if (!strcmp(name, "Act1759A")) {                                  /* the target's sword out or not */
