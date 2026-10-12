@@ -1300,6 +1300,30 @@ Results: 0 mismatches over the standard runs and every owner state (422,373 chec
 100 in 100 for each. Replace mode plays the new-game script and four states. 130 of the 135
 actions are C.
 
+#### The monsters' actions, batch 27: the last boss's parts ($1A026-$1A437, 2026-10-12)
+
+Five actions, the last of the table. `$1A026` is the node walker firing: it turns to the target
+(`$1032`), fires a shot of kind `$224` from its heading's muzzle (`$1A0A0`) and holds it, MAKER
+both ways, until the shot lets go. `$1A218` readies a part of the last boss (its body and attack
+boxes `$1A25C`/`$1A261`, its attack's strength). `$1A3E4` is the last boss standing: before its
+second form only its attack meets the player (unless `$99FA` bit 7), and in the second form it
+takes animation 2 after TIMER frames; struck (TOUCH bit 3), state 2. `$1A2E2` is it hurt: beaten
+the first time, its health comes back, it moves to its second place (`$10A8`, `$1058`) with new
+attack boxes (`$1A3DE`), makes its piece (`$1985A`, kind `$80C`) and sets the room's effects;
+beaten the second time, state 1. `$1A266` is the last boss beaten: the room frozen, its pieces
+gone, a puff every 4 frames (`$19C34`) and, after TIMER2 of them, the ending's flag (`$965F` bit 1).
+
+The fuzz puts kind `$80C` in the room's list and gives these actions their phases, forms, whiles,
+`$99DE`/`$99FA` and a held shot.
+
+Results: 0 mismatches over the standard runs and every owner state (422,373 checked calls);
+125,000 fuzz cases from five states, 0 mismatches, every instruction covered. Self-test caught
+100 in 100 for each. Replace mode plays the new-game script and four states.
+
+**All 135 of the monsters' actions are now C** (batches 7-27): every entry of the action table
+at `$13DB6` has a port in `port/actions.c`, checked against the original by shadow runs, fuzzing
+from five states with full instruction coverage, and the self-test.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

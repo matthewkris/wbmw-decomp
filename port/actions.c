@@ -292,6 +292,11 @@
 #define MOUNT_TOUCH       0x1839Cu  /* the mount takes its health; the player against it */
 #define MOUNT_GROUNDED    0x183BAu  /* a2 the mount; z: on the ground (COLL & 10 is 2) */
 #define SHAKE_SCREEN      0x183D4u  /* the screen shaken ($9738), sound 57 */
+#define ANGLE_TO          0x1032u   /* d3: the angle from it to a2 */
+#define BIG_PUFF          0x19C34u  /* a puff within d4, d5 of it */
+#define MAKE_PIECE        0x1985Au  /* the last boss's piece made (kind $80C, $A392) */
+#define HITBOX_OVERLAP    0xC3Eu
+#define BODY_VS_ATTACK_SWAP 0xD6Eu  /* its attack boxes against a2's body */
 #define BODY_HIT          0x19DD2u  /* the player against it (a little ahead); mi: hit */
 #define TURN_LOOK         0x19E2Cu  /* its animation by its heading (VAR) */
 #define AT_NODE           0x19E44u  /* z: at NEXT_NODE's place ($19DA6) */
@@ -5024,6 +5029,208 @@ static void a19FE6(Ent e)
     new_state(0);
 }
 
+/* ---- the last boss's parts (batch 27) ---- */
+
+/* the node walker's shot: it turns to the target ($1032), then fires a shot of kind $224 from
+ * its heading's muzzle ($1A0A0) and holds it (MAKER both ways) until the shot lets go; hit, the
+ * shot is gone and state 2 */
+static void a1A026(Ent e)
+{
+    if (begins(e)) {
+        c->a[2] = (uint32_t)(int32_t)(int16_t)rdw(TARGET_W);
+        call(ANGLE_TO);
+        c->d[3] = set_w(c->d[3], (c->d[3] & 0xFFFF) >> 8);
+        e = c->a[4];
+        wr8(SHOT(e), (uint8_t)c->d[3]);
+        wr8(PHASE(e), 0);
+        wr8(MAKER(e), 0xFF);
+        return;
+    }
+    call(BODY_HIT);
+    e = c->a[4];
+    if (c->ccr & CC_N) {
+        set_d0w(rdw(MAKER(e)));
+        if ((int16_t)c->d[0] >= 0) {
+            c->a[0] = (uint32_t)(int32_t)(int16_t)c->d[0];
+            wr8(ALIVE(c->a[0]), 0);
+        }
+        c->d[0] = 2;
+        new_state(0);
+        return;
+    }
+    if (rd8(PHASE(e))) {
+        if (rdw(MAKER(e)) >= 0) return;
+        c->d[0] = 3;
+        new_state(0);
+        return;
+    }
+    call(TURN_TOWARD);
+    if (!(c->ccr & CC_Z)) return;
+    e = c->a[4];
+    wr8(PHASE(e), (uint8_t)(rd8(PHASE(e)) + 1));
+    c->d[0] = rd8(VAR(e)) >> 4;
+    c->a[0] = 0x1A0A0u + c->d[0];
+    set_d0w(0x224);
+    call(SHOT_AT);
+    if (c->ccr & CC_N) { c->d[0] = 3; new_state(0); return; }
+    e = c->a[4];
+    wr8(VAR(c->a[2]), rd8(VAR(e)));
+    wrw(MAKER(e), (uint16_t)c->a[2]);
+    wrw(MAKER(c->a[2]), (uint16_t)e);
+}
+
+/* a part readied: its body and attack boxes ($1A25C, $1A261), its strength, drawn; state 3 */
+static void a1A218(Ent e)
+{
+    wrw(BODY_W(e), 0x080C);
+    wr32(HIT_A(e), 0x1A25Cu);
+    wr32(HIT_B(e), 0x1A261u);
+    wrw(STRENGTH2(e), rdw(STRENGTH(e)));
+    set8(BLINK(e), 0x80);
+    set8(BLINK(e), 0x10);
+    wr8(ANIM_RATE(e), 0x16);
+    c->d[0] = 0;
+    wr8(SPAWN(e), 0);
+    call(SET_ANIM);
+    set8(ALIVE(c->a[4]), 0x40);
+    c->d[0] = 3;
+    new_state(0);
+}
+
+/* the last boss beaten: the room frozen, its pieces gone; every 4 frames a puff about it
+ * ($19C34), and after TIMER2 of them the ending flag ($965F bit 1) */
+static void a1A266(Ent e)
+{
+    if (begins(e)) {
+        set8(0xFFFF99DEu, 0x40);
+        wr8(0xFFFFA117u, 0);
+        wr8(0xFFFFA118u, 0);
+        wr8(0xFFFF9F05u, 8);
+        call(FREEZE_ENEMIES);
+        c->a[0] = (uint32_t)(int32_t)(int16_t)rdw(0xFFFFA392u);
+        wr8(ALIVE(c->a[0]), 0);
+        wr8(0xFFFFA38Eu, 0);
+        wr8(0xFFFF9EDAu, 0);
+        wrw(TIMER(c->a[4]), 0x0120);
+        call_d0(SET_ANIM, 6);
+        return;
+    }
+    wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+    if (rd8(TIMER(e))) return;
+    if (rd8(TIMER2(e))) {
+        wr8(TIMER2(e), (uint8_t)(rd8(TIMER2(e)) - 1));
+        if (!rd8(TIMER2(e))) set8(0xFFFF965Fu, 2);
+    }
+    wr8(TIMER(e), 4);
+    c->d[4] = 31; c->d[5] = 31;
+    wrw(X(e), (uint16_t)(rdw(X(e)) + 0x18));
+    wrw(Y(e), (uint16_t)(rdw(Y(e)) + 0x10));
+    call(BIG_PUFF);
+    e = c->a[4];
+    wrw(X(e), (uint16_t)(rdw(X(e)) - 0x18));
+    wrw(Y(e), (uint16_t)(rdw(Y(e)) - 0x10));
+}
+
+/* the last boss hurt. Beaten the first time (SPAWN bit 0 not yet set): health back, moved to its
+ * second place ($10A8, $1058), new attack boxes ($1A3DE), a piece made ($1985A, kind $80C) and the
+ * room's effects ($99DE-$99EC); beaten the second time, state 1. Not beaten: a flash, and when
+ * the second form, a pause. Then the piece gone and an animation, or its while; then state 3 */
+static void a1A2E2(Ent e)
+{
+    if (begins(e)) {
+        call(DAMAGE_ENEMY);
+        e = c->a[4];
+        if (!(c->ccr & CC_Z)) {
+            wr8(TIMER2(e), 0x10);
+            wr8(0xFFFF99EAu, 0x10);
+            c->d[0] = 16;
+            if (rd8(SPAWN(e)) & 1) {
+                wr8(TIMER(e), 0x3C);
+                call_d0(SET_ANIM, 4);
+                wr8(0xFFFF99EBu, 0x10);
+                c->d[0] = 32;
+            }
+            set8(0xFFFF99DEu, (uint8_t)c->d[0]);
+            return;
+        }
+        c->d[0] = 1;
+        uint8_t sp = rd8(SPAWN(e));
+        wr8(SPAWN(e), sp | 1);
+        if (sp & 1) { new_state(0); return; }
+        call(ENEMY_MAX_HEALTH);
+        e = c->a[4];
+        wrw(HEALTH(e), (uint16_t)c->d[0]);
+        wrw(X(e), 0x10A8);
+        wrw(Y(e), 0x1058);
+        clr8(BLINK(e), 0x10);
+        wr32(HIT_A(e), 0x1A3DEu);
+        wr8(TIMER2(e), 0);
+        wr8(0xFFFFA38Eu, 0xFE);
+        wr8(0xFFFFA38Fu, 0xC0);
+        call(MAKE_PIECE);
+        e = c->a[4];
+        set8(0xFFFF99DEu, 8);
+        wr8(0xFFFF99EAu, 0x80);
+        wr8(0xFFFF99ECu, 0x14);
+        wr32(HIT_B(e), 0);
+        wrw(WORD_3DFE(e), (uint16_t)(rdw(WORD_3DFE(e)) + 0x20));
+        c->d[2] = 3;
+        call(BREAK_UP_START);
+        e = c->a[4];
+        wrw(WORD_3DFE(e), (uint16_t)(rdw(WORD_3DFE(e)) - 0x20));
+        return;
+    }
+    c->a[2] = (uint32_t)(int32_t)(int16_t)rdw(PLAYER_W);
+    call(BODY_VS_ATTACK_SWAP);
+    e = c->a[4];
+    if (rd8(TIMER2(e))) {
+        wr8(TIMER2(e), (uint8_t)(rd8(TIMER2(e)) - 1));
+        if (rd8(TIMER2(e))) return;
+        c->d[0] = 3;
+        new_state(0);
+        return;
+    }
+    if (!rd8(PHASE(e))) {
+        if (rd8(0xFFFF99DEu) & 8) return;
+        c->a[0] = (uint32_t)(int32_t)(int16_t)rdw(0xFFFF99F6u);
+        wr8(ALIVE(c->a[0]), 0);
+        wr8(PHASE(e), (uint8_t)(rd8(PHASE(e)) + 1));
+        call_d0(SET_ANIM, 2);
+        return;
+    }
+    if (rd8(ANIM_BUSY(e))) return;
+    wr8(0xFFFFA118u, 0x3C);
+    c->d[0] = 3;
+    new_state(0);
+}
+
+/* the last boss standing: the player against it (only its attack until the second form, unless
+ * $99FA bit 7); in the second form the animation 2 after TIMER frames; struck (TOUCH bit 3),
+ * state 2 */
+static void a1A3E4(Ent e)
+{
+    if (begins(e)) return;
+    c->a[2] = (uint32_t)(int32_t)(int16_t)rdw(PLAYER_W);
+    if (!(rd8(SPAWN(e)) & 1) && !(rd8(0xFFFF99FAu) & 0x80)) {
+        call(HITBOX_OVERLAP);
+        call(BODY_VS_ATTACK_SWAP);
+        return;
+    }
+    if (rd8(SPAWN(e)) & 1) {
+        c->d[0] = 2;
+        if (rd8(ANIM_ID(e)) != 2) {
+            wr8(TIMER(e), (uint8_t)(rd8(TIMER(e)) - 1));
+            if (!rd8(TIMER(e))) call(SET_ANIM);
+        }
+    }
+    call(BODY_VS_ATTACK);
+    call(BODY_VS_ATTACK_SWAP);
+    e = c->a[4];
+    if (!(rd8(TOUCH(e)) & 8)) return;
+    c->d[0] = 2;
+    new_state(0);
+}
+
 /* the actions, registered by their addresses (registry.c). call_68k leaves its mark in ret: it
  * is cleared unless the action went on elsewhere */
 #define ACTION(addr) void Act##addr(Cpu *cpu) { c = cpu; went_on = 0; a##addr((Ent)c->a[4]); if (!went_on) c->ret = 0; }
@@ -5052,3 +5259,4 @@ ACTION(18BBE) ACTION(18E3A) ACTION(18F62) ACTION(18FC2)
 ACTION(19026) ACTION(190C8) ACTION(190E4) ACTION(19102) ACTION(1916A)
 ACTION(19200) ACTION(192C8) ACTION(192EC)
 ACTION(19EAE) ACTION(19F00) ACTION(19F32) ACTION(19F6A) ACTION(19FE6)
+ACTION(1A026) ACTION(1A218) ACTION(1A266) ACTION(1A2E2) ACTION(1A3E4)
