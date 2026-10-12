@@ -20,6 +20,9 @@ void TaskCallSystem(Cpu *), TaskCallUser(Cpu *);
 void Cosine(Cpu *), Sine(Cpu *), VelocityAt(Cpu *), VelocityAtCoarse(Cpu *), Direction16To(Cpu *), Direction16(Cpu *), DirectionTo(Cpu *), Direction(Cpu *), SetVelocityAt(Cpu *), VelocityTo(Cpu *), SetVelocityToCoarse(Cpu *), SetVelocityAtCoarse(Cpu *), VelocityToCoarse(Cpu *), Distance(Cpu *);   /* maths.c: exact */
 void RunItems(Cpu *);   /* items.c */
 void RunSpawnPoints(Cpu *);   /* spawns.c */
+void ObjLobbed(Cpu *), ObjThrown(Cpu *), ObjStanding(Cpu *), ObjFlying(Cpu *), ObjWalker(Cpu *),   /* objects.c */
+     ObjCrawler(Cpu *), ObjCrawlerStill(Cpu *), ObjAimed(Cpu *), ObjBouncer(Cpu *), ObjHopper(Cpu *),
+     ObjFloater(Cpu *), ObjColumn(Cpu *), ObjEdgeCrawler(Cpu *);
 void RunEnemies(Cpu *), EnemyDispatch(Cpu *), EnemySetState(Cpu *), EnemyNextState(Cpu *);   /* enemies.c */
 void MagicUsed(Cpu *), SlotEmptied(Cpu *), MagicMeter(Cpu *), HudRedraw(Cpu *), GoldDisplay(Cpu *);   /* hud.c */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
@@ -158,6 +161,19 @@ const PortRoutine port_routines[] = {
     {0x013582, 0x0135AE, "EnemyDispatch", EnemyDispatch},         /* the monsters' state machine: carries on at the action */
     {0x01357E, 0x013582, "EnemySetState", EnemySetState},
     {0x013542, 0x013578, "EnemyNextState", EnemyNextState},           /* items.c: every item and effect, each frame */
+    {0x01A464, 0x01A4D2, "ObjLobbed", ObjLobbed, CT_SP},         /* objects.c: thirteen enemy handlers (ranges to the next) */
+    {0x01A4D2, 0x01A538, "ObjThrown", ObjThrown, CT_SP},
+    {0x01A538, 0x01A55A, "ObjStanding", ObjStanding, CT_SP},
+    {0x01A55A, 0x01A5B0, "ObjFlying", ObjFlying, CT_SP},
+    {0x01A5B0, 0x01A62C, "ObjWalker", ObjWalker, CT_SP},
+    {0x01A62C, 0x01A678, "ObjCrawler", ObjCrawler, CT_SP},
+    {0x01A678, 0x01A686, "ObjCrawlerStill", ObjCrawlerStill, CT_SP},
+    {0x01A686, 0x01A6EE, "ObjAimed", ObjAimed, CT_SP},
+    {0x01A6EE, 0x01A7B8, "ObjBouncer", ObjBouncer, CT_SP},
+    {0x01A7B8, 0x01A84E, "ObjHopper", ObjHopper, CT_SP},
+    {0x01A84E, 0x01A8BA, "ObjFloater", ObjFloater, CT_SP},
+    {0x01A8BA, 0x01A99A, "ObjColumn", ObjColumn, CT_SP},
+    {0x01A99A, 0x01AA3C, "ObjEdgeCrawler", ObjEdgeCrawler, CT_SP},
     {0x00EE70, 0x00EF12, "PlayerSwordTip", PlayerSwordTip, CT_SP},
     {0x011170, 0x01141A, "MagicStart", MagicStart, CT_SP},       /* magic.c; a potion may carry on at $F288 */
     {0x01141A, 0x0114C0, "MagicFrame", MagicFrame, CT_SP},       /* may carry on at $11590 or $11780 off a pass */

@@ -523,6 +523,7 @@ static int32_t small(int n) { return (int32_t)(rnd() % (unsigned)(2 * n + 1)) - 
 
 /* collision type of the block at pixel (x, y) of layer a3 as entity e sees it, via the hand port */
 void TileAttrAtPixel(Cpu *), TileTypeOf(Cpu *);
+void call_68k(Cpu *, uint32_t);                 /* port/world.c: set up an enemy with the game's code */
 static uint32_t type_at(uint32_t layer, uint32_t e, uint32_t x, uint32_t y)
 {
     Cpu c = {0};
@@ -684,7 +685,8 @@ int hybrid_fuzz(const char *name, long count)
         for (int i = 0; i < 8; i++) m68k_set_reg(M68K_REG_D0 + i, rnd() << 16 ^ rnd());
         m68k_set_reg(M68K_REG_A4, (rnd() & 63) * 4);
         m68k_set_reg(M68K_REG_SR, (m68k_get_reg(NULL, M68K_REG_SR) & ~0x1Fu) | (rnd() & 0x1F));
-        for (uint32_t a = 0xC000; a < 0xE000; a++) ram[a] = (uint8_t)rnd();
+        if (strncmp(name, "Obj", 3))                /* the objects keep the state's entities (below) */
+            for (uint32_t a = 0xC000; a < 0xE000; a++) ram[a] = (uint8_t)rnd();
         for (uint32_t a = 0x8A52; a < 0x8A56; a++) ram[a] = (uint8_t)(rnd() & (k & 1 ? 0xFF : 0));  /* seed 0 half the time */
         if (!strcmp(name, "SetGfxSlots")) {         /* a random valid slot list in scratch RAM */
             uint32_t p = 0x4E00;                    /* restored after every case, so any RAM will do */
@@ -1196,6 +1198,56 @@ int hybrid_fuzz(const char *name, long count)
             }
             uint32_t at = items[rnd() % (unsigned)ni];
             for (int k2 = 0; k2 < 4; k2++) { ram[0xC400 + e + k2] = (uint8_t)(at >> (24 - 8 * k2)); ram[0xC500 + e + k2] = (uint8_t)(script >> (24 - 8 * k2)); }
+        }
+        if (!strncmp(name, "Obj", 3)) {
+            /* one of objects.c's handlers: an enemy slot set up by the game's own routine for one
+             * of the handler's kinds ($12684: animation set, stats), then its fields at the values
+             * each step reads: on the first frame or later, near the player or the screen's edge,
+             * timers near their ends, touched or not, counted at a spawn point or not */
+            static const struct { const char *n; uint16_t kinds[3]; } objs[] = {
+                {"ObjLobbed", {0x208}}, {"ObjThrown", {0x20A, 0x20C, 0x22A}}, {"ObjStanding", {0x226}},
+                {"ObjFlying", {0x214}}, {"ObjWalker", {0x21C}}, {"ObjCrawler", {0x212, 0x21E, 0x230}},
+                {"ObjCrawlerStill", {0x232}}, {"ObjAimed", {0x22C}}, {"ObjBouncer", {0x22E}},
+                {"ObjHopper", {0x802}}, {"ObjFloater", {0x804}}, {"ObjColumn", {0x806}}, {"ObjEdgeCrawler", {0x808}},
+            };
+            uint16_t kind = 0;
+            for (unsigned i = 0; i < sizeof objs / sizeof *objs; i++)
+                if (!strcmp(name, objs[i].n)) { int nk = objs[i].kinds[2] ? 3 : objs[i].kinds[1] ? 2 : 1; kind = objs[i].kinds[rnd() % (unsigned)nk]; }
+            uint32_t e = 0x40 + (rnd() % 16) * 4;
+            m68k_set_reg(M68K_REG_A4, e);
+            for (uint32_t row = 0xC000; row < 0xE000; row += 0x100)          /* every field, at random */
+                for (uint32_t b = 0; b < 4; b++) ram[row + e + b] = (uint8_t)rnd();
+            {   Cpu t = {0}; t.a[2] = t.a[4] = e; t.d[1] = kind; t.a[7] = 0xFFFF4F00u;
+                call_68k(&t, 0x12684); }
+            uint32_t p = (uint32_t)(int32_t)(int16_t)(ram[0x9EEE] << 8 | ram[0x9EEF]);
+            int32_t px = get_sword(0xC800 + p), py = get_sword(0xC900 + p);
+            int32_t cx = get_sword(0x9758), cy = get_sword(0x975A);
+            put_word(0xD402 + e, kind);
+            ram[0xC000 + e] = (uint8_t)(rnd() % 4 ? 0x80 | (rnd() & 0x41) : rnd());
+            ram[0xD401 + e] = (uint8_t)(rnd() % 2 ? 0x80 : 0);
+            ram[0xC002 + e] = (uint8_t)rnd();                                 /* facing, and the rest ($12684 clears it) */
+            {   int where = (int)(rnd() % 4);                               /* by the player, or the screen's edges */
+                int32_t x = where < 2 ? px + small(48) : where == 2 ? cx + (rnd() % 2 ? -40 : 360) + small(24) : cx + (int32_t)(rnd() % 320);
+                int32_t y = where < 2 ? py + small(32) : where == 3 ? cy + (rnd() % 2 ? -40 : 260) + small(24) : cy + (int32_t)(rnd() % 224);
+                put_word(0xC800 + e, (uint32_t)x); put_word(0xC900 + e, (uint32_t)y);
+                put_word(0xD200 + e, (uint32_t)(x + small(4)));                  /* the x before */
+                put_word(0xDF02 + e, (uint32_t)(y + (rnd() % 3 ? small(0x40) : small(4))));   /* home */
+                put_word(0xD302 + e, (uint32_t)((x >> 4) + (rnd() % 2 ? 0 : small(1))));       /* start column */
+            }
+            put_word(0xCA00 + e, (uint32_t)small(0x400)); put_word(0xCA02 + e, (uint32_t)small(0x400));
+            put_word(0xCC00 + e, (uint32_t)small(0x40)); put_word(0xCC02 + e, (uint32_t)small(0x40));
+            put_word(0xCD00 + e, rnd() % 0x400); put_word(0xCD02 + e, rnd() % 0x400);
+            ram[0xD800 + e] = (uint8_t)(rnd() % 3 ? 1 + rnd() % 3 : rnd());   /* timers near their ends */
+            ram[0xD801 + e] = (uint8_t)(rnd() % 3 ? rnd() % 3 : rnd());
+            put_word(0xD802 + e, rnd() % 2 ? 0 : rnd() % 3 ? rnd() % 0x20 : rnd());
+            ram[0xD503 + e] = (uint8_t)(rnd() % 2 ? 0 : rnd());               /* touched */
+            ram[0xCF00 + e] = (uint8_t)(rnd() % 2 ? 0 : rnd());               /* collisions */
+            ram[0xCE00 + e] = (uint8_t)(rnd() % 2 ? 0 : rnd() & 7);           /* NO_COUNT and the despawn test */
+            ram[0xC600 + e] = (uint8_t)(rnd() % 2 ? 0 : rnd());               /* the animation busy */
+            put_word(0xD500 + e, rnd() % 3 ? (rnd() % 16) * 4 : 0x8000 | rnd());   /* its spawn point */
+            put_word(0xA11C, rnd() % 2 ? p : 0x40 + (rnd() % 16) * 4);
+            ram[0xA10E] = (uint8_t)(rnd() % 4);
+            if (rnd() % 8 == 0) ram[0x966B] ^= 0x20;
         }
         uint32_t sp = m68k_get_reg(NULL, M68K_REG_SP) - 4;
         bus_write16(sp, 0x0000); bus_write16(sp + 2, 0x0200);   /* return to an address the check recognises */
