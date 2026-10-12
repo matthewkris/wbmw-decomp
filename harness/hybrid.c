@@ -1418,6 +1418,25 @@ int hybrid_fuzz(const char *name, long count)
                     }
                     if (rnd() % 2) ram[0xD803 + e] = ram[0xD802 + e];             /* turned to its heading */
                 }
+                if (!strcmp(name, "Act1A026")) {                                  /* turned or not; holding its shot */
+                    ram[0xCE01 + e] = (uint8_t)(rnd() % 2);
+                    if (rnd() % 2) ram[0xD803 + e] = ram[0xD802 + e];
+                    if (rnd() % 2) put_word(0xD302 + e, rnd() % 2 ? 0xFF00 | rnd() : 0x40 + (rnd() % 16) * 4);
+                }
+                if (!strcmp(name, "Act1A266")) {                                  /* the last puffs */
+                    if (rnd() % 2) ram[0xD800 + e] = 1;
+                    if (rnd() % 2) ram[0xD801 + e] = (uint8_t)(rnd() % 3);
+                }
+                if (!strcmp(name, "Act1A2E2") || !strcmp(name, "Act1A3E4")) {    /* the last boss: its form, its whiles */
+                    uint32_t n = (uint32_t)(ram[0xA142] << 8 | ram[0xA143]), i;  /* its piece ($80C) in the room's list */
+                    for (i = 0; i < n && i < 8; i++) if ((ram[0xA122 + 4 * i] << 8 | ram[0xA123 + 4 * i]) == 0x80C) break;
+                    if (i == n || i == 8) { i = n < 8 ? n : 7; put_word(0xA122 + 4 * i, 0x80C); if (n < 8) put_word(0xA142, n + 1); }
+                    ram[0xCE01 + e] = (uint8_t)(rnd() % 2);
+                    if (rnd() % 2) ram[0xD801 + e] = (uint8_t)(rnd() % 2);
+                    if (rnd() % 2) ram[0xD800 + e] = 1;
+                    ram[0x99DE] = (uint8_t)rnd(); ram[0x99FA] = (uint8_t)rnd();
+                    if (rnd() % 2) ram[0xC302 + e] = 2;                             /* its animation already 2 */
+                }
                 if (!strcmp(name, "Act1916A")) {                                  /* falling, lying, rising */
                     ram[0xCE01 + e] = (uint8_t)(rnd() % 3);
                     if (rnd() % 2) ram[0xD800 + e] = 1;
