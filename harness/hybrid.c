@@ -1047,6 +1047,13 @@ int hybrid_fuzz(const char *name, long count)
                 if (rnd() % 2) ram[0x9F11] = as;
             }
         }
+        if (!strcmp(name, "EnemyNextState")) {      /* a monster with a pending state or none, any variant */
+            uint32_t e = 0x40 + (rnd() % 16) * 4;
+            m68k_set_reg(M68K_REG_A4, e);
+            ram[0xDE00 + e] = (uint8_t)(rnd() % 2 ? 0xFF : rnd() % 9);          /* -$2200 */
+            ram[0xDA03 + e] = (uint8_t)(rnd() % 4 ? rnd() % 24 : rnd());        /* -$25FD */
+            ram[0xD401 + e] = (uint8_t)(rnd() % 9 | (rnd() % 2 ? 0x80 : 0));    /* -$2BFF */
+        }
         if (!strcmp(name, "RunItems")) {
             /* the item slots: kinds of the table at every step, begun or not, near the player,
              * timers near their ends; the attacker ($9F30) and its spark state */

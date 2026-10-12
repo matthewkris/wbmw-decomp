@@ -692,6 +692,26 @@ Checked like the others: 0 mismatches, every instruction of these routines run (
 $8666 and $875C belong to the status screen), the self-test caught, and replace mode matches
 in casting runs that redraw the bar.
 
+#### The enemies: the framework (2026-10-11)
+
+`port/enemies.c`. Each frame `RunEnemies` ($133B2) runs the spawn points ($12A70, still the
+original's) and then the sixteen enemy slots from `$FFA11A`: a slot's kind (group in the high
+byte, 0-8; bit 7 skips it) picks one of 35 handlers through the tables at $13418 and $13422
+(while `$FF9659` bit 3 is set only groups above 2 run). Group 0's ordinary monsters go through
+`EnemyDispatch` ($13582): a state machine of 9 states, where the monster's kind and state pick
+an action routine (the tables at $13B70 and $13DA4); `EnemySetState` ($1357E) sets the state
+first, and `EnemyNextState` ($13542) moves to a pending state or the next one for the monster's
+variant (the table at $13FD2).
+
+The handlers and actions are still the original's code, called on the caller's registers as in
+the original. With the dispatchers in C the translator no longer sees their jump tables, so
+their 170 targets are listed in `"seen"` in `analysis/translate.json` (computed from the
+tables in the ROM).
+
+The rest of the enemies, in order: the spawn points; the small handlers (about 20, under 70
+instructions each); the medium ones; the large ones and the monsters' action routines
+($14000-$1A000).
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

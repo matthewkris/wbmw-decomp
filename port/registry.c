@@ -19,6 +19,7 @@ void PlayerState(Cpu *), PlayerStartFrame(Cpu *), PlayerInput(Cpu *), PlayerBoun
 void TaskCallSystem(Cpu *), TaskCallUser(Cpu *);
 void Cosine(Cpu *), Sine(Cpu *), VelocityAt(Cpu *), VelocityAtCoarse(Cpu *), Direction16To(Cpu *), Direction16(Cpu *), DirectionTo(Cpu *), Direction(Cpu *), SetVelocityAt(Cpu *), VelocityTo(Cpu *), SetVelocityToCoarse(Cpu *), SetVelocityAtCoarse(Cpu *), VelocityToCoarse(Cpu *), Distance(Cpu *);   /* maths.c: exact */
 void RunItems(Cpu *);   /* items.c */
+void RunEnemies(Cpu *), EnemyDispatch(Cpu *), EnemySetState(Cpu *), EnemyNextState(Cpu *);   /* enemies.c */
 void MagicUsed(Cpu *), SlotEmptied(Cpu *), MagicMeter(Cpu *), HudRedraw(Cpu *), GoldDisplay(Cpu *);   /* hud.c */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
      FindFreeEffect(Cpu *), CheckGrounded(Cpu *);
@@ -150,7 +151,11 @@ const PortRoutine port_routines[] = {
     {0x0085A8, 0x0085CC, "GoldDisplay", GoldDisplay, CT_SP},   /* hud.c: leaves a4 the player */
     {0x01090C, 0x010910, "SpawnItem", SpawnItem},                 /* effects.c: every register as the original */
     {0x010910, 0x010A1E, "SpawnItemAt", SpawnItemAt},
-    {0x010A1E, 0x011094, "RunItems", RunItems, CT_SP},           /* items.c: every item and effect, each frame */
+    {0x010A1E, 0x011094, "RunItems", RunItems, CT_SP},
+    {0x0133B2, 0x013418, "RunEnemies", RunEnemies, CT_SP},       /* enemies.c: every enemy, each frame */
+    {0x013582, 0x0135AE, "EnemyDispatch", EnemyDispatch},         /* the monsters' state machine: carries on at the action */
+    {0x01357E, 0x013582, "EnemySetState", EnemySetState},
+    {0x013542, 0x013578, "EnemyNextState", EnemyNextState},           /* items.c: every item and effect, each frame */
     {0x00EE70, 0x00EF12, "PlayerSwordTip", PlayerSwordTip, CT_SP},
     {0x011170, 0x01141A, "MagicStart", MagicStart, CT_SP},       /* magic.c; a potion may carry on at $F288 */
     {0x01141A, 0x0114C0, "MagicFrame", MagicFrame, CT_SP},       /* may carry on at $11590 or $11780 off a pass */
