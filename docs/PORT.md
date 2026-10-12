@@ -708,7 +708,25 @@ the original. With the dispatchers in C the translator no longer sees their jump
 their 170 targets are listed in `"seen"` in `analysis/translate.json` (computed from the
 tables in the ROM).
 
-The rest of the enemies, in order: the spawn points; the small handlers (about 20, under 70
+The spawn points (`port/spawns.c`, `RunSpawnPoints`, $12A70-$133B1): sixteen points per room
+(`$FFA15C` + 4n), each run by its kind: triggered single spawns, reloading ones, ones that wait
+for the last enemy to be beaten, a row near the player, an item unless its game flag is set,
+placed and turned enemies, the room's chests, a guardian with three companions, spawns from a
+map block, a scripted boss room in six phases, groups from a list of offsets, waves from a
+list of positions, and one enemy when the player comes near. A point counts what it made,
+what was beaten and what was lost off the screen, and stops at its maximum. Four periodic
+timers (`$FFA14C`) trigger the timed ones. Where the original loops forever (a guaranteed
+spawn with no free slot) the C stops with a message.
+
+Checked: the standard runs and owner states, and 20,000 fuzz cases from each of seven states
+with synthetic spawn points of the kinds that need no level data (enemy kinds from the room's
+loaded list at `$FFA122`: any other kind makes the original loop forever), placed on the
+screen, just off it and far. 0 mismatches. Not yet reached, because they need their rooms'
+data: the guardian (kind 8, $12DCE), spawns from a map block (11, $12E66), the scripted boss
+room (12, $12EE4), waves (14, $131CC) and three instructions of the chests (6). Save states in
+those rooms will cover them.
+
+The rest of the enemies, in order: the small handlers (about 20, under 70
 instructions each); the medium ones; the large ones and the monsters' action routines
 ($14000-$1A000).
 

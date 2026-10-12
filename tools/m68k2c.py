@@ -81,7 +81,7 @@ if CONFIG.get('hand_ports', True) is False: HAND = {}
 
 # what the rewritten C calls in code not rewritten yet (call_68k and its wrappers, or hands over
 # to with port_continue_at) must be an entry, even when no generated code calls it any more
-C_CALL = re.compile(r'\b(?:call_68k|with_player|call_with_d0|with_entity|call_at|call_d0|port_continue_at)\s*\([^;]*?\b0x([0-9A-Fa-f]{3,6})\b')
+C_CALL = re.compile(r'\b(?:call_68k|with_player|call_with_d0|with_entity|call_at|call_d0|call|port_continue_at)\s*\([^;]*?\b0x([0-9A-Fa-f]{3,6})\b')
 for name in sorted(os.listdir(os.path.join(os.path.dirname(__file__), '..', 'port'))):
     if name.endswith('.c'):
         for line in open(os.path.join(os.path.dirname(__file__), '..', 'port', name), encoding='utf-8'):

@@ -19,6 +19,7 @@ void PlayerState(Cpu *), PlayerStartFrame(Cpu *), PlayerInput(Cpu *), PlayerBoun
 void TaskCallSystem(Cpu *), TaskCallUser(Cpu *);
 void Cosine(Cpu *), Sine(Cpu *), VelocityAt(Cpu *), VelocityAtCoarse(Cpu *), Direction16To(Cpu *), Direction16(Cpu *), DirectionTo(Cpu *), Direction(Cpu *), SetVelocityAt(Cpu *), VelocityTo(Cpu *), SetVelocityToCoarse(Cpu *), SetVelocityAtCoarse(Cpu *), VelocityToCoarse(Cpu *), Distance(Cpu *);   /* maths.c: exact */
 void RunItems(Cpu *);   /* items.c */
+void RunSpawnPoints(Cpu *);   /* spawns.c */
 void RunEnemies(Cpu *), EnemyDispatch(Cpu *), EnemySetState(Cpu *), EnemyNextState(Cpu *);   /* enemies.c */
 void MagicUsed(Cpu *), SlotEmptied(Cpu *), MagicMeter(Cpu *), HudRedraw(Cpu *), GoldDisplay(Cpu *);   /* hud.c */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
@@ -152,6 +153,7 @@ const PortRoutine port_routines[] = {
     {0x01090C, 0x010910, "SpawnItem", SpawnItem},                 /* effects.c: every register as the original */
     {0x010910, 0x010A1E, "SpawnItemAt", SpawnItemAt},
     {0x010A1E, 0x011094, "RunItems", RunItems, CT_SP},
+    {0x012A70, 0x0133B2, "RunSpawnPoints", RunSpawnPoints, CT_SP}, /* spawns.c: with its kinds and helpers */
     {0x0133B2, 0x013418, "RunEnemies", RunEnemies, CT_SP},       /* enemies.c: every enemy, each frame */
     {0x013582, 0x0135AE, "EnemyDispatch", EnemyDispatch},         /* the monsters' state machine: carries on at the action */
     {0x01357E, 0x013582, "EnemySetState", EnemySetState},
