@@ -292,6 +292,8 @@
 #define MOUNT_TOUCH       0x1839Cu  /* the mount takes its health; the player against it */
 #define MOUNT_GROUNDED    0x183BAu  /* a2 the mount; z: on the ground (COLL & 10 is 2) */
 #define SHAKE_SCREEN      0x183D4u  /* the screen shaken ($9738), sound 57 */
+#define RUN_VEL           0x19434u  /* VEL by its heading (TIMER), doubled when TIMER2 */
+#define RUN_LOOK          0x19468u  /* facing and animation by its heading */
 #define ENEMY_MAX_HEALTH  0x4928u   /* d0: its kind's health */
 #define HEALTH(e)     ((e) - 0x2600)   /* word */
 #define RIDE_ANIM         0x18A24u  /* the beast's animation d0 */
@@ -4722,6 +4724,167 @@ static void a1916A(Ent e)
     new_state(0);
 }
 
+/* ---- a hoverer that drops its young, and a creature that runs round the room (batch 25) ---- */
+
+/* $19214: a new heading: high one time in 16 (PHASE), and towards the player unless within $20
+ * (TIMER: 0 still, 1 right, $FF left); a random while */
+static void hover_pick(Ent e)
+{
+    call(RANDOM);
+    set_d0w(c->d[0] & 0xF);
+    e = c->a[4];
+    wr8(PHASE(e), (c->d[0] & 0xF) ? 0 : 0xFF);
+    c->a[0] = (uint32_t)(int32_t)(int16_t)rdw(TARGET_W);
+    uint16_t d = (uint16_t)(rdw(X(c->a[0])) - rdw(X(e)));
+    set_d0w(d);
+    c->d[1] = set_b(c->d[1], (int16_t)d < 0 ? 0xFF : 0);
+    if (d < 0x20) c->d[1] = 0;
+    else c->d[1] = set_b(c->d[1], (uint8_t)(2 * c->d[1] + 1));
+    wr8(TIMER(e), (uint8_t)c->d[1]);
+    call(RANDOM_DELAY);
+}
+
+/* hovers about a height ($1032, or $1070 when high), drifting at the player, and every $50
+ * frames or so drops a young one (kind $80A) */
+static void a19200(Ent e)
+{
+    if (begins(e)) {
+        wrw(SPEED_Y(e), 0x100);
+        call_d0(SET_ANIM, 18);
+        hover_pick(c->a[4]);
+        return;
+    }
+    c->d[0] = 32;
+    int8_t t = (int8_t)rd8(TIMER(e));
+    if (!t) call(FRICTION_X);
+    else {
+        if (t < 0) set_d0w(-32);
+        wrw(ACCEL_X(e), (uint16_t)c->d[0]);
+        call(ACCEL_X_);
+        call(FACE_VELOCITY);
+    }
+    e = c->a[4];
+    set_d0w(rd8(PHASE(e)) ? 0x1070 : 0x1032);
+    if ((int16_t)rdw(VEL_Y(e)) < 0) set_d0w(c->d[0] - 4);
+    c->d[1] = 32;
+    if ((uint16_t)c->d[0] < (uint16_t)rdw(Y(e))) {
+        wr8(PHASE(e), 0);
+        c->d[1] = set_w(c->d[1], (uint16_t)-32);
+    }
+    wrw(GRAVITY(e), (uint16_t)c->d[1]);
+    call(FALL_AND_MOVE);
+    call(PLAYER_CONTACT_ALL);
+    if (hit()) return;
+    e = c->a[4];
+    if (rd8(PHASE(e))) return;
+    wr8(TIMER2(e), (uint8_t)(rd8(TIMER2(e)) - 1));
+    if (!rd8(TIMER2(e))) { hover_pick(e); return; }
+    c->d[0] = 79 & rdw(0xFFFF965Au);
+    if (c->d[0]) return;
+    call(FIND_FREE_ENTITY);
+    if (c->ccr & CC_N) return;
+    e = c->a[4];
+    c->d[0] = 0xFFFFFFFFu;
+    c->d[1] = set_w(c->d[1], 0x80A);
+    c->d[6] = set_w(c->d[6], rdw(X(e)));
+    c->d[7] = set_w(c->d[7], rdw(Y(e)));
+    call(SPAWN_KIND);
+}
+
+/* shows its DELAY animation; when it ends, still, on to DELAY's second byte */
+static void a192C8(Ent e)
+{
+    if (begins(e)) {
+        c->d[0] = set_b(c->d[0], rd8(DELAY(e)));
+        call(SET_ANIM);
+        return;
+    }
+    if (rd8(ANIM_BUSY(e))) return;
+    wr32(VEL(e), 0);
+    c->d[0] = set_b(c->d[0], rd8(DELAY(e) + 1));
+    new_state(0);
+}
+
+/* falls; landed, it runs round the inside of the room ($1010-$1090 high, up to x $1170), TIMER its
+ * heading (0-7: right, down, left, up, the second four at double speed, $19434/$19468), turning at
+ * each corner ($193CA) or, after WORD_31FE frames, back the way it came ($1942C); TIMER2 its
+ * speed; VAR counts its turns on the floor and ceiling: 256 of them and it starts over */
+static void a192EC(Ent e)
+{
+    if (begins(e)) {
+        wr8(PHASE(e), 0);
+        wr8(VAR(e), 0);
+        wrw(GRAVITY(e), 0x40);
+        wrw(SPEED_Y(e), 0x800);
+        clr8(ATTR(e), 0x10);
+        call_d0(SET_ANIM, 24);
+        return;
+    }
+    if (!rd8(PHASE(e))) {
+        call(FALL_AND_MOVE);
+        call(PLAYER_CONTACT_ALL);
+        if (hit()) return;
+        call(CHECK_GROUNDED);
+        if (!(c->ccr & CC_Z)) return;
+        e = c->a[4];
+        wr8(PHASE(e), (uint8_t)(rd8(PHASE(e)) + 1));
+        wrw(ANIM_STEP(e), 0x200);
+        call(RANDOM);
+        c->d[0] = set_b(c->d[0], c->d[0] & 4);
+        if (c->d[0] & 0xFF) c->d[0] = 6;
+        e = c->a[4];
+        wr8(TIMER(e), (uint8_t)c->d[0]);
+        wr8(TIMER2(e), 0xFF);
+        wrw(WORD_31FE(e), 0x8C);
+        call(RUN_LOOK);
+        call(RUN_VEL);
+        return;
+    }
+    call(APPLY_VEL);
+    call(PLAYER_CONTACT_ALL);
+    if (hit()) return;                              /* (its bpl after: always taken) */
+    e = c->a[4];
+    c->d[0] = rd8(TIMER(e)) * 2;
+    c->a[0] = 0x1949Au + (uint32_t)(int32_t)(int16_t)rdw(0x1949Au + c->d[0]);
+    uint16_t x = (uint16_t)rdw(X(e)), y = (uint16_t)rdw(Y(e));
+    int corner = 0, horiz = 0;
+    switch ((c->d[0] >> 1) & 3) {
+    case 0: set_d0w(0x1170); corner = !(0x1170 > x); horiz = 1; break;
+    case 1: set_d0w(0x1010); corner = !(0x1010 <= y); break;
+    case 2: set_d0w(0x1090); corner = !(0x1090 <= x); horiz = 1; break;
+    default: set_d0w(0x1080); corner = !(0x1080 > y); break;
+    }
+    if (corner) {                                   /* at a wall: put on it, the next heading */
+        wrw(horiz ? X(e) : Y(e), (uint16_t)c->d[0]);
+        c->d[0] = rd8(TIMER(e));
+        wr8(TIMER(e), rd8(0x193CAu + c->d[0]));
+    } else {
+        wrw(WORD_31FE(e), (uint16_t)(rdw(WORD_31FE(e)) - 1));
+        if (!rdw(WORD_31FE(e))) {                   /* back the way it came, slow, a new while */
+            c->d[0] = 0;
+            wr8(TIMER2(e), 0);
+            c->d[0] = rd8(TIMER(e));
+            wr8(TIMER(e), rd8(0x1942Cu + c->d[0]));
+            call(RANDOM);
+            set_d0w(c->d[0] & 0x7F);
+            if ((c->d[0] & 0xFF) < 0x10) set_d0w(c->d[0] + 0xC0);
+            set_d0w(c->d[0] + 0x10);
+            wrw(WORD_31FE(c->a[4]), (uint16_t)c->d[0]);
+        }
+    }
+    call(RUN_VEL);
+    call(RUN_LOOK);
+    e = c->a[4];
+    c->d[0] = set_b(c->d[0], rd8(TIMER(e)));
+    if (c->d[0] & 1) { c->d[0] = set_b(c->d[0], (c->d[0] & 0xFF) >> 1); return; }
+    uint8_t h = (uint8_t)((((c->d[0] & 0xFF) >> 1) - 1) & 3);
+    c->d[0] = set_b(c->d[0], (uint8_t)(h - 2));
+    if (h >= 2) { wr8(VAR(e), 0); return; }
+    wr8(VAR(e), (uint8_t)(rd8(VAR(e)) + 1));
+    if (rd8(VAR(e))) return;
+    clr8(STEP(e), 0x80);
+}
+
 /* the actions, registered by their addresses (registry.c). call_68k leaves its mark in ret: it
  * is cleared unless the action went on elsewhere */
 #define ACTION(addr) void Act##addr(Cpu *cpu) { c = cpu; went_on = 0; a##addr((Ent)c->a[4]); if (!went_on) c->ret = 0; }
@@ -4748,3 +4911,4 @@ ACTION(183E0) ACTION(184C4) ACTION(18584) ACTION(185EC)
 ACTION(186D6) ACTION(18710) ACTION(187AC) ACTION(18ADE)
 ACTION(18BBE) ACTION(18E3A) ACTION(18F62) ACTION(18FC2)
 ACTION(19026) ACTION(190C8) ACTION(190E4) ACTION(19102) ACTION(1916A)
+ACTION(19200) ACTION(192C8) ACTION(192EC)

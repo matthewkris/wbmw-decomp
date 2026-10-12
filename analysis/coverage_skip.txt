@@ -5,3 +5,6 @@
 018DBE
 018DC0
 018DC6
+019368  # $192EC: after EnemyCheckHit (which leaves past the action when hit) its bpl is always taken
+01936E
+019370
