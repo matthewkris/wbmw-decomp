@@ -124,3 +124,86 @@ void Accel(Cpu *c)
     AccelX(c);
     AccelY(c);
 }
+
+/* ClearEntityAnim ($A20): the velocity, the position fractions and the sprite word cleared, the
+ * camera and tile base cleared, the animation step $100. Out: d0 = 0; flags from the last move
+ * (#$100: neither N nor Z). */
+void ClearEntityAnim(Cpu *c)
+{
+    stack_residue(c, 0xA24);                        /* jsr $C1C */
+    wr32(F(c, -0x3600), 0);
+    wr16(F(c, -0x37FE), 0);
+    wr16(F(c, -0x36FE), 0);
+    wr16(F(c, -0x3FFE), 0);
+    wr32(F(c, -0x3E00), 0);
+    wr16(F(c, -0x39FE), 0x100);
+    c->d[0] = 0;
+    c->ccr = cc_move_w(c->ccr, 0x100);
+}
+
+/* ClearEntity ($A36): ClearEntityAnim, then the entity's state cleared (flags, collision,
+ * attack, hit boxes, timers). Out: d0 = 0, Z set. */
+void ClearEntity(Cpu *c)
+{
+    stack_residue(c, 0xA38);
+    c->a[7] -= 4; ClearEntityAnim(c); c->a[7] += 4;
+    static const int16_t words[] = {-0x3FFE, -0x2C00, -0x21FE};
+    static const int16_t longs[] = {-0x3200, -0x3100, -0x3000, -0x2F00, -0x2B00, -0x2A00, -0x2900, -0x2800};
+    for (int i = 0; i < 3; i++) wr16(F(c, words[i]), 0);
+    for (int i = 0; i < 8; i++) wr32(F(c, longs[i]), 0);
+    c->ccr = cc_move_l(c->ccr, 0);
+}
+
+/* FreezeEntities ($A66) / UnfreezeEntities ($A8E): every entity in use (bit 7) stopped (bit 5
+ * set; bit 4 remembers whether it was already) or let go again. a4 ends at $100, d1.w at $FFFF;
+ * d0 and the flags are the last byte handled. */
+static void freeze_all(Cpu *c, int freeze)
+{
+    uint32_t d0 = c->d[0];
+    uint16_t cc = c->ccr;
+    for (uint32_t e = 0; e < 0x100; e += 4) {
+        uint32_t a = ea(e, -0x4000);
+        uint8_t f = rd8(a);
+        d0 = set_b(d0, f);
+        cc = tst_b(cc, f);
+        if (!(f & 0x80)) continue;
+        if (freeze) f = (f & 0x20) ? (uint8_t)(f | 0x30) : (uint8_t)((f | 0x20) & ~0x10);
+        else f = (f & 0x10) ? (uint8_t)((f & ~0x30) | 0x20) : (uint8_t)(f & ~0x30);
+        d0 = set_b(d0, f);
+        wr8(a, f);
+        cc = (uint16_t)((cc & CC_X) | (f & 0x80 ? CC_N : 0) | (f ? 0 : CC_Z));
+    }
+    c->d[0] = d0;
+    c->d[1] = 0x0000FFFFu;
+    c->a[4] = 0x100;
+    c->ccr = cc;
+}
+void FreezeEntities(Cpu *c)   { freeze_all(c, 1); }
+void UnfreezeEntities(Cpu *c) { freeze_all(c, 0); }
+
+/* FindFreeEffect ($27E6): a4 = the first of the slots $E0-$FC not in use (N clear), or the
+ * last one with N set; d0.w = how many slots were left after it ($FFFF: none). */
+void FindFreeEffect(Cpu *c)
+{
+    uint32_t e = 0xE0, n = 7;
+    for (;;) {
+        uint8_t f = rd8(ea(e, -0x4000));
+        c->ccr = tst_b(c->ccr, f);
+        c->ccr &= (uint16_t)~(CC_V | CC_C);
+        if (!(f & 0x80)) break;
+        n = (n - 1) & 0xFFFF;
+        if (n == 0xFFFF) break;
+        e += 4;
+    }
+    c->d[0] = n;                                    /* moveq #7 cleared the upper word */
+    c->a[4] = e;
+}
+
+/* CheckGrounded ($4362): Z set if on the ground (collision bit 1 without bit 3); d0 =
+ * (collision & $A) - 2, as a byte */
+void CheckGrounded(Cpu *c)
+{
+    uint16_t cc = c->ccr;
+    c->d[0] = sub_b(&cc, 2, rd8(F(c, -0x3100)) & 0xA);
+    c->ccr = cc;
+}

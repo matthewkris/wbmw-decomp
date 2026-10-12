@@ -17,6 +17,9 @@ void PlayerState(Cpu *), PlayerStartFrame(Cpu *), PlayerInput(Cpu *), PlayerBoun
      PlayerAnimate(Cpu *), PlayerSword(Cpu *), PlayerSpecial(Cpu *),
      PlayerDamage(Cpu *), PlayerGold(Cpu *), PlayerItem(Cpu *), PlayerHeart(Cpu *), PlayerUpdate(Cpu *);
 void TaskCallSystem(Cpu *), TaskCallUser(Cpu *);
+void RunItems(Cpu *);   /* items.c */
+void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
+     FindFreeEffect(Cpu *), CheckGrounded(Cpu *);
 void Hearts(Cpu *), SpawnItem(Cpu *), SpawnItemAt(Cpu *), PlayerSwordTip(Cpu *);   /* hud.c, effects.c, player.c */
 void MagicStart(Cpu *), MagicFrame(Cpu *), MagicShieldHit(Cpu *),   /* magic.c */
      QuakeShaking(Cpu *), QuakeRocks(Cpu *), QuakeSettling(Cpu *), QuakeEnding(Cpu *), ThunderFlashes(Cpu *);   /* task.c: task passes on coroutines */
@@ -39,6 +42,12 @@ const PortRoutine port_routines[] = {
     {0x000AB4, 0x000AB8, "ApplyVelocity", ApplyVelocity},
     {0x000AB8, 0x000AD6, "ApplyVelX", ApplyVelX},
     {0x000AD6, 0x000AF4, "ApplyVelY", ApplyVelY},
+    {0x000A20, 0x000A36, "ClearEntityAnim", ClearEntityAnim},
+    {0x000A36, 0x000A66, "ClearEntity", ClearEntity},
+    {0x000A66, 0x000A8E, "FreezeEntities", FreezeEntities},
+    {0x000A8E, 0x000AB4, "UnfreezeEntities", UnfreezeEntities},
+    {0x0027E6, 0x0027FA, "FindFreeEffect", FindFreeEffect},
+    {0x004362, 0x00436C, "CheckGrounded", CheckGrounded},
     {0x000B92, 0x000BAC, "FrictionX", FrictionX},
     {0x000BAC, 0x000BC6, "FrictionY", FrictionY},
     {0x000AF4, 0x000B42, "AccelX", AccelX},
@@ -120,6 +129,7 @@ const PortRoutine port_routines[] = {
     {0x008AA2, 0x008B62, "Hearts", Hearts, CT_SP | CT_A0 << 4},   /* hud.c: leaves a4 the player */
     {0x01090C, 0x010910, "SpawnItem", SpawnItem},                 /* effects.c: every register as the original */
     {0x010910, 0x010A1E, "SpawnItemAt", SpawnItemAt},
+    {0x010A1E, 0x011094, "RunItems", RunItems, CT_SP},           /* items.c: every item and effect, each frame */
     {0x00EE70, 0x00EF12, "PlayerSwordTip", PlayerSwordTip, CT_SP},
     {0x011170, 0x01141A, "MagicStart", MagicStart, CT_SP},       /* magic.c; a potion may carry on at $F288 */
     {0x01141A, 0x0114C0, "MagicFrame", MagicFrame, CT_SP},       /* may carry on at $11590 or $11780 off a pass */

@@ -626,6 +626,40 @@ script, fills the item slots with kinds of every priority), every instruction co
 self-test caught in every case, and in replace mode a run casting power and swinging the sword
 from `castle.state` matches the original in every game frame.
 
+#### Items and effects each frame (2026-10-11)
+
+`port/items.c`, `RunItems` ($10A1E-$11093): each of the sixteen item slots by its kind.
+
+* Group 0, the pickups, in four steps: appear (a dropped one keeps the speed it was given),
+  pop up and fall back to where it started, then settle (gold $00-$0A rolls off, bouncing lower
+  each time; gold $0C-$16 and the heart and items $18-$1C lie still), blink for 60 frames after
+  240, and vanish in a puff. Touching the player hands the kind over in `$FF9F78` for the
+  player's frame ($F1B0).
+* Group 2, the effects: a splash or puff ($200, $202), a rising bubble ($204, $210) that pops
+  when it leaves the water and drifts with currents, block debris ($206-$20C), the hit spark of
+  `$FF9F30`'s attack ($20E, hurting the enemies it touches), a broken block's remains ($212,
+  which writes map block $296), a pickup flying to the player ($214), a sparkle ($216).
+
+The routines it calls read registers the calls before them left (a2 for `BodyOverlap`, a3 for
+the probes), and the original carries registers from one item to the next, so the C runs those
+calls on the caller's own registers, as the original does, and sets the registers the original
+sets where a callee reads them. The hit spark's loop over the enemies counts with d5 and a2,
+since `CheckBodyContact` could change them.
+
+Also in this batch:
+
+* The big items ($B42A, in `port/effects.c`): kinds $1000 and up go in the slots $E0-$FC, one
+  at a time (the timer `$FF9962` = 9 keeps out the next). A heart container once the maximum is
+  14 hearts, or the revival item when the player has one, becomes kind $1A instead.
+* Exact kernel helpers in `port/entity.c` (no contract: every register and flag compared):
+  `ClearEntityAnim` ($A20), `ClearEntity` ($A36), `FreezeEntities` ($A66),
+  `UnfreezeEntities` ($A8E), `FindFreeEffect` ($27E6), `CheckGrounded` ($4362).
+* The player's splash ($DD7C) now runs the spawner on its caller's registers: an item calls
+  the splash and then tests "touching the player?" with the a2 the spawner left (the kinds'
+  table, not the player), and the C must leave the same a2.
+* Fuzzing items needs real animation sets (from the kinds' table): with a random one the
+  animation interpreter loops forever.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

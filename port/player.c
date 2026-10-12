@@ -810,20 +810,26 @@ static void splash(Ent e)
 {
     if (rd8(AREA_FLAGS) & 1) return;                /* an area all under water */
     uint16_t here = rd16(TILE_HERE);
-    int16_t y;
+    Cpu *c = cpu;
     if (here == WATER || here == 0x5000) {
         if (rd8(MODE(e)) & 0x80) return;
         set8(MODE(e), 0x80);
         queue_sound(0x47);
-        y = rdw(Y(e));
+        c->d[2] = (c->d[2] & 0xFFFF0000u) | (uint16_t)rdw(Y(e));
     } else {
         uint16_t below = rd16(TILE_BELOW);
         if (below == WATER || below == 0x5000) return;
         if (!(rd8(MODE(e)) & 0x80)) return;
         clr8(MODE(e), 0x80);
-        y = (int16_t)(rd8(HALF_H(e)) + rdw(Y(e)));
+        c->d[2] = (uint16_t)(rd8(HALF_H(e)) + rdw(Y(e)));
     }
-    spawn_effect(e, 0x202, rdw(X(e)), (int16_t)((y - 8) & 0xFFF0));
+    /* the spawner runs on the caller's registers, as in the original: items ($10A1E) call
+     * this and then use the a2 the spawner leaves (the kinds' table), not the player */
+    c->d[2] = (c->d[2] & 0xFFFF0000u) | (uint16_t)((c->d[2] - 8) & 0xFFF0);
+    c->d[0] = (c->d[0] & 0xFFFF0000u) | 0x202;
+    c->d[1] = (c->d[1] & 0xFFFF0000u) | (uint16_t)rdw(X(e));
+    c->a[4] = e;
+    SpawnItemAt(c);
 }
 
 /* $DDDE: under water, a bubble every 120 frames (sooner while moving fast); hurt, a burst */

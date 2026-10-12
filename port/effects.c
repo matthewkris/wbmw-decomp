@@ -57,17 +57,77 @@ static int32_t slot_for(Cpu *c, uint16_t kind)
 
 /* $1090C / $10910: a new item of kind d0 at d1, d2 (SpawnItemAt: a4 its parent). Out: a0 the
  * item, d3 0 and Z set; or d3 -1 and N set if there was no room. */
+static void place(Cpu *c);
+static void big_item(Cpu *c);
+
 static void spawn(Cpu *c, int at)
 {
-    uint8_t flags = at ? rd8(MOVE_FLAGS(c->a[4])) & 0x80 : 0;
-    c->d[6] = at ? 0xFFFFFF00u | flags : 0;
-    uint16_t kind = (uint16_t)c->d[0];
-    if (kind >= 0x1000) {                           /* a big item */
-        Cpu t = *c;
-        call_68k(&t, 0xB42A);
-        t.ret = c->ret; *c = t;
+    c->d[6] = at ? 0xFFFFFF00u | (rd8(MOVE_FLAGS(c->a[4])) & 0x80) : 0;
+    if ((uint16_t)c->d[0] >= 0x1000) big_item(c);
+    else place(c);
+}
+
+/* the 68000's movem.w back into a register: the word, sign-extended */
+static uint32_t sext(uint32_t v) { return (uint32_t)(int32_t)(int16_t)v; }
+
+/* $B42A: a big item (kinds $1000 and up) goes in the eight slots $E0-$FC, one at a time (it
+ * sets the timer $FF9962 to 9; while that runs there is no other). A heart container ($40)
+ * once the maximum is 14 hearts, and the revival item ($2A) when the player has it already,
+ * become kind $1A (a small pickup) instead. Out: d0 0 and Z set if placed, N set if not. */
+static void big_item(Cpu *c)
+{
+    uint8_t k = (uint8_t)c->d[0];
+    int check = k == 0x2A;
+    if (k == 0x40 && rd16(0xFFFF9F00u) >= 0xE00) { c->d[0] = (c->d[0] & 0xFFFF0000u) | 0x102A; check = 1; }
+    if (check) {
+        uint32_t d0 = c->d[0], d1 = c->d[1], d2 = c->d[2], d6 = c->d[6];
+        call_68k(c, 0x23E4);                        /* has the item? (Z clear if so) */
+        c->d[0] = sext(d0); c->d[1] = sext(d1); c->d[2] = sext(d2); c->d[6] = sext(d6);
+        if (!(c->ccr & CC_Z)) {
+            c->d[0] = 0x1A;
+            place(c);
+            c->ret = 0;
+            return;
+        }
+    }
+    c->ret = 0;
+    if (rdw(0xFFFF9962u)) {
+        c->d[0] = 0xFFFFFFFFu;
+        c->ccr = (uint16_t)((c->ccr & CC_X) | CC_N);
         return;
     }
+    c->d[3] = (c->d[3] & 0xFFFF0000u) | (uint16_t)c->d[0];
+    uint32_t caller = c->a[4];
+    c->a[3] = caller;
+    /* FindFreeEffect ($27E6): the first of $E0-$FC not in use */
+    uint16_t n = 7;
+    Ent e = 0xE0;
+    while ((rd8(ALIVE(e)) & 0x80) && n != 0xFFFF) { n--; if (n != 0xFFFF) e += 4; }
+    c->d[0] = (c->d[0] & 0xFFFF0000u) | n;
+    c->a[4] = e;
+    if (rd8(ALIVE(e)) & 0x80) {                     /* none free */
+        c->ccr = (uint16_t)((c->ccr & CC_X) | CC_N);
+        c->a[4] = caller;
+        return;
+    }
+    wr8(ALIVE(e), 0x80);
+    wrw(e - 0x3800, (uint16_t)c->d[1]);
+    wrw(e - 0x3700, (uint16_t)c->d[2]);
+    c->d[3] = (c->d[3] & 0xFFFF0000u) | ((uint16_t)c->d[3] & 0xFF);
+    wrw(e - 0x2300, (uint16_t)c->d[3]);             /* which big item */
+    wrw(0xFFFF9968u, (uint16_t)e);
+    wrw(TYPE(e), 4);
+    wrw(0xFFFF9962u, 9);
+    c->d[0] = 0;
+    c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z);
+    c->a[4] = caller;
+}
+
+/* $10916 on: a kind below $1000 in the slots $80-$BC; d6's low byte is its MOVE_FLAGS */
+static void place(Cpu *c)
+{
+    uint16_t kind = (uint16_t)c->d[0];
+    uint8_t flags = (uint8_t)c->d[6];
     int32_t s = slot_for(c, kind);
     if (s < 0) {
         c->a[0] = 0xC0; c->d[3] = 0xFFFFFFFFu;

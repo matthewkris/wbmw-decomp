@@ -995,6 +995,83 @@ int hybrid_fuzz(const char *name, long count)
             put_word(0x9962, rnd() % 2 ? 0 : rnd() % 16);
             ram[0x959E] = (uint8_t)(rnd() % 3 ? rnd() % 4 : rnd());
             ram[0x959D] = (uint8_t)(rnd() % 3);
+            put_word(0x9F00, rnd() % 2 ? 0xE00 + (rnd() % 3) * 0x100 : 0x200 + (rnd() % 12) * 0x100);   /* the heart container's limit */
+        }
+        if (strstr(name, "Freeze") || !strcmp(name, "FindFreeEffect") || !strncmp(name, "ClearEntity", 11)
+            || !strcmp(name, "CheckGrounded")) {    /* every entity's state byte, often in use */
+            for (uint32_t e = 0; e < 0x100; e += 4) ram[0xC000 + e] = (uint8_t)(rnd() % 3 ? 0x80 | rnd() : rnd());
+            if (!strcmp(name, "FindFreeEffect") && rnd() % 3 == 0)
+                for (uint32_t e = 0xE0; e < 0x100; e += 4) ram[0xC000 + e] |= 0x80;   /* all busy */
+            m68k_set_reg(M68K_REG_A4, (rnd() % 64) * 4);
+        }
+        if (!strcmp(name, "RunItems")) {
+            /* the item slots: kinds of the table at every step, begun or not, near the player,
+             * timers near their ends; the attacker ($9F30) and its spark state */
+            uint32_t p = (uint32_t)(int32_t)(int16_t)(ram[0x9EEE] << 8 | ram[0x9EEF]);
+            int32_t px = get_sword(0xC800 + p), py = get_sword(0xC900 + p);
+            static const uint8_t steps0[] = {0, 2, 4, 6}, steps2[] = {0, 2};
+            for (uint32_t s = 0x80; s < 0xC0; s += 4) {
+                uint16_t kind = rnd() % 2 ? (uint16_t)(2 * (rnd() % 15)) : (uint16_t)(0x200 + 2 * (rnd() % 12));
+                ram[0xC000 + s] = (uint8_t)(rnd() % 4 ? 0x80 | (rnd() & 0x41) : rnd() & 0x41);
+                put_word(0xD402 + s, kind);
+                {   /* its animation set from the kinds' table, as the spawner gives it (a random
+                     * one sends the animation interpreter round forever) */
+                    uint32_t grp = 0x11094 + (uint32_t)(int32_t)(int16_t)bus_read16(0x11094 + (kind >> 8));
+                    uint32_t rec = 0x11094 + (uint32_t)(int32_t)(int16_t)bus_read16(grp + (kind & 0xFF));
+                    put_word(0xC300 + s, bus_read16(rec));
+                    ram[0xC302 + s] = (uint8_t)(kind == 0x20E ? 8 * (rnd() % 2) : 2 * (rnd() % 2) * (kind < 0x200));
+                    ram[0xC303 + s] = 10;
+                }
+                uint8_t st = kind < 0x200 ? steps0[rnd() % 4] : (kind == 0x204 || kind == 0x210) ? steps2[rnd() % 2] : 0;
+                ram[0xD401 + s] = (uint8_t)(st | (rnd() % 2 ? 0x80 : 0));
+                put_word(0xC800 + s, (uint32_t)(px + small(40))); put_word(0xC900 + s, (uint32_t)(py + small(40)));
+                /* the saved place (-$2100), as its first frame leaves it: a broken block's
+                 * remains write the map there, and a random place writes over other RAM */
+                put_word(0xDF00 + s, (uint32_t)get_sword(0xC800 + s)); put_word(0xDF02 + s, (uint32_t)get_sword(0xC900 + s));
+                if (kind == 0x212) {                                            /* on a block of the map */
+                    uint32_t cols = (uint32_t)(ram[0x9754 + 0x44] << 8 | ram[0x9754 + 0x45]) + 1;
+                    uint32_t rows = (uint32_t)(ram[0x9754 + 0x46] << 8 | ram[0x9754 + 0x47]) / 64 + 1;
+                    put_word(0xDF00 + s, 0x1000 + (rnd() % cols) * 16 + rnd() % 16);
+                    put_word(0xDF02 + s, 0x1000 + (rnd() % rows) * 16 + rnd() % 16);
+                }
+                put_word(0xCA00 + s, (uint32_t)small(0x400)); put_word(0xCA02 + s, (uint32_t)small(0x400));
+                ram[0xD800 + s] = (uint8_t)(rnd() % 3 ? 1 + rnd() % 3 : rnd());
+                ram[0xD801 + s] = (uint8_t)(rnd() % 3 ? rnd() % 3 : rnd());
+                put_word(0xD802 + s, rnd() % 3 ? 1 + rnd() % 3 : rnd());
+                ram[0xDA03 + s] = (uint8_t)rnd(); ram[0xDA02 + s] = (uint8_t)rnd();
+                put_word(0xD302 + s, rnd() % 2 ? p : 0x40 + (rnd() % 16) * 4);
+                ram[0xC600 + s] = (uint8_t)(rnd() % 2 ? 0 : rnd());
+                ram[0xCB00 + s] = (uint8_t)(rnd() % 16); ram[0xCB01 + s] = (uint8_t)(rnd() % 16);
+                ram[0xCB03 + s] = (uint8_t)(rnd() % 16);
+                ram[0xCF00 + s] = (uint8_t)rnd(); ram[0xD100 + s] = (uint8_t)rnd();
+                put_word(0xCC00 + s, (uint32_t)small(0x40)); put_word(0xCD00 + s, rnd() % 0x400);
+                ram[0xDE00 + s] = (uint8_t)(rnd() % 2);
+                if ((kind == 0x204 || kind == 0x210) && rnd() % 2) {     /* a bubble in a water current */
+                    static uint8_t cur[16]; static int nc = -1;
+                    if (nc < 0) {
+                        nc = 0;
+                        for (uint32_t a = 0; a < 0x80 && nc < 16; a++) {
+                            Cpu t = {0}; t.a[4] = s; t.d[1] = a; TileTypeOf(&t);
+                            if ((t.d[2] & 0xB00F) == 0xB000) cur[nc++] = (uint8_t)a;
+                        }
+                    }
+                    if (nc) set_block_attr(0x9754, s, (uint32_t)get_sword(0xC800 + s), (uint32_t)get_sword(0xC900 + s), cur[rnd() % (unsigned)nc]);
+                }
+            }
+            for (uint32_t a = 0x40; a < 0x80; a += 4) {                         /* enemies for the sparks */
+                ram[0xC000 + a] = (uint8_t)(rnd() % 3 ? 0xC1 : rnd());
+                ram[0xD402 + a] = (uint8_t)(rnd() % 3 ? 0 : rnd() % 4);
+                ram[0xD401 + a] = (uint8_t)(rnd() % 4 * 2);
+                put_word(0xDA00 + a, rnd() % 4 ? rnd() % 0x400 : 0);
+                put_word(0xC800 + a, (uint32_t)(px + small(40))); put_word(0xC900 + a, (uint32_t)(py + small(40)));
+            }
+            put_word(0x9F30, rnd() % 2 ? p : 0x40 + (rnd() % 16) * 4);
+            uint32_t at = (uint32_t)(int32_t)(int16_t)(ram[0x9F30] << 8 | ram[0x9F31]);
+            ram[0xDA03 + at] = (uint8_t)(rnd() % 3 ? rnd() % 2 : rnd());
+            ram[0xD800 + at] = (uint8_t)(rnd() % 2 ? 0 : rnd());
+            ram[0x9F78] = (uint8_t)(rnd() % 2 ? 0 : rnd());
+            put_word(0x965A, rnd());
+            put_word(0x95F4, rnd() % 0x200);
         }
         if (!strcmp(name, "Currents")) {            /* in water with a current, near the speed limit */
             ram[0x966B] = (uint8_t)(rnd() | (rnd() % 4 ? 1 : 0));
