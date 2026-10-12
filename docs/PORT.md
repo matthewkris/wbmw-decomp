@@ -692,6 +692,44 @@ Checked like the others: 0 mismatches, every instruction of these routines run (
 $8666 and $875C belong to the status screen), the self-test caught, and replace mode matches
 in casting runs that redraw the bar.
 
+#### The enemies: the framework (2026-10-11)
+
+`port/enemies.c`. Each frame `RunEnemies` ($133B2) runs the spawn points ($12A70, still the
+original's) and then the sixteen enemy slots from `$FFA11A`: a slot's kind (group in the high
+byte, 0-8; bit 7 skips it) picks one of 35 handlers through the tables at $13418 and $13422
+(while `$FF9659` bit 3 is set only groups above 2 run). Group 0's ordinary monsters go through
+`EnemyDispatch` ($13582): a state machine of 9 states, where the monster's kind and state pick
+an action routine (the tables at $13B70 and $13DA4); `EnemySetState` ($1357E) sets the state
+first, and `EnemyNextState` ($13542) moves to a pending state or the next one for the monster's
+variant (the table at $13FD2).
+
+The handlers and actions are still the original's code, called on the caller's registers as in
+the original. With the dispatchers in C the translator no longer sees their jump tables, so
+their 170 targets are listed in `"seen"` in `analysis/translate.json` (computed from the
+tables in the ROM).
+
+The spawn points (`port/spawns.c`, `RunSpawnPoints`, $12A70-$133B1): sixteen points per room
+(`$FFA15C` + 4n), each run by its kind: triggered single spawns, reloading ones, ones that wait
+for the last enemy to be beaten, a row near the player, an item unless its game flag is set,
+placed and turned enemies, the room's chests, a guardian with three companions, spawns from a
+map block, a scripted boss room in six phases, groups from a list of offsets, waves from a
+list of positions, and one enemy when the player comes near. A point counts what it made,
+what was beaten and what was lost off the screen, and stops at its maximum. Four periodic
+timers (`$FFA14C`) trigger the timed ones. Where the original loops forever (a guaranteed
+spawn with no free slot) the C stops with a message.
+
+Checked: the standard runs and owner states, and 20,000 fuzz cases from each of seven states
+with synthetic spawn points of the kinds that need no level data (enemy kinds from the room's
+loaded list at `$FFA122`: any other kind makes the original loop forever), placed on the
+screen, just off it and far. 0 mismatches. Not yet reached, because they need their rooms'
+data: the guardian (kind 8, $12DCE), spawns from a map block (11, $12E66), the scripted boss
+room (12, $12EE4), waves (14, $131CC) and three instructions of the chests (6). Save states in
+those rooms will cover them.
+
+The rest of the enemies, in order: the small handlers (about 20, under 70
+instructions each); the medium ones; the large ones and the monsters' action routines
+($14000-$1A000).
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

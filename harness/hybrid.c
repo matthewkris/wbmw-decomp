@@ -1047,6 +1047,55 @@ int hybrid_fuzz(const char *name, long count)
                 if (rnd() % 2) ram[0x9F11] = as;
             }
         }
+        if (!strcmp(name, "EnemyNextState")) {      /* a monster with a pending state or none, any variant */
+            uint32_t e = 0x40 + (rnd() % 16) * 4;
+            m68k_set_reg(M68K_REG_A4, e);
+            ram[0xDE00 + e] = (uint8_t)(rnd() % 2 ? 0xFF : rnd() % 9);          /* -$2200 */
+            ram[0xDA03 + e] = (uint8_t)(rnd() % 4 ? rnd() % 24 : rnd());        /* -$25FD */
+            ram[0xD401 + e] = (uint8_t)(rnd() % 9 | (rnd() % 2 ? 0x80 : 0));    /* -$2BFF */
+        }
+        if (!strcmp(name, "RunSpawnPoints")) {
+            /* spawn points of the kinds that need no level data (0-5, 7, 9, 10, 13, 15), for
+             * enemy kinds already in the room (their graphics are loaded), around the player */
+            uint16_t kinds[32]; int nk = 0;                                 /* the room's list ($FFA122) */
+            for (uint32_t i = 0; i < (uint32_t)(ram[0xA142] << 8 | ram[0xA143]) && nk < 8; i++)
+                kinds[nk++] = (uint16_t)(ram[0xA122 + 4 * i] << 8 | ram[0xA123 + 4 * i]);
+            uint32_t pl = (uint32_t)(int32_t)(int16_t)(ram[0x9EEE] << 8 | ram[0x9EEF]);
+            int32_t px = get_sword(0xC800 + pl), py = get_sword(0xC900 + pl);
+            static const uint8_t ks[] = {0, 1, 2, 3, 4, 5, 7, 9, 10, 13, 15};
+            for (uint32_t q = 0; nk && q < 0x40; q += 4) {
+                if (rnd() % 2) continue;                                    /* keep the room's own */
+                uint8_t k = ks[rnd() % 11];
+                ram[0xA15C + q] = (uint8_t)(0x80 | (rnd() % 2) | (rnd() % 4 ? 0 : 0x40));
+                ram[0xA15D + q] = (uint8_t)(k | (rnd() % 5 ? 0 : 0x80));
+                ram[0xA15E + q] = (uint8_t)rnd();
+                ram[0xA15F + q] = (uint8_t)(rnd() & 0x7F);
+                ram[0xA1AC + q] = (uint8_t)rnd(); ram[0xA1AD + q] = (uint8_t)rnd();
+                put_word(0xA1AE + q, kinds[rnd() % (unsigned)nk]);
+                {   /* on the screen, just off it, or far: by the camera ($9758, $975A) */
+                    int32_t cx = get_sword(0x9758), cy = get_sword(0x975A);
+                    int where = (int)(rnd() % 3);
+                    int32_t x = where == 0 ? cx + (int32_t)(rnd() % 320) : where == 1 ? cx - 1 - (int32_t)(rnd() % 60) : px + small(0x200);
+                    int32_t y = where == 0 ? cy + (int32_t)(rnd() % 224) : where == 1 ? cy + 225 + (int32_t)(rnd() % 40) : py + small(0x100);
+                    put_word(0xA1FC + q, (uint32_t)x); put_word(0xA1FE + q, (uint32_t)y);
+                }
+                uint8_t max = (uint8_t)(rnd() % 4 ? 1 + rnd() % 5 : 0x80 | rnd());
+                ram[0xA24C + q] = max;
+                uint8_t made = (uint8_t)(max & 0x80 ? rnd() % 4 : rnd() % (max + 1u));
+                ram[0xA24D + q] = made;
+                ram[0xA24E + q] = (uint8_t)(rnd() % (made + 1u)); ram[0xA24F + q] = (uint8_t)(rnd() % 2 ? 0 : rnd() % (made + 1u));
+                ram[0xA29C + q] = (uint8_t)(1 + rnd() % 4); ram[0xA29D + q] = (uint8_t)(rnd() % 3);
+                ram[0xA29E + q] = (uint8_t)(rnd() % 4); ram[0xA29F + q] = (uint8_t)(rnd() % 16 - 8);
+                if (k == 4) ram[0xA29D + q] = (uint8_t)rnd();                   /* its flag */
+                if (k == 13) put_long(0xA2EC + q, 0x10000 + rnd() % 0x8000);    /* offsets: any bytes */
+                else if (k == 15) { put_word(0xA2EC + q, (uint32_t)(px + small(0x80))); put_word(0xA2EE + q, (uint32_t)(py + small(0x80))); }
+                else { put_word(0xA2EC + q, rnd() % 0x200); put_word(0xA2EE + q, (uint32_t)small(0x40)); }
+            }
+            for (uint32_t t = 0; t < 16; t += 4) { put_word(0xA14C + t, rnd()); put_word(0xA14E + t, rnd() % 3 ? rnd() % 0x100 : rnd()); }
+            put_word(0x965A, rnd());
+            if (rnd() % 8 == 0) ram[0x9659] ^= (uint8_t)(1 << (rnd() % 2 ? 0 : 4));
+            if (rnd() % 4 == 0) ram[0x9668] = (uint8_t)(rnd() % 2 ? 0xF : rnd() % 16);
+        }
         if (!strcmp(name, "RunItems")) {
             /* the item slots: kinds of the table at every step, begun or not, near the player,
              * timers near their ends; the attacker ($9F30) and its spark state */
