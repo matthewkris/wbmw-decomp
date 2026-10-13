@@ -718,7 +718,7 @@ int hybrid_fuzz(const char *name, long count)
         if (!strcmp(name, "Meter") || !strcmp(name, "Cells")) { ram[0x95C8] = (uint8_t)(rnd() % 3 ? rnd() % 12 : 0); ram[0x95B7] = (uint8_t)(rnd() % 12); }
         if (!strcmp(name, "FixedName")) put_word(0x8CDE, 1 + rnd() % 14);
         if (!strcmp(name, "MoreBelow")) { put_word(0x9612, rnd() % 8); put_word(0x9610, rnd() % 12); }
-        if (!strncmp(name, "Pressed", 7) || !strcmp(name, "ListButtons")) ram[0x8A7C] = (uint8_t)(rnd() % 2 ? 0 : 1u << (rnd() % 8));
+        if (!strncmp(name, "Pressed", 7) || !strcmp(name, "ListButtons") || !strcmp(name, "NoteIn")) ram[0x8A7C] = (uint8_t)(rnd() % 2 ? 0 : 1u << (rnd() % 8));
         if (!strcmp(name, "TwoDigits") || !strcmp(name, "Level")) { ram[0x95E1] = (uint8_t)(rnd() % 100); ram[0x9F00] = (uint8_t)(rnd() % 100); }
         if (!strcmp(name, "String") || !strncmp(name, "String", 6))               /* a string: in ROM, or a short one in RAM */
             if (rnd() % 2) { m68k_set_reg(M68K_REG_A1, 0xFF4E00); for (int k3 = 0, n3 = (int)(rnd() % 12); k3 <= n3; k3++) ram[0x4E00 + k3] = (uint8_t)(k3 == n3 ? 0 : 0x20 + rnd() % 0x5F); }

@@ -64,7 +64,7 @@ void TextAt(Cpu *), TextAtRC(Cpu *), String(Cpu *), StringPlain(Cpu *), StringBr
      UpBlink(Cpu *), UpHide(Cpu *), DownBlink(Cpu *), DownHide(Cpu *), DownShow(Cpu *), CursorBlink(Cpu *), CursorHide(Cpu *), CursorShow(Cpu *), ListMove(Cpu *), TileRowAt(Cpu *), TileRow(Cpu *), TilesAt(Cpu *), FrameFull(Cpu *), FrameLower(Cpu *), FrameStats(Cpu *), FrameFoot(Cpu *), FrameItems(Cpu *), FrameBox(Cpu *), FramePause(Cpu *), Palette8(Cpu *), BoxDim(Cpu *), StatsPage(Cpu *), SpriteInit(Cpu *), ClickBack(Cpu *), Click(Cpu *),
      FillZero(Cpu *), FillBlank(Cpu *), TilePair(Cpu *), TileRows(Cpu *), Mark(Cpu *), MarkTwo(Cpu *), LeftSlot(Cpu *), RightSlot(Cpu *), ItemsIcon(Cpu *), ViewLimits(Cpu *), Title(Cpu *), BuildList(Cpu *), DrawList(Cpu *), ListPage(Cpu *), ClearPanel(Cpu *), Blank13(Cpu *), LineX2(Cpu *), OpenLine(Cpu *), MainMenu(Cpu *), MenuMove(Cpu *), TakeOff(Cpu *), MagicPage(Cpu *), ItemsPage(Cpu *), MaybePicture(Cpu *), Stats(Cpu *),
      StatusScreen(Cpu *), PauseScreen(Cpu *), CursorSpriteTop(Cpu *), CursorSpriteLow(Cpu *), SlotFlipTop(Cpu *), SlotFlipLow(Cpu *), ListButtons(Cpu *), ScreenSetup(Cpu *), MenuReset(Cpu *);
-void NumText(Cpu *), CharAt(Cpu *), ScrollWindow(Cpu *), WindowFrame(Cpu *), WindowRow(Cpu *), TileUnder(Cpu *), WindowRestore(Cpu *), NewLine(Cpu *), MoreBlink(Cpu *), MoreHide(Cpu *), MoreShow(Cpu *), ChoiceBlink(Cpu *), ChoiceHide(Cpu *), ChoiceShow(Cpu *), PriceOf(Cpu *), NameOf(Cpu *), NameText(Cpu *), FoundThing(Cpu *), FoundGold(Cpu *), BoxText(Cpu *), BoxRows(Cpu *), BoxRow(Cpu *), ShowFoundGold(Cpu *), ShowFound(Cpu *), WindowGeometry(Cpu *), Cheaper(Cpu *), Owns(Cpu *), Give(Cpu *), Take(Cpu *), ItemCell(Cpu *), FlagCell(Cpu *), MessageData(Cpu *), OpenWindow(Cpu *), WindowAt(Cpu *), MsgStep(Cpu *), CharIn(Cpu *);   /* message.c */
+void NumText(Cpu *), CharAt(Cpu *), ScrollWindow(Cpu *), WindowFrame(Cpu *), WindowRow(Cpu *), TileUnder(Cpu *), WindowRestore(Cpu *), NewLine(Cpu *), MoreBlink(Cpu *), MoreHide(Cpu *), MoreShow(Cpu *), ChoiceBlink(Cpu *), ChoiceHide(Cpu *), ChoiceShow(Cpu *), PriceOf(Cpu *), NameOf(Cpu *), NameText(Cpu *), FoundThing(Cpu *), FoundGold(Cpu *), BoxText(Cpu *), BoxRows(Cpu *), BoxRow(Cpu *), ShowFoundGold(Cpu *), ShowFound(Cpu *), WindowGeometry(Cpu *), Cheaper(Cpu *), Owns(Cpu *), Give(Cpu *), Take(Cpu *), ItemCell(Cpu *), FlagCell(Cpu *), MessageData(Cpu *), OpenWindow(Cpu *), WindowAt(Cpu *), MsgStep(Cpu *), CharIn(Cpu *), NoteIn(Cpu *), OcarinaTune(Cpu *);   /* message.c */
 #define CT_ALL 0x3FFFF                /* every register and flag compared */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
      FindFreeEffect(Cpu *), CheckGrounded(Cpu *);
@@ -218,6 +218,8 @@ const PortRoutine port_routines[] = {
     {0x00183E, 0x001864, "NumText", NumText, CT_ALL},   /* message.c: the message window, every register and flag as the original */
     {0x0013BC, 0x001D92, "MsgStep", MsgStep, CT_SP},   /* with its commands, the quiz and the inn ($14F4-$1D90; the T5 entries inside are their own) */
     {0x0013AE, 0x0013BC, "CharIn", CharIn, CT_ALL},
+    {0x002AAE, 0x002B08, "OcarinaTune", OcarinaTune, CT_SP},   /* waits for frames: checked by the task passes, not fuzzed */
+    {0x002B08, 0x002B34, "NoteIn", NoteIn, CT_ALL},
     {0x002050, 0x002082, "CharAt", CharAt, CT_ALL},
     {0x002082, 0x002110, "ScrollWindow", ScrollWindow, CT_ALL},
     {0x002110, 0x0021E8, "WindowFrame", WindowFrame, CT_ALL},   /* entered by jmp from $27B0 */
