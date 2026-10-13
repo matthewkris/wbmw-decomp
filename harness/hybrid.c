@@ -1095,6 +1095,11 @@ int hybrid_fuzz(const char *name, long count)
             }
             if (!strcmp(name, "NearX")) m68k_set_reg(M68K_REG_D1, (rnd() << 16) | (x + rnd() % 16 - 8));
         }
+        if (!strcmp(name, "WalkInSetup")) {         /* a start point, a routine for the frame */
+            uint32_t t = bus_read16(0x1CC00) << 16 | bus_read16(0x1CC02), n = bus_read16(t) / 2;
+            put_word(0x9676, rnd() % (n ? n : 1));
+            m68k_set_reg(M68K_REG_A0, 0xC1E0);
+        }
         if (!strncmp(name, "Door", 4) || !strncmp(name, "Picture", 7) || !strcmp(name, "CrackedAt") || !strncmp(name, "Grow", 4)) {
             /* a door's frame at a cell, 1 or 2 blocks each way; an event's picture from its record (the directory's table 2) */
             static const uint8_t frames[] = { 0, 6, 8, 12 };

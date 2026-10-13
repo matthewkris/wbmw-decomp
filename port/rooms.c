@@ -21,6 +21,7 @@
  * at them does.
  * Batch T17, the room changes' helpers: the door's frame and blocks, the events' pictures.
  * Batch T18, the picture growing, the door's animations (they wait for frames), leaving a room.
+ * Batch T19, the room changes' sequences: doors, warps, shops and houses.
  * Ported register for register, with every register and flag in the contract. */
 #include "world.h"
 #include "task.h"
@@ -2895,3 +2896,322 @@ ENTRY(RoomLeave, room_leave)               /* $BD9A */
 /* the two that wait leave by port_continue_at, so ret is theirs to set */
 void DoorOpen(Cpu *cpu)  { c = cpu; door_animation_68k(0); }   /* $BD0A */
 void DoorClose(Cpu *cpu) { c = cpu; door_animation_68k(1); }   /* $BD52 */
+
+/* ---- batch T19: the room changes' sequences: doors, warps, shops and houses ----
+ * When a trigger's routine sets $9962, the game's task jumps (from its table at $91F4) to one of
+ * these. They run on the task's coroutine, wait for frames at the original's resume addresses,
+ * and leave as the original does: back to the game's loop ($8FFC), to the next room ($9100), or
+ * to the exits' code ($F76C). $BDB0, $BDC0, $BE50 and $BF80 are not yet registered: no session
+ * runs them yet. */
+
+#define GAME_LOOP     0x8FFC
+#define NEXT_ROOM     0x9100
+#define EXIT_ROOM     0xF76C
+#define PLAYER_ENT    0xFFFF9EEEu
+#define DOOR_KEEP     0xDF80u       /* the player and camera kept still */
+#define DOOR_FREE     0xDF90u
+#define SPAWN_ENEMIES 0x12848u
+#define APPLY_VELOCITY 0x0AB4u
+
+static void leave_to(uint32_t addr) { port_continue_at(c, addr, 0); }
+static void player_a4(void) { c->a[4] = sx(rd16(PLAYER_ENT)); }
+
+/* $C128, $C152: the frame's animation waited for (a sound first; $C152 restarts it), the
+ * caller's return address on the continuations' stack meanwhile */
+static void frame_wait(uint32_t ret, int restart)
+{
+    c->a[0] = sx(rd16(CONTINUATIONS));
+    wr32(c->a[0], ret); c->a[0] += 4; F_L(ret);
+    put16m(CONTINUATIONS, c->a[0]);
+    c->d[0] = restart ? 34 : 35; F_L(c->d[0]);
+    call(QUEUE_SOUND);
+    if (restart) { c->a[4] = 8; call(RESET_ANIM); }
+    do {
+        wait_frame(restart ? 0xC16E : 0xC13C);
+        c->a[4] = 8;
+        F_B(rd8(c->a[4] - 0x3A00));
+    } while (rd8(c->a[4] - 0x3A00));
+    c->a[1] = sx(rd16(CONTINUATIONS));
+    c->a[1] -= 4;
+    c->a[0] = rd32(c->a[1]);
+    put16m(CONTINUATIONS, c->a[1]);
+}
+
+/* $C0C2: walking into a building from start point $9676: the room left, the door's frame at the
+ * point (one block across, two down), its picture $C, the routine a0 kept for the frame ($9F22) */
+static void walk_in_setup(void)
+{
+    put8(0xFFFF9F05u, 6);
+    put32m(0xFFFF9F22u, c->a[0]);
+    call(0xF99C); call(0x13786); call(0x11BA4); call(0x1115E);
+    c->a[0] = rd32(DATA_DIR);
+    c->d[0] = set_w(c->d[0], rd16(0xFFFF9676u)); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+    c->a[0] += sx(rd16(c->a[0] + sx(c->d[0])));
+    move_b(0, rd8(c->a[0] + 4));
+    move_b(1, rd8(c->a[0] + 5));
+    push32(0xC0F8); to_position(); c->a[7] += 4;
+    put16m(0xFFFF9BD6u, c->d[0]);
+    put16m(0xFFFF9BD8u, c->d[1]);
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 8, c->d[0]));
+    put16m(DOOR, c->d[0]);
+    c->d[1] = set_w(c->d[1], sub_w(&c->ccr, 0x20, c->d[1]));
+    put16m(DOOR + 2, c->d[1]);
+    put16m(DOOR + 4, 1);
+    put16m(DOOR + 6, 2);
+    c->d[0] = 12; F_L(12);
+    push32(0xC120); door_frame(); c->a[7] += 4;
+    put8(c->a[4] - 0x3CFD, 0x1E);
+}
+
+/* $BE18: the door at (d0, d1), d2 pixels each way: its frame (picture d3) opens, then the next room */
+static void door_then_next(void)
+{
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, c->d[2], c->d[0]));
+    put16m(DOOR, c->d[0]);
+    c->d[2] = set_w(c->d[2], add_w(&c->ccr, c->d[2], c->d[2]));
+    c->d[1] = set_w(c->d[1], sub_w(&c->ccr, c->d[2], c->d[1]));
+    put16m(DOOR + 2, c->d[1]);
+    c->d[2] = set_w(c->d[2], lsr_n(&c->ccr, c->d[2], 4, 16));
+    put16m(DOOR + 4, c->d[2]);
+    put16m(DOOR + 6, c->d[2]);
+    call(DOOR_KEEP);
+    move_b(0, (uint8_t)c->d[3]);
+    push32(0xBE3A); door_frame(); c->a[7] += 4;
+    put8(c->a[4] - 0x3CFD, 0x16);
+    wait_frame(0xBE44);
+    push32(0xBE48); door_blank(); c->a[7] += 4;
+    door_animation(0xBE4C, 0);
+    leave_to(NEXT_ROOM);
+}
+
+/* $BDB0 (11, from an item): leaving for a start point, by the exits' code */
+static void seq_exit(void)
+{
+    push32(0xBDB2); room_leave(); c->a[7] += 4;
+    call(0x8F98);
+    uint8_t v = rd8(0xFFFF965Fu) | 1; wr8(0xFFFF965Fu, v); F_B(v);
+    leave_to(EXIT_ROOM);
+}
+/* $BDC0 (13, from the door object at $1822A): its door kept at $99F2/$99F4 (picture 6, or 0 in
+ * area $F) */
+static void seq_kept_door(void)
+{
+    push32(0xBDC4); reset_continuations(); c->a[7] += 4;
+    push32(0xBDC6); room_leave(); c->a[7] += 4;
+    c->d[0] = set_w(c->d[0], rd16(0xFFFF99F2u)); F_W(c->d[0]);
+    c->d[1] = set_w(c->d[1], rd16(0xFFFF99F4u)); F_W(c->d[1]);
+    c->d[2] = 16;
+    c->d[3] = 0; F_L(0);
+    cmp_byte(0xF, rd8(AREA));
+    if (rd8(AREA) != 0xF) { c->d[3] = 6; F_L(6); }
+    door_then_next();
+}
+/* $BDDE (2): start point $9982's door (none for kind $10: an exit) */
+static void seq_door(void)
+{
+    push32(0xBDE2); reset_continuations(); c->a[7] += 4;
+    push32(0xBDE4); room_leave(); c->a[7] += 4;
+    c->a[0] = rd32(DATA_DIR);
+    c->d[0] = set_w(c->d[0], rd16(0xFFFF9982u)); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+    c->a[0] += sx(rd16(c->a[0] + sx(c->d[0])));
+    cmp_byte(0x10, rd8(c->a[0] + 2));
+    if (rd8(c->a[0] + 2) == 0x10) { leave_to(EXIT_ROOM); return; }
+    move_b(0, rd8(c->a[0] + 4));
+    move_b(1, rd8(c->a[0] + 5));
+    push32(0xBE0A); to_position(); c->a[7] += 4;
+    move_b(3, rd8(c->a[0] + 3));
+    c->d[2] = 16; F_L(16);
+    cmp_byte(8, c->d[3]);
+    if ((c->d[3] & 0xFF) == 8) { c->d[2] = 8; F_L(8); }
+    door_then_next();
+}
+/* $BE50 (12): a warp, after 20 frames */
+static void seq_warp(void)
+{
+    push32(0xBE54); room_leave(); c->a[7] += 4;
+    call(DOOR_KEEP);
+    put16m(0xFFFF9C1Cu, 0x14);
+    do wait_frame(0xBE62); while (mem_sub_w(0xFFFF9C1Cu, 1));
+    leave_to(NEXT_ROOM);
+}
+/* $BE6C (3): into a shop or house: its picture swapped in behind a frame that opens, its things,
+ * then the picture growing from the middle every 3 frames */
+static void seq_inside(void)
+{
+    push32(0xBE70); reset_continuations(); c->a[7] += 4;
+    call(DOOR_KEEP);
+    uint8_t v = rd8(0xFFFF9659u); f_bit(v >> 4 & 1); wr8(0xFFFF9659u, v | 0x10);
+    call(0x136A6); call(0xF99C); call(0x108FA);
+    push32(0xBE8A); picture_setup(); c->a[7] += 4;
+    push32(0xBE8E); rect_mark(); c->a[7] += 4;
+    push32(0xBE92); picture_frame(); c->a[7] += 4;
+    put8(c->a[4] - 0x3CFD, 0x16);
+    wait_frame(0xBE9C);
+    push32(0xBEA0); picture_corner(); c->a[7] += 4;
+    push32(0xBEA4); rect_redraw(); c->a[7] += 4;
+    v = rd8(0xFFFF9659u); f_bit(v & 1); wr8(0xFFFF9659u, v | 1);
+    call(SPAWN_ENEMIES);
+    call(0x133B2);
+    v = rd8(0xFFFF9659u); f_bit(v & 1); wr8(0xFFFF9659u, v & ~1);
+    door_animation(0xBEBC, 0);
+    push32(0xBEC0); picture_frame_2(); c->a[7] += 4;
+    wr16(0xFFFF9BE8u, 0); wr16(0xFFFF9BE6u, 0); c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z);
+    push32(0xBECC); picture_put(); c->a[7] += 4;
+    do {
+        wait_frame(0xBED0); wait_frame(0xBED4); wait_frame(0xBED8);
+        mem_add_w(0xFFFF9BE6u, 1);
+        push32(0xBEE0); picture_grow(); c->a[7] += 4;
+    } while (!(c->ccr & CC_Z));
+    wait_frame(0xBEE6); wait_frame(0xBEEA);
+    wr16(ROOM_CHANGE, 0); c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z);
+    leave_to(GAME_LOOP);
+}
+/* $BEF2 (4): out of it: the picture shrinking back (from the largest step still inside), the
+ * frame closing, the room's triggers back */
+static void seq_outside(void)
+{
+    push32(0xBEF6); reset_continuations(); c->a[7] += 4;
+    call(DOOR_FREE); call(0xF99C); call(0x108FA);
+    push32(0xBF06); rect_restore(); c->a[7] += 4;
+    c->d[0] = set_w(c->d[0], rd16(0xFFFF9BE2u)); F_W(c->d[0]);
+    c->d[1] = set_w(c->d[1], rd16(0xFFFF9BDEu)); F_W(c->d[1]);
+    c->d[1] = set_w(c->d[1], sub_w(&c->ccr, c->d[0], c->d[1]));
+    c->d[1] = set_w(c->d[1], sub_w(&c->ccr, rd16(0xFFFF9BD2u), c->d[1]));
+    cmp_w(&c->ccr, c->d[1], c->d[0]);
+    if ((c->d[0] & 0xFFFF) < (c->d[1] & 0xFFFF)) { c->d[0] = set_w(c->d[0], c->d[1]); F_W(c->d[1]); }
+    c->d[1] = set_w(c->d[1], rd16(0xFFFF9BE4u)); F_W(c->d[1]);
+    cmp_w(&c->ccr, c->d[1], c->d[0]);
+    if ((c->d[0] & 0xFFFF) < (c->d[1] & 0xFFFF)) { c->d[0] = set_w(c->d[0], c->d[1]); F_W(c->d[1]); }
+    c->d[2] = set_w(c->d[2], rd16(0xFFFF9BE0u)); F_W(c->d[2]);
+    c->d[2] = set_w(c->d[2], sub_w(&c->ccr, c->d[1], c->d[2]));
+    c->d[2] = set_w(c->d[2], sub_w(&c->ccr, rd16(0xFFFF9BD4u), c->d[2]));
+    cmp_w(&c->ccr, c->d[2], c->d[0]);
+    if ((c->d[0] & 0xFFFF) < (c->d[2] & 0xFFFF)) { c->d[0] = set_w(c->d[0], c->d[2]); F_W(c->d[2]); }
+    put16m(0xFFFF9BE6u, c->d[0]);
+    put16m(0xFFFF9BE8u, 0x8000);
+    do {
+        wait_frame(0xBF42); wait_frame(0xBF46); wait_frame(0xBF4A);
+        push32(0xBF4E); picture_grow(); c->a[7] += 4;
+    } while (mem_sub_w(0xFFFF9BE6u, 1));
+    push32(0xBF58); picture_frame(); c->a[7] += 4;
+    door_animation(0xBF5C, 1);
+    call(0x13748);
+    uint8_t v = rd8(0xFFFF9659u); f_bit(v >> 4 & 1); wr8(0xFFFF9659u, v & ~0x10);
+    wait_frame(0xBF6A);
+    wr8(0xFFFFC008u, 0); c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z);
+    put32m(TRIGGERS, rd32(0xFFFF9970u));
+    push32(0xBF78); rect_redraw(); c->a[7] += 4;
+    wr16(ROOM_CHANGE, 0); c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z);
+    leave_to(GAME_LOOP);
+}
+/* $BF80 (5): a house's door: the frame opens, the player walks through to the place inside (by
+ * $127A's speed for $200), the frame closes behind */
+static void seq_house(void)
+{
+    push32(0xBF84); reset_continuations(); c->a[7] += 4;
+    call(DOOR_KEEP); call(0xF99C); call(0x108FA);
+    c->a[2] = rd32(0xFFFF9986u);
+    move_b(0, rd8(c->a[2] + 1));
+    c->d[1] = 16; F_L(16);
+    cmp_byte(8, c->d[0]);
+    if ((c->d[0] & 0xFF) == 8) { c->d[1] = 8; F_L(8); }
+    c->d[2] = set_w(c->d[2], rd16(0xFFFF9982u)); F_W(c->d[2]);
+    c->d[2] = set_w(c->d[2], sub_w(&c->ccr, c->d[1], c->d[2]));
+    put16m(DOOR, c->d[2]);
+    c->d[1] = set_w(c->d[1], add_w(&c->ccr, c->d[1], c->d[1]));
+    c->d[2] = set_w(c->d[2], rd16(0xFFFF9984u)); F_W(c->d[2]);
+    c->d[2] = set_w(c->d[2], sub_w(&c->ccr, c->d[1], c->d[2]));
+    put16m(DOOR + 2, c->d[2]);
+    c->d[1] = set_w(c->d[1], lsr_n(&c->ccr, c->d[1], 4, 16));
+    put16m(DOOR + 4, c->d[1]);
+    put16m(DOOR + 6, c->d[1]);
+    push32(0xBFC6); door_frame(); c->a[7] += 4;
+    wait_frame(0xBFCA);
+    push32(0xBFCE); door_blank(); c->a[7] += 4;
+    door_animation(0xBFD2, 0);
+    player_a4();
+    uint8_t v = rd8(c->a[4] - 0x3FFD) | 0x10; wr8(c->a[4] - 0x3FFD, v); F_B(v);
+    wait_frame(0xBFE0);
+    push32(0xBFE4); door_restore(); c->a[7] += 4;
+    wr16(0xFFFFC008u, 0); c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z);
+    player_a4();
+    call(0xC1C);
+    c->a[2] = rd32(0xFFFF9986u);
+    move_b(0, rd8(c->a[2] + 2));
+    move_b(1, rd8(c->a[2] + 3));
+    push32(0xC000); to_position(); c->a[7] += 4;
+    c->d[2] = 16; F_L(16);
+    cmp_byte(1, rd8(DOOR + 4));                     /* the word's high byte, as the original reads it */
+    if (rd8(DOOR + 4) != 1) {
+        c->d[0] = set_w(c->d[0], sub_w(&c->ccr, c->d[2], c->d[0]));
+        c->d[2] = 32; F_L(32);
+    }
+    c->d[4] = set_w(c->d[4], c->d[0]); F_W(c->d[0]);
+    c->d[4] = set_w(c->d[4], sub_w(&c->ccr, rd16(DOOR), c->d[4]));
+    put16m(DOOR, c->d[0]);
+    c->d[1] = set_w(c->d[1], sub_w(&c->ccr, c->d[2], c->d[1]));
+    c->d[5] = set_w(c->d[5], c->d[1]); F_W(c->d[1]);
+    c->d[5] = set_w(c->d[5], sub_w(&c->ccr, rd16(DOOR + 2), c->d[5]));
+    put16m(DOOR + 2, c->d[1]);
+    player_a4();
+    c->d[0] = set_w(c->d[0], c->d[4]); F_W(c->d[4]);
+    c->d[4] = set_w(c->d[4], add_w(&c->ccr, rd16(c->a[4] - 0x3800), c->d[4]));
+    put16m(0xFFFF9C20u, c->d[4]);
+    c->d[1] = set_w(c->d[1], c->d[5]); F_W(c->d[5]);
+    c->d[5] = set_w(c->d[5], add_w(&c->ccr, rd16(c->a[4] - 0x3700), c->d[5]));
+    put16m(0xFFFF9C22u, c->d[5]);
+    c->d[2] = set_w(c->d[2], 0x200); F_W(0x200);
+    call(0x127A);
+    put16m(c->a[4] - 0x3600, c->d[4]);
+    put16m(c->a[4] - 0x35FE, c->d[5]);
+    c->d[2] = set_w(c->d[2], lsr_n(&c->ccr, c->d[2], 1, 16));
+    put16m(0xFFFF9C1Cu, c->d[2]);
+    for (;;) {
+        wait_frame(0xC056);
+        player_a4();
+        call(APPLY_VELOCITY);
+        push32(0xC062); layers_frame(); c->a[7] += 4;
+        F_W(rd16(0xFFFF9C1Cu));
+        if (!rd16(0xFFFF9C1Cu)) break;
+        if (!mem_sub_w(0xFFFF9C1Cu, 1)) break;
+    }
+    player_a4();
+    call(0xC1C);
+    put16m(c->a[4] - 0x3800, rd16(0xFFFF9C20u));
+    put16m(c->a[4] - 0x3700, rd16(0xFFFF9C22u));
+    c->a[4] = 8;
+    c->a[2] = rd32(0xFFFF9986u);
+    move_b(0, rd8(c->a[2] + 1));
+    push32(0xC092); door_frame(); c->a[7] += 4;
+    put8(c->a[4] - 0x3CFD, 8);
+    wait_frame(0xC09C);
+    push32(0xC0A0); door_blank(); c->a[7] += 4;
+    player_a4();
+    call(DOOR_FREE);
+    v = rd8(c->a[4] - 0x3FFD) & 0xEF; wr8(c->a[4] - 0x3FFD, v); F_B(v);
+    door_animation(0xC0B2, 1);
+    push32(0xC0B6); door_restore(); c->a[7] += 4;
+    wr8(0xFFFFC008u, 0); c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z);
+    wr16(ROOM_CHANGE, 0); c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z);
+    leave_to(GAME_LOOP);
+}
+
+ENTRY(WalkInSetup, walk_in_setup)          /* $C0C2 */
+/* the sequences and waits leave by port_continue_at, so ret is theirs to set */
+void SeqExit(Cpu *cpu)      { c = cpu; seq_exit(); }        /* $BDB0 */
+void SeqKeptDoor(Cpu *cpu)  { c = cpu; seq_kept_door(); }   /* $BDC0 */
+void SeqDoor(Cpu *cpu)      { c = cpu; seq_door(); }        /* $BDDE */
+void SeqWarp(Cpu *cpu)      { c = cpu; seq_warp(); }        /* $BE50 */
+void SeqInside(Cpu *cpu)    { c = cpu; seq_inside(); }      /* $BE6C */
+void SeqOutside(Cpu *cpu)   { c = cpu; seq_outside(); }     /* $BEF2 */
+void SeqHouse(Cpu *cpu)     { c = cpu; seq_house(); }       /* $BF80 */
+static void frame_wait_68k(int restart)
+{
+    uint32_t ret = rd32(c->a[7]); c->a[7] += 4;
+    frame_wait(ret, restart);
+    port_continue_at(c, c->a[0], 0);
+}
+void FrameWait(Cpu *cpu)    { c = cpu; frame_wait_68k(0); }   /* $C128 */
+void FrameRestart(Cpu *cpu) { c = cpu; frame_wait_68k(1); }   /* $C152 */
