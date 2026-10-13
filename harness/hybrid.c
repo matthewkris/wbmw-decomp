@@ -1134,6 +1134,33 @@ int hybrid_fuzz(const char *name, long count)
                 m68k_set_reg(M68K_REG_D6, (rnd() << 16) | rnd() % w); m68k_set_reg(M68K_REG_D7, (rnd() << 16) | rnd() % h);
             }
         }
+        if (!strncmp(name, "Break", 5)) {           /* the player thrusting down onto a tile's top, in a room with breakable floors */
+            uint32_t e = (uint32_t)ram[0x9EEE] << 8 | ram[0x9EEF];
+            if (rnd() % 4) ram[0x966B] |= 8;
+            ram[(e - 0x3100) & 0xFFFF] = (uint8_t)(rnd() % 3 ? 2 | (rnd() & 0xF5) : rnd());
+            uint32_t h = ram[(e - 0x34FD) & 0xFFFF];
+            put_word(e - 0x3800, 0x1000 + rnd() % 0x400);
+            put_word(e - 0x3700, (0x1000 + 16 * (rnd() % 0x40) - h - (rnd() % 4 ? 0 : rnd() % 16)) & 0xFFFF);
+            ram[(e - 0x34FE) & 0xFFFF] = (uint8_t)(rnd() % 16);
+            for (uint32_t k4 = 0; k4 < 0x300; k4++) if (rnd() % 3 == 0) ram[0xED00 + k4] = 0x0D;   /* cracked blocks (their bytes, the tables + $800) */
+            m68k_set_reg(M68K_REG_A4, (uint32_t)(int32_t)(int16_t)e); m68k_set_reg(M68K_REG_A3, 0xFFFF9754);
+            m68k_set_reg(M68K_REG_D6, (rnd() << 16) | (0x100 + rnd() % 0x40)); m68k_set_reg(M68K_REG_D7, (rnd() << 16) | (0x4000 + 0x40 * (rnd() % 0x40)));
+        }
+        if (!strcmp(name, "DoorAdd")) {             /* a door's bytes in scratch RAM, some slots taken */
+            for (uint32_t k4 = 0; k4 < 9; k4++) ram[0x4E00 + k4] = (uint8_t)rnd();
+            ram[0x4E00] = (uint8_t)(rnd() % 4);
+            for (uint32_t k4 = 0; k4 < 16; k4++) ram[0x9A96 + 4 * k4] = (uint8_t)(rnd() % 3 ? 0x80 : 0);
+            m68k_set_reg(M68K_REG_A0, 0xFFFF4E00);
+        }
+        if (!strcmp(name, "CrumbleWalls")) {        /* up to four walls crumbling */
+            uint32_t n = 1 + rnd() % 4;
+            put_word(0x9BB6, 0x9B96 + 8 * n);
+            for (uint32_t k4 = 0; k4 < n; k4++) {
+                uint32_t r = 0x9B96 + 8 * k4;
+                ram[r] = (uint8_t)(rnd() % 4 ? 0x80 | rnd() % 4 : 0); ram[r + 1] = (uint8_t)(1 + rnd() % 2);
+                put_word(r + 2, rnd() % 5); put_word(r + 4, 0xF0 + rnd() % 0x100); put_word(r + 6, (0x4000 + rnd() % 0x1500) & ~0x3Fu);
+            }
+        }
         if (!strcmp(name, "TilesAt") || !strcmp(name, "FrameBox")) m68k_set_reg(M68K_REG_A0, 0x8C82 + 2 * (rnd() % 0x80));
         if (!strcmp(name, "TileRow") || !strcmp(name, "TileRowAt")) m68k_set_reg(M68K_REG_A0, 0x8C82 + rnd() % 0x1A0);
         if (!strcmp(name, "SetGfxSlots")) {         /* a random valid slot list in scratch RAM */

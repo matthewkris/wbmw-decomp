@@ -2059,6 +2059,31 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 registered arrivals but one branch of `$C572` (a kind 8 arrival). 60,000 fuzz cases, 0
 mismatches. Self-test caught 100 in 100. Replace mode: thirteen runs, no problems.
 
+#### The room changes, batch T21: breaking and crumbling walls, the doors' records (2026-10-13)
+
+In `port/rooms.c`, with every register and flag in the contract:
+
+* Breaking floors (`$B32E`, each frame). In a room with breakable floors (`$966B` bit 3), the
+  player's downward thrust onto a tile's top breaks the tile below if it is cracked (attribute
+  `$D`). Otherwise it tries the nearer side and then the other side (`$B394`, `$B3C8`), if the
+  player's width reaches there and the tile is not solid. A broken tile becomes a crumble effect
+  (`$B400`: kind 2, sound 75).
+* Crumbling walls (`$B864`, each frame; `$B852` clears them). Up to four records of 8 bytes at
+  `$9B96`, to `$9BB6`. Every 3 frames each crumbles outward a block a step (`$B8D4`), each side
+  stopping where none is left, for 4 steps.
+* The doors' records (`$B49C`, command 19's): 16 records at `$FF9A96`, 4 bytes apart, each with
+  its kind, place and fields further on. `$B4FA` clears them. Their per-frame handling
+  (`$B50C`-`$B850`) comes later.
+
+The fuzz gives these the player at a tile's top, thrusting down, with some blocks made cracked
+(their bytes, the tables plus `$800`), crumbling walls' records, and doors' bytes with some
+slots taken.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(38 runs, all complete; 579,778 checked calls). 240,000 fuzz cases from six states, 0 mismatches,
+every instruction covered. Self-test caught 100 in 100 for each. Replace mode: thirteen runs, no
+problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

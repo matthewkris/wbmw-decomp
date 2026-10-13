@@ -23,6 +23,7 @@
  * Batch T18, the picture growing, the door's animations (they wait for frames), leaving a room.
  * Batch T19, the room changes' sequences: doors, warps, shops and houses.
  * Batch T20, arriving in a room: through a door, inside, walking in or out, fading in.
+ * Batch T21, breaking and crumbling walls, the doors' records.
  * Ported register for register, with every register and flag in the contract. */
 #include "world.h"
 #include "task.h"
@@ -3430,3 +3431,220 @@ void ArriveInsideDoor(Cpu *cpu) { c = cpu; NEEDS_PASS(0xC6F6); arrive_inside_doo
 void ArriveFade(Cpu *cpu)       { c = cpu; NEEDS_PASS(0xC71C); arrive_fade(); }          /* $C71C */
 void ArriveTalk(Cpu *cpu)       { c = cpu; NEEDS_PASS(0xC728); arrive_talk(); }          /* $C728 */
 void SeqWalkIn(Cpu *cpu)        { c = cpu; NEEDS_PASS(0xC184); seq_walk_in(); }          /* $C184 */
+
+/* ---- batch T21: breaking walls, crumbling walls, the door records ----
+ * In a room with breakable floors ($966B bit 3) the player's downward thrust on a cracked tile
+ * (attribute $D) breaks it, or the one beside it under the player's width: a crumble effect
+ * (kind 2) takes its place. Cracked walls ($9B96: up to four records of 8 bytes, to $9BB6)
+ * crumble outward a block at a time every 3 frames. The doors of command 19 are 16 records at
+ * $FF9A96 (4 bytes apart, with more fields further on). */
+
+#define TILE_ATTR_AT  0x30DAu       /* d6, d7: the tile's attribute (d1) and flags (d2) on layer a3 */
+#define FIND_EFFECT   0x27E6u       /* a4 a free effect (mi: none) */
+#define CLEAR_ENTITY  0x0A36u
+#define WALLS         0xFFFF9B96u   /* the crumbling walls' records */
+
+/* $B400: a crumble effect at (d6, d7) (d5 its word), with sound 75 */
+static void break_spawn(void)
+{
+    call(FIND_EFFECT);
+    if (c->ccr & CC_N) return;
+    call(CLEAR_ENTITY);
+    put16m(c->a[4] - 0x2600, c->d[5]);
+    put16m(c->a[4] - 0x2500, c->d[6]);
+    put16m(c->a[4] - 0x24FE, c->d[7]);
+    put16m(c->a[4] - 0x2BFE, 2);
+    put8(c->a[4] - 0x4000, 0x80);
+    c->d[0] = 75; F_L(75);
+    call(QUEUE_SOUND);
+}
+/* $B394, $B3C8: the tile left (or right) of the player's, if the player's width reaches it:
+ * broken if cracked (d0 -1), d0 -1 too if it is solid (flags bit 2) */
+static void break_side(int right)
+{
+    c->d[0] = 0;
+    move_b(0, rd8(c->a[4] - 0x34FE));
+    c->d[1] = set_w(c->d[1], rd16(c->a[4] - 0x3800)); F_W(c->d[1]);
+    and_w(1, 0xF);
+    if (!right) {
+        c->d[1] = set_w(c->d[1], sub_w(&c->ccr, c->d[0], c->d[1]));
+        if (!(c->ccr & CC_C)) goto no;
+        c->d[6] = set_w(c->d[6], sub_w(&c->ccr, 1, c->d[6]));
+    } else {
+        c->d[1] = set_w(c->d[1], add_w(&c->ccr, c->d[0], c->d[1]));
+        cmp_w(&c->ccr, 0x10, c->d[1]);
+        if ((c->d[1] & 0xFFFF) < 0x10) goto no;
+        c->d[6] = set_w(c->d[6], add_w(&c->ccr, 1, c->d[6]));
+    }
+    call(TILE_ATTR_AT);
+    cmp_byte(0xD, c->d[1]);
+    if ((c->d[1] & 0xFF) == 0xD) {
+        c->d[5] = 0; F_L(0);
+        push32(right ? 0xB3FC : 0xB3C4); break_spawn(); c->a[7] += 4;
+        goto yes;
+    }
+    c->d[6] = set_w(c->d[6], right ? sub_w(&c->ccr, 1, c->d[6]) : add_w(&c->ccr, 1, c->d[6]));
+    f_bit(c->d[2] >> 2 & 1);
+    if (c->d[2] & 4) goto yes;
+no:
+    c->d[0] = 0; F_L(0);
+    return;
+yes:
+    c->d[0] = 0xFFFFFFFFu; F_L(c->d[0]);
+}
+static void break_left(void) { break_side(0); }    /* $B394 */
+static void break_right(void) { break_side(1); }   /* $B3C8 */
+
+/* $B32E: each frame: the player thrusting down ($CF00 & $A is 2) onto a tile's top in a room with
+ * breakable floors: the tile below broken if cracked, else the nearer side's, then the other's */
+static void break_check(void)
+{
+    f_bit(rd8(0xFFFF966Bu) >> 3 & 1);
+    if (!(rd8(0xFFFF966Bu) & 8)) return;
+    player_a4();
+    move_b(0, rd8(c->a[4] - 0x3100));
+    and_w(0, 0xA);
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 2, c->d[0]));
+    if (c->d[0] & 0xFFFF) return;
+    feet(7);
+    c->d[0] = set_w(c->d[0], c->d[7]); F_W(c->d[7]);
+    and_w(0, 0xF);
+    if (c->d[0] & 0xFFFF) return;
+    c->d[7] = set_w(c->d[7], lsl_n(&c->ccr, c->d[7], 2, 16));
+    c->d[6] = set_w(c->d[6], rd16(c->a[4] - 0x3800)); F_W(c->d[6]);
+    c->d[6] = set_w(c->d[6], lsr_n(&c->ccr, c->d[6], 4, 16));
+    c->a[3] = LAYER_A;
+    call(TILE_ATTR_AT);
+    cmp_byte(0xD, c->d[1]);
+    if ((c->d[1] & 0xFF) == 0xD) {
+        c->d[5] = 0; F_L(0);
+        push32(0xB392); break_spawn(); c->a[7] += 4;
+        return;
+    }
+    f_bit(c->d[2] >> 2 & 1);
+    if (c->d[2] & 4) return;
+    c->d[0] = set_w(c->d[0], rd16(c->a[4] - 0x3800)); F_W(c->d[0]);
+    and_w(0, 0xF);
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 8, c->d[0]));
+    if (c->ccr & CC_C) {                            /* the left half: the left first */
+        push32(0xB382); break_left(); c->a[7] += 4;
+        if (!(c->ccr & CC_Z)) return;
+        break_right();
+    } else {
+        push32(0xB388); break_right(); c->a[7] += 4;
+        if (!(c->ccr & CC_Z)) return;
+        break_left();
+    }
+}
+
+/* $B49C: a door's record from command 19's bytes at a0, in the first free slot (d0 -1; none: as
+ * the slots' search left it) */
+static void door_add(void)
+{
+    c->a[1] = 0;
+    c->d[0] = 15;
+    for (;;) {
+        F_B(rd8(c->a[1] - 0x656A));
+        if (!(rd8(c->a[1] - 0x656A) & 0x80)) break;
+        c->a[1] += 4;
+        if (!dbra(0)) return;
+    }
+    move_b(0, next8(0));
+    put8(c->a[1] - 0x6567, next8(0));
+    c->d[1] = 0xFFFFFF80u;
+    c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 1, c->d[0]));
+    if (c->ccr & (CC_C | CC_Z)) {                   /* not bhi */
+        if (c->ccr & CC_Z) c->d[1] = 0xFFFFFFE0u;   /* kind 1 */
+        else c->d[1] = 0xFFFFFFC0u;                 /* kind 0 */
+    }
+    move_b(0, next8(0));
+    if (c->d[0] & 0x80) {
+        and_b(0, 0x7F);
+        c->d[1] = set_b(c->d[1], add_b(&c->ccr, 1, c->d[1]));
+    }
+    put8(c->a[1] - 0x6569, c->d[0]);
+    put8(c->a[1] - 0x656A, c->d[1]);
+    put8(c->a[1] - 0x6568, next8(0));
+    c->d[0] = set_w(c->d[0], 0x100); F_W(0x100);
+    c->d[1] = set_w(c->d[1], c->d[0]); F_W(c->d[0]);
+    move_b(0, next8(0));
+    put16m(c->a[1] - 0x652A, c->d[0]);
+    move_b(1, next8(0));
+    c->d[1] = set_w(c->d[1], lsl_n(&c->ccr, c->d[1], 6, 16));
+    put16m(c->a[1] - 0x6528, c->d[1]);
+    put8(c->a[1] - 0x64E8, next8(0));
+    put8(c->a[1] - 0x64E7, next8(0));
+    c->d[0] = 0xFFFFFFFFu; F_L(c->d[0]);
+}
+/* $B4FA: the doors' records emptied */
+static void doors_clear(void)
+{
+    c->d[0] = 0;
+    c->a[0] = 0;
+    c->d[1] = 15;
+    do { put8(c->a[0] - 0x656A, 0); c->a[0] += 4; } while (dbra(1));
+}
+/* $B852: the crumbling walls' records emptied */
+static void crumble_clear(void)
+{
+    c->a[0] = WALLS;
+    c->d[0] = 0;
+    c->d[1] = 3;
+    do { put8(c->a[0], 0); c->a[0] += 8; } while (dbra(1));
+}
+/* $B864: each crumbling wall every 3 frames: the block at its step's distance either way
+ * cracked away ($B8D4), each side stopping (bits 0, 1) where none is left, for 4 steps */
+static void crumble_walls(void)
+{
+    c->a[4] = WALLS;
+    c->a[3] = LAYER_A;
+    do {
+        F_B(rd8(c->a[4]));
+        if (!(rd8(c->a[4]) & 0x80)) goto next;
+        { uint8_t v = (uint8_t)sub_b(&c->ccr, 1, rd8(c->a[4] + 1)); wr8(c->a[4] + 1, v); if (v) goto next; }
+        put8(c->a[4] + 1, 3);
+        c->d[6] = set_w(c->d[6], rd16(c->a[4] + 4)); F_W(c->d[6]);
+        c->d[7] = set_w(c->d[7], rd16(c->a[4] + 6)); F_W(c->d[7]);
+        c->d[0] = set_w(c->d[0], rd16(c->a[4] + 2)); F_W(c->d[0]);
+        if (!(c->d[0] & 0xFFFF)) {                  /* its own block first */
+            push32(0xB88C); cracked_at(); c->a[7] += 4;
+            if (!(c->ccr & CC_Z)) goto step;
+            goto done;
+        }
+        f_bit(rd8(c->a[4]) >> 1 & 1);
+        if (!(rd8(c->a[4]) & 2)) {                  /* to the right */
+            c->d[6] = set_w(c->d[6], add_w(&c->ccr, c->d[0], c->d[6]));
+            push32(0xB89C); cracked_at(); c->a[7] += 4;
+            if (c->ccr & CC_Z) { uint8_t v = (uint8_t)add_b(&c->ccr, 2, rd8(c->a[4])); wr8(c->a[4], v); }
+        }
+        f_bit(rd8(c->a[4]) & 1);
+        if (!(rd8(c->a[4]) & 1)) {                  /* to the left */
+            c->d[6] = set_w(c->d[6], rd16(c->a[4] + 4)); F_W(c->d[6]);
+            c->d[6] = set_w(c->d[6], sub_w(&c->ccr, rd16(c->a[4] + 2), c->d[6]));
+            push32(0xB8B0); cracked_at(); c->a[7] += 4;
+            if (c->ccr & CC_Z) { uint8_t v = (uint8_t)add_b(&c->ccr, 1, rd8(c->a[4])); wr8(c->a[4], v); }
+        }
+        c->d[0] = 3;
+        and_b(0, rd8(c->a[4]));
+        c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 3, c->d[0]));
+        if (!(c->d[0] & 0xFF)) goto done;
+    step:
+        mem_add_w(c->a[4] + 2, 1);
+        cmp_w(&c->ccr, 4, rd16(c->a[4] + 2));
+        if (rd16(c->a[4] + 2) < 4) goto next;
+    done:
+        wr8(c->a[4], 0); c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z);
+    next:
+        c->a[4] += 8;
+        cmp_l(&c->ccr, sx(rd16(0xFFFF9BB6u)), c->a[4]);
+    } while (c->ccr & CC_C);
+}
+
+ENTRY(BreakCheck, break_check)             /* $B32E */
+ENTRY(BreakLeft, break_left)               /* $B394 */
+ENTRY(BreakRight, break_right)             /* $B3C8 */
+ENTRY(BreakSpawn, break_spawn)             /* $B400 */
+ENTRY(DoorAdd, door_add)                   /* $B49C */
+ENTRY(DoorsClear, doors_clear)             /* $B4FA */
+ENTRY(CrumbleClear, crumble_clear)         /* $B852 */
+ENTRY(CrumbleWalls, crumble_walls)         /* $B864 */
