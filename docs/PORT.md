@@ -1676,6 +1676,45 @@ runs (34 runs, 517,965 checked calls), every instruction of the four tasks run. 
 from five states, 0 mismatches, every instruction covered. Self-test caught 100 in 100 for each.
 Replace mode: thirteen runs, no problems.
 
+#### The rooms, batch T11: the unpackers (2026-10-13)
+
+A room has two layers, each described by a record: `$FF9754` for plane A, `$FF97D4` for plane B.
+Among a record's fields are the room's data (`$34`), its blocks' table (`$1C`) and its map (`$22`).
+The data starts with offsets to its packed blocks and its packed map. The routines that unpack
+them are in a new `port/rooms.c`, with every register and flag in the contract:
+
+* The blocks (`$9F6A`). A block is four tiles (a word each) and a byte, stored as 8 bytes in the
+  table, with the bytes `$800` after. Each block has a nibble: 0 is an empty block; otherwise the
+  nibble is inverted, its top bit then set to leave out the block's byte (0), and its low three
+  bits say how the other three tiles follow from the first:
+  * 0: all given.
+  * 1: the next tiles in a sheet 16 wide.
+  * 2: their numbers and flips, packed in 2 bytes.
+  * 3: their low bytes given.
+  * 4-7: a number and flips, a byte each.
+
+  `$9F64` unpacks a room's blocks and `$9F46` the three sets every room shares (`$FFE500`, `$FFEE00`, `$FFF700`).
+* A layer's map (`$A068`). The map (64 bytes) gets a chunk number for each place the room uses (-1
+  for the others). Each chunk's 192 cells go to `$FF5000` plus `$180` a chunk (plane B's chunks
+  are numbered from `$10`). A chunk is packed as runs of one block, each a block and a bitmap of
+  the cells it fills (`$970C` tracks which are filled); then the cells left, as 10-bit numbers four
+  to five bytes. A count byte with its top bit set first expands zero runs (`$A1C4`: a mask, a bit
+  set for a 0, then the other bytes).
+
+What they needed: the C follows `$A068` label by label (as gotos), because its runs loop jumps
+into the middle of the cells loop when a run has filled every cell. It keeps its frame's locals
+in C. They sit below the stack pointer the routine ends with, which the checks treat as dead,
+and its pushes are written as the original's. a3 ends as the word it had, sign-extended (pushed
+and popped as a word).
+
+The fuzz gives these the layer records of five states (the rooms there) and the shared
+blocks' table, and random zero runs in scratch RAM. Every room loaded in play runs them too.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(34 runs, 517,970 checked calls). 125,000 fuzz cases from five states, 0 mismatches. Every
+instruction is covered, by play alone too. Self-test caught 100 in 100 for each. Replace mode:
+thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
