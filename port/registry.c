@@ -216,7 +216,7 @@ const PortRoutine port_routines[] = {
     {0x00853C, 0x008552, "Level", Level, CT_ALL},
     {0x008552, 0x008596, "TwoDigits", TwoDigits, CT_ALL},
     {0x00183E, 0x001864, "NumText", NumText, CT_ALL},   /* message.c: the message window, every register and flag as the original */
-    {0x0013BC, 0x0016C6, "MsgStep", MsgStep, CT_SP},   /* hands over to the original for its further commands */
+    {0x0013BC, 0x001D92, "MsgStep", MsgStep, CT_SP},   /* with its commands, the quiz and the inn ($14F4-$1D90; the T5 entries inside are their own) */
     {0x0013AE, 0x0013BC, "CharIn", CharIn, CT_ALL},
     {0x002050, 0x002082, "CharAt", CharAt, CT_ALL},
     {0x002082, 0x002110, "ScrollWindow", ScrollWindow, CT_ALL},

@@ -772,11 +772,41 @@ int hybrid_fuzz(const char *name, long count)
             if (!strcmp(name, "MsgStep") || !strcmp(name, "CharIn")) {         /* a real message, at its start or part-way */
                 uint32_t t = (uint32_t)bus_read16(0x1CC14) << 16 | bus_read16(0x1CC16), m = 3 * (rnd() % 64);
                 uint32_t text = t + (uint32_t)(int32_t)(int16_t)(bus_read8(t + m + 1) << 8 | bus_read8(t + m + 2));
-                if (rnd() % 3 == 0) text += rnd() % 24;
+                /* (from its start: part-way, a byte could be read in the middle of a command) */
                 if (rnd() % 8 == 0) {                                         /* a marked character ($FE/$FF before it) */
                     static const uint8_t marked[] = { 0x41, 0xFE, 0x42, 0x43, 0xFF, 0x44, 0x05, 0x00 };
                     for (uint32_t k4 = 0; k4 < sizeof marked; k4++) ram[0x4E00 + k4] = marked[k4];
                     text = 0xFF4E00;
+                }
+                if (rnd() % 2) {                                              /* a command of $15C8, with its arguments */
+                    uint32_t n = rnd() % 51; if (n == 26 || n == 11 || n == 21) n = 25;   /* not 26 (the ocarina, the original's), 11 and 21 (the save EEPROM) */
+                    uint8_t *t = &ram[0x4E00];
+                    for (int k4 = 0; k4 < 48; k4++) t[k4] = 0x05;             /* "more" after whatever it does */
+                    t[47] = 0;
+                    t[0] = (uint8_t)(rnd() % 3 ? 0x41 : 0x0B); t[1] = 0x0B; t[2] = (uint8_t)n;
+                    if (t[0] == 0x0B) { t[0] = 0x41; }
+                    t[3] = (uint8_t)(rnd() % 2 ? rnd() % 65 : rnd());          /* an argument: a thing, a flag, a byte */
+                    t[4] = 0x00; t[5] = 0x06;                                  /* a jump word: 6 on */
+                    t[6] = 0x00; t[7] = 0x06;
+                    if (n == 1 || n == 28) t[3] = 1;                           /* table 1 */
+                    if (n == 50) t[3] = (uint8_t)(1 + rnd() % 4);              /* the text's lines (0 scrolls 65534 rows) */
+                    if (n == 3 || n == 43 || n == 44 || n == 45 || n == 47) { t[3] = 0x00; t[4] = 0x06; }   /* a jump word at once */
+                    if ((n == 15 || n == 23) && rnd() % 3 == 0) t[3] = 0xFF;     /* $FF: the message's thing */
+
+                    for (uint32_t k4 = 0; k4 < 4; k4++) ram[0x95CA + k4] = (uint8_t)rnd();   /* things owned */
+                    for (uint32_t k4 = 0; k4 < 3; k4++) ram[0x8CCF + k4] = (uint8_t)(rnd() % 3);   /* the quiz's answers */
+                    if (n == 36) for (int k4 = 3; k4 < 17; k4 += 2) { t[k4] = 0x00; t[k4 + 1] = 0x10; }
+                    if (n == 39) for (int k4 = 3; k4 < 17; k4 += 2) { t[k4] = 0x00; t[k4 + 1] = 0x12; }
+                    text = 0xFF4E00;
+                    ram[0x8CAF] = (uint8_t)(rnd() % 65); ram[0x8CAE] = (uint8_t)(rnd() % 4 ? rnd() % 65 : 0x60 + rnd() % 6);
+                    ram[0x8CC4] = 1; ram[0x8CC5] = (uint8_t)(rnd() % 65);
+                    for (uint32_t k4 = 0; k4 < 4; k4++) ram[0x8CC6 + k4] = (uint8_t)bus_read8(0x1AD6 + rnd() % 36);
+                    put_word(0x8CB0, 0x40 + 4 * (rnd() % 16));
+                    put_long(0x962C, rnd() % 4 ? rnd() % 100000 : 0); put_long(0x8CB2, rnd() % 4 ? rnd() % 100000 : rnd() << 16 | rnd());
+                    put_word(0x9F00, rnd() % 2 ? 0xE00 : 0x100 * (1 + rnd() % 14)); ram[0x959C] = (uint8_t)rnd();
+                    int all12 = n == 44 && rnd() % 2;                          /* command 44: all five at 12 */
+                    for (uint32_t k4 = 0; k4 < 5; k4++) ram[0x95BE + k4] = (uint8_t)(all12 || rnd() % 2 ? 12 : rnd() % 13);
+                    put_word(0x9F32, rnd() % 2 ? 0x8000 : rnd() & 0x7FFF);
                 }
                 put_long(0x8C7A, text); put_word(0x8CA8, 0);
                 uint8_t f = 0x80 | (rnd() % 2 ? 0x40 : 0);
@@ -789,6 +819,8 @@ int hybrid_fuzz(const char *name, long count)
                 put_word(0x8CA6, 0x8000 | (rnd() % 8) << 8);
                 ram[0x8A7C] = (uint8_t)(rnd() % 2 ? 0 : 1u << (rnd() % 8)); ram[0x8A7A] = (uint8_t)(rnd() % 2 ? 0 : 1u << (rnd() % 8));
                 ram[0x8CC3] = (uint8_t)(1u << (rnd() % 8));
+                put_word(0x968A, 2 * (rnd() % 4)); put_word(0x9F30, 0x40 + 4 * (rnd() % 16));   /* the scene for command 29 ($F906) */
+                put_word(0x8CD4, 1 + rnd() % 3); ram[0x8CD2] = (uint8_t)(rnd() % 6); ram[0x8CD3] = (uint8_t)(rnd() % 6);   /* the quiz */
             }
             if (!strcmp(name, "WindowAt")) {                                              /* a window's record */
                 uint32_t t = (uint32_t)bus_read16(0x1CC18) << 16 | bus_read16(0x1CC1A);

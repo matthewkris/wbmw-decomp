@@ -1533,6 +1533,43 @@ Results: 0 mismatches over the standard runs, every owner state, the three sessi
 instruction covered. Self-test caught 100 in 100 for each. Replace mode plays the new-game
 script, four states, the three sessions and `pause`.
 
+#### The messages, batch T7: the interpreter's commands, the quiz and the inn (2026-10-13)
+
+The rest of `$13BC` is C: its 51 further commands (code `$0B` and a number, `$15C8`), the quiz's
+answer step (`$1CBC`) and the inn's heal (`$1BE6`), with `$1B50` (a 16-bit division by shifts). The
+commands, by what they do: step into a text (a thing's name, a quiz answer, a table and entry), a
+choice of two, prices and the amount (`$8CB2`: a thing's price, a table at `$1906`, a long), the
+amount as digits, paying and gaining gold (the HUD's gold redrawn), giving and taking things and
+testing them, game flags (test, set, by bit), a pause, a sound, the cursor's place, the text
+cleared or its lines, tests that jump in the text (gold short, a game flag, a thing owned, the
+most hearts, every special action at 12, health full, `$9F32`), a heart more, the speaker gone,
+the quiz (its six questions from ten, each question's three answers in random order, the answer
+awaited for 240 frames, a jump by the right answers) and the inn. A test's jump is the word after
+it (`$168C`). The quiz: A, B or C answers ("Correct." with sound 52, "Incorrect." 53, or "Time's
+up." when the 240 frames run out), the answer's text stepped into and the text cleared for it.
+The inn: `$10` health a frame up to the most, then the message goes on.
+
+Still the original's: command 26, the ocarina's tune. Its `$2AAE` waits for frames itself, keeping
+its return addresses in a RAM stack at `$9C14`, so the command moves the interpreter's own return
+address out of the way first (`$8CD6`); the C hands over to it as before. It wants a coroutine,
+as the status screen's menus have.
+
+How it is checked: the owner's shop and talk sessions run it throughout. The fuzz opens one of 64
+real messages from its start (from part-way, a byte could be read in the middle of a command), or
+builds a short text of one command with its argument and a jump word that lands inside it, then
+"more"s; it gives the commands real things (under 65, or `$60`-`$65`), game flags, gold and
+amounts, the hearts and their most, the special actions' counts (all at 12 for command 44), the
+quiz's state and answers, a speaker, and command 29's scene (`$968A` 0-6, `$F906`'s jump table).
+Commands 11 and 21 (loading and saving through the cartridge's serial EEPROM, `$1C494`, `$1C330`)
+are not fuzzed: the check cannot run the EEPROM's protocol twice from one state. They and command
+26 are the 22 instructions not yet covered; a recorded session that saves the game and plays an
+ocarina tune would cover them. Command 50's lines are 1 to 4 (0 would scroll 65534 rows).
+
+Results: 0 mismatches over the standard runs, every owner state, the three sessions and `pause`
+(30 runs, 485,890 checked calls); 25,000 fuzz cases from five states, 0 mismatches; 649 of 671
+instructions covered (the 22 above). Self-test caught 100 in 100. Replace mode plays the new-game
+script, four states, the three sessions and `pause`.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

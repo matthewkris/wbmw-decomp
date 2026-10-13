@@ -52,6 +52,8 @@ static int mem_bclr(uint32_t a, int bit) { int on = mem_bit(a, bit); wr8(a, rd8(
 static int mem_bset(uint32_t a, int bit) { int on = mem_bit(a, bit); wr8(a, rd8(a) | 1 << (bit & 7)); return on; }
 static uint8_t mem_subq_b(uint32_t a, uint32_t n) { uint8_t v = (uint8_t)sub_b(&c->ccr, n, rd8(a)); wr8(a, v); return v; }
 static uint16_t mem_addq_w(uint32_t a, uint32_t n) { uint16_t v = (uint16_t)add_w(&c->ccr, n, rd16(a)); wr16(a, v); return v; }
+static uint16_t mem_subq_w(uint32_t a, uint32_t n) { uint16_t v = (uint16_t)sub_w(&c->ccr, n, rd16(a)); wr16(a, v); return v; }
+static void f_clr_z(void) { c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z); }   /* clr */
 
 /* $183E: d1 as decimal digits ending at a1 (a 0 there); a1 ends at the first digit */
 static void num_text(void)
@@ -798,6 +800,517 @@ static void msg_pause(void)
     wr32(c->a[0] - 0x7386, c->a[2]);
 }
 
+/* ---- batch T7: the interpreter's further commands ---- */
+
+#define MSG_THING     0xFFFF8CAEu   /* byte: the thing a message is about (a byte $FF in a command means it) */
+#define MSG_AMOUNT    0xFFFF8CB2u   /* long: a price or amount */
+#define GOLD          0xFFFF962Cu   /* long: the gold */
+#define QUIZ_LEFT     0xFFFF8CD4u   /* word: the quiz's frames to answer */
+#define QUIZ_ROUND    0xFFFF8CD2u   /* byte: the question */
+#define QUIZ_RIGHT    0xFFFF8CD3u   /* byte: the right answers */
+#define MAX_HEALTH_W  0xFFFF9F00u
+#define PLAYER_PTR    0xFFFF9EEEu
+
+enum { CMD_ON, CMD_PAUSE, CMD_RETURN, CMD_HANDED };
+
+/* $1568: step into text d2 of table d3 & 3 of the names (the place kept on the texts' stack) */
+static void step_into(void)
+{
+    c->d[3] = set_w(c->d[3], c->d[3] & 3);
+    c->d[3] = set_w(c->d[3], lsl_n(&c->ccr, c->d[3], 2, 16));
+    c->a[1] = rd32(rd32(DATA_DIR + 0x10) + sx(c->d[3]));
+    c->d[3] = set_b(c->d[3], c->d[2]);
+    c->d[3] = set_w(c->d[3], add_w(&c->ccr, c->d[3], c->d[3]));
+    c->d[2] = set_w(c->d[2], rd16(c->a[1] + sx(c->d[3]))); F_W(c->d[2]);
+    c->a[0] = sx(rd16(MSG_DEPTH));
+    wr32(c->a[0] - 0x7386, c->a[2]);
+    c->a[0] += 4;
+    wr16(MSG_DEPTH, (uint16_t)c->a[0]);
+    c->a[2] = c->a[1] + sx(c->d[2]);
+}
+
+/* $168C: a jump in the text by the word at a2 */
+static void jump_text(void)
+{
+    c->d[0] = set_b(c->d[0], rd8(c->a[2]++));
+    c->d[0] = set_w(c->d[0], c->d[0] << 8);
+    c->d[0] = set_b(c->d[0], rd8(c->a[2]));
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 1, c->d[0]));
+    c->a[2] += sx(c->d[0]);
+}
+/* a test's outcome: jump by the word after it, or step past the word */
+static void jump_if(int taken) { if (taken) jump_text(); else c->a[2] += 2; }
+
+/* the byte at a2, or MSG_THING for $FF */
+static void arg_thing(void)
+{
+    c->d[0] = set_b(c->d[0], rd8(c->a[2]++));
+    cmp_byte(0xFF, c->d[0]);
+    if ((c->d[0] & 0xFF) == 0xFF) { c->d[0] = set_b(c->d[0], rd8(MSG_THING)); F_B(c->d[0]); }
+}
+
+/* a call the original makes with a2 kept on the stack (it is put back after) */
+static void call_keep_a2(uint32_t addr)
+{
+    uint32_t a2 = c->a[2];
+    c->a[7] -= 4; wr32(c->a[7], a2);
+    call_68k(c, addr);
+    c->a[2] = rd32(c->a[7]); c->a[7] += 4;
+}
+static void gold_shown(void) { call_keep_a2(0x85A8); }   /* $1886: the HUD's gold */
+
+/* $1B50: d0 / d1 (16 bits by shifts): d0 the quotient, d2 the remainder */
+static void div16(void)
+{
+    c->d[2] = 0;
+    for (c->d[3] = 15; ; ) {
+        uint32_t x = (c->d[0] >> 15) & 1;
+        c->d[0] = set_w(c->d[0], c->d[0] << 1);
+        c->d[2] = set_w(c->d[2], (c->d[2] << 1) + x);
+        cmp_byte(c->d[1], c->d[2]);
+        if ((c->d[2] & 0xFF) >= (c->d[1] & 0xFF)) {
+            c->d[2] = set_b(c->d[2], sub_b(&c->ccr, c->d[1], c->d[2]));
+            c->d[0] = set_b(c->d[0], add_b(&c->ccr, 1, c->d[0]));
+        }
+        c->d[3] = set_w(c->d[3], c->d[3] - 1);
+        if ((c->d[3] & 0xFFFF) == 0xFFFF) break;
+    }
+}
+
+/* $1A90: the quiz's question QUIZ_ROUND: its text and three answers in random order ($1AD6,
+ * $1AFE: the six orders) */
+static void quiz_question(void)
+{
+    uint32_t a2 = c->a[2];
+    c->a[7] -= 4; wr32(c->a[7], a2);
+    c->d[0] = rd8(QUIZ_ROUND);
+    c->a[0] = sx(c->d[0]);
+    c->d[0] = set_b(c->d[0], rd8(c->a[0] - 0x7336));
+    c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 2, 16));
+    c->a[1] = 0x1AD6u + sx(c->d[0]);
+    c->a[2] = 0xFFFF8CC6u;
+    wr8(c->a[2]++, rd8(c->a[1]));
+    call_68k(c, 0x5D8);                             /* Random */
+    c->d[1] = 6;
+    div16();
+    c->d[0] = set_b(c->d[0], rd8(0x1AFEu + sx(c->d[2])));
+    c->d[1] = 2;
+    c->a[0] = 0xFFFF8CCFu;
+    for (;;) {
+        c->d[2] = set_b(c->d[2], c->d[0]);
+        c->d[2] = set_w(c->d[2], c->d[2] & 3);
+        wr8(c->a[0]++, (uint8_t)c->d[2]);
+        wr8(c->a[2]++, rd8(c->a[1] + 1 + sx(c->d[2])));
+        c->d[0] = set_w(c->d[0], lsr_n(&c->ccr, c->d[0], 2, 16));
+        c->d[1] = set_w(c->d[1], c->d[1] - 1);
+        if ((c->d[1] & 0xFFFF) == 0xFFFF) break;
+    }
+    c->a[2] = rd32(c->a[7]); c->a[7] += 4;
+}
+
+/* $1B04: the quiz's six questions, from ten, in random order (into $8CCA) */
+static void quiz_order(void)
+{
+    uint32_t sp = c->a[7] - 4;
+    wr32(sp, c->a[6]); c->a[6] = sp; c->a[7] = sp - 10;
+    c->a[0] = c->a[6] - 10;
+    for (c->d[0] = 9; ; ) {
+        wr8(c->a[0]++, 0);
+        c->d[0] = set_w(c->d[0], c->d[0] - 1);
+        if ((c->d[0] & 0xFFFF) == 0xFFFF) break;
+    }
+    c->a[1] = 0xFFFF8CCAu;
+    c->d[7] = 10;
+    do {
+        call_68k(c, 0x5D8);                         /* Random */
+        c->d[1] = set_w(c->d[1], c->d[7]);
+        div16();
+        c->a[0] = c->a[6] - 10;
+        c->d[1] = 0;
+        for (;;) {                                  /* the d2-th still free */
+            c->d[1] = set_b(c->d[1], add_b(&c->ccr, 1, c->d[1]));
+            uint8_t used = rd8(c->a[0]++); F_B(used);
+            if (used) continue;
+            c->d[2] = set_b(c->d[2], sub_b(&c->ccr, 1, c->d[2]));
+            if (!(c->d[2] & 0x80)) continue;
+            break;
+        }
+        wr8(--c->a[0], 0xFF);
+        c->d[1] = set_b(c->d[1], sub_b(&c->ccr, 1, c->d[1]));
+        wr8(c->a[1]++, (uint8_t)c->d[1]);
+        c->d[7] = set_w(c->d[7], sub_w(&c->ccr, 1, c->d[7]));
+        cmp_byte(5, c->d[7]);
+    } while ((c->d[7] & 0xFF) >= 5);
+    wr8(QUIZ_RIGHT, 0); wr8(QUIZ_ROUND, 0); f_clr_z();
+    c->a[7] = c->a[6]; c->a[6] = rd32(c->a[7]); c->a[7] += 4;
+}
+
+/* $15C8's commands: code $0B, then a number. They answer how the text goes on */
+static int command(void)
+{
+    c->d[0] = rd8(c->a[2]++);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+    c->a[0] = 0x15C8u + sx(rd16(0x15C8u + sx(c->d[0])));
+    uint32_t a0;
+    switch ((c->d[0] & 0xFFFF) >> 1) {
+    case 0:                                         /* the frame's part ends here */
+        return CMD_RETURN;
+    case 1:                                         /* step into table d3, the thing at $8CAF */
+        c->d[3] = set_b(c->d[3], rd8(c->a[2]++));
+        c->d[2] = set_b(c->d[2], rd8(0xFFFF8CAFu));
+        step_into();
+        return CMD_ON;
+    case 2:                                         /* a choice of two: the answers' columns */
+        wr8(MSG, rd8(MSG) | 0x20);
+        wr8(0xFFFF8CACu, rd8(c->a[2]++));
+        wr8(0xFFFF8CADu, rd8(c->a[2]++));
+        wr8(MARKS, rd8(MARKS) & 0xFD);
+        wr8(MARKS, rd8(MARKS) | 4); F_B(rd8(MARKS));
+        c->a[0] = sx(rd16(MSG_DEPTH));
+        wr32(c->a[0] - 0x7386, c->a[2]);
+        choice_draw(0x87B5);
+        return CMD_RETURN;
+    case 3:                                         /* the gold short of the amount: jump */
+        c->d[0] = rd32(GOLD); F_L(c->d[0]);
+        { uint16_t x = c->ccr & CC_X; uint32_t amt = rd32(MSG_AMOUNT), r = c->d[0] - amt;
+          c->ccr = (uint16_t)(x | (r & 0x80000000u ? CC_N : 0) | (r ? 0 : CC_Z) | (c->d[0] < amt ? CC_C : 0)
+                              | ((((c->d[0] ^ amt) & (c->d[0] ^ r)) >> 31) ? CC_V : 0)); }
+        if (c->d[0] < rd32(MSG_AMOUNT)) jump_text(); else c->a[2] += 2;
+        return CMD_ON;
+    case 4:                                         /* the amount: a thing's price */
+        arg_thing();
+        price_of();
+        wr32(MSG_AMOUNT, c->d[0]);
+        return CMD_ON;
+    case 5:                                         /* the amount, as digits (a text stepped into) */
+        c->d[1] = rd32(MSG_AMOUNT);
+        c->a[1] = 0xFFFF8CC0u;
+        num_text();
+        c->a[0] = sx(rd16(MSG_DEPTH));
+        wr32(c->a[0] - 0x7386, c->a[2]);
+        c->a[0] += 4;
+        wr16(MSG_DEPTH, (uint16_t)c->a[0]);
+        c->a[2] = c->a[1];
+        return CMD_ON;
+    case 6:                                         /* the thing's name */
+        c->d[3] = 13;
+        c->d[2] = set_b(c->d[2], rd8(MSG_THING));
+        cmp_byte(0x60, c->d[2]);
+        if ((c->d[2] & 0xFF) >= 0x60) {
+            cmp_byte(0x66, c->d[2]);
+            if ((c->d[2] & 0xFF) < 0x66) c->d[2] = set_b(c->d[2], sub_b(&c->ccr, 0x40, c->d[2]));
+        }
+        step_into();
+        return CMD_ON;
+    case 7:                                         /* pay the amount */
+        c->d[0] = rd32(MSG_AMOUNT);
+        wr32(GOLD, rd32(GOLD) - c->d[0]);
+        gold_shown();
+        return CMD_ON;
+    case 8:                                         /* give a thing */
+        arg_thing();
+        call_keep_a2(0x245A);
+        wr16(0xFFFF9994u, rd16(0xFFFF9994u) | 0x4000); F_W(rd16(0xFFFF9994u));
+        return CMD_ON;
+    case 9:                                         /* the speaker gone */
+        c->a[0] = sx(rd16(0xFFFF8CB0u));
+        wr8(c->a[0] - 0x4000, 0); f_clr_z();
+        return CMD_ON;
+    case 10:
+        wr8(MSG_THING, rd8(c->a[2]++));
+        return CMD_ON;
+    case 11:
+        call_68k(c, 0x1C494);
+        return CMD_ON;
+    case 12: wr8(0xFFFF9BF3u, rd8(0xFFFF9BF3u) | 3); F_B(rd8(0xFFFF9BF3u)); return CMD_ON;
+    case 13: wr8(0xFFFF9BF3u, rd8(0xFFFF9BF3u) | 1); F_B(rd8(0xFFFF9BF3u)); return CMD_ON;
+    case 14:
+        wr8(0xFFFF965Eu, rd8(c->a[2]++));
+        return CMD_ON;
+    case 15:                                        /* the amount from the table at $1906 */
+        c->d[0] = 0;
+        c->d[0] = set_b(c->d[0], rd8(c->a[2]++));
+        cmp_byte(0xFF, c->d[0]);
+        if ((c->d[0] & 0xFF) == 0xFF) c->d[0] = set_b(c->d[0], rd8(0xFFFF965Eu));
+        c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 2, 16));
+        wr32(MSG_AMOUNT, rd32(0x1906u + sx(c->d[0]))); F_L(rd32(0x1906u + sx(c->d[0])));
+        return CMD_ON;
+    case 16:                                        /* no gold */
+        wr32(GOLD, 0); f_clr_z();
+        gold_shown();
+        return CMD_ON;
+    case 17:                                        /* a game flag's bit set: jump */
+        c->d[0] = set_b(c->d[0], rd8(c->a[2]++));
+        call_68k(c, 0x2758);                        /* GameFlagBit */
+        jump_if(mem_bit(c->a[0] + sx(c->d[1]), (int)(c->d[0] & 7)));
+        return CMD_ON;
+    case 18:                                        /* a game flag set: jump */
+        c->d[0] = set_b(c->d[0], rd8(c->a[2]++));
+        call_68k(c, 0x274C);                        /* TestGameFlag */
+        jump_if(!(c->ccr & CC_Z));
+        return CMD_ON;
+    case 19:
+        c->d[0] = set_b(c->d[0], rd8(c->a[2]++));
+        call_68k(c, 0x2758);
+        mem_bset(c->a[0] + sx(c->d[1]), (int)(c->d[0] & 7));
+        return CMD_ON;
+    case 20:
+        c->d[0] = set_b(c->d[0], rd8(c->a[2]++));
+        call_68k(c, 0x2752);                        /* SetGameFlag */
+        return CMD_ON;
+    case 21:
+        call_keep_a2(0x1C330);
+        return CMD_ON;
+    case 22:
+        wr8(0xFFFF8CC3u, rd8(c->a[2]++));
+        return CMD_ON;
+    case 23:                                        /* a thing owned: jump */
+        arg_thing();
+        owns();
+        jump_if(!(c->ccr & CC_Z));
+        return CMD_ON;
+    case 24:                                        /* a pause of d0 frames */
+        c->d[0] = set_b(c->d[0], rd8(c->a[2]++));
+        cheaper();
+        wr8(MSG_WAIT, (uint8_t)c->d[0]);
+        return CMD_PAUSE;
+    case 25:
+        c->d[0] = set_b(c->d[0], rd8(c->a[2]++));
+        call_68k(c, 0x366);                         /* QueueSound */
+        return CMD_ON;
+    case 26:                                        /* the ocarina's tune ($2AAE waits for frames): still the original's */
+        hand_over(c->a[0]);
+        return CMD_HANDED;
+    case 27:
+        wr8(0xFFFF8CC4u, rd8(c->a[2]++));
+        wr8(0xFFFF8CC5u, rd8(c->a[2]++));
+        return CMD_ON;
+    case 28:
+        c->d[3] = set_b(c->d[3], rd8(0xFFFF8CC4u));
+        c->d[2] = set_b(c->d[2], rd8(0xFFFF8CC5u));
+        step_into();
+        return CMD_ON;
+    case 29:
+        c->d[0] = set_w(c->d[0], rd16(0xFFFF968Au));
+        call_68k(c, 0xF906);
+        return CMD_ON;
+    case 30:                                        /* the cursor's place */
+        c->d[0] = 0;
+        c->d[0] = set_b(c->d[0], rd8(c->a[2]++)); wr16(TEXT_COL, (uint16_t)c->d[0]);
+        c->d[0] = set_b(c->d[0], rd8(c->a[2]++)); wr16(TEXT_LINE, (uint16_t)c->d[0]); F_W(c->d[0]);
+        return CMD_ON;
+    case 31:                                        /* step into a quiz answer's text */
+        c->d[3] = 12;
+        c->d[0] = rd8(c->a[2]++);
+        c->a[0] = sx(c->d[0]);
+        c->d[2] = set_b(c->d[2], rd8(c->a[0] - 0x733A));
+        step_into();
+        return CMD_ON;
+    case 32:                                        /* the text cleared */
+        c->d[0] = set_w(c->d[0], 0x8020);
+        c->d[7] = 1;
+        c->d[5] = set_w(c->d[5], rd16(TEXT_LINES));
+        c->d[5] = set_w(c->d[5], add_w(&c->ccr, c->d[5], c->d[5]));
+        c->d[5] = set_w(c->d[5], add_w(&c->ccr, 1, c->d[5]));
+        do {
+            c->d[6] = 1;
+            c->d[4] = set_w(c->d[4], rd16(TEXT_W));
+            do {
+                char_at();
+                c->d[6] = set_w(c->d[6], c->d[6] + 1);
+                c->d[4] = set_w(c->d[4], sub_w(&c->ccr, 1, c->d[4]));
+            } while (c->d[4] & 0xFFFF);
+            c->d[7] = set_w(c->d[7], add_w(&c->ccr, 1, c->d[7]));
+            c->d[5] = set_w(c->d[5], sub_w(&c->ccr, 1, c->d[5]));
+        } while (c->d[5] & 0xFFFF);
+        wr16(TEXT_COL, (uint16_t)c->d[5]); wr16(TEXT_LINE, (uint16_t)c->d[5]); F_W(c->d[5]);
+        return CMD_ON;
+    case 33:                                        /* the quiz's answer awaited (240 frames) */
+        wr16(QUIZ_LEFT, 0xF0);
+        mem_bset(MSG, 3);
+        return CMD_PAUSE;
+    case 34: quiz_question(); return CMD_ON;
+    case 35: quiz_order(); return CMD_ON;
+    case 36:                                        /* by the right answers: the n-th of a list of jumps */
+        c->d[0] = rd8(QUIZ_RIGHT);
+        for (;;) {
+            c->d[1] = set_b(c->d[1], rd8(c->a[2]++));
+            c->d[1] = set_w(c->d[1], lsl_n(&c->ccr, c->d[1], 8, 16));
+            c->d[1] = set_b(c->d[1], rd8(c->a[2]++));
+            c->d[0] = set_w(c->d[0], c->d[0] - 1);
+            if ((c->d[0] & 0xFFFF) == 0xFFFF) break;
+        }
+        c->a[2] = c->a[2] - 2 + sx(c->d[1]);
+        return CMD_ON;
+    case 37:                                        /* the amount: the long at a2; the frame's part ends */
+        c->d[0] = set_b(c->d[0], rd8(c->a[2]++));
+        c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 8, 16));
+        c->d[0] = set_b(c->d[0], rd8(c->a[2]++));
+        c->d[0] = c->d[0] << 16 | c->d[0] >> 16;
+        c->d[0] = set_b(c->d[0], rd8(c->a[2]++));
+        c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 8, 16));
+        c->d[0] = set_b(c->d[0], rd8(c->a[2]++));
+        wr32(MSG_AMOUNT, c->d[0]); F_L(c->d[0]);
+        return CMD_RETURN;
+    case 38:                                        /* gain the amount */
+        wr32(GOLD, rd32(GOLD) + rd32(MSG_AMOUNT));
+        gold_shown();
+        return CMD_ON;
+    case 39: {                                      /* jump by how many of the best things are owned */
+        wr32(MSG_AMOUNT, 0);
+        uint32_t a2 = c->a[2];
+        c->a[7] -= 4; wr32(c->a[7], a2);
+        for (c->d[0] = 7; ; ) {
+            c->a[7] -= 2; wr16(c->a[7], (uint16_t)c->d[0]);
+            owns();
+            if (!(c->ccr & CC_Z)) mem_addq_w(0xFFFF8CB4u, 1);
+            c->d[0] = set_w(c->d[0], rd16(c->a[7])); c->a[7] += 2;
+            c->d[0] = set_w(c->d[0], add_w(&c->ccr, 8, c->d[0]));
+            cmp_word(0x20, c->d[0]);
+            if ((c->d[0] & 0xFFFF) >= 0x20) break;
+        }
+        c->a[2] = rd32(c->a[7]); c->a[7] += 4;
+        c->d[0] = set_w(c->d[0], rd16(0xFFFF8CB4u));
+        c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+        c->a[2] += sx(c->d[0]);
+        jump_text();
+        return CMD_ON;
+    }
+    case 40:                                        /* the inn: the heal each frame ($1BE6) */
+        wr8(MSG, rd8(MSG) | 4);
+        wr32(0xFFFF8CDAu, 0x1BE6);
+        c->d[0] = 61; call_68k(c, 0x366);
+        return CMD_PAUSE;
+    case 41:                                        /* take the thing */
+        c->d[0] = rd8(MSG_THING);
+        call_keep_a2(0x24DC);
+        return CMD_ON;
+    case 42:                                        /* $959C up to the byte: jump */
+        c->d[0] = set_b(c->d[0], rd8(c->a[2]++));
+        cmp_byte(rd8(0xFFFF959Cu), c->d[0]);
+        jump_if((c->d[0] & 0xFF) <= rd8(0xFFFF959Cu));
+        return CMD_ON;
+    case 43:                                        /* the most hearts already: jump */
+        cmp_word(0xE00, rd16(MAX_HEALTH_W));
+        jump_if(rd16(MAX_HEALTH_W) >= 0xE00);
+        return CMD_ON;
+    case 44: {                                      /* every special action at 12: jump */
+        int all = 1;
+        for (uint32_t k = 0; k < 5 && all; k++) { cmp_byte(rd8(0xFFFF95BEu + k), 12); all = rd8(0xFFFF95BEu + k) == 12; }
+        c->d[0] = 12;
+        jump_if(all);
+        return CMD_ON;
+    }
+    case 45:                                        /* health full: jump */
+        a0 = sx(rd16(PLAYER_PTR));
+        c->a[0] = a0;
+        c->d[0] = set_w(c->d[0], rd16(a0 - 0x2600)); F_W(c->d[0]);
+        cmp_word(rd16(MAX_HEALTH_W), c->d[0]);
+        jump_if((c->d[0] & 0xFFFF) >= rd16(MAX_HEALTH_W));
+        return CMD_ON;
+    case 46:
+        call_68k(c, 0x8E9C);
+        c->a[2] += 2;
+        return CMD_ON;
+    case 47:                                        /* $9F32 not negative: jump */
+        F_W(rd16(0xFFFF9F32u));
+        jump_if(!(rd16(0xFFFF9F32u) & 0x8000));
+        return CMD_ON;
+    case 48:                                        /* a heart more (up to 14) */
+        cmp_word(0xE00, rd16(MAX_HEALTH_W));
+        if (rd16(MAX_HEALTH_W) < 0xE00) {
+            wr16(MAX_HEALTH_W, (uint16_t)add_w(&c->ccr, 0x100, rd16(MAX_HEALTH_W)));
+            c->a[0] = sx(rd16(PLAYER_PTR));
+            wr16(c->a[0] - 0x2600, (uint16_t)add_w(&c->ccr, 0x100, rd16(c->a[0] - 0x2600)));
+            call_keep_a2(0x8AA2);
+        }
+        return CMD_ON;
+    case 49:
+        call_keep_a2(0x76C4);
+        return CMD_ON;
+    default:                                        /* 50: the text's lines */
+        c->d[0] = 0;
+        c->d[0] = set_b(c->d[0], rd8(c->a[2]++));
+        wr16(TEXT_LINES, (uint16_t)c->d[0]); F_W(c->d[0]);
+        return CMD_ON;
+    }
+}
+
+/* $1CBC: the quiz's answer: A, B or C (or the time running out): "Correct.", "Incorrect." or
+ * "Time's up." stepped into, with its sound; the text cleared for it */
+static void quiz_answer(void)
+{
+    int answered = 1;
+    if (mem_bit(PAD_NEW_MSG, 6)) c->d[0] = 0;
+    else if (mem_bit(PAD_NEW_MSG, 4)) c->d[0] = 1;
+    else if (mem_bit(PAD_NEW_MSG, 5)) c->d[0] = 2;
+    else answered = 0;
+    if (!answered) {
+        if (mem_subq_w(QUIZ_LEFT, 1)) return;
+        wr8(0xFFFF8CC2u, rd8(0xFFFF8CC2u) | 0x40);
+        c->a[2] = 0x1D72u;
+        c->d[0] = 53;
+    } else {
+        F_L(c->d[0]);
+        c->a[0] = sx(c->d[0]);
+        c->d[7] = set_w(c->d[7], c->d[0]);
+        c->d[7] = set_w(c->d[7], add_w(&c->ccr, c->d[7], c->d[7]));
+        c->d[7] = set_w(c->d[7], add_w(&c->ccr, 6, c->d[7]));
+        c->d[6] = 2;
+        c->d[0] = set_w(c->d[0], add_w(&c->ccr, 0xA010, c->d[0]));
+        char_at();
+        F_B(rd8(c->a[0] - 0x7331));
+        if (rd8(c->a[0] - 0x7331)) {
+            wr8(0xFFFF8CC2u, rd8(0xFFFF8CC2u) | 0x40);
+            c->a[2] = 0x1D7Du;
+            c->d[0] = 53;
+        } else {
+            wr8(0xFFFF8CC2u, rd8(0xFFFF8CC2u) | 0x80);
+            c->a[2] = 0x1D88u;
+            wr8(QUIZ_RIGHT, (uint8_t)add_b(&c->ccr, 1, rd8(QUIZ_RIGHT)));
+            c->d[0] = 52;
+        }
+    }
+    call_68k(c, 0x366);                             /* QueueSound */
+    c->a[0] = sx(rd16(MSG_DEPTH)) + 4;
+    wr32(c->a[0] - 0x7386, c->a[2]);
+    wr16(MSG_DEPTH, (uint16_t)c->a[0]);
+    wr16(TEXT_COL, 2);
+    wr16(TEXT_LINE, 0);
+    c->d[0] = set_w(c->d[0], 0x8020);
+    c->d[7] = 1;
+    c->d[5] = 4;
+    do {
+        c->d[6] = 1;
+        c->d[4] = set_w(c->d[4], rd16(TEXT_W));
+        do {
+            char_at();
+            c->d[6] = set_w(c->d[6], c->d[6] + 1);
+            c->d[4] = set_w(c->d[4], sub_w(&c->ccr, 1, c->d[4]));
+        } while (c->d[4] & 0xFFFF);
+        c->d[7] = set_w(c->d[7], add_w(&c->ccr, 1, c->d[7]));
+        c->d[5] = set_w(c->d[5], sub_w(&c->ccr, 1, c->d[5]));
+    } while (c->d[5] & 0xFFFF);
+    wr8(QUIZ_ROUND, (uint8_t)add_b(&c->ccr, 1, rd8(QUIZ_ROUND)));
+    mem_bclr(MSG, 3);
+}
+
+/* $1BE6: the inn's heal, $10 a frame up to the most; then the message goes on (sound 62); the
+ * hearts drawn ($8AA2) */
+static void inn_heal(void)
+{
+    c->a[0] = sx(rd16(PLAYER_PTR));
+    wr16(c->a[0] - 0x2600, (uint16_t)add_w(&c->ccr, 0x10, rd16(c->a[0] - 0x2600)));
+    c->d[0] = set_w(c->d[0], rd16(MAX_HEALTH_W));
+    cmp_word(rd16(c->a[0] - 0x2600), c->d[0]);
+    if ((c->d[0] & 0xFFFF) <= rd16(c->a[0] - 0x2600)) {
+        wr16(c->a[0] - 0x2600, (uint16_t)c->d[0]);
+        wr8(MSG, rd8(MSG) & 0xFB);
+        c->d[0] = 62; call_68k(c, 0x366);
+    }
+    call_68k(c, 0x8AA2);
+}
+
 /* $14F4: the text from a2 until something waits; 0 when the frame's part is done, 1 handed over */
 static void msg_text(void)
 {
@@ -832,17 +1345,7 @@ static void msg_text(void)
             mem_addq_w(TEXT_COL, 1);
         } else if (ch >= 0x0C) {                    /* $0C-$0F: step into text d2 of table d3 & 3 */
             c->d[2] = set_b(c->d[2], rd8(c->a[2]++));
-            c->d[3] = set_w(c->d[3], c->d[3] & 3);
-            c->d[3] = set_w(c->d[3], lsl_n(&c->ccr, c->d[3], 2, 16));
-            c->a[1] = rd32(rd32(DATA_DIR + 0x10) + sx(c->d[3]));
-            c->d[3] = set_b(c->d[3], c->d[2]);
-            c->d[3] = set_w(c->d[3], add_w(&c->ccr, c->d[3], c->d[3]));
-            c->d[2] = set_w(c->d[2], rd16(c->a[1] + sx(c->d[3]))); F_W(c->d[2]);
-            c->a[0] = sx(rd16(MSG_DEPTH));
-            wr32(c->a[0] - 0x7386, c->a[2]);
-            c->a[0] += 4;
-            wr16(MSG_DEPTH, (uint16_t)c->a[0]);
-            c->a[2] = c->a[1] + sx(c->d[2]);
+            step_into();
             continue;
         } else {
             c->d[0] = ch;
@@ -881,11 +1384,7 @@ static void msg_text(void)
                 msg_pause();
                 return;
             case 6:                                 /* a jump in the text */
-                c->d[0] = set_b(c->d[0], rd8(c->a[2]++));
-                c->d[0] = set_w(c->d[0], c->d[0] << 8);
-                c->d[0] = set_b(c->d[0], rd8(c->a[2]));
-                c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 1, c->d[0]));
-                c->a[2] += sx(c->d[0]);
+                jump_text();
                 continue;
             case 7:
                 wr8(MSG, rd8(MSG) | 0x10); F_B(rd8(MSG));
@@ -901,12 +1400,12 @@ static void msg_text(void)
             case 10:                                /* the indent */
                 wr8(0xFFFF8CABu, rd8(c->a[2]++));
                 continue;
-            default:                                /* 11: a further command ($15C8): the original's */
-                c->d[0] = rd8(c->a[2]++);
-                c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
-                c->a[0] = 0x15C8u + sx(rd16(0x15C8u + sx(c->d[0])));
-                hand_over(c->a[0]);
-                return;
+            default: {                              /* 11: a further command ($15C8) */
+                int r = command();
+                if (r == CMD_ON) continue;
+                if (r == CMD_PAUSE) msg_pause();
+                return;                             /* CMD_RETURN, CMD_HANDED */
+            }
             }
         }
         wr8(MSG_WAIT, rd8(MSG_DELAY)); F_B(rd8(MSG_DELAY));   /* $1546 */
@@ -923,8 +1422,12 @@ static void msg_step(void)
         wr8(MARKS, 0); wr16(MSG_DEPTH, 0); wr32(TEXT_COL, 0); wr16(MSG_DELAY, 0);
         wr8(0xFFFF8CC2u, 0); wr8(0xFFFF8CC3u, 1); wr16(MSG_ATTR, 0x8000); F_W(0x8000);
     }
-    if (mem_bit(MSG, 2)) { c->a[0] = rd32(0xFFFF8CDAu); hand_over(c->a[0]); return; }
-    if (mem_bit(MSG, 3)) { hand_over(0x1CBC); return; }
+    if (mem_bit(MSG, 2)) {                          /* a step of its own: the inn's heal ($1BE6) */
+        c->a[0] = rd32(0xFFFF8CDAu);
+        if (c->a[0] == 0x1BE6) inn_heal(); else hand_over(c->a[0]);
+        return;
+    }
+    if (mem_bit(MSG, 3)) { quiz_answer(); return; }
     if (mem_bit(MSG, 5)) {                          /* a choice of two: left/right, A/B/C */
         choice_blink();
         int change = 0;

@@ -21,3 +21,4 @@
 001EAC
 001EB0
 001EB2
+001772  # an unreachable rts after $1754 (MoreShow), inside MsgStep's range
