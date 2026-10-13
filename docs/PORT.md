@@ -1715,6 +1715,64 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 instruction is covered, by play alone too. Self-test caught 100 in 100 for each. Replace mode:
 thirteen runs, no problems.
 
+#### The rooms, batch T12: loading a room (2026-10-13)
+
+A room is a list of commands, found by its area (`$9668`) and room (`$9669`) through the data
+directory's table at `$1CC20`, and ended by `$FF`. `LoadRoom` (`$9330`) does the following:
+1. Sets up both layers' records (`$967E`, `$9622`) and calls five routines that reset the
+   things, doors and effects.
+2. Clears the room's state.
+3. Runs the commands, by their offsets at `$9442`. Each handler is entered with `jsr (a0)`, so
+   it starts with a0 at its own address.
+4. Finishes: the things' graphics, then the music and palette. A dark room (command 14) gets
+   palette `$76` unless the player owns thing 49, which lights it. A room with a flag's music
+   (command 15) keeps its usual music once the flag is set.
+
+The commands, all in `port/rooms.c`:
+
+| Command | Handler | What it does |
+|---|---|---|
+| 0, 1 | `$94AA` | A layer: its kind, size in screens, a word, and its data at an offset in the list (`$946C` fills the record) |
+| 16, 17 | `$94B4` | A layer, its data at an address |
+| 2 | `$9510` | The graphics' slot list |
+| 3, 10 | `$9520`, `$952A` | Palettes |
+| 4 | `$9530` | An effect's script (`$23A6`) |
+| 5, 8 | `$9540`, `$9578` | Pointers kept for later (`$996C`, `$A11E`) |
+| 6 | `$9548` | Under water |
+| 7 | `$954E` | A thing at a place (`$11BF0`) |
+| 9, 13, 14, 15 | `$958C`, `$95C0`, `$95CA`, `$95D0` | Bytes and words kept: command 14 the dark room, 15 the flag's music |
+| 11 | `$9592` | A block drawn (`$2974`) |
+| 12 | `$95AC` | A palette effect (`$5658`) |
+| 18 | `$95DA` | The door's kind; if it changed, `$F880` |
+| 19 | `$95EE` | A door's record (`$B49C`) |
+| 20 | `$95FE` | A thing in a free slot (`$11CE8`) |
+
+A pointer in a command is a byte, then a long if the byte is not 0, or else a word offset from
+the room's list (`$9500`). With them:
+* `$96D6`: one of the ending's six scenes, from the directory's table at `$1CC1C`. It sets both
+  layers' data, a palette and the graphics, and unpacks both maps.
+* `$92D4`: the room's music. Values `$00`-`$7F` and `$F0`-`$FF` are used as they are. `$EF`
+  depends on two game flags (`$DAC8`). The others pick one of two from `$932A` by a game flag.
+
+All are ported with every register and flag in the contract.
+
+What they needed:
+* **Fuzz inputs.** The command handlers get random command bytes in scratch RAM. The graphics
+  command gets a real slot list, and command 18 a door kind of 0-6 or the one in use.
+  `RoomMusic` gets any room of the 22 areas with random game flags.
+* **LoadRoom's fuzz.** `LoadRoom` keeps the state's own room. In another room the things it sets
+  up depend on how the player got there, and the original goes wrong too. From area 3's first
+  room it also loads the next room, which has a flag's music. Thing 49's count (`$958D`) and the
+  flags vary, so both endings of the dark rooms and of the flag's music run.
+* **`ocarina` joins the fuzz states**, for that room.
+* **Command 7 is not fuzzed.** A random thing's kind sends the original astray. Play runs every
+  instruction of it.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(37 runs, 558,595 checked calls). 750,000 fuzz cases from six states, 0 mismatches. Every
+instruction is covered (command 7 by play). Self-test caught 100 in 100 for each. Replace mode:
+thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

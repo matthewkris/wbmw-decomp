@@ -7,7 +7,7 @@
 #   tools/accept.sh OUTDIR NAME [NAME ...]
 #
 # Environment: PYTHON (python3), LIMIT (seconds per harness run, 1200), JOBS (fuzz runs at once, 12), CASES (fuzz cases per routine and state, 5000), FUZZ_STATES
-# (state names in work/, "castle platform after-boss2 boss2 thunder"), REPLACE_STATES (states
+# (state names in work/, "castle platform after-boss2 boss2 thunder ocarina"), REPLACE_STATES (states
 # for replace mode, "boss2 thunder door-crash castle status shop talk pause ocarina-tunes"), ROM, SAVE (a save EEPROM for
 # the title menu's runs, play.sav). Each state's input is
 # work/runs/inputs/STATE.txt: made once (3,000 frames of random buttons) and kept, or recorded by play --record (to its "# end"). Run from the
@@ -18,7 +18,7 @@ NAMES="$*"
 PY="${PYTHON:-python3}"
 CASES="${CASES:-5000}"
 JOBS="${JOBS:-12}"                # fuzz runs at once: the cores
-FUZZ_STATES="${FUZZ_STATES:-castle platform after-boss2 boss2 thunder}"
+FUZZ_STATES="${FUZZ_STATES:-castle platform after-boss2 boss2 thunder ocarina}"
 REPLACE_STATES="${REPLACE_STATES:-boss2 thunder door-crash castle status shop talk pause ocarina-tunes}"
 ROM="${ROM:-rom/Wonder Boy in Monster World (USA, Europe).md}"
 SAVE="${SAVE:-play.sav}"

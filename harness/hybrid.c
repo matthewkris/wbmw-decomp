@@ -925,6 +925,38 @@ int hybrid_fuzz(const char *name, long count)
             for (uint32_t k4 = 0; k4 < m + n + 2; k4++) ram[p++] = (uint8_t)(rnd() % 3 ? rnd() : 0xFF);
             m68k_set_reg(M68K_REG_A2, 0xFFFF4E00);
         }
+        if (!strcmp(name, "LoadRoom") || !strcmp(name, "RoomMusic")) {   /* RoomMusic: any room of the game (22 areas), any flags; LoadRoom: the state's own room (another needs the state that leads there) */
+            if (!strcmp(name, "RoomMusic")) {
+                uint32_t area = rnd() % 22, p = bus_read16(0x1CC20 + 4 * area) << 16 | bus_read16(0x1CC22 + 4 * area);
+                uint32_t n = (uint32_t)(int16_t)bus_read16(p) / 2;
+                ram[0x9668] = (uint8_t)area; ram[0x9669] = (uint8_t)(n ? rnd() % n : 0);
+                for (uint32_t k4 = 0; k4 < 32; k4++) ram[0x99BE + k4] = (uint8_t)rnd();   /* the game's flags */
+            }
+            if (rnd() % 2) ram[0x9684] = (uint8_t)rnd();
+            if (!strcmp(name, "LoadRoom")) {         /* the thing that lights the dark rooms (49), the game's flags */
+                if (rnd() % 2) ram[0x958D] = 0;      /* its count ($958C + 49 - $30) */
+                if (rnd() % 2) for (uint32_t k4 = 0; k4 < 32; k4++) ram[0x99BE + k4] = (uint8_t)rnd();
+            }
+            if (!strcmp(name, "LoadRoom") && ram[0x9668] == 3 && ram[0x9669] == 0 && rnd() % 2) ram[0x9669] = 1;   /* the next room, with a flag's music (command 15) */
+        }
+        if (!strcmp(name, "LoadScene")) m68k_set_reg(M68K_REG_D0, (rnd() << 16) | rnd() % 6);   /* the ending's six scenes */
+        if (!strcmp(name, "InitLayer")) {           /* one of the layers' records, plane A or B */
+            uint32_t r = rnd() % 2 ? 0x9754 : 0x97D4;
+            ram[r] = (uint8_t)(rnd() % 2);
+            m68k_set_reg(M68K_REG_A3, 0xFFFF0000u | r);
+        }
+        if (!strncmp(name, "RoomCmd", 7) || !strncmp(name, "RoomLayer", 9) || !strcmp(name, "RoomGfx") || !strncmp(name, "RoomPalette", 11)
+            || !strcmp(name, "SetupLayer") || !strcmp(name, "ReadRoomPointer")) {   /* a command's bytes in scratch RAM */
+            for (uint32_t k4 = 0; k4 < 16; k4++) ram[0x4E00 + k4] = (uint8_t)rnd();
+            ram[0x4E00] = (uint8_t)(rnd() % 2 ? 0 : rnd());               /* a pointer's kind: an offset or a long */
+            if (!strcmp(name, "RoomCmd18")) ram[0x4E00] = (uint8_t)(rnd() % 3 ? 2 * (rnd() % 4) : ram[0x9F33]);   /* a door's kind, or the one in use */
+            if (!strcmp(name, "RoomGfx")) {          /* the graphics: a real slot list (the shared base one) */
+                ram[0x4E00] = 1; ram[0x4E01] = 0; ram[0x4E02] = 0; ram[0x4E03] = 0x96; ram[0x4E04] = 0xBC;
+            }
+            m68k_set_reg(M68K_REG_A2, 0xFFFF4E00);
+            m68k_set_reg(M68K_REG_A1, 0x20000 + (rnd() & 0xFFFE));
+            m68k_set_reg(M68K_REG_D0, (rnd() << 16) | 2 * (rnd() % 21));
+        }
         if (!strcmp(name, "TilesAt") || !strcmp(name, "FrameBox")) m68k_set_reg(M68K_REG_A0, 0x8C82 + 2 * (rnd() % 0x80));
         if (!strcmp(name, "TileRow") || !strcmp(name, "TileRowAt")) m68k_set_reg(M68K_REG_A0, 0x8C82 + rnd() % 0x1A0);
         if (!strcmp(name, "SetGfxSlots")) {         /* a random valid slot list in scratch RAM */
