@@ -1953,6 +1953,33 @@ and the title runs (38 runs, 579,724 checked calls). 390,000 fuzz cases from six
 mismatches, every instruction covered. Self-test caught 100 in 100 for each. Replace mode:
 thirteen runs, no problems.
 
+#### The room changes, batch T18: the picture growing, the door's animations, leaving (2026-10-13)
+
+In `port/rooms.c`, with every register and flag in the contract except the two that wait:
+
+* The picture growing (`$BBEA`). An event's picture opens from its middle. Each step (`$9BE6`)
+  redraws the edges of a rectangle a cell larger each way (`$BCAC` a row, `$BCDA` a column),
+  with `$9BE8` or'ed into the blocks: bit 15 in front while it opens, 0 to take it away. d0
+  tells which edges were still inside, so the caller knows when it is fully open. The two
+  helpers keep their counts in their caller's `link` frame, and the C does too.
+* The door's animations (`$BD0A`: opening, picture 8; `$BD52`: closing, `$16`). They play sounds
+  35 and 34 and wait a frame at a time: first while the frame is still moving, then for the
+  animation's end. While they wait, the caller's return address goes on the game's continuation
+  stack (`$9C14`), and at the end they jump to the address popped from it, as the ocarina's tune
+  does. The C keeps the same RAM, waits with `task_wait_frame` at the original's resume
+  addresses, and from the original's code goes on at the popped address. From C it returns, and
+  the next batch's sequences call it that way.
+* Leaving a room (`$BD9A`): the things, effects and items stopped.
+
+How it is checked: the two that wait are not fuzzed (registered with a plain contract), and the
+owner's `rooms` session runs every instruction of both. The others are fuzzed with real
+pictures and the caller's frame.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(38 runs, 579,724 checked calls). 120,000 fuzz cases from six states, 0 mismatches, every
+instruction covered. Self-test caught 100 in 100 for each fuzzed routine. Replace mode: thirteen
+runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

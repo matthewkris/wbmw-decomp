@@ -1095,7 +1095,7 @@ int hybrid_fuzz(const char *name, long count)
             }
             if (!strcmp(name, "NearX")) m68k_set_reg(M68K_REG_D1, (rnd() << 16) | (x + rnd() % 16 - 8));
         }
-        if (!strncmp(name, "Door", 4) || !strncmp(name, "Picture", 7) || !strcmp(name, "CrackedAt")) {
+        if (!strncmp(name, "Door", 4) || !strncmp(name, "Picture", 7) || !strcmp(name, "CrackedAt") || !strncmp(name, "Grow", 4)) {
             /* a door's frame at a cell, 1 or 2 blocks each way; an event's picture from its record (the directory's table 2) */
             static const uint8_t frames[] = { 0, 6, 8, 12 };
             put_word(0x9BC6, 0x1000 + 16 * (rnd() % 0x80)); put_word(0x9BC8, 0x1000 + 16 * (rnd() % 0x40));
@@ -1115,6 +1115,15 @@ int hybrid_fuzz(const char *name, long count)
             m68k_set_reg(M68K_REG_D6, (rnd() << 16) | (!strcmp(name, "CrackedAt") ? 0xF0 + rnd() % 0x100 : rnd() % w));
             m68k_set_reg(M68K_REG_D7, (rnd() << 16) | (!strcmp(name, "CrackedAt") ? (0x4000 + rnd() % 0x1500) & ~0x3Fu : rnd() % h));
             m68k_set_reg(M68K_REG_A3, 0xFFFF9754);
+            put_word(0x9BE6, rnd() % 12); put_word(0x9BE8, rnd() % 2 ? 0x8000 : 0);   /* the growing's step, in front or not */
+            if (!strncmp(name, "Grow", 4)) {        /* the caller's frame: the rectangle's edges */
+                uint32_t f = 0x0E00;
+                put_word(f - 2, rnd() % w); put_word(f - 4, rnd() % w); put_word(f - 6, rnd() % h); put_word(f - 8, rnd() % h);
+                if (ram[f - 3] > ram[f - 1]) { uint8_t t2 = ram[f - 3]; ram[f - 3] = ram[f - 1]; ram[f - 1] = t2; }
+                if (ram[f - 7] > ram[f - 5]) { uint8_t t2 = ram[f - 7]; ram[f - 7] = ram[f - 5]; ram[f - 5] = t2; }
+                m68k_set_reg(M68K_REG_A6, 0xFFFF0000u | f);
+                m68k_set_reg(M68K_REG_D6, (rnd() << 16) | rnd() % w); m68k_set_reg(M68K_REG_D7, (rnd() << 16) | rnd() % h);
+            }
         }
         if (!strcmp(name, "TilesAt") || !strcmp(name, "FrameBox")) m68k_set_reg(M68K_REG_A0, 0x8C82 + 2 * (rnd() % 0x80));
         if (!strcmp(name, "TileRow") || !strcmp(name, "TileRowAt")) m68k_set_reg(M68K_REG_A0, 0x8C82 + rnd() % 0x1A0);
