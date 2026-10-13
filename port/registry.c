@@ -79,6 +79,8 @@ void TextAt(Cpu *), TextAtRC(Cpu *), String(Cpu *), StringPlain(Cpu *), StringBr
      SeqExit(Cpu *), SeqKeptDoor(Cpu *), SeqDoor(Cpu *), SeqWarp(Cpu *), SeqInside(Cpu *), SeqOutside(Cpu *), SeqHouse(Cpu *), WalkInSetup(Cpu *), FrameWait(Cpu *), FrameRestart(Cpu *),
      SeqWalkIn(Cpu *), WalkLeft(Cpu *), DoorAtPlayer(Cpu *), FadeInWait(Cpu *), ArriveDoor(Cpu *), ArriveStill(Cpu *), InsideSetup(Cpu *), ArriveInside(Cpu *), ArriveWalkOut(Cpu *), WalkRight(Cpu *), ArriveInsideDoor(Cpu *), ArriveFade(Cpu *), ArriveTalk(Cpu *),
      BreakCheck(Cpu *), BreakLeft(Cpu *), BreakRight(Cpu *), BreakSpawn(Cpu *), DoorAdd(Cpu *), DoorsClear(Cpu *), CrumbleClear(Cpu *), CrumbleWalls(Cpu *);
+void GatesSetup(Cpu *), GateSetup(Cpu *), GatesRun(Cpu *), GateRun(Cpu *), GateEnd(Cpu *), GateFlag(Cpu *), GateTimer(Cpu *),
+     GateGrow(Cpu *), GateCell(Cpu *), GateShrink(Cpu *), GateSparkTime(Cpu *), GateSparks(Cpu *), CrumbleAdd(Cpu *);
 void NumText(Cpu *), CharAt(Cpu *), ScrollWindow(Cpu *), WindowFrame(Cpu *), WindowRow(Cpu *), TileUnder(Cpu *), WindowRestore(Cpu *), NewLine(Cpu *), MoreBlink(Cpu *), MoreHide(Cpu *), MoreShow(Cpu *), ChoiceBlink(Cpu *), ChoiceHide(Cpu *), ChoiceShow(Cpu *), PriceOf(Cpu *), NameOf(Cpu *), NameText(Cpu *), FoundThing(Cpu *), FoundGold(Cpu *), BoxText(Cpu *), BoxRows(Cpu *), BoxRow(Cpu *), ShowFoundGold(Cpu *), ShowFound(Cpu *), WindowGeometry(Cpu *), Cheaper(Cpu *), Owns(Cpu *), Give(Cpu *), Take(Cpu *), ItemCell(Cpu *), FlagCell(Cpu *), MessageData(Cpu *), OpenWindow(Cpu *), WindowAt(Cpu *), MsgStep(Cpu *), CharIn(Cpu *), NoteIn(Cpu *), OcarinaTune(Cpu *);   /* message.c */
 #define CT_ALL 0x3FFFF                /* every register and flag compared */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
@@ -511,6 +513,19 @@ const PortRoutine port_routines[] = {
     {0x00B4FA, 0x00B50C, "DoorsClear", DoorsClear, CT_ALL},
     {0x00B852, 0x00B864, "CrumbleClear", CrumbleClear, CT_ALL},
     {0x00B864, 0x00B8D4, "CrumbleWalls", CrumbleWalls, CT_ALL},
+    {0x00B50C, 0x00B526, "GatesSetup", GatesSetup, CT_ALL},       /* rooms.c: the gates (the doors' records) each frame */
+    {0x00B526, 0x00B5AC, "GateSetup", GateSetup, CT_ALL},
+    {0x00B5AC, 0x00B5C6, "GatesRun", GatesRun, CT_ALL},
+    {0x00B5C6, 0x00B68C, "GateRun", GateRun, CT_ALL},
+    {0x00B68C, 0x00B702, "GateEnd", GateEnd, CT_ALL},
+    {0x00B702, 0x00B724, "GateFlag", GateFlag, CT_ALL},
+    {0x00B724, 0x00B744, "GateTimer", GateTimer, CT_ALL},
+    {0x00B744, 0x00B754, "GateGrow", GateGrow, CT_ALL},
+    {0x00B754, 0x00B79C, "GateCell", GateCell, CT_ALL},
+    {0x00B79C, 0x00B7A6, "GateShrink", GateShrink, CT_ALL},
+    {0x00B7A6, 0x00B7B8, "GateSparkTime", GateSparkTime, CT_ALL},
+    {0x00B7B8, 0x00B82A, "GateSparks", GateSparks, CT_ALL},
+    {0x00B82A, 0x00B852, "CrumbleAdd", CrumbleAdd, CT_ALL},
     {0x01090C, 0x010910, "SpawnItem", SpawnItem},                 /* effects.c: every register as the original */
     {0x010910, 0x010A1E, "SpawnItemAt", SpawnItemAt},
     {0x010A1E, 0x011094, "RunItems", RunItems, CT_SP},

@@ -2084,6 +2084,33 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 every instruction covered. Self-test caught 100 in 100 for each. Replace mode: thirteen runs, no
 problems.
 
+#### The room changes, batch T22: the gates (2026-10-13)
+
+The doors' records of command 19 (T21's `$B49C`) are gates: a bar of blocks (tile `$2B0` plus its
+direction, 0 right to 3 up) that slides out of its cell a block at a time to its length (up to 6
+in the rooms' data) and back, with a 2-cell end that flickers through 3 frames (`$B6D2`). In
+`port/rooms.c`, with every register and flag in the contract:
+
+* As the room loads (`$B50C`, `$B526`): a gate tied to a flag that is set is gone. One starting
+  shut (bit 0, from the record's bit 7) is drawn at its full length (`$2812`).
+* Each frame (`$B5AC`, `$B5C6`): a gate waits open, shuts, waits shut and opens again. Bit 1 is
+  moving, bit 2 opening. A wait of 0 lasts for ever. Its flag (bit 6: a game flag with bit 5,
+  else a room flag, `$B702`) opens it for good. A step's frames depend on how far out it is
+  (`$B724`, from 16 down to 2). While shut it throws a spark (item `$204` or `$210`) every 12 to
+  139 frames along its end (`$B7B8`, `$B7A6`).
+* A crumbling wall's record added (`$B82A`, called by an object at `$176B8`).
+
+`$B7A6` is only branched to; it has an entry of its own so that its coverage is counted.
+
+The fuzz gives these sixteen gates as the data has them: kinds `$80`, `$C0` and `$E0`,
+directions 0-3, lengths 1-6, part-way through moving or waiting. It also sets random game and
+room flags.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(39 runs, all complete; 637,567 checked calls). No session yet reaches a room with gates: play
+runs only the empty loops. 390,000 fuzz cases from six states, 0 mismatches, every instruction
+covered. Self-test caught 100 in 100 for each. Replace mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

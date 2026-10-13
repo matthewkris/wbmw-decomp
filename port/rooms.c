@@ -3648,3 +3648,348 @@ ENTRY(DoorAdd, door_add)                   /* $B49C */
 ENTRY(DoorsClear, doors_clear)             /* $B4FA */
 ENTRY(CrumbleClear, crumble_clear)         /* $B852 */
 ENTRY(CrumbleWalls, crumble_walls)         /* $B864 */
+
+/* ---- batch T22: the gates (the doors' records) each frame ----
+ * Command 19's records (DoorAdd) are gates: a bar of blocks (tile $2B0 + its direction) that
+ * slides out from its place a block at a time to its length and back, with a 2-cell end that
+ * flickers through 3 frames. Each waits open, shuts, waits shut (bit 0) throwing sparks, opens
+ * and so on; a wait of 0 lasts for ever. A gate tied to a flag (bit 6: a game flag with bit 5,
+ * else a room flag) opens for good once the flag is set. Bit 1: moving, bit 2: opening. Records
+ * 4 bytes apart, a4 their offset. */
+
+#define G_FLAGS       0xFFFF9A96u   /* bit 7: in use, 0: shut */
+#define G_DIR         0xFFFF9A97u   /* 0 right, 1 down, 2 left, 3 up */
+#define G_LENGTH      0xFFFF9A98u   /* in blocks, shut */
+#define G_FLAG        0xFFFF9A99u
+#define G_X           0xFFFF9AD6u   /* its cell */
+#define G_Y           0xFFFF9AD8u
+#define G_TIMER       0xFFFF9B16u   /* frames to the next step */
+#define G_PHASE       0xFFFF9B17u   /* the end's frame, 0-2 */
+#define G_WAIT_SHUT   0xFFFF9B18u
+#define G_WAIT_OPEN   0xFFFF9B19u
+#define G_WAIT        0xFFFF9B56u
+#define G_SPARK       0xFFFF9B57u   /* frames to the next spark */
+#define G_OUT         0xFFFF9B58u   /* blocks out */
+#define RANDOM        0x05D8u
+#define SET_MAP_BLOCKS 0x2812u      /* d0 x d1 blocks from d2 at (d6, d7) */
+#define SPAWN_ITEM    0x1090Cu
+
+static const uint8_t gate_steps[10] = { 0x10, 0x0C, 0x0A, 0x08, 0x06, 0x05, 0x04, 0x03, 0x02, 0x00 };   /* $B732: frames a step, by blocks out */
+static const uint16_t gate_ends[4][3][2] = {                 /* $B6D2: the end's two cells by direction and frame */
+    { { 0x2AA, 0x2AB }, { 0x2AE, 0x2AF }, { 0x2AC, 0x2AD } },
+    { { 0x298, 0x299 }, { 0x29A, 0x29B }, { 0x29C, 0x29D } },
+    { { 0x2A4, 0x2A5 }, { 0x2A8, 0x2A9 }, { 0x2A6, 0x2A7 } },
+    { { 0x29E, 0x29F }, { 0x2A0, 0x2A1 }, { 0x2A2, 0x2A3 } },
+};
+static uint32_t g(uint32_t field) { return c->a[4] + field; }
+static void g_or(uint32_t field, uint8_t m) { uint8_t v = rd8(g(field)) | m; wr8(g(field), v); F_B(v); }
+static void g_and(uint32_t field, uint8_t m) { uint8_t v = rd8(g(field)) & m; wr8(g(field), v); F_B(v); }
+static uint8_t g_dec(uint32_t field) { uint8_t v = (uint8_t)sub_b(&c->ccr, 1, rd8(g(field))); wr8(g(field), v); return v; }
+
+/* $B7A6: the next spark in 12 to 139 frames */
+static void gate_spark_time(void)
+{
+    call(RANDOM);
+    and_b(0, 0x7F);
+    c->d[0] = set_b(c->d[0], add_b(&c->ccr, 0xC, c->d[0]));
+    put8(g(G_SPARK), c->d[0]);
+}
+/* $B724: the step's frames by how far out it is */
+static void gate_timer(void)
+{
+    c->d[0] = 0;
+    move_b(0, rd8(g(G_OUT)));
+    put8(g(G_TIMER), gate_steps[c->d[0]]);
+}
+/* $B67E: the end's next frame drawn; $B68C (first) its frame 0 */
+static void gate_end_frame(uint32_t phase)
+{
+    put8(g(G_PHASE), phase);
+    c->d[0] = set_w(c->d[0], phase);
+    c->d[6] = set_w(c->d[6], rd16(g(G_X))); F_W(c->d[6]);
+    c->d[7] = set_w(c->d[7], rd16(g(G_Y))); F_W(c->d[7]);
+    uint32_t dir = rd8(g(G_DIR));
+    c->d[1] = dir * 6;
+    c->d[2] = set_w(c->d[2], dir);
+    c->d[0] = set_w(c->d[0], (dir * 6 + phase * 2) * 2);
+    c->a[0] = 0xB6D4u + (c->d[0] & 0xFFFF);
+    c->d[0] = set_w(c->d[0], gate_ends[dir][phase][0]);
+    c->a[7] -= 2; wr16(c->a[7], gate_ends[dir][phase][1]);
+    if (dir & 1) {                                  /* up or down: side by side */
+        push32(0xB6C0); cell_set_a(); c->a[7] += 4;
+        c->d[6] = set_w(c->d[6], add_w(&c->ccr, 1, c->d[6]));
+    } else {
+        push32(0xB6C8); cell_set_a(); c->a[7] += 4;
+        c->d[7] = set_w(c->d[7], add_w(&c->ccr, 0x40, c->d[7]));
+    }
+    c->d[0] = set_w(c->d[0], rd16(c->a[7])); c->a[7] += 2; F_W(c->d[0]);
+    cell_set_draw_if_shown();
+}
+static void gate_end(void) { c->d[0] = 0; F_L(0); gate_end_frame(0); }   /* $B68C */
+static void gate_end_next(void)
+{
+    c->d[0] = 0;
+    move_b(0, rd8(g(G_PHASE)));
+    c->d[0] = set_b(c->d[0], add_b(&c->ccr, 1, c->d[0]));
+    cmp_byte(3, c->d[0]);
+    if ((c->d[0] & 0xFF) < 3) gate_end_frame(c->d[0] & 0xFF);
+    else gate_end();
+}
+/* $B702: its flag (none: eq) */
+static void gate_flag(void)
+{
+    f_bit(rd8(g(G_FLAGS)) >> 6 & 1);
+    if (!(rd8(g(G_FLAGS)) & 0x40)) return;
+    move_b(0, rd8(g(G_FLAG)));
+    f_bit(rd8(g(G_FLAGS)) >> 5 & 1);
+    if (rd8(g(G_FLAGS)) & 0x20) { flag_test(); return; }
+    push32(0xB71E); room_flag_bit(); c->a[7] += 4;
+    f_bit(rd8(c->a[0] + sx(c->d[1])) >> (c->d[0] & 7) & 1);
+}
+/* $B754: the block d0 at blocks out from its place, then the end's next frame */
+static void gate_cell(void)
+{
+    c->d[6] = set_w(c->d[6], rd16(g(G_X))); F_W(c->d[6]);
+    c->d[7] = set_w(c->d[7], rd16(g(G_Y))); F_W(c->d[7]);
+    c->a[7] -= 2; wr16(c->a[7], c->d[0]);
+    c->d[1] = 0;
+    move_b(1, rd8(g(G_OUT)));
+    move_b(2, rd8(g(G_DIR)));
+    int beside;                                     /* up or down: the block's two cells side by side */
+    switch (rd8(g(G_DIR))) {
+    case 0: c->d[6] = set_w(c->d[6], add_w(&c->ccr, c->d[1], c->d[6])); beside = 0; break;
+    case 1:
+        c->d[2] = set_b(c->d[2], 0);
+        c->d[1] = set_w(c->d[1], lsl_n(&c->ccr, c->d[1], 6, 16));
+        c->d[7] = set_w(c->d[7], add_w(&c->ccr, c->d[1], c->d[7])); beside = 1; break;
+    case 2: c->d[2] = set_b(c->d[2], 0); c->d[6] = set_w(c->d[6], sub_w(&c->ccr, c->d[1], c->d[6])); beside = 0; break;
+    default:
+        c->d[2] = set_b(c->d[2], c->d[2] - 2);
+        c->d[1] = set_w(c->d[1], lsl_n(&c->ccr, c->d[1], 6, 16));
+        c->d[7] = set_w(c->d[7], sub_w(&c->ccr, c->d[1], c->d[7])); beside = 1; break;
+    }
+    if (beside) {
+        push32(0xB790); cell_set_a(); c->a[7] += 4;
+        c->d[6] = set_w(c->d[6], add_w(&c->ccr, 1, c->d[6]));
+    } else {
+        push32(0xB782); cell_set_a(); c->a[7] += 4;
+        c->d[7] = set_w(c->d[7], add_w(&c->ccr, 0x40, c->d[7]));
+    }
+    c->d[0] = set_w(c->d[0], rd16(c->a[7])); c->a[7] += 2; F_W(c->d[0]);
+    push32(0xB798); cell_set_draw_if_shown(); c->a[7] += 4;
+    gate_end_next();
+}
+/* $B744: a block further out */
+static void gate_grow(void)
+{
+    wr8(g(G_OUT), (uint8_t)add_b(&c->ccr, 1, rd8(g(G_OUT))));
+    c->d[0] = 0;
+    move_b(0, rd8(g(G_DIR)));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+    c->d[0] = set_w(c->d[0], 0x2B0 + rd8(g(G_DIR))); F_W(c->d[0]);
+    gate_cell();
+}
+/* $B79C: a block back in */
+static void gate_shrink(void)
+{
+    c->d[0] = 0; F_L(0);
+    push32(0xB7A0); gate_cell(); c->a[7] += 4;
+    g_dec(G_OUT);
+}
+/* $B7B8: a shut gate's sparks, at random along its end */
+static void gate_sparks(void)
+{
+    f_bit(rd8(g(G_FLAGS)) & 1);
+    if (!(rd8(g(G_FLAGS)) & 1)) return;
+    if (g_dec(G_SPARK)) return;
+    call(RANDOM);
+    c->d[1] = set_w(c->d[1], rd16(g(G_X))); F_W(c->d[1]);
+    c->d[1] = set_w(c->d[1], lsl_n(&c->ccr, c->d[1], 4, 16));
+    c->d[2] = set_w(c->d[2], rd16(g(G_Y))); F_W(c->d[2]);
+    c->d[2] = set_w(c->d[2], lsr_n(&c->ccr, c->d[2], 2, 16));
+    c->d[4] = set_w(c->d[4], c->d[0]); F_W(c->d[0]);
+    and_w(4, 0xF);
+    c->d[4] = set_w(c->d[4], add_w(&c->ccr, 8, c->d[4]));
+    c->d[3] = 0;
+    move_b(3, rd8(g(G_DIR)));
+    c->d[3] = set_w(c->d[3], add_w(&c->ccr, c->d[3], c->d[3]));
+    static const uint16_t at[4] = { 0xB806, 0xB80E, 0xB816, 0xB81C };
+    c->a[0] = at[rd8(g(G_DIR))];
+    switch (rd8(g(G_DIR))) {                        /* along the end's far side */
+    case 0: c->d[1] = set_w(c->d[1], add_w(&c->ccr, 0x12, c->d[1])); c->d[2] = set_w(c->d[2], add_w(&c->ccr, c->d[4], c->d[2])); break;
+    case 1: c->d[1] = set_w(c->d[1], add_w(&c->ccr, c->d[4], c->d[1])); c->d[2] = set_w(c->d[2], add_w(&c->ccr, 0x12, c->d[2])); break;
+    case 2: c->d[1] = set_w(c->d[1], sub_w(&c->ccr, 2, c->d[1])); c->d[2] = set_w(c->d[2], add_w(&c->ccr, c->d[4], c->d[2])); break;
+    default: c->d[1] = set_w(c->d[1], add_w(&c->ccr, c->d[4], c->d[1])); c->d[2] = set_w(c->d[2], sub_w(&c->ccr, 2, c->d[2])); break;
+    }
+    int big = c->d[0] >> 8 & 1;
+    c->d[3] = set_w(c->d[3], big ? 0x210 : 0x204); F_W(c->d[3]);
+    f_bit(big);
+    c->d[0] = set_w(c->d[0], c->d[3]); F_W(c->d[3]);
+    call(SPAWN_ITEM);
+    gate_spark_time();
+}
+/* $B526: a gate as its room loads: gone if its flag is set; one starting shut drawn shut */
+static void gate_setup(void)
+{
+    push32(0xB52A); gate_end(); c->a[7] += 4;
+    push32(0xB52E); gate_flag(); c->a[7] += 4;
+    if (!(c->ccr & CC_Z)) { put8(g(G_FLAGS), 0); return; }
+    f_bit(rd8(g(G_FLAGS)) & 1);
+    if (!(rd8(g(G_FLAGS)) & 1)) {
+        put8(g(G_WAIT), rd8(g(G_WAIT_OPEN)));
+        put8(g(G_OUT), 0);
+        return;
+    }
+    put8(g(G_WAIT), rd8(g(G_WAIT_SHUT)));
+    c->d[1] = 0;
+    move_b(1, rd8(g(G_LENGTH)));
+    put8(g(G_OUT), c->d[1]);
+    c->d[0] = 0;
+    move_b(0, rd8(g(G_DIR)));
+    uint32_t dir = c->d[0];
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+    c->d[6] = set_w(c->d[6], rd16(g(G_X))); F_W(c->d[6]);
+    c->d[7] = set_w(c->d[7], rd16(g(G_Y))); F_W(c->d[7]);
+    c->d[2] = set_w(c->d[2], 0x2B0 + dir); F_W(c->d[2]);
+    static const uint16_t at[4] = { 0xB588, 0xB594, 0xB58C, 0xB59A };
+    c->a[0] = at[dir];
+    switch (dir) {                                  /* the whole bar: d0 x d1 blocks */
+    case 0: c->d[6] = set_w(c->d[6], add_w(&c->ccr, 1, c->d[6])); goto across;
+    case 2: c->d[6] = set_w(c->d[6], sub_w(&c->ccr, c->d[1], c->d[6]));
+    across:
+        c->d[0] = set_w(c->d[0], c->d[1]); F_W(c->d[1]);
+        c->d[1] = 2; F_L(2);
+        break;
+    case 1: c->d[7] = set_w(c->d[7], add_w(&c->ccr, 0x40, c->d[7])); goto down;
+    default:
+        c->d[0] = set_w(c->d[0], c->d[1]); F_W(c->d[1]);
+        c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 6, 16));
+        c->d[7] = set_w(c->d[7], sub_w(&c->ccr, c->d[0], c->d[7]));
+    down:
+        c->d[0] = 2; F_L(2);
+        break;
+    }
+    call(SET_MAP_BLOCKS);
+    push32(0xB584); gate_timer(); c->a[7] += 4;
+    gate_spark_time();
+}
+/* $B50C: every gate as the room loads */
+static void gates_setup(void)
+{
+    c->a[4] = 0;
+    c->d[0] = 15; F_L(15);
+    do {
+        F_B(rd8(g(G_FLAGS)));
+        if (rd8(g(G_FLAGS)) & 0x80) {
+            c->a[7] -= 2; wr16(c->a[7], c->d[0]); F_W(c->d[0]);
+            push32(0xB51C); gate_setup(); c->a[7] += 4;
+            c->d[0] = set_w(c->d[0], rd16(c->a[7])); c->a[7] += 2; F_W(c->d[0]);
+        }
+        c->a[4] += 4;
+    } while (dbra(0));
+}
+/* $B5C6: a gate each frame */
+static void gate_run(void)
+{
+    push32(0xB5CA); gate_sparks(); c->a[7] += 4;
+    f_bit(rd8(g(G_FLAGS)) >> 1 & 1);
+    if (rd8(g(G_FLAGS)) & 2) {                      /* moving */
+        if (g_dec(G_TIMER)) return;
+        f_bit(rd8(g(G_FLAGS)) >> 2 & 1);
+        if (!(rd8(g(G_FLAGS)) & 4)) {               /* shutting */
+            push32(0xB5E4); gate_grow(); c->a[7] += 4;
+            move_b(0, rd8(g(G_OUT)));
+            cmp_byte(rd8(g(G_LENGTH)), c->d[0]);
+            if ((c->d[0] & 0xFF) < rd8(g(G_LENGTH))) { gate_timer(); return; }
+            put8(g(G_WAIT), rd8(g(G_WAIT_SHUT)));
+            g_and(G_FLAGS, 0xFD);
+            gate_timer();
+            return;
+        }
+        push32(0xB604); gate_shrink(); c->a[7] += 4;    /* opening */
+        F_B(rd8(g(G_OUT)));
+        if (rd8(g(G_OUT))) { gate_timer(); return; }
+        push32(0xB610); gate_flag(); c->a[7] += 4;
+        if (!(c->ccr & CC_Z)) { put8(g(G_FLAGS), 0); return; }
+        put8(g(G_WAIT), rd8(g(G_WAIT_OPEN)));
+        g_and(G_FLAGS, 0xF8);
+        return;
+    }
+    push32(0xB62A); gate_flag(); c->a[7] += 4;
+    if (!(c->ccr & CC_Z)) {                         /* its flag set: gone if open, else opening */
+        f_bit(rd8(g(G_FLAGS)) & 1);
+        if (!(rd8(g(G_FLAGS)) & 1)) { put8(g(G_FLAGS), 0); return; }
+        g_or(G_FLAGS, 6);
+        return;
+    }
+    F_B(rd8(g(G_WAIT)));
+    if (rd8(g(G_WAIT))) {                           /* waiting */
+        f_bit(rd8(g(G_FLAGS)) & 1);
+        if (!(rd8(g(G_FLAGS)) & 1)) {               /* open: then shut */
+            if (g_dec(G_WAIT)) return;
+            put8(g(G_TIMER), 1);
+            g_or(G_FLAGS, 3);
+            gate_spark_time();
+            return;
+        }
+        if (g_dec(G_WAIT)) goto flicker;            /* shut: then open */
+        g_or(G_FLAGS, 6);
+        return;
+    }
+flicker:
+    if (g_dec(G_TIMER)) return;
+    push32(0xB67E); gate_timer(); c->a[7] += 4;
+    gate_end_next();
+}
+/* $B5AC: every gate each frame */
+static void gates_run(void)
+{
+    c->a[4] = 0;
+    c->d[0] = 15; F_L(15);
+    do {
+        F_B(rd8(g(G_FLAGS)));
+        if (rd8(g(G_FLAGS)) & 0x80) {
+            c->a[7] -= 2; wr16(c->a[7], c->d[0]); F_W(c->d[0]);
+            push32(0xB5BC); gate_run(); c->a[7] += 4;
+            c->d[0] = set_w(c->d[0], rd16(c->a[7])); c->a[7] += 2; F_W(c->d[0]);
+        }
+        c->a[4] += 4;
+    } while (dbra(0));
+}
+
+/* $B82A: a crumbling wall at (d6, d7) in the first free record, stopping on one side (d0 bit 3:
+ * the left) */
+static void crumble_add(void)
+{
+    c->a[0] = WALLS;
+    c->d[1] = 3; F_L(3);
+    for (;;) {
+        F_B(rd8(c->a[0]));
+        if (!(rd8(c->a[0]) & 0x80)) break;
+        c->a[0] += 8;
+        if (!dbra(1)) return;
+    }
+    c->d[1] = 8; F_L(8);
+    and_w(0, 8);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, 8, c->d[0]));
+    c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 5, 16));
+    or_w(0, 0x8001);
+    put16(0, c->d[0]);
+    put16(0, 0);
+    put16(0, c->d[6]);
+    put16(0, c->d[7]);
+}
+
+ENTRY(GatesSetup, gates_setup)             /* $B50C */
+ENTRY(GateSetup, gate_setup)               /* $B526 */
+ENTRY(GatesRun, gates_run)                 /* $B5AC */
+ENTRY(GateRun, gate_run)                   /* $B5C6 */
+ENTRY(GateEnd, gate_end)                   /* $B68C */
+ENTRY(GateFlag, gate_flag)                 /* $B702 */
+ENTRY(GateTimer, gate_timer)               /* $B724 */
+ENTRY(GateGrow, gate_grow)                 /* $B744 */
+ENTRY(GateCell, gate_cell)                 /* $B754 */
+ENTRY(GateShrink, gate_shrink)             /* $B79C */
+ENTRY(GateSparkTime, gate_spark_time)      /* $B7A6 */
+ENTRY(GateSparks, gate_sparks)             /* $B7B8 */
+ENTRY(CrumbleAdd, crumble_add)             /* $B82A */
