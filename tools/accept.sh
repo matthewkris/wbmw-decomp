@@ -8,7 +8,8 @@
 #
 # Environment: PYTHON (python3), LIMIT (seconds per harness run, 1200), JOBS (fuzz runs at once, 12), CASES (fuzz cases per routine and state, 5000), FUZZ_STATES
 # (state names in work/, "castle platform after-boss2 boss2 thunder"), REPLACE_STATES (states
-# for replace mode, "boss2 thunder door-crash castle status shop talk pause ocarina-tunes"), ROM. Each state's input is
+# for replace mode, "boss2 thunder door-crash castle status shop talk pause ocarina-tunes"), ROM, SAVE (a save EEPROM for
+# the title menu's runs, play.sav). Each state's input is
 # work/runs/inputs/STATE.txt: made once (3,000 frames of random buttons) and kept, or recorded by play --record (to its "# end"). Run from the
 # repository root in Git Bash, after building the harness.
 set -u
@@ -20,6 +21,7 @@ JOBS="${JOBS:-12}"                # fuzz runs at once: the cores
 FUZZ_STATES="${FUZZ_STATES:-castle platform after-boss2 boss2 thunder}"
 REPLACE_STATES="${REPLACE_STATES:-boss2 thunder door-crash castle status shop talk pause ocarina-tunes}"
 ROM="${ROM:-rom/Wonder Boy in Monster World (USA, Europe).md}"
+SAVE="${SAVE:-play.sav}"
 H=work/harness/harness.exe; [ -x "$H" ] || H=work/harness/harness
 T="timeout ${LIMIT:-1200}"        # a run that loops in C (no cycle budget) is cut off: exit 124
 mkdir -p "$OUT" work/runs/inputs
@@ -53,6 +55,14 @@ grep -h "^fuzz" "$OUT"/fz_*.log | awk '{c += $3; m += $6} END {print "cases", c,
 echo "== shadow runs (the standard runs and every state)"
 $T "$H" "$ROM" --frames 4000 --input harness/inputs/newgame.txt --port shadow --coverage "$OUT/cov_newgame.txt" --quiet > "$OUT/run_newgame.log" 2>&1 &
 $T "$H" "$ROM" --frames 4000 --port shadow --coverage "$OUT/cov_demo.txt" --quiet > "$OUT/run_demo.log" 2>&1 &
+title_runs() {  # the title: Start on the Sega logo (the title fades in), and with a saved game (SAVE,
+                # default play.sav, if there is one) the menu's continue and new game
+    $T "$H" "$ROM" --frames 1200 --input harness/inputs/title-skip.txt --port "$1" ${2:+--coverage "$OUT/cov_title-skip.txt"} --quiet > "$OUT/$3_title-skip.log" 2>&1 &
+    [ -f "$SAVE" ] && for t in continue new; do
+        $T "$H" "$ROM" --eeprom "$SAVE" --frames 1200 --input "harness/inputs/title-$t.txt" --port "$1" ${2:+--coverage "$OUT/cov_title-$t.txt"} --quiet > "$OUT/$3_title-$t.log" 2>&1 &
+    done
+}
+title_runs shadow cov run
 for st in work/*.state; do
     s=$(basename "$st" .state); f=$(frame "$s"); in=$(input "$s")
     $T "$H" "$ROM" --load-state "$st" --frames "$(last "$f" "$in")" --input "$in" --port shadow --coverage "$OUT/cov_$s.txt" --quiet > "$OUT/run_$s.log" 2>&1 &
@@ -84,6 +94,7 @@ done
 
 echo "== replace mode"
 $T "$H" "$ROM" --frames 4000 --input harness/inputs/newgame.txt --port replace --quiet > "$OUT/rep_newgame.log" 2>&1 &
+title_runs replace "" rep
 for s in $REPLACE_STATES; do
     f=$(frame "$s"); in=$(input "$s")
     $T "$H" "$ROM" --load-state "work/$s.state" --frames "$(last "$f" "$in")" --input "$in" --port replace --quiet > "$OUT/rep_$s.log" 2>&1 &
