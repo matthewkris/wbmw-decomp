@@ -68,7 +68,8 @@ void TextAt(Cpu *), TextAtRC(Cpu *), String(Cpu *), StringPlain(Cpu *), StringBr
      SpecialGiven(Cpu *), SlotRefill(Cpu *), SpecialUseBack(Cpu *), GameStart(Cpu *), UsesKeep(Cpu *), UsesSame(Cpu *),
      TitleOpening(Cpu *), TitleShown(Cpu *), TitleScreen(Cpu *), TitleMenu(Cpu *), TitleSetup(Cpu *), TitlePlace(Cpu *),
      TitleCursor(Cpu *), TitleMenuSetup(Cpu *), TitlePad(Cpu *),
-     UnpackBlocks(Cpu *), UnpackRoomBlocks(Cpu *), LoadSharedBlocks(Cpu *), ExpandZeroRuns(Cpu *), UnpackLayerMap(Cpu *);
+     UnpackBlocks(Cpu *), UnpackRoomBlocks(Cpu *), LoadSharedBlocks(Cpu *), ExpandZeroRuns(Cpu *), UnpackLayerMap(Cpu *),
+     LoadRoom(Cpu *), InitLayers(Cpu *), InitLayer(Cpu *), SetupLayer(Cpu *), ReadRoomPointer(Cpu *), LoadScene(Cpu *), RoomMusic(Cpu *), RoomLayer(Cpu *), RoomLayerAt(Cpu *), RoomGfx(Cpu *), RoomPalettes(Cpu *), RoomPalette2(Cpu *), RoomCmd4(Cpu *), RoomCmd5(Cpu *), RoomCmd6(Cpu *), RoomCmd7(Cpu *), RoomCmd8(Cpu *), RoomCmd9(Cpu *), RoomCmd11(Cpu *), RoomCmd12(Cpu *), RoomCmd13(Cpu *), RoomCmd14(Cpu *), RoomCmd15(Cpu *), RoomCmd18(Cpu *), RoomCmd19(Cpu *), RoomCmd20(Cpu *);
 void NumText(Cpu *), CharAt(Cpu *), ScrollWindow(Cpu *), WindowFrame(Cpu *), WindowRow(Cpu *), TileUnder(Cpu *), WindowRestore(Cpu *), NewLine(Cpu *), MoreBlink(Cpu *), MoreHide(Cpu *), MoreShow(Cpu *), ChoiceBlink(Cpu *), ChoiceHide(Cpu *), ChoiceShow(Cpu *), PriceOf(Cpu *), NameOf(Cpu *), NameText(Cpu *), FoundThing(Cpu *), FoundGold(Cpu *), BoxText(Cpu *), BoxRows(Cpu *), BoxRow(Cpu *), ShowFoundGold(Cpu *), ShowFound(Cpu *), WindowGeometry(Cpu *), Cheaper(Cpu *), Owns(Cpu *), Give(Cpu *), Take(Cpu *), ItemCell(Cpu *), FlagCell(Cpu *), MessageData(Cpu *), OpenWindow(Cpu *), WindowAt(Cpu *), MsgStep(Cpu *), CharIn(Cpu *), NoteIn(Cpu *), OcarinaTune(Cpu *);   /* message.c */
 #define CT_ALL 0x3FFFF                /* every register and flag compared */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
@@ -343,6 +344,32 @@ const PortRoutine port_routines[] = {
     {0x009F46, 0x009F64, "LoadSharedBlocks", LoadSharedBlocks, CT_ALL},
     {0x00A1C4, 0x00A1FE, "ExpandZeroRuns", ExpandZeroRuns, CT_ALL},
     {0x00A068, 0x00A1C4, "UnpackLayerMap", UnpackLayerMap, CT_ALL},
+    {0x009330, 0x009442, "LoadRoom", LoadRoom, CT_ALL},   /* rooms.c: loading a room */
+    {0x00967E, 0x0096BC, "InitLayers", InitLayers, CT_ALL},
+    {0x009622, 0x00965E, "InitLayer", InitLayer, CT_ALL},
+    {0x00946C, 0x0094AA, "SetupLayer", SetupLayer, CT_ALL},
+    {0x009500, 0x009510, "ReadRoomPointer", ReadRoomPointer, CT_ALL},
+    {0x0096D6, 0x009720, "LoadScene", LoadScene, CT_ALL},
+    {0x0092D4, 0x00932A, "RoomMusic", RoomMusic, CT_ALL},
+    {0x0094AA, 0x0094B4, "RoomLayer", RoomLayer, CT_ALL},
+    {0x0094B4, 0x0094CC, "RoomLayerAt", RoomLayerAt, CT_ALL},
+    {0x009510, 0x009520, "RoomGfx", RoomGfx, CT_ALL},
+    {0x009520, 0x00952A, "RoomPalettes", RoomPalettes, CT_ALL},
+    {0x00952A, 0x009530, "RoomPalette2", RoomPalette2, CT_ALL},
+    {0x009530, 0x009540, "RoomCmd4", RoomCmd4, CT_ALL},
+    {0x009540, 0x009548, "RoomCmd5", RoomCmd5, CT_ALL},
+    {0x009548, 0x00954E, "RoomCmd6", RoomCmd6, CT_ALL},
+    {0x00954E, 0x009578, "RoomCmd7", RoomCmd7, CT_ALL},
+    {0x009578, 0x00958C, "RoomCmd8", RoomCmd8, CT_ALL},
+    {0x00958C, 0x009592, "RoomCmd9", RoomCmd9, CT_ALL},
+    {0x009592, 0x0095AC, "RoomCmd11", RoomCmd11, CT_ALL},
+    {0x0095AC, 0x0095C0, "RoomCmd12", RoomCmd12, CT_ALL},
+    {0x0095C0, 0x0095CA, "RoomCmd13", RoomCmd13, CT_ALL},
+    {0x0095CA, 0x0095D0, "RoomCmd14", RoomCmd14, CT_ALL},
+    {0x0095D0, 0x0095DA, "RoomCmd15", RoomCmd15, CT_ALL},
+    {0x0095DA, 0x0095EE, "RoomCmd18", RoomCmd18, CT_ALL},
+    {0x0095EE, 0x0095FE, "RoomCmd19", RoomCmd19, CT_ALL},
+    {0x0095FE, 0x009622, "RoomCmd20", RoomCmd20, CT_ALL},
     {0x01090C, 0x010910, "SpawnItem", SpawnItem},                 /* effects.c: every register as the original */
     {0x010910, 0x010A1E, "SpawnItemAt", SpawnItemAt},
     {0x010A1E, 0x011094, "RunItems", RunItems, CT_SP},

@@ -11,6 +11,8 @@
  * - $A068, a layer's map: a chunk for each place used, each of 192 cells of blocks, packed as
  *   runs of one block over a bitmap of the cells, then the rest as 10-bit numbers four to five
  *   bytes, or with zero runs ($A1C4).
+ * Batch T12, loading a room: its list of commands (layers, graphics, palettes, music, doors and
+ * things), the layers' records, the ending's scenes and the room's music.
  * Ported register for register, with every register and flag in the contract. */
 #include "world.h"
 
@@ -332,3 +334,414 @@ ENTRY(UnpackRoomBlocks, unpack_room_blocks)    /* $9F64 */
 ENTRY(LoadSharedBlocks, load_shared_blocks)    /* $9F46 */
 ENTRY(ExpandZeroRuns, expand_zero_runs)        /* $A1C4 */
 ENTRY(UnpackLayerMap, unpack_layer_map)        /* $A068 */
+
+/* ---- batch T12: loading a room ----
+ * A room is a list of commands (by area $9668 and room $9669, from the directory's table 8):
+ * its layers, graphics, palettes, music, doors and things, ended by $FF. LoadRoom ($9330)
+ * resets the room's state, runs them, and finishes the graphics and music. */
+
+#define AREA          0xFFFF9668u   /* byte */
+#define ROOM          0xFFFF9669u   /* byte */
+#define LAYER_A       0xFFFF9754u   /* the layers' records */
+#define LAYER_B       0xFFFF97D4u
+#define ROOM_COMMANDS 0x9442u       /* the commands' offsets */
+#define TEST_FLAG     0x274Cu       /* TestGameFlag: d0 the flag (ne: set) */
+#define SET_GFX_SLOTS 0x234Cu
+#define LOAD_PALETTES 0x135Cu
+#define STREAM_GFX    0x22F0u
+#define OWNS          0x23E4u
+
+static void call(uint32_t addr) { call_68k(c, addr); }
+static uint32_t sub_l(uint16_t *ccr, uint32_t s, uint32_t d)   /* sub.l / subi.l */
+{
+    uint32_t r = d - s;
+    int v = ((s ^ d) & (r ^ d) & 0x80000000u) != 0;
+    *ccr = (uint16_t)((r & 0x80000000u ? CC_N : 0) | (r ? 0 : CC_Z) | (v ? CC_V : 0) | (s > d ? CC_C | CC_X : 0));
+    return r;
+}
+static void cmp_byte(uint32_t s, uint32_t d) { uint16_t x = c->ccr & CC_X; sub_b(&c->ccr, s, d); c->ccr = (uint16_t)((c->ccr & ~CC_X) | x); }
+static uint16_t next16(int r) { uint16_t v = rd16(c->a[r]); c->a[r] += 2; return v; }   /* (an)+, a word */
+static uint32_t next32(int r) { uint32_t v = rd32(c->a[r]); c->a[r] += 4; return v; }
+static void put8(uint32_t a, uint32_t v) { wr8(a, (uint8_t)v); F_B(v); }                /* move.b to memory */
+static void put16m(uint32_t a, uint32_t v) { wr16(a, (uint16_t)v); F_W(v); }
+static void put32m(uint32_t a, uint32_t v) { wr32(a, v); F_L(v); }
+static void push32(uint32_t v) { c->a[7] -= 4; wr32(c->a[7], v); }
+static uint32_t pop32(void) { uint32_t v = rd32(c->a[7]); c->a[7] += 4; return v; }
+/* a call with a1-a2 kept on the stack (movem.l a1-a2,-(a7) ... (a7)+,a1-a2) */
+static void call_keep_a1a2(uint32_t addr)
+{
+    c->a[7] -= 8; wr32(c->a[7], c->a[1]); wr32(c->a[7] + 4, c->a[2]);
+    call(addr);
+    c->a[1] = rd32(c->a[7]); c->a[2] = rd32(c->a[7] + 4); c->a[7] += 8;
+}
+
+/* $9622: layer a3's record: its buffers ($FFE500, $900 apart) and plane's fields by layer
+ * ($965E for A, $966E for B) */
+static void init_layer(void)
+{
+    c->a[0] = 0xFFFFE500u;
+    put32m(c->a[3] + 0x10, c->a[0]);
+    c->a[0] += 0x900;
+    put32m(c->a[3] + 0x14, c->a[0]);
+    c->a[0] += 0x900;
+    put32m(c->a[3] + 0x18, c->a[0]);
+    c->a[0] = 0x965Eu;
+    f_bit(rd8(c->a[3]) & 1);
+    if (rd8(c->a[3]) & 1) c->a[0] = 0x966Eu;
+    put16m(c->a[3] + 0x20, next16(0));
+    put16m(c->a[3] + 0x22, next16(0));
+    put32m(c->a[3] + 0x1C, next32(0));
+    put32m(c->a[3] + 0x28, next32(0));
+    put32m(c->a[3] + 0x2C, next32(0));
+}
+
+/* $967E: both layers' records, the base graphics, the planes' scroll kept */
+static void init_layers(void)
+{
+    wr8(0xFFFF9858u, 0); c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z);
+    c->a[0] = 0x96BCu; call(SET_GFX_SLOTS);
+    c->a[3] = LAYER_A; put8(c->a[3], 0); init_layer();
+    c->a[3] = LAYER_B; put8(c->a[3], 1); init_layer();
+    c->d[0] = rd32(0xFFFFC800u); F_L(c->d[0]);
+    c->d[0] = sub_l(&c->ccr, 0x800000, c->d[0]);
+    put32m(0xFFFF972Cu, c->d[0]);
+    c->d[0] = rd32(0xFFFFC900u); F_L(c->d[0]);
+    c->d[0] = sub_l(&c->ccr, 0x600000, c->d[0]);
+    put32m(0xFFFF9730u, c->d[0]);
+}
+
+/* $946C: a layer command's record (d0 bit 1: B): its kind (d0), width and height in screens
+ * ($38/$39, the limits $44/$46) and a word ($3A) */
+static void setup_layer(void)
+{
+    c->a[3] = LAYER_A;
+    and_w(0, 2);
+    if (c->d[0] & 0xFFFF) c->a[3] = LAYER_B;
+    move_b(0, next8(2));
+    c->d[1] = 0;
+    c->d[1] = set_b(c->d[1], next8(2));
+    put8(c->a[3] + 0x38, c->d[1]);
+    c->d[1] = set_w(c->d[1], lsl_n(&c->ccr, c->d[1], 4, 16));
+    c->d[1] = set_w(c->d[1], sub_w(&c->ccr, 1, c->d[1]));
+    put16m(c->a[3] + 0x44, c->d[1]);
+    c->d[1] = 0;
+    c->d[1] = set_b(c->d[1], next8(2));
+    put8(c->a[3] + 0x39, c->d[1]);
+    c->d[1] = set_b(c->d[1], add_b(&c->ccr, c->d[1], c->d[1]));
+    c->d[1] = set_b(c->d[1], add_b(&c->ccr, rd8(c->a[3] + 0x39), c->d[1]));
+    c->d[1] = set_w(c->d[1], lsl_n(&c->ccr, c->d[1], 8, 16));
+    c->d[1] = set_w(c->d[1], sub_w(&c->ccr, 0x40, c->d[1]));
+    put16m(c->a[3] + 0x46, c->d[1]);
+    put16m(c->a[3] + 0x3A, next16(2));
+}
+
+/* $9500: a pointer in the commands: a byte, then a long (if it is not 0) or an offset from the
+ * room's list (a1) */
+static void read_room_pointer(void)
+{
+    uint8_t v = next8(2); F_B(v);
+    if (v) { c->a[0] = next32(2); return; }
+    c->d[0] = set_w(c->d[0], next16(2)); F_W(c->d[0]);
+    c->a[0] = c->a[1] + sx(c->d[0]);
+}
+
+/* $94B8: the layer's data (a4), kind and its record's long from $94CC */
+static void layer_data(void)
+{
+    put32m(c->a[3] + 0x34, c->a[4]);
+    put8(c->a[3] + 1, c->d[0]);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+    put32m(c->a[3] + 0x30, rd32(0x94CCu + sx(c->d[0])));
+}
+
+/* the commands, by their handlers' addresses */
+static void cmd_layer(void)        /* $94AA, 0-1: a layer, its data at an offset */
+{
+    setup_layer();
+    c->d[1] = set_w(c->d[1], next16(2)); F_W(c->d[1]);
+    c->a[4] = c->a[1] + sx(c->d[1]);
+    layer_data();
+}
+static void cmd_layer_at(void)     /* $94B4, 16-17: a layer, its data at an address */
+{
+    setup_layer();
+    c->a[4] = next32(2);
+    layer_data();
+}
+static void cmd_gfx(void)          /* $9510, 2: the graphics */
+{
+    read_room_pointer();
+    put32m(0xFFFF9672u, c->a[0]);
+    c->a[3] = c->a[1];
+    call(SET_GFX_SLOTS);
+    c->a[1] = c->a[3];
+}
+static void cmd_palettes(void)     /* $9520, 3 */
+{
+    put8(0xFFFF9670u, next8(2));
+    put16m(0xFFFF966Cu, next16(2));
+}
+static void cmd_palette2(void) { put8(0xFFFF9671u, next8(2)); }          /* $952A, 10 */
+static void cmd_4(void) { read_room_pointer(); call_keep_a1a2(0x23A6); }  /* $9530, 4 */
+static void cmd_5(void) { read_room_pointer(); put32m(0xFFFF996Cu, c->a[0]); }   /* $9540 */
+static void cmd_6(void) { put8(0xFFFF966Bu, next8(2)); }                  /* $9548: under water */
+static void cmd_7(void)            /* $954E, 7 */
+{
+    c->d[5] = 0;
+    c->d[5] = set_b(c->d[5], next8(2));
+    c->d[4] = set_w(c->d[4], next16(2));
+    c->d[6] = 0;
+    c->d[6] = set_b(c->d[6], next8(2));
+    c->d[6] = set_w(c->d[6], lsl_n(&c->ccr, c->d[6], 4, 16));
+    c->d[6] = set_w(c->d[6], add_w(&c->ccr, 0xF00, c->d[6]));
+    c->d[7] = 0;
+    c->d[7] = set_b(c->d[7], next8(2));
+    c->d[7] = set_w(c->d[7], lsl_n(&c->ccr, c->d[7], 4, 16));
+    c->d[7] = set_w(c->d[7], add_w(&c->ccr, 0xF00, c->d[7]));
+    call_keep_a1a2(0x11BF0);
+}
+static void cmd_8(void)            /* $9578, 8: as $9500, kept at $A11E */
+{
+    uint8_t v = next8(2); F_B(v);
+    if (v) c->a[0] = next32(2);
+    else { c->d[0] = set_w(c->d[0], next16(2)); F_W(c->d[0]); c->a[0] = c->a[1] + sx(c->d[0]); }
+    put32m(0xFFFFA11Eu, c->a[0]);
+}
+static void cmd_9(void) { put8(0xFFFFA0E0u, next8(2)); }                  /* $958C */
+static void cmd_11(void)           /* $9592, 11 */
+{
+    read_room_pointer();
+    c->d[6] = 0;
+    c->d[6] = set_b(c->d[6], next8(2));
+    c->d[6] = set_w(c->d[6], add_w(&c->ccr, 0x100, c->d[6]));
+    c->d[7] = 0;
+    c->d[7] = set_b(c->d[7], next8(2));
+    c->d[7] = set_w(c->d[7], lsl_n(&c->ccr, c->d[7], 6, 16));
+    c->d[7] = set_w(c->d[7], add_w(&c->ccr, 0x4000, c->d[7]));
+    call(0x2974);
+}
+static void cmd_12(void)           /* $95AC, 12 */
+{
+    c->d[0] = 0;
+    move_b(0, next8(2));
+    call_keep_a1a2(0x5658);
+}
+static void cmd_13(void)           /* $95C0, 13 */
+{
+    c->d[0] = 0;
+    move_b(0, next8(2));
+    put16m(0xFFFF9682u, c->d[0]);
+}
+static void cmd_14(void) { put8(0xFFFF9685u, next8(2)); }                 /* $95CA */
+static void cmd_15(void)           /* $95D0, 15 */
+{
+    put8(0xFFFF9688u, next8(2));
+    put16m(0xFFFF9686u, next16(2));
+}
+static void cmd_18(void)           /* $95DA, 18 */
+{
+    c->d[0] = 0;
+    move_b(0, next8(2));
+    put16m(0xFFFF968Au, c->d[0]);
+    cmp_w(&c->ccr, rd16(0xFFFF9F32u), c->d[0]);
+    if ((c->d[0] & 0xFFFF) != rd16(0xFFFF9F32u)) call(0xF880);
+}
+static void cmd_19(void)           /* $95EE, 19 */
+{
+    c->a[2] += 1;
+    push32(c->a[1]); F_L(c->a[1]);
+    c->a[0] = c->a[2];
+    call(0xB49C);
+    c->a[2] += 8;
+    c->a[1] = pop32();
+}
+static void cmd_20(void)           /* $95FE, 20: a thing in a free slot ($11CE8) */
+{
+    call(0x11CE8);
+    if (c->ccr & CC_N) return;
+    put8(c->a[1] - 0x6072, 0x80);
+    put8(c->a[1] - 0x6071, next8(2));
+    put32m(c->a[1] - 0x601E, next32(2));
+    put32m(c->a[1] - 0x5F76, next32(2));
+    wr32(c->a[1] - 0x5FCA, 0); c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z);
+    wr8(c->a[1] - 0x6070, 0xFF);
+}
+
+static void room_command(uint32_t at)
+{
+    switch (at) {
+    case 0x94AA: cmd_layer(); break;
+    case 0x94B4: cmd_layer_at(); break;
+    case 0x9510: cmd_gfx(); break;
+    case 0x9520: cmd_palettes(); break;
+    case 0x952A: cmd_palette2(); break;
+    case 0x9530: cmd_4(); break;
+    case 0x9540: cmd_5(); break;
+    case 0x9548: cmd_6(); break;
+    case 0x954E: cmd_7(); break;
+    case 0x9578: cmd_8(); break;
+    case 0x958C: cmd_9(); break;
+    case 0x9592: cmd_11(); break;
+    case 0x95AC: cmd_12(); break;
+    case 0x95C0: cmd_13(); break;
+    case 0x95CA: cmd_14(); break;
+    case 0x95D0: cmd_15(); break;
+    case 0x95DA: cmd_18(); break;
+    case 0x95EE: cmd_19(); break;
+    case 0x95FE: cmd_20(); break;
+    default: call(at); break;                       /* past the table: as the original jumps */
+    }
+}
+
+/* $9330: the room: its state reset, its commands run; then the things' graphics, and the music
+ * and palette by the game's flags */
+static void load_room(void)
+{
+    init_layers();
+    call(0x11BBC);
+    call(0x289A);
+    call(0x29A4);
+    call(0xB4FA);
+    call(0xB852);
+    c->d[0] = 0; F_L(0);
+    wr8(0xFFFF966Bu, 0); wr32(0xFFFF996Cu, 0); wr8(0xFFFF9966u, 0); wr16(0xFFFF9962u, 0);
+    wr32(0xFFFFA11Eu, 0); wr8(0xFFFFA0E0u, 0); wr16(0xFFFF966Cu, 0); wr8(0xFFFF9685u, 0);
+    wr16(0xFFFF9980u, 0); wr32(0xFFFF9734u, 0); wr32(0xFFFF9738u, 0);
+    put32m(0xFFFF966Eu, 0x10000);
+    wr8(0xFFFF9854u, 0);
+    put16m(0xFFFF9EDAu, 0x1FF);
+    wr16(0xFFFF974Au, 0); wr8(0xFFFF9BB6u, 0); wr8(0xFFFF9667u, 0); wr16(0xFFFF9994u, 0); F_L(0);
+    move_b(1, rd8(AREA));
+    cmp_byte(rd8(0xFFFF9684u), c->d[1]);
+    if ((c->d[1] & 0xFF) != rd8(0xFFFF9684u)) { put8(0xFFFF9684u, c->d[1]); put16m(0xFFFF9992u, c->d[0]); }
+    c->d[0] = 0xFFFFFFFFu;
+    wr16(0xFFFF9682u, 0xFFFF); wr16(0xFFFF968Au, 0xFFFF); wr16(0xFFFF9686u, 0xFFFF);
+    wr16(0xFFFF9748u, 0xFFFF); wr16(0xFFFF9C18u, 0xFFFF);
+    c->d[0] = 0;
+    move_b(0, rd8(AREA));
+    c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 2, 16));
+    c->d[0] = add_l(&c->ccr, DATA_DIR + 0x20, c->d[0]);
+    c->a[1] = rd32(c->d[0]);
+    c->d[0] = 0;
+    move_b(0, rd8(ROOM));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+    c->d[0] = set_w(c->d[0], rd16(c->a[1] + sx(c->d[0]))); F_W(c->d[0]);
+    c->a[2] = c->a[1] + sx(c->d[0]);
+    for (;;) {
+        c->d[0] = 0;
+        move_b(0, next8(2));
+        cmp_byte(0xFF, c->d[0]);
+        if ((c->d[0] & 0xFF) == 0xFF) break;
+        c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+        c->a[0] = ROOM_COMMANDS + sx(rd16(ROOM_COMMANDS + sx(c->d[0])));
+        c->a[7] -= 4; wr32(c->a[7], 0x93FA);    /* jsr (a0) */
+        room_command(c->a[0]);
+        c->a[7] += 4;
+    }
+    call(0xF5FC);
+    call(0x137C8);
+    call(STREAM_GFX);
+    F_B(rd8(0xFFFF9685u));
+    if (rd8(0xFFFF9685u)) {
+        c->d[0] = 49; F_L(49);
+        call(OWNS);
+        if (c->ccr & CC_Z) put8(0xFFFF9670u, 0x76);
+    }
+    F_W(rd16(0xFFFF9686u));
+    if (rd16(0xFFFF9686u) & 0x8000) return;
+    move_b(0, rd8(0xFFFF9688u));
+    call(TEST_FLAG);
+    if (!(c->ccr & CC_Z)) { wr8(0xFFFF9686u, 0xFF); return; }
+    put8(0xFFFF9689u, rd8(0xFFFF9671u));
+    put8(0xFFFF9671u, 0x76);
+}
+
+/* $96D6: one of the ending's scenes (d0, from the directory's table 7): its two layers' data,
+ * a palette, the graphics, and both maps */
+static void load_scene(void)
+{
+    c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 4, 16));
+    c->a[0] = rd32(DATA_DIR + 0x1C);
+    c->a[0] += sx(c->d[0]);
+    push32(c->a[0]); F_L(c->a[0]);
+    init_layers();
+    wr32(0xFFFF9758u, 0); c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z);
+    c->a[1] = pop32();
+    put32m(0xFFFF9788u, next32(1));
+    put32m(0xFFFF9808u, next32(1));
+    c->a[0] = 0xFFFF966Au;
+    c->a[0] -= 2; put16m(c->a[0], next16(1));
+    c->a[0] -= 2; put16m(c->a[0], 1);
+    push32(c->a[1]); F_L(c->a[1]);
+    call(LOAD_PALETTES);
+    c->a[0] = pop32();
+    put16m(0xFFFF8B56u, next16(0));
+    c->a[0] = rd32(c->a[0]);
+    call(SET_GFX_SLOTS);
+    c->a[3] = LAYER_A;
+    c->a[7] -= 4; wr32(c->a[7], 0x9718); unpack_layer_map(); c->a[7] += 4;
+    c->a[3] = LAYER_B;
+    unpack_layer_map();
+}
+
+/* $92D4: the room's music ($9660), from the directory's table 3 by area and room: $00-$7F and
+ * $F0-$FF as they are; $EF by $DAC8 (85 or 15); others pick by a game flag from the pairs at $932A */
+static void room_music(void)
+{
+    c->a[0] = rd32(DATA_DIR + 0xC);
+    c->d[0] = 0;
+    move_b(0, rd8(AREA));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+    c->a[0] += sx(rd16(c->a[0] + sx(c->d[0])));
+    move_b(0, rd8(ROOM));
+    move_b(0, rd8(c->a[0] + sx(c->d[0])));
+    if (c->d[0] & 0x80) {
+        cmp_byte(0xF0, c->d[0]);
+        if ((c->d[0] & 0xFF) < 0xF0) {
+            cmp_byte(0xEF, c->d[0]);
+            if ((c->d[0] & 0xFF) >= 0xEF) {
+                call(0xDAC8);
+                c->d[0] = c->ccr & CC_Z ? 15 : 85; F_L(c->d[0]);
+            } else {
+                and_w(0, 0x7F);
+                c->d[1] = set_w(c->d[1], c->d[0]); F_W(c->d[0]);
+                c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+                c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[1], c->d[0]));
+                c->a[1] = 0x932Au + sx(c->d[0]);
+                move_b(0, next8(1));
+                call(TEST_FLAG);
+                if (!(c->ccr & CC_Z)) c->a[1] += 1;
+                move_b(0, rd8(c->a[1]));
+            }
+        }
+    }
+    put8(0xFFFF9660u, c->d[0]);
+}
+
+ENTRY(LoadRoom, load_room)                /* $9330 */
+ENTRY(InitLayers, init_layers)            /* $967E */
+ENTRY(InitLayer, init_layer)              /* $9622 */
+ENTRY(SetupLayer, setup_layer)            /* $946C */
+ENTRY(ReadRoomPointer, read_room_pointer) /* $9500 */
+ENTRY(LoadScene, load_scene)              /* $96D6 */
+ENTRY(RoomMusic, room_music)              /* $92D4 */
+ENTRY(RoomLayer, cmd_layer)               /* $94AA */
+ENTRY(RoomLayerAt, cmd_layer_at)          /* $94B4 */
+ENTRY(RoomGfx, cmd_gfx)                   /* $9510 */
+ENTRY(RoomPalettes, cmd_palettes)         /* $9520 */
+ENTRY(RoomPalette2, cmd_palette2)         /* $952A */
+ENTRY(RoomCmd4, cmd_4)                    /* $9530 */
+ENTRY(RoomCmd5, cmd_5)                    /* $9540 */
+ENTRY(RoomCmd6, cmd_6)                    /* $9548 */
+ENTRY(RoomCmd7, cmd_7)                    /* $954E */
+ENTRY(RoomCmd8, cmd_8)                    /* $9578 */
+ENTRY(RoomCmd9, cmd_9)                    /* $958C */
+ENTRY(RoomCmd11, cmd_11)                  /* $9592 */
+ENTRY(RoomCmd12, cmd_12)                  /* $95AC */
+ENTRY(RoomCmd13, cmd_13)                  /* $95C0 */
+ENTRY(RoomCmd14, cmd_14)                  /* $95CA */
+ENTRY(RoomCmd15, cmd_15)                  /* $95D0 */
+ENTRY(RoomCmd18, cmd_18)                  /* $95DA */
+ENTRY(RoomCmd19, cmd_19)                  /* $95EE */
+ENTRY(RoomCmd20, cmd_20)                  /* $95FE */
