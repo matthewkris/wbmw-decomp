@@ -957,6 +957,34 @@ int hybrid_fuzz(const char *name, long count)
             m68k_set_reg(M68K_REG_A1, 0x20000 + (rnd() & 0xFFFE));
             m68k_set_reg(M68K_REG_D0, (rnd() << 16) | 2 * (rnd() % 21));
         }
+        if (!strncmp(name, "Layer", 5) || !strcmp(name, "Parallax") || !strcmp(name, "MoverPlace") || !strncmp(name, "Scroll", 6)) {
+            /* a layer's record (A or B) with valid kinds ($30-$33), small parallaxes, a camera */
+            uint32_t r = rnd() % 2 ? 0x9754 : 0x97D4;
+            static const uint8_t kx[] = { 0, 2, 4, 6, 8 }, ky[] = { 0, 2, 4, 6 }, kr[] = { 0, 2, 4 };
+            for (int two = 0; two < 2; two++) {
+                uint32_t q = two ? 0x97D4 : 0x9754;
+                if (rnd() % 3 == 0 || strcmp(name, "LayersSetup")) {
+                    ram[q + 0x30] = kx[rnd() % 5]; ram[q + 0x31] = ky[rnd() % 4]; ram[q + 0x32] = (uint8_t)(2 * (rnd() % 2)); ram[q + 0x33] = kr[rnd() % 3];
+                    ram[q + 0x3A] = (uint8_t)((int)(rnd() % 16) - 3); ram[q + 0x3B] = (uint8_t)((int)(rnd() % 7) - 3);
+                    if (ram[q + 0x31] == 6 || !strcmp(name, "LayerYMover")) ram[q + 0x3B] = (uint8_t)(rnd() % 2);   /* the movers' scripts ($9988): one */
+                    if (rnd() % 2) for (uint32_t k4 = 4; k4 < 8; k4++) ram[q + k4] = (uint8_t)rnd();   /* its x and y */
+                    ram[q] = (uint8_t)((ram[q] & ~1) | (q == 0x97D4));
+                }
+            }
+            for (uint32_t k4 = 0; k4 < 8; k4++) ram[0x972C + k4] = (uint8_t)rnd();
+            ram[0x972C] = (uint8_t)(0x10 + rnd() % 8); ram[0x9730] = (uint8_t)(0x10 + rnd() % 8);   /* the camera, from $1000 */
+            if (!strcmp(name, "MoverPlace") || !strcmp(name, "ScrollX") || !strcmp(name, "ScrollY") || !strcmp(name, "LayerX") || !strcmp(name, "LayerY")) {
+                for (uint32_t k4 = 4; k4 < 8; k4++) ram[r + k4] = (uint8_t)rnd();
+                ram[r + 0x74] = 0; ram[r + 0x75] = (uint8_t)(4 * (rnd() % 32));
+                if (rnd() % 2) ram[r] ^= 1;
+            }
+            if (!strcmp(name, "Parallax")) {
+                m68k_set_reg(M68K_REG_D0, rnd() << 16 ^ rnd());
+                m68k_set_reg(M68K_REG_D1, (rnd() << 8) | (uint8_t)((int)(rnd() % 17) - 8));
+                m68k_set_reg(M68K_REG_D2, rnd() << 16 ^ rnd());
+            }
+            if (strcmp(name, "LayersSetup")) m68k_set_reg(M68K_REG_A3, 0xFFFF0000u | r);
+        }
         if (!strcmp(name, "TilesAt") || !strcmp(name, "FrameBox")) m68k_set_reg(M68K_REG_A0, 0x8C82 + 2 * (rnd() % 0x80));
         if (!strcmp(name, "TileRow") || !strcmp(name, "TileRowAt")) m68k_set_reg(M68K_REG_A0, 0x8C82 + rnd() % 0x1A0);
         if (!strcmp(name, "SetGfxSlots")) {         /* a random valid slot list in scratch RAM */
