@@ -246,6 +246,332 @@ static void level(void)
     two_digits();
 }
 
+/* ---- batch T2: the cursors, the tile loaders ---- */
+
+#define QUEUE_SOUND   0x366u
+#define LIST_LINE     0xFFFF9606u   /* word: the line chosen */
+#define PAD_HELD      0xFFFF95D9u   /* byte: the buttons for the menus (pressed, or repeating) */
+#define PAL_STEP      0xFFFF8A77u   /* byte: the palette's fade step */
+#define GAME_FLAGS2   0xFFFF8006u   /* byte: bit 2, the palette to upload */
+#define DRAW_LIST     0x83D0u
+
+/* btst / bclr / bset #bit on a byte of memory: only Z changes */
+static int bit_test(uint32_t a, int bit)
+{
+    int on = rd8(a) >> bit & 1;
+    c->ccr = (uint16_t)((c->ccr & ~CC_Z) | (on ? 0 : CC_Z));
+    return on;
+}
+static int bit_clear(uint32_t a, int bit) { int on = bit_test(a, bit); wr8(a, rd8(a) & ~(1 << bit)); return on; }
+static int bit_set(uint32_t a, int bit)   { int on = bit_test(a, bit); wr8(a, rd8(a) | 1 << bit); return on; }
+
+/* subq.b #1 on a byte of memory, its flags; nonzero */
+static int count_down(uint32_t a)
+{
+    uint16_t cc = c->ccr;
+    uint8_t v = (uint8_t)sub_b(&cc, 1, rd8(a));
+    wr8(a, v); c->ccr = cc;
+    return v;
+}
+
+/* $8200: the tile d6 at column d4, row d5 */
+static void mark_at(void)
+{
+    c->d[7] = set_b(c->d[7], c->d[4]);
+    c->d[7] = set_w(c->d[7], c->d[7] << 8);
+    c->d[7] = set_b(c->d[7], c->d[5]);
+    text_at();
+    wr16(VDP_DATA, (uint16_t)c->d[6]);
+    c->ccr = cc_move_w(c->ccr, c->d[6]);
+}
+
+/* a blink's state byte: bit 0 on, bit 1 shown; the next byte counts to its next change (20
+ * frames). $8200 draws it: d6 the tile, d4/d5 the place */
+static void blink_timer(uint32_t st) { wr8(st + 1, 0x14); }
+
+/* the upper scroll arrow (more of the list above), at (22, 5): $80C4 hides it, $80D4 shows it */
+static void up_hide(void)
+{
+    if (!bit_clear(0xFFFF9620u, 1)) return;
+    c->d[6] = set_w(c->d[6], 0x8020);
+    blink_timer(0xFFFF9620u);
+    c->d[4] = set_w(c->d[4], 0x16); c->d[5] = set_w(c->d[5], 5);
+    mark_at();
+}
+static void up_show(void)
+{
+    if (bit_test(0xFFFF9620u, 1)) up_hide();
+    bit_set(0xFFFF9620u, 1);
+    c->d[6] = set_w(c->d[6], 0x8013);
+    blink_timer(0xFFFF9620u);
+    c->d[4] = set_w(c->d[4], 0x16); c->d[5] = set_w(c->d[5], 5);
+    mark_at();
+}
+/* $80A8: its blink, each frame */
+static void up_blink(void)
+{
+    if (!bit_test(0xFFFF9620u, 0)) return;
+    if (count_down(0xFFFF9621u)) return;
+    if (bit_test(0xFFFF9620u, 1)) up_hide(); else up_show();
+}
+
+/* the lower scroll arrow (more below), at (22, 14): $8116 hides it, $8126 shows it */
+static void down_hide(void)
+{
+    if (!bit_clear(0xFFFF9622u, 1)) return;
+    c->d[6] = set_w(c->d[6], 0x8020);
+    blink_timer(0xFFFF9622u);
+    c->d[4] = 22; c->d[5] = 14;
+    mark_at();
+}
+static void down_show(void)
+{
+    if (bit_test(0xFFFF9622u, 1)) down_hide();
+    bit_set(0xFFFF9622u, 1);
+    c->d[6] = set_w(c->d[6], 0x9013);
+    blink_timer(0xFFFF9622u);
+    c->d[4] = 22; c->d[5] = 14;
+    mark_at();
+}
+/* $80FA: its blink */
+static void down_blink(void)
+{
+    if (!bit_test(0xFFFF9622u, 0)) return;
+    if (count_down(0xFFFF9623u)) return;
+    if (bit_test(0xFFFF9622u, 1)) down_hide(); else down_show();
+}
+
+/* the menu cursor ($87B5) at the place in $9624 (column, row), last drawn at $9626: $81C0
+ * hides it, $81D6 shows it (moved) */
+static void cursor_hide(void)
+{
+    if (!bit_clear(0xFFFF9614u, 1)) return;
+    c->d[4] = set_b(c->d[4], rd8(0xFFFF9626u));
+    c->d[5] = set_b(c->d[5], rd8(0xFFFF9627u));
+    c->d[6] = set_w(c->d[6], 0x8020);
+    blink_timer(0xFFFF9614u);
+    mark_at();
+}
+static void cursor_show(void)
+{
+    if (bit_test(0xFFFF9614u, 1)) cursor_hide();
+    bit_set(0xFFFF9614u, 1);
+    c->d[4] = set_b(c->d[4], rd8(0xFFFF9624u));
+    c->d[5] = set_b(c->d[5], rd8(0xFFFF9625u));
+    wr8(0xFFFF9626u, (uint8_t)c->d[4]);
+    wr8(0xFFFF9627u, (uint8_t)c->d[5]);
+    c->d[6] = set_w(c->d[6], 0x87B5);
+    blink_timer(0xFFFF9614u);
+    mark_at();
+}
+/* $81A8: its blink */
+static void cursor_blink(void)
+{
+    if (!bit_test(0xFFFF9614u, 0)) return;
+    if (count_down(0xFFFF9615u)) return;
+    if (bit_test(0xFFFF9614u, 1)) cursor_hide(); else cursor_show();
+}
+
+static void sound(uint32_t n) { c->d[0] = n; call_68k(c, QUEUE_SOUND); }
+
+/* $8212: up or down the list (PAD_HELD bits 0, 1) within its length, scrolled to keep the line
+ * among the four shown ($83D0 redraws it); the cursor on it, a click */
+static void list_move(void)
+{
+    uint16_t cc = c->ccr;
+    c->d[3] = set_w(c->d[3], rd16(LIST_LINE));
+    c->ccr = cc_move_w(c->ccr, c->d[3]);
+    if (bit_test(PAD_HELD, 0)) {
+        cc = c->ccr;
+        c->d[3] = set_w(c->d[3], sub_w(&cc, 1, c->d[3]));
+        c->ccr = cc;
+        if (cc & CC_N) return;
+    } else {
+        if (!bit_test(PAD_HELD, 1)) return;
+        cc = c->ccr;
+        c->d[3] = set_w(c->d[3], add_w(&cc, 1, c->d[3]));
+        cmp_w(&cc, rd16(LIST_LEN), c->d[3]);
+        c->ccr = cc;
+        if (!(cc & CC_C)) return;
+    }
+    wr16(LIST_LINE, (uint16_t)c->d[3]);
+    cc = c->ccr;
+    c->d[0] = set_w(c->d[0], sub_w(&cc, rd16(LIST_TOP), c->d[3]));
+    c->ccr = cc;
+    if (cc & CC_C) {
+        wr16(LIST_TOP, (uint16_t)c->d[3]);
+        call_68k(c, DRAW_LIST);
+    } else {
+        cmp_w(&cc, 4, c->d[0]);
+        c->ccr = cc;
+        if (!(cc & CC_C)) {
+            c->d[0] = set_w(c->d[0], c->d[3]);
+            cc = c->ccr;
+            c->d[0] = set_w(c->d[0], sub_w(&cc, 3, c->d[0]));
+            wr16(LIST_TOP, (uint16_t)c->d[0]);
+            c->ccr = cc_move_w(cc, c->d[0]);
+            call_68k(c, DRAW_LIST);
+        }
+    }
+    cc = c->ccr;
+    c->d[3] = set_w(c->d[3], rd16(LIST_LINE));
+    c->d[3] = set_w(c->d[3], sub_w(&cc, rd16(LIST_TOP), c->d[3]));
+    c->d[3] = set_w(c->d[3], add_w(&cc, c->d[3], c->d[3]));
+    c->d[3] = set_w(c->d[3], add_w(&cc, 7, c->d[3]));
+    wr8(0xFFFF9625u, (uint8_t)c->d[3]);
+    c->ccr = cc;
+    cursor_show();
+    sound(37);
+}
+
+/* $802A: 32 tiles from 32 bytes at a0: the low nibble a tile, the high one its palette and flip
+ * ($804A) */
+static void tile_row(void)
+{
+    c->d[2] = 31;
+    for (;;) {
+        c->d[0] = rd8(c->a[0]++);
+        c->d[1] = set_w(c->d[1], c->d[0]);
+        c->d[0] = set_b(c->d[0], c->d[0] & 0xF);
+        c->d[1] = set_b(c->d[1], (c->d[1] & 0xFF) >> 4);
+        c->d[1] = set_b(c->d[1], c->d[1] * 2);
+        c->d[0] = set_w(c->d[0], c->d[0] | rd16(0x804Au + (uint32_t)(int32_t)(int16_t)c->d[1]));
+        wr16(VDP_DATA, (uint16_t)c->d[0]);
+        c->ccr = (uint16_t)(cc_move_w(c->ccr, c->d[0]) & ~CC_X);     /* X: the add.b (no carry) */
+        c->d[2] = set_w(c->d[2], c->d[2] - 1);
+        if ((c->d[2] & 0xFFFF) == 0xFFFF) break;
+    }
+}
+/* $8024: a row of them at row d1 */
+static void tile_row_at(void)
+{
+    c->d[0] = 0;
+    text_at_rc();
+    tile_row();
+}
+/* $8010: 32 long words (64 tiles) from a0 at row d1 */
+static void tiles_at(void)
+{
+    c->d[0] = 0;
+    text_at_rc();
+    for (c->d[2] = 31; ; ) {
+        uint32_t v = rd32(c->a[0]); c->a[0] += 4;
+        wr32(VDP_DATA, v);
+        c->ccr = cc_move_l(c->ccr, v);
+        c->d[2] = set_w(c->d[2], c->d[2] - 1);
+        if ((c->d[2] & 0xFFFF) == 0xFFFF) break;
+    }
+}
+static void row_at(uint32_t data, uint32_t row) { c->a[0] = data; c->d[1] = row; tile_row_at(); }
+static void row_next(uint32_t data) { c->a[0] = data; tile_row(); }
+
+/* $7F76: the frame's lower part (rows 4-7) */
+static void frame_lower(void)
+{
+    row_at(0x8D22, 4); row_next(0x8D22); row_next(0x8DC2); row_next(0x8D42);
+}
+/* $7F54: the frame from the top (rows 0-3), then $7F76 */
+static void frame_full(void)
+{
+    row_at(0x8CC2, 0); row_next(0x8E02); row_next(0x8D22); row_next(0x8DE2);
+    frame_lower();
+}
+/* $7FBA: rows 14 and 15 */
+static void frame_foot(void)
+{
+    row_at(0x8DA2, 14); row_at(0x8CE2, 15);
+}
+/* $7F98: the stats page's frame (rows 4-13), then $7FBA */
+static void frame_stats(void)
+{
+    row_at(0x8D02, 4);
+    for (c->d[3] = 8; ; ) {
+        row_next(0x8D02);
+        c->d[3] = set_w(c->d[3], c->d[3] - 1);
+        if ((c->d[3] & 0xFFFF) == 0xFFFF) break;
+    }
+    row_at(0x8D62, 7);
+    frame_foot();
+}
+/* $7FCE: the items page's frame */
+static void frame_items(void)
+{
+    row_at(0x8C82, 4);
+    for (c->d[3] = 8; ; ) {
+        row_next(0x8C82);
+        c->d[3] = set_w(c->d[3], c->d[3] - 1);
+        if ((c->d[3] & 0xFFFF) == 0xFFFF) break;
+    }
+    row_next(0x8D82); row_next(0x8CA2);
+}
+/* $7FF6: 64 tiles from a0 at row 8, then a row */
+static void frame_box(void)
+{
+    c->d[1] = 8; tiles_at(); row_next(0x8CA2);
+}
+/* $8000: rows 8 and 9 */
+static void frame_pause(void)
+{
+    row_at(0x8D82, 8); row_at(0x8CA2, 9);
+}
+
+/* $7F00: the palette's step 8, to upload */
+static void palette_8(void)
+{
+    wr8(PAL_STEP, 8);
+    uint8_t v = rd8(GAME_FLAGS2) | 4;
+    wr8(GAME_FLAGS2, v);
+    c->ccr = tst_b(c->ccr, v);
+}
+/* $7EEE: the box ($7FF6), the palette's step $B */
+static void box_dim(void)
+{
+    frame_box();
+    wr8(PAL_STEP, 0x0B);
+    uint8_t v = rd8(GAME_FLAGS2) | 4;
+    wr8(GAME_FLAGS2, v);
+    c->ccr = tst_b(c->ccr, v);
+}
+
+/* $7E7C: the stats page: its frame, the level and the labels AP, DP, SP ($84DE) at (2, 9-13) */
+static void stats_page(void)
+{
+    frame_stats();
+    frame_foot();
+    level();
+    c->d[7] = set_w(c->d[7], 0x209);
+    c->a[1] = 0x84DEu;
+    for (c->d[3] = 2; ; ) {
+        text_at();
+        string_bright();
+        uint16_t cc = c->ccr;
+        c->d[7] = set_b(c->d[7], add_b(&cc, 2, c->d[7]));
+        c->ccr = cc;
+        c->d[3] = set_w(c->d[3], c->d[3] - 1);
+        if ((c->d[3] & 0xFFFF) == 0xFFFF) break;
+    }
+}
+
+/* $8E22: the screen's sprite records at $FF3300: 24 bytes from $8E3E, 36 zero */
+static void sprite_init(void)
+{
+    c->a[0] = 0xFF3300u;
+    c->a[1] = 0x8E3Eu;
+    c->d[0] = 24;
+    uint16_t cc = c->ccr;
+    do { wr8(c->a[0]++, rd8(c->a[1]++)); c->d[0] = set_w(c->d[0], sub_w(&cc, 1, c->d[0])); } while (c->d[0] & 0xFFFF);
+    for (c->d[1] = 35; ; ) {
+        wr8(c->a[0]++, (uint8_t)c->d[0]);
+        cc = (uint16_t)((cc & CC_X) | CC_Z);
+        c->d[1] = set_w(c->d[1], c->d[1] - 1);
+        if ((c->d[1] & 0xFFFF) == 0xFFFF) break;
+    }
+    c->ccr = cc;
+}
+
+static void click_back(void) { sound(38); }     /* $8BAA */
+static void click(void)      { sound(37); }     /* $8BB0 */
+
 /* call_68k leaves its mark in ret: cleared, as none of these goes on elsewhere */
 #define ENTRY(name, fn) void name(Cpu *cpu) { c = cpu; fn(); c->ret = 0; }
 ENTRY(TextAt, text_at)                 /* $83B0 */
@@ -269,3 +595,28 @@ ENTRY(Div10, div10)                    /* $8522 */
 ENTRY(Digits, digits)                  /* $84EC */
 ENTRY(TwoDigits, two_digits)           /* $8552 */
 ENTRY(Level, level)                    /* $853C */
+ENTRY(UpBlink, up_blink)        /* $80A8 */
+ENTRY(UpHide, up_hide)          /* $80C4 */
+ENTRY(DownBlink, down_blink)    /* $80FA */
+ENTRY(DownHide, down_hide)      /* $8116 */
+ENTRY(DownShow, down_show)      /* $8126 */
+ENTRY(CursorBlink, cursor_blink) /* $81A8 */
+ENTRY(CursorHide, cursor_hide)  /* $81C0 */
+ENTRY(CursorShow, cursor_show)  /* $81D6 */
+ENTRY(ListMove, list_move)      /* $8212 */
+ENTRY(TileRowAt, tile_row_at)   /* $8024 */
+ENTRY(TileRow, tile_row)        /* $802A */
+ENTRY(TilesAt, tiles_at)        /* $8010 */
+ENTRY(FrameFull, frame_full)    /* $7F54 */
+ENTRY(FrameLower, frame_lower)  /* $7F76 */
+ENTRY(FrameStats, frame_stats)  /* $7F98 */
+ENTRY(FrameFoot, frame_foot)    /* $7FBA */
+ENTRY(FrameItems, frame_items)  /* $7FCE */
+ENTRY(FrameBox, frame_box)      /* $7FF6 */
+ENTRY(FramePause, frame_pause)  /* $8000 */
+ENTRY(Palette8, palette_8)      /* $7F00 */
+ENTRY(BoxDim, box_dim)          /* $7EEE */
+ENTRY(StatsPage, stats_page)    /* $7E7C */
+ENTRY(SpriteInit, sprite_init)  /* $8E22 */
+ENTRY(ClickBack, click_back)    /* $8BAA */
+ENTRY(Click, click)             /* $8BB0 */
