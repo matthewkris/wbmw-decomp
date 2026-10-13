@@ -1,0 +1,795 @@
+/* The message window and its helpers, as ordinary C (the idiomatic rewrite; docs/PORT.md, "The
+ * messages").
+ *
+ * Conversations, shops, signs and the "Found ..." boxes all go through the message
+ * interpreter ($13BC). It draws in a window on plane A, whose place and size come from the
+ * message's header ($276C, $27B0: column $8D92, row $8D94, inner width $8C9E and height $8CA0
+ * in lines of two rows); characters are written with $2050 (column d6, row d7 inside the
+ * window, scrolled with the plane: $8D9A, $8D9C). The interpreter itself waits for frames and
+ * comes later; these are the routines under it, ported register for register with every
+ * register and flag in the contract, as the status screen's are.
+ *
+ * Batch T5: the window (frame, characters, scrolling, the map redrawn behind it), its blinking
+ * marks, numbers, names, the "Found" boxes, prices, and the things owned (testing, giving,
+ * taking). */
+#include "world.h"
+
+#define VDP_DATA      0x00C00000u
+#define VDP_CTRL      0x00C00004u
+#define DATA_DIR      0x0001CC00u   /* the ROM's directory of data tables */
+#define WIN_COL       0xFFFF8D92u   /* word: the window's column on the plane (in tiles) */
+#define WIN_ROW       0xFFFF8D94u   /* word: its row */
+#define WIN_W         0xFFFF8D96u   /* word: its width with the frame */
+#define WIN_H         0xFFFF8D98u   /* word: its height with the frame */
+#define WIN_X         0xFFFF8D9Au   /* word: its column on screen, scrolled (mod 64) */
+#define WIN_Y         0xFFFF8D9Cu   /* word: its row on screen, scrolled (mod 32) */
+#define TEXT_W        0xFFFF8C9Eu   /* word: the text's width */
+#define TEXT_LINES    0xFFFF8CA0u   /* word: its lines */
+#define TEXT_LINE     0xFFFF8C9Cu   /* word: the line being written */
+#define TEXT_COL      0xFFFF8C9Au   /* word: the column being written */
+#define MARKS         0xFFFF8CA5u   /* byte: bit 0 the "more" arrow shown, 2 the choice cursor, 1 the second choice */
+#define MARK_COUNT    0xFFFF8CAAu   /* byte: frames to the marks' next blink */
+#define NAME_LEN      0xFFFF8CDEu
+#define NAME_TOP      0xFFFF8CE0u
+#define BOX           0xFFFF8D12u   /* the "Found" box: two rows of 32 tiles */
+#define SCROLL_X      0xFFFF9758u   /* word: plane A's scroll, in pixels */
+#define SCROLL_Y      0xFFFF975Au
+
+static Cpu *c;
+
+/* the flags as the 68000's moves leave them (N, Z; V and C clear; X kept) */
+static void f_move(uint32_t v, uint32_t sign) { c->ccr = (uint16_t)((c->ccr & CC_X) | (v & sign ? CC_N : 0) | ((v & (sign * 2 - 1)) ? 0 : CC_Z)); }
+#define F_B(v) f_move((v), 0x80u)
+#define F_W(v) f_move((v), 0x8000u)
+#define F_L(v) f_move((v), 0x80000000u)
+static void f_bit(int on) { c->ccr = (uint16_t)((c->ccr & ~CC_Z) | (on ? 0 : CC_Z)); }   /* btst, bset, bclr */
+static uint32_t sx(uint32_t w) { return (uint32_t)(int32_t)(int16_t)w; }
+static uint32_t swap32(uint32_t v) { uint32_t r = v << 16 | v >> 16; F_L(r); return r; }
+static void cmp_byte(uint32_t s, uint32_t d) { uint16_t x = c->ccr & CC_X; sub_b(&c->ccr, s, d); c->ccr = (uint16_t)((c->ccr & ~CC_X) | x); }
+static void cmp_word(uint32_t s, uint32_t d) { cmp_w(&c->ccr, s, d); }
+static int mem_bit(uint32_t a, int bit) { int on = rd8(a) >> (bit & 7) & 1; f_bit(on); return on; }
+static int mem_bclr(uint32_t a, int bit) { int on = mem_bit(a, bit); wr8(a, rd8(a) & ~(1 << (bit & 7))); return on; }
+static int mem_bset(uint32_t a, int bit) { int on = mem_bit(a, bit); wr8(a, rd8(a) | 1 << (bit & 7)); return on; }
+static uint8_t mem_subq_b(uint32_t a, uint32_t n) { uint8_t v = (uint8_t)sub_b(&c->ccr, n, rd8(a)); wr8(a, v); return v; }
+static uint16_t mem_addq_w(uint32_t a, uint32_t n) { uint16_t v = (uint16_t)add_w(&c->ccr, n, rd16(a)); wr16(a, v); return v; }
+
+/* $183E: d1 as decimal digits ending at a1 (a 0 there); a1 ends at the first digit */
+static void num_text(void)
+{
+    wr8(c->a[1], 0);
+    c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z);
+    do {
+        c->d[0] = 0;
+        for (c->d[2] = 31; ; ) {
+            uint32_t x = c->d[1] >> 31;
+            c->d[1] <<= 1;
+            c->d[0] = set_b(c->d[0], (c->d[0] << 1) + x);
+            if ((c->d[0] & 0xFF) >= 10) {
+                c->d[0] = set_b(c->d[0], c->d[0] - 10);
+                c->d[1] = set_b(c->d[1], c->d[1] + 1);
+            }
+            c->d[2] = set_w(c->d[2], c->d[2] - 1);
+            if ((c->d[2] & 0xFFFF) == 0xFFFF) break;
+        }
+        c->d[0] = set_b(c->d[0], add_b(&c->ccr, 0x30, c->d[0]));
+        wr8(--c->a[1], (uint8_t)c->d[0]);
+        F_L(c->d[1]);
+    } while (c->d[1]);
+}
+
+/* $2050: the tile d0 at column d6, row d7 of the window, on the plane as scrolled */
+static void char_at(void)
+{
+    c->d[1] = set_w(c->d[1], ((c->d[7] + rd16(WIN_Y)) & 0x1F) << 6);
+    c->d[2] = set_w(c->d[2], (c->d[6] + rd16(WIN_X)) & 0x3F);
+    c->d[1] = set_w(c->d[1], ((c->d[1] + c->d[2]) * 2) | 0x4000);
+    c->d[1] = (c->d[1] & 0xFFFF) << 16 | 3;
+    wr32(VDP_CTRL, c->d[1]);
+    wr16(VDP_DATA, (uint16_t)c->d[0]);
+    c->ccr = (uint16_t)(((c->d[0] & 0x8000) ? CC_N : 0) | ((c->d[0] & 0xFFFF) ? 0 : CC_Z));   /* X: the adds, no carry */
+}
+
+/* $21E8: a row of the frame at row d7: d0 at the left, d5's low word inside, its high word at
+ * the right */
+static void window_row(void)
+{
+    c->d[6] = 0;
+    char_at();
+    c->d[6] = set_w(c->d[6], c->d[6] + 1);
+    c->d[3] = set_w(c->d[3], rd16(WIN_W) - 3);
+    for (;;) {
+        c->d[0] = set_w(c->d[0], c->d[5]);
+        char_at();
+        c->d[6] = set_w(c->d[6], c->d[6] + 1);
+        c->d[3] = set_w(c->d[3], c->d[3] - 1);
+        if ((c->d[3] & 0xFFFF) == 0xFFFF) break;
+    }
+    c->d[5] = c->d[5] << 16 | c->d[5] >> 16;
+    c->d[0] = set_w(c->d[0], c->d[5]);
+    char_at();
+}
+
+/* $2082: the text scrolled up a line: $8DA4 rows of $8DA2 tiles from column $8D9E, row $8DA0,
+ * each read from $8DA6 rows below and written back (through VRAM reads into $FF8DA8) */
+static void scroll_window(void)
+{
+    c->a[7] -= 4; wr32(c->a[7], c->a[2]);
+    c->a[0] = VDP_DATA; c->a[1] = VDP_CTRL;
+    c->d[4] = set_w(c->d[4], rd16(0xFFFF8DA6u) << 7);
+    c->d[7] = set_w(c->d[7], rd16(0xFFFF8DA0u));
+    c->d[6] = set_w(c->d[6], rd16(0xFFFF8DA4u));
+    do {
+        c->d[3] = set_w(c->d[3], ((c->d[7] + rd16(WIN_Y)) & 0x1F) << 7);
+        c->d[2] = set_w(c->d[2], ((rd16(0xFFFF8D9Eu) + rd16(WIN_X)) * 2) | 0x4000);
+        c->d[5] = set_w(c->d[5], rd16(0xFFFF8DA2u));
+        c->d[1] = set_w(c->d[1], c->d[2]);
+        c->a[2] = 0xFFFF8DA8u;
+        do {
+            c->d[2] = set_w(c->d[2], c->d[2] & 0x7E);
+            do c->d[0] = set_w(c->d[0], rd16(c->a[1])); while (!(c->d[0] & 0x200));
+            c->d[0] = set_w(c->d[0], ((c->d[3] + c->d[4]) | c->d[2]) & 0xFFE);
+            c->d[0] = (c->d[0] & 0xFFFF) << 16 | 3;
+            wr32(c->a[1], c->d[0]);
+            wr16(c->a[2], rd16(c->a[0])); c->a[2] += 2;
+            c->d[2] = set_w(c->d[2], c->d[2] + 2);
+            c->d[5] = set_w(c->d[5], c->d[5] - 1);
+        } while (c->d[5] & 0xFFFF);
+        c->d[5] = set_w(c->d[5], rd16(0xFFFF8DA2u));
+        c->a[2] = 0xFFFF8DA8u;
+        do {
+            c->d[1] = set_w(c->d[1], c->d[1] & 0x407E);
+            c->d[0] = set_w(c->d[0], c->d[3] | c->d[1]);
+            c->d[0] = (c->d[0] & 0xFFFF) << 16 | 3;
+            wr32(c->a[1], c->d[0]);
+            wr16(c->a[0], rd16(c->a[2])); c->a[2] += 2;
+            c->d[1] = set_w(c->d[1], c->d[1] + 2);
+            c->d[5] = set_w(c->d[5], c->d[5] - 1);
+        } while (c->d[5] & 0xFFFF);
+        c->d[7] = set_w(c->d[7], c->d[7] + 1);
+        c->d[6] = set_w(c->d[6], sub_w(&c->ccr, 1, c->d[6]));
+    } while (c->d[6] & 0xFFFF);
+    c->a[2] = rd32(c->a[7]); c->a[7] += 4;
+}
+
+/* $2110: the window's frame drawn where the plane is scrolled to, and the sprites it covers
+ * hidden (in front, animated: their ATTR bit 7 off, ALIVE bit 2 on, $225C brings them back) */
+static void window_frame(void)
+{
+    wr16(WIN_X, (uint16_t)(((rd16(SCROLL_X) >> 3) + rd16(WIN_COL)) & 0x3F));
+    wr16(WIN_Y, (uint16_t)(((rd16(SCROLL_Y) >> 3) + rd16(WIN_ROW)) & 0x1F));
+    c->d[7] = 0;
+    c->d[0] = set_w(c->d[0], 0x8014); c->d[5] = 0x88148015u;
+    window_row();
+    c->d[7] = 1;
+    c->d[4] = set_w(c->d[4], rd16(WIN_H) - 3);
+    for (;;) {
+        c->d[0] = set_w(c->d[0], 0x8016); c->d[5] = 0x88168020u;
+        window_row();
+        c->d[7] = set_w(c->d[7], c->d[7] + 1);
+        c->d[4] = set_w(c->d[4], c->d[4] - 1);
+        if ((c->d[4] & 0xFFFF) == 0xFFFF) break;
+    }
+    c->d[0] = set_w(c->d[0], 0x9014); c->d[5] = 0x98149015u;
+    window_row();
+    c->d[4] = set_w(c->d[4], (rd16(WIN_COL) << 3) + rd16(SCROLL_X));
+    c->d[6] = set_w(c->d[6], rd16(WIN_W) << 3);
+    c->d[5] = set_w(c->d[5], (rd16(WIN_ROW) << 3) + rd16(SCROLL_Y));
+    c->d[7] = set_w(c->d[7], lsl_n(&c->ccr, rd16(WIN_H), 3, 16));
+    c->a[4] = 0;
+    c->d[1] = 0;
+    for (c->d[3] = 63; ; ) {
+        uint32_t e = c->a[4];
+        F_B(rd8(e - 0x4000));
+        if (rd8(e - 0x4000) & 0x80) {
+            F_B(rd8(e - 0x3FFE));
+            if (rd8(e - 0x3FFE) & 0x80) {
+                cmp_byte(4, rd8(e - 0x3CFD));
+                if (rd8(e - 0x3CFD) >= 4) {
+                    c->d[0] = set_w(c->d[0], rd16(e - 0x3800)); F_W(c->d[0]);
+                    c->d[1] = set_b(c->d[1], rd8(e - 0x34FE)); F_B(c->d[1]);
+                    c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[1], c->d[0]));
+                    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, c->d[4], c->d[0]));
+                    if (!(c->ccr & (CC_C | CC_Z))) {
+                        c->d[0] = set_w(c->d[0], sub_w(&c->ccr, c->d[1], c->d[0]));
+                        c->d[0] = set_w(c->d[0], sub_w(&c->ccr, c->d[1], c->d[0]));
+                        cmp_word(c->d[6], c->d[0]);
+                        if ((int16_t)c->d[0] < (int16_t)c->d[6]) {
+                            c->d[0] = set_w(c->d[0], rd16(e - 0x3700)); F_W(c->d[0]);
+                            c->d[1] = set_b(c->d[1], rd8(e - 0x34FD)); F_B(c->d[1]);
+                            c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[1], c->d[0]));
+                            c->d[0] = set_w(c->d[0], sub_w(&c->ccr, c->d[5], c->d[0]));
+                            if (!(c->ccr & (CC_C | CC_Z))) {
+                                c->d[0] = set_w(c->d[0], sub_w(&c->ccr, c->d[1], c->d[0]));
+                                c->d[0] = set_w(c->d[0], sub_w(&c->ccr, c->d[1], c->d[0]));
+                                cmp_word(c->d[7], c->d[0]);
+                                if ((int16_t)c->d[0] < (int16_t)c->d[7]) {
+                                    wr8(e - 0x3FFE, rd8(e - 0x3FFE) & 0x7F);
+                                    wr8(e - 0x4000, rd8(e - 0x4000) | 4); F_B(rd8(e - 0x4000));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        c->a[4] += 4;
+        c->d[3] = set_w(c->d[3], c->d[3] - 1);
+        if ((c->d[3] & 0xFFFF) == 0xFFFF) break;
+    }
+}
+
+/* $220A: the map's tile under window column d6, row d7 (MapBlockAt, the block's quarter) */
+static void tile_under(void)
+{
+    c->a[3] = 0xFFFF9754u;
+    c->d[1] = 0;
+    c->d[0] = set_w(c->d[0], lsr_n(&c->ccr, rd16(c->a[3] + 6), 3, 16));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(WIN_ROW), c->d[0]));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[7], c->d[0]));
+    c->d[0] = set_w(c->d[0], lsr_n(&c->ccr, c->d[0], 1, 16));
+    uint32_t x = c->ccr & CC_X ? 1 : 0;
+    c->d[1] = set_w(c->d[1], (c->d[1] << 1) | x);          /* roxl.w #1,d1 */
+    c->d[0] = set_w(c->d[0], c->d[0] << 6);
+    c->d[7] = c->d[7] << 16 | c->d[7] >> 16;
+    c->d[7] = set_w(c->d[7], c->d[0]);
+    c->d[0] = set_w(c->d[0], lsr_n(&c->ccr, rd16(c->a[3] + 4), 3, 16));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(WIN_COL), c->d[0]));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[6], c->d[0]));
+    c->d[0] = set_w(c->d[0], lsr_n(&c->ccr, c->d[0], 1, 16));
+    x = c->ccr & CC_X ? 1 : 0;
+    c->d[1] = set_w(c->d[1], (c->d[1] << 2) | (x << 1));   /* roxl.w #2,d1 (d1 is 0 or 1) */
+    c->ccr &= ~CC_X;
+    c->d[6] = c->d[6] << 16 | c->d[6] >> 16;
+    c->d[6] = set_w(c->d[6], c->d[0]);
+    c->a[7] -= 2; wr16(c->a[7], (uint16_t)c->d[1]);
+    call_68k(c, 0x2542);                                    /* MapBlockAt */
+    c->d[1] = c->d[0] & 0xFF;
+    c->d[0] = set_w(c->d[0], c->d[0] & 0x300);
+    c->d[0] = set_w(c->d[0], lsr_n(&c->ccr, c->d[0], 6, 16));
+    c->a[0] = rd32(c->a[3] + 0x10 + sx(c->d[0]));
+    c->d[1] = set_w(c->d[1], c->d[1] << 3);
+    c->d[1] = set_w(c->d[1], add_w(&c->ccr, rd16(c->a[7]), c->d[1])); c->a[7] += 2;
+    c->d[0] = set_w(c->d[0], rd16(c->a[0] + sx(c->d[1])));
+    c->d[6] = c->d[6] << 16 | c->d[6] >> 16;
+    c->d[7] = swap32(c->d[7]);
+}
+
+/* $225C: the map redrawn under the whole window; the sprites it hid shown again; then, if
+ * $8A51 bit 0, $DE6A */
+static void window_restore(void)
+{
+    c->d[7] = 0;
+    do {
+        c->d[6] = 0;
+        do {
+            tile_under();
+            char_at();
+            c->d[6] = set_w(c->d[6], c->d[6] + 1);
+            cmp_word(rd16(WIN_W), c->d[6]);
+        } while ((c->d[6] & 0xFFFF) < rd16(WIN_W));
+        c->d[7] = set_w(c->d[7], c->d[7] + 1);
+        cmp_word(rd16(WIN_H), c->d[7]);
+    } while ((c->d[7] & 0xFFFF) < rd16(WIN_H));
+    c->a[4] = 0;
+    for (c->d[0] = 64; ; ) {
+        F_B(rd8(c->a[4] - 0x4000));
+        if ((rd8(c->a[4] - 0x4000) & 0x80) && mem_bclr(c->a[4] - 0x4000, 2)) {
+            wr8(c->a[4] - 0x3FFE, rd8(c->a[4] - 0x3FFE) | 0x80); F_B(rd8(c->a[4] - 0x3FFE));
+        }
+        c->a[4] += 4;
+        c->d[0] = set_w(c->d[0], c->d[0] - 1);
+        if ((c->d[0] & 0xFFFF) == 0xFFFF) break;
+    }
+    if (mem_bit(0xFFFF8A51u, 0)) call_68k(c, 0xDE6A);
+}
+
+/* $16C6: a new line: the next, or at the last the text scrolled up ($2082) and the last line
+ * blanked */
+static void new_line(void)
+{
+    wr16(TEXT_COL, 0);
+    mem_addq_w(TEXT_LINE, 1);
+    c->d[7] = set_w(c->d[7], rd16(TEXT_LINE)); F_W(c->d[7]);
+    cmp_word(rd16(TEXT_LINES), c->d[7]);
+    if ((c->d[7] & 0xFFFF) < rd16(TEXT_LINES)) return;
+    wr16(TEXT_LINE, (uint16_t)sub_w(&c->ccr, 1, rd16(TEXT_LINE)));
+    c->d[0] = set_w(c->d[0], rd16(TEXT_LINES));
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 1, c->d[0]));
+    if (c->d[0] & 0xFFFF) {
+        c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+        wr16(0xFFFF8DA4u, (uint16_t)c->d[0]);
+        wr16(0xFFFF8DA2u, rd16(TEXT_W));
+        wr16(0xFFFF8D9Eu, 1); wr16(0xFFFF8DA0u, 1); wr16(0xFFFF8DA6u, 2);
+        scroll_window();
+    }
+    c->d[7] = set_w(c->d[7], rd16(TEXT_LINES));
+    c->d[7] = set_w(c->d[7], sub_w(&c->ccr, 1, c->d[7]));
+    c->d[7] = set_w(c->d[7], add_w(&c->ccr, c->d[7], c->d[7]));
+    c->d[7] = set_w(c->d[7], add_w(&c->ccr, 1, c->d[7]));
+    c->d[0] = set_w(c->d[0], 0x8020);
+    for (c->d[4] = 1; ; ) {
+        c->d[3] = set_w(c->d[3], rd16(TEXT_W));
+        c->d[6] = 1;
+        do {
+            char_at();
+            c->d[6] = set_w(c->d[6], c->d[6] + 1);
+            c->d[3] = set_w(c->d[3], sub_w(&c->ccr, 1, c->d[3]));
+        } while (c->d[3] & 0xFFFF);
+        c->d[7] = set_w(c->d[7], add_w(&c->ccr, 1, c->d[7]));
+        c->d[4] = set_w(c->d[4], c->d[4] - 1);
+        if ((c->d[4] & 0xFFFF) == 0xFFFF) break;
+    }
+}
+
+/* the "more" arrow ($9013) under the text's middle: $173C hides it, $1754 shows it, $172E
+ * blinks it every 20 frames */
+static void more_draw(uint32_t tile)
+{
+    c->d[0] = set_w(c->d[0], tile);
+    wr8(MARK_COUNT, 0x14);
+    c->d[7] = set_w(c->d[7], rd16(TEXT_LINES));
+    c->d[7] = set_w(c->d[7], add_w(&c->ccr, c->d[7], c->d[7]));
+    c->d[7] = set_w(c->d[7], add_w(&c->ccr, 1, c->d[7]));
+    c->d[6] = set_w(c->d[6], lsr_n(&c->ccr, rd16(TEXT_W), 1, 16));
+    c->d[6] = set_w(c->d[6], add_w(&c->ccr, 1, c->d[6]));
+    char_at();
+}
+static void more_hide(void) { if (mem_bclr(MARKS, 0)) more_draw(0x8020); }
+static void more_show(void) { more_draw(0x9013); }
+static void more_blink(void)
+{
+    if (mem_subq_b(MARK_COUNT, 1)) return;
+    if (mem_bit(MARKS, 0)) { more_hide(); return; }
+    if (mem_bset(MARKS, 0)) return;
+    more_show();
+}
+
+/* the choice cursor ($87B5) before the choice ($8CAC, or $8CAD when MARKS bit 1) on the line:
+ * $1782 hides it, $1790 shows it, $1774 blinks it */
+static void choice_draw(uint32_t tile)
+{
+    c->d[0] = set_w(c->d[0], tile);
+    wr8(MARK_COUNT, 0x14);
+    c->d[7] = set_w(c->d[7], rd16(TEXT_LINE));
+    c->d[7] = set_w(c->d[7], add_w(&c->ccr, c->d[7], c->d[7]));
+    c->d[7] = set_w(c->d[7], add_w(&c->ccr, 2, c->d[7]));
+    c->d[6] = 0;
+    c->d[6] = set_b(c->d[6], rd8(0xFFFF8CACu));
+    if (mem_bit(MARKS, 1)) c->d[6] = set_b(c->d[6], rd8(0xFFFF8CADu));
+    c->d[6] = set_w(c->d[6], add_w(&c->ccr, 1, c->d[6]));
+    char_at();
+}
+static void choice_hide(void) { if (mem_bclr(MARKS, 2)) choice_draw(0x8020); }
+static void choice_show(void) { if (!mem_bset(MARKS, 2)) choice_draw(0x87B5); }
+static void choice_blink(void)
+{
+    if (mem_subq_b(MARK_COUNT, 1)) return;
+    if (mem_bit(MARKS, 2)) choice_hide(); else choice_show();
+}
+
+/* $1D92: the price of thing d0 ($60-$65 are $20-$25's) from $1DAE */
+static void price_of(void)
+{
+    c->d[0] = set_w(c->d[0], c->d[0] & 0xFF);
+    if ((c->d[0] & 0xFF) >= 0x60 && (c->d[0] & 0xFF) < 0x66) c->d[0] = set_w(c->d[0], c->d[0] - 0x40);
+    c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 2, 16));
+    c->d[0] = rd32(0x1DAEu + sx(c->d[0]));
+    F_L(c->d[0]);
+}
+
+/* $1ED0: a2 the text of thing d0 in table d3 (0-3) of the names ($1CC10) */
+static void name_text(void)
+{
+    c->d[3] = set_w(c->d[3], c->d[3] & 3);
+    c->d[3] = set_w(c->d[3], lsl_n(&c->ccr, c->d[3], 2, 16));
+    c->a[2] = rd32(DATA_DIR + 0x10);
+    c->a[2] = rd32(c->a[2] + sx(c->d[3]));
+    c->d[0] = set_w(c->d[0], c->d[0] & 0xFF);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+    c->a[2] += sx(rd16(c->a[2] + sx(c->d[0])));
+}
+
+/* $1E6A: the name of thing d0 (table 1) into NAME_TOP, two rows of characters (the marks
+ * above in its second half), NAME_LEN long. A name can include others (bytes $0C-$0F: a table,
+ * then the thing): they nest through the stack of texts at $FF8D00 */
+static void name_of(void)
+{
+    wr16(0xFFFF8D10u, 0);
+    wr16(NAME_LEN, 0);
+    c->a[3] = NAME_TOP;
+    c->d[3] = 13;
+    name_text();
+    for (;;) {
+        c->d[3] = set_b(c->d[3], rd8(c->a[2]++)); F_B(c->d[3]);
+        if (!(c->d[3] & 0xFF)) {
+            c->d[0] = set_w(c->d[0], rd16(0xFFFF8D10u)); F_W(c->d[0]);
+            if (!(c->d[0] & 0xFFFF)) return;
+            c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 4, c->d[0]));
+            c->a[0] = sx(c->d[0]);
+            c->a[2] = rd32(c->a[0] - 0x7300);
+            continue;
+        }
+        cmp_byte(0x10, c->d[3]);
+        if ((c->d[3] & 0xFF) >= 0x10) {
+            c->d[2] = 32;
+            cmp_byte(0xFE, c->d[3]);
+            if ((c->d[3] & 0xFF) >= 0xFE) {
+                c->d[3] = set_b(c->d[3], sub_b(&c->ccr, 0x40, c->d[3]));
+                c->d[2] = set_b(c->d[2], c->d[3]);
+                c->d[3] = set_b(c->d[3], rd8(c->a[2]++));
+            }
+            wr8(c->a[3] + 0x10, (uint8_t)c->d[3]);
+            wr8(c->a[3]++, (uint8_t)c->d[2]);
+            mem_addq_w(NAME_LEN, 1);
+            continue;
+        }
+        if ((c->d[3] & 0xFF) < 0x0C) for (;;) { }    /* the original hangs on a bad name ($1E9C) */
+        c->d[0] = set_b(c->d[0], rd8(c->a[2]++));
+        c->a[0] = sx(rd16(0xFFFF8D10u));
+        wr32(c->a[0] - 0x7300, c->a[2]);
+        c->a[0] += 4;
+        wr16(0xFFFF8D10u, (uint16_t)c->a[0]);
+        name_text();
+    }
+}
+
+/* $1F8E: the text at a0 into the box at a2 (characters d2's high byte, the marks row $40 below);
+ * bytes $FE, $FF set d2 for the next character */
+static void box_text(void)
+{
+    c->d[2] = set_w(c->d[2], c->d[1]);
+    for (;;) {
+        c->d[0] = set_b(c->d[0], rd8(c->a[0]++)); F_B(c->d[0]);
+        if (!(c->d[0] & 0xFF)) return;
+        cmp_byte(0xFE, c->d[0]);
+        if ((c->d[0] & 0xFF) >= 0xFE) {
+            c->d[2] = set_b(c->d[2], c->d[0]);
+            c->d[2] = set_b(c->d[2], sub_b(&c->ccr, 0x40, c->d[2]));
+            continue;
+        }
+        wr16(c->a[2] + 0x40, (uint16_t)c->d[0]);
+        wr16(c->a[2], (uint16_t)c->d[2]); c->a[2] += 2;
+        c->d[2] = set_w(c->d[2], c->d[1]);
+    }
+}
+
+/* $1FBC: a box row: d3, 30 of d2, d3 (at a0); $1FAC both rows, blank between the edges */
+static void box_row(void)
+{
+    wr16(c->a[0], (uint16_t)c->d[3]); c->a[0] += 2;
+    for (c->d[1] = 29; ; ) {
+        wr16(c->a[0], (uint16_t)c->d[2]); c->a[0] += 2;
+        c->d[1] = set_w(c->d[1], c->d[1] - 1);
+        if ((c->d[1] & 0xFFFF) == 0xFFFF) break;
+    }
+    wr16(c->a[0], (uint16_t)c->d[3]); c->a[0] += 2;
+    F_W(c->d[3]);
+}
+static void box_rows(void)
+{
+    c->a[0] = BOX;
+    c->d[2] = set_w(c->d[2], 0x8020);
+    c->d[3] = set_w(c->d[3], 0x87A1);
+    box_row();
+    box_row();
+}
+
+/* $1EEC: "Found the <name of thing d0>." centred in the box */
+static void found_thing(void)
+{
+    name_of();
+    box_rows();
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, 6, rd16(NAME_LEN)));
+    c->d[1] = 28;
+    c->d[1] = set_w(c->d[1], sub_w(&c->ccr, c->d[0], c->d[1]));
+    c->d[1] = set_w(c->d[1], c->d[1] & 0xFFFE);
+    c->a[2] = BOX + sx(c->d[1]);
+    c->d[1] = set_w(c->d[1], 0x8020);
+    c->d[0] = set_w(c->d[0], c->d[1]);
+    c->a[0] = 0x1FE6u;
+    box_text();
+    c->a[0] = NAME_TOP;
+    c->d[0] = set_w(c->d[0], 0xA000);
+    c->d[1] = set_w(c->d[1], rd16(NAME_LEN)); F_W(c->d[1]);
+    while (c->d[1] & 0xFFFF) {
+        c->d[0] = set_b(c->d[0], rd8(c->a[0] + 0x10));
+        wr16(c->a[2] + 0x40, (uint16_t)c->d[0]);
+        c->d[0] = set_b(c->d[0], rd8(c->a[0]++));
+        wr16(c->a[2], (uint16_t)c->d[0]); c->a[2] += 2;
+        c->d[1] = set_w(c->d[1], sub_w(&c->ccr, 1, c->d[1]));
+    }
+    c->d[1] = set_w(c->d[1], 0x8020);
+    c->d[0] = set_w(c->d[0], c->d[1]);
+    c->a[0] = 0x1FFFu;
+    box_text();
+}
+
+/* $1F46: "Found <d0> GOLD." centred in the box (the digits in a link frame) */
+static void found_gold(void)
+{
+    uint32_t sp = c->a[7] - 4;
+    wr32(sp, c->a[6]); c->a[6] = sp; c->a[7] = sp - 12;
+    box_rows();
+    c->d[1] = c->d[0];
+    c->a[1] = c->a[6] - 2;
+    c->a[0] = c->a[1];
+    num_text();
+    c->a[0] -= c->a[1];
+    c->d[0] = set_w(c->d[0], c->a[0]);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, 5, c->d[0]));
+    c->d[1] = 26;
+    c->d[1] = set_w(c->d[1], sub_w(&c->ccr, c->d[0], c->d[1]));
+    c->d[1] = set_w(c->d[1], c->d[1] & 0xFFFE);
+    c->a[2] = BOX + sx(c->d[1]);
+    c->d[1] = set_w(c->d[1], 0x8020);
+    c->d[0] = set_w(c->d[0], c->d[1]);
+    c->a[0] = 0x1FF1u; box_text();
+    c->a[0] = c->a[1]; box_text();
+    c->a[0] = 0x1FF8u; box_text();
+    c->a[7] = c->a[6]; c->a[6] = rd32(c->a[7]); c->a[7] += 4;
+}
+
+/* $1FD4: the box shown ($7EEE) for a second */
+static void found_show(void)
+{
+    c->a[0] = BOX;
+    call_68k(c, 0x7EEE);
+    wr16(0xFFFF965Cu, 0x3C); F_W(0x3C);
+}
+static void show_found_gold(void)                   /* $1FCA: its bsr's return on the stack, as the frame (and a1) sit under it */
+{
+    c->a[7] -= 4; wr32(c->a[7], 0x1FCEu);
+    found_gold();
+    c->a[7] += 4;
+    found_show();
+}
+static void show_found(void)      { found_thing(); found_show(); }   /* $1FD0 */
+
+/* $276C: message d0's text (a pointer at $8C7A) and window (a1), from the tables at $1CC14 and
+ * $1CC18 */
+static void message_data(void)
+{
+    c->d[1] = set_w(c->d[1], c->d[0]);
+    c->d[0] = set_w(c->d[0], c->d[0] * 2);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[1], c->d[0]));
+    c->a[1] = rd32(DATA_DIR + 0x14);
+    c->d[1] = set_b(c->d[1], rd8(c->a[1] + 1 + sx(c->d[0])));
+    c->d[1] = set_w(c->d[1], c->d[1] << 8);
+    c->d[1] = set_b(c->d[1], rd8(c->a[1] + 2 + sx(c->d[0])));
+    c->a[0] = c->a[1] + sx(c->d[1]);
+    wr32(0xFFFF8C7Au, c->a[0]);
+    c->d[1] = rd8(c->a[1] + sx(c->d[0]));
+    c->d[1] = set_w(c->d[1], lsl_n(&c->ccr, c->d[1], 2, 16));
+    c->a[1] = rd32(DATA_DIR + 0x18) + sx(c->d[1]);
+}
+
+/* $2002: the window's place and size from a1, for drawing without its frame */
+static void window_geometry(void)
+{
+    message_data();
+    c->d[0] = rd8(c->a[1]++);
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 1, c->d[0]));
+    wr16(WIN_COL, (uint16_t)c->d[0]); wr16(WIN_X, (uint16_t)c->d[0]);
+    c->d[0] = rd8(c->a[1]++);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 1, c->d[0]));
+    wr16(WIN_ROW, (uint16_t)c->d[0]); wr16(WIN_Y, (uint16_t)c->d[0]);
+    c->d[0] = rd8(c->a[1]++);
+    wr16(TEXT_W, (uint16_t)c->d[0]);
+    c->d[0] = set_b(c->d[0], rd8(c->a[1]++));
+    wr16(TEXT_LINES, (uint16_t)c->d[0]);
+    wr8(0xFFFF8CA4u, 0x80); F_B(0x80);
+}
+
+/* $27B0: the window from a1 (column, row, width, lines) opened: its frame drawn */
+static void window_at(void)
+{
+    F_W(rd16(0xFFFF965Cu));
+    if (rd16(0xFFFF965Cu)) call_68k(c, 0x7F00);
+    c->d[0] = 0;
+    c->d[0] = set_b(c->d[0], rd8(c->a[1]++)); wr16(WIN_COL, (uint16_t)c->d[0]);
+    c->d[0] = set_b(c->d[0], rd8(c->a[1]++)); wr16(WIN_ROW, (uint16_t)c->d[0]);
+    c->d[0] = set_b(c->d[0], rd8(c->a[1]++)); wr16(TEXT_W, (uint16_t)c->d[0]);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, 2, c->d[0])); wr16(WIN_W, (uint16_t)c->d[0]);
+    c->d[0] = set_b(c->d[0], rd8(c->a[1]++)); wr16(TEXT_LINES, (uint16_t)c->d[0]);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, 3, c->d[0])); wr16(WIN_H, (uint16_t)c->d[0]);
+    window_frame();
+}
+
+/* $279C: message d0's window opened, with its sound (79) */
+static void open_window(void)
+{
+    message_data();
+    c->d[0] = 79;
+    call_68k(c, 0x366);
+    window_at();
+    wr8(0xFFFF8CA4u, 0x80); F_B(0x80);
+}
+
+/* $203A: in the cheaper towns ($8A8B), a price d0 times 5 / 6 */
+static void cheaper(void)
+{
+    F_B(rd8(0xFFFF8A8Bu));
+    if (!rd8(0xFFFF8A8Bu)) return;
+    c->d[1] = c->d[0] & 0xFF;
+    c->d[1] = set_w(c->d[1], lsl_n(&c->ccr, c->d[1], 2, 16));
+    c->d[1] = set_w(c->d[1], add_w(&c->ccr, c->d[0], c->d[1]));
+    uint32_t t = c->d[0]; c->d[0] = c->d[1]; c->d[1] = t;
+    c->d[1] = 6;
+    uint32_t q = c->d[0] / 6, r = c->d[0] % 6;
+    c->d[0] = (r << 16) | (q & 0xFFFF);
+    c->ccr = (uint16_t)((c->ccr & CC_X) | (q & 0x8000 ? CC_N : 0) | ((q & 0xFFFF) ? 0 : CC_Z));
+}
+
+/* things owned. Thing numbers: under $20 a bit of $95CA (the swords, armour, shields, boots
+ * owned); $20-$25 a special action's count ($8A04); $26-$27 the slots' ($8A3A); $28-$5F an item's
+ * count at $958C ($2510; $2B-$2E the potions' level in one cell, 18); $60 up a game flag. The
+ * thresholds ($60, $28, $26, $20) are the bytes at $24D8, which is also a bra.s */
+static void item_cell(void)                         /* $2510: a0 its count's cell */
+{
+    c->a[0] = 0xFFFF958Cu;
+    cmp_byte(0x29, c->d[0]);
+    if ((c->d[0] & 0xFF) < 0x29) c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 0x1C, c->d[0]));
+    else {
+        c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 0x30, c->d[0]));
+        if (c->ccr & CC_C) {
+            c->d[0] = set_b(c->d[0], add_b(&c->ccr, 0x17, c->d[0]));
+            cmp_byte(0x12, c->d[0]);
+            if ((c->d[0] & 0xFF) >= 0x12) { c->d[0] = 18; F_L(18); }
+        }
+    }
+    c->a[0] += sx(c->d[0]);
+}
+static void flag_cell(void)                         /* $2536: a0 its bit's byte */
+{
+    c->a[0] = 0xFFFF95CAu;
+    c->d[1] = set_w(c->d[1], c->d[0]); F_W(c->d[1]);
+    c->d[1] = set_w(c->d[1], lsr_n(&c->ccr, c->d[1], 3, 16));
+    c->a[0] += sx(c->d[1]);
+}
+static uint8_t threshold(void) { return rd8(c->a[1]++); }
+static void yes(void) { c->d[0] = 0xFFFFFFFFu; F_L(c->d[0]); }
+static void no(void)  { c->d[0] = 0; F_L(0); }
+
+/* $23E4: whether thing d0 is owned (ne), or for item $29 if 99 are not yet (the bag) */
+static void owns(void)
+{
+    c->d[0] = set_w(c->d[0], c->d[0] & 0xFF);
+    c->a[1] = 0x24D8u;
+    uint8_t t = threshold(); cmp_byte(t, c->d[0]);
+    if ((c->d[0] & 0xFF) >= t) { c->d[0] = set_b(c->d[0], c->d[0] | 0xF8); F_B(c->d[0]); call_68k(c, 0x274C); return; }
+    cmp_byte(0x29, c->d[0]);
+    if ((c->d[0] & 0xFF) == 0x29) {
+        cmp_byte(0x63, rd8(0xFFFF959Cu));
+        if (rd8(0xFFFF959Cu) < 0x63) no(); else yes();
+        return;
+    }
+    t = threshold(); cmp_byte(t, c->d[0]);
+    if ((c->d[0] & 0xFF) >= t) {
+        c->d[1] = set_w(c->d[1], c->d[0]);
+        item_cell();
+        cmp_byte(0x12, c->d[0]);
+        if ((c->d[0] & 0xFF) < 0x12) { F_B(rd8(c->a[0])); return; }
+        c->d[1] = set_b(c->d[1], sub_b(&c->ccr, 0x2B, c->d[1]));
+        F_B(rd8(c->a[0]));
+        if (rd8(c->a[0]) & 0x80) { no(); return; }
+        cmp_byte(rd8(c->a[0]), c->d[1]);
+        if ((c->d[1] & 0xFF) > rd8(c->a[0])) no(); else yes();
+        return;
+    }
+    c->a[1] += 1;
+    t = threshold(); cmp_byte(t, c->d[0]);
+    if ((c->d[0] & 0xFF) >= t) {
+        c->d[0] = set_b(c->d[0], c->d[0] & 0xF);
+        c->d[1] = 11;
+        cmp_byte(5, c->d[0]);
+        if ((c->d[0] & 0xFF) >= 5) c->d[1] = 0;
+        c->a[0] = 0xFFFF95BEu;
+        cmp_byte(rd8(c->a[0] + sx(c->d[0])), c->d[1]);
+        if ((c->d[1] & 0xFF) >= rd8(c->a[0] + sx(c->d[0]))) no(); else yes();
+        return;
+    }
+    flag_cell();
+    mem_bit(c->a[0], (int)(c->d[0] & 7));
+}
+
+/* $245A: give thing d0 */
+static void give(void)
+{
+    c->d[0] = set_w(c->d[0], c->d[0] & 0xFF);
+    c->a[1] = 0x24D8u;
+    uint8_t t = threshold(); cmp_byte(t, c->d[0]);
+    if ((c->d[0] & 0xFF) >= t) {
+        c->d[2] = set_b(c->d[2], c->d[0]);
+        c->d[0] = set_b(c->d[0], c->d[0] | 0xF8);
+        call_68k(c, 0x2752);                        /* SetGameFlag */
+        c->d[0] = set_b(c->d[0], c->d[2]);
+        c->d[0] = set_w(c->d[0], c->d[0] & 0xF);
+        call_68k(c, 0x8A04);
+        return;
+    }
+    t = threshold(); cmp_byte(t, c->d[0]);
+    if ((c->d[0] & 0xFF) >= t) {
+        c->d[1] = set_w(c->d[1], c->d[0]);
+        item_cell();
+        cmp_byte(0x12, c->d[0]);
+        if ((c->d[0] & 0xFF) != 0x12) { wr8(c->a[0], (uint8_t)add_b(&c->ccr, 1, rd8(c->a[0]))); return; }
+        c->d[1] = set_b(c->d[1], sub_b(&c->ccr, 0x2B, c->d[1]));
+        wr8(c->a[0], (uint8_t)c->d[1]);
+        c->d[1] = set_b(c->d[1], add_b(&c->ccr, 8, c->d[1]));
+        c->a[0] = 0xFFFF9F10u;
+        for (c->d[0] = 1; ; ) {
+            cmp_byte(8, rd8(c->a[0]));
+            if (rd8(c->a[0]) >= 8) {
+                cmp_byte(0xC, rd8(c->a[0]));
+                if (rd8(c->a[0]) < 0xC) { wr8(c->a[0], (uint8_t)c->d[1]); call_68k(c, 0x76C4); return; }
+            }
+            c->a[0] += 1;
+            c->d[0] = set_w(c->d[0], c->d[0] - 1);
+            if ((c->d[0] & 0xFFFF) == 0xFFFF) return;
+        }
+    }
+    t = threshold(); cmp_byte(t, c->d[0]);
+    if ((c->d[0] & 0xFF) >= t) { call_68k(c, 0x8A3A); return; }
+    t = threshold(); cmp_byte(t, c->d[0]);
+    if ((c->d[0] & 0xFF) >= t) { c->d[0] = set_w(c->d[0], c->d[0] & 0xF); F_W(c->d[0]); call_68k(c, 0x8A04); return; }
+    flag_cell();
+    mem_bset(c->a[0], (int)(c->d[0] & 7));
+}
+
+/* $24DC: take thing d0 (an item's count down; leaving its slot, $882C) */
+static void take(void)
+{
+    c->d[0] = set_w(c->d[0], c->d[0] & 0xFF);
+    cmp_byte(0x20, c->d[0]);
+    if ((c->d[0] & 0xFF) < 0x20) { flag_cell(); mem_bclr(c->a[0], (int)(c->d[0] & 7)); return; }
+    c->d[3] = set_w(c->d[3], c->d[0]);
+    call_68k(c, 0x882C);
+    c->d[0] = set_w(c->d[0], c->d[3]);
+    c->d[1] = set_w(c->d[1], c->d[0]);
+    item_cell();
+    cmp_byte(0x12, c->d[0]);
+    if ((c->d[0] & 0xFF) != 0x12) { wr8(c->a[0], (uint8_t)sub_b(&c->ccr, 1, rd8(c->a[0]))); return; }
+    F_B(rd8(c->a[0]));
+    if (rd8(c->a[0]) & 0x80) return;
+    c->d[1] = set_b(c->d[1], sub_b(&c->ccr, 0x2A, c->d[1]));
+    wr8(c->a[0], (uint8_t)sub_b(&c->ccr, c->d[1], rd8(c->a[0])));
+}
+
+/* call_68k leaves its mark in ret: cleared, as none of these goes on elsewhere */
+#define ENTRY(name, fn) void name(Cpu *cpu) { c = cpu; fn(); c->ret = 0; }
+ENTRY(NumText, num_text)                /* $183E */
+ENTRY(CharAt, char_at)                  /* $2050 */
+ENTRY(WindowRow, window_row)            /* $21E8 */
+ENTRY(ScrollWindow, scroll_window)      /* $2082 */
+ENTRY(WindowFrame, window_frame)        /* $2110 */
+ENTRY(TileUnder, tile_under)            /* $220A */
+ENTRY(WindowRestore, window_restore)    /* $225C */
+ENTRY(NewLine, new_line)                /* $16C6 */
+ENTRY(MoreBlink, more_blink)            /* $172E */
+ENTRY(MoreHide, more_hide)              /* $173C */
+ENTRY(MoreShow, more_show)              /* $1754 */
+ENTRY(ChoiceBlink, choice_blink)        /* $1774 */
+ENTRY(ChoiceHide, choice_hide)          /* $1782 */
+ENTRY(ChoiceShow, choice_show)          /* $1790 */
+ENTRY(PriceOf, price_of)                /* $1D92 */
+ENTRY(NameText, name_text)              /* $1ED0 */
+ENTRY(NameOf, name_of)                  /* $1E6A */
+ENTRY(BoxText, box_text)                /* $1F8E */
+ENTRY(BoxRow, box_row)                  /* $1FBC */
+ENTRY(BoxRows, box_rows)                /* $1FAC */
+ENTRY(FoundThing, found_thing)          /* $1EEC */
+ENTRY(FoundGold, found_gold)            /* $1F46 */
+ENTRY(ShowFoundGold, show_found_gold)   /* $1FCA */
+ENTRY(ShowFound, show_found)            /* $1FD0 */
+ENTRY(MessageData, message_data)        /* $276C */
+ENTRY(WindowGeometry, window_geometry)  /* $2002 */
+ENTRY(WindowAt, window_at)              /* $27B0 */
+ENTRY(OpenWindow, open_window)          /* $279C */
+ENTRY(Cheaper, cheaper)                 /* $203A */
+ENTRY(ItemCell, item_cell)              /* $2510 */
+ENTRY(FlagCell, flag_cell)              /* $2536 */
+ENTRY(Owns, owns)                       /* $23E4 */
+ENTRY(Give, give)                       /* $245A */
+ENTRY(Take, take)                       /* $24DC */

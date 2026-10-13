@@ -64,6 +64,7 @@ void TextAt(Cpu *), TextAtRC(Cpu *), String(Cpu *), StringPlain(Cpu *), StringBr
      UpBlink(Cpu *), UpHide(Cpu *), DownBlink(Cpu *), DownHide(Cpu *), DownShow(Cpu *), CursorBlink(Cpu *), CursorHide(Cpu *), CursorShow(Cpu *), ListMove(Cpu *), TileRowAt(Cpu *), TileRow(Cpu *), TilesAt(Cpu *), FrameFull(Cpu *), FrameLower(Cpu *), FrameStats(Cpu *), FrameFoot(Cpu *), FrameItems(Cpu *), FrameBox(Cpu *), FramePause(Cpu *), Palette8(Cpu *), BoxDim(Cpu *), StatsPage(Cpu *), SpriteInit(Cpu *), ClickBack(Cpu *), Click(Cpu *),
      FillZero(Cpu *), FillBlank(Cpu *), TilePair(Cpu *), TileRows(Cpu *), Mark(Cpu *), MarkTwo(Cpu *), LeftSlot(Cpu *), RightSlot(Cpu *), ItemsIcon(Cpu *), ViewLimits(Cpu *), Title(Cpu *), BuildList(Cpu *), DrawList(Cpu *), ListPage(Cpu *), ClearPanel(Cpu *), Blank13(Cpu *), LineX2(Cpu *), OpenLine(Cpu *), MainMenu(Cpu *), MenuMove(Cpu *), TakeOff(Cpu *), MagicPage(Cpu *), ItemsPage(Cpu *), MaybePicture(Cpu *), Stats(Cpu *),
      StatusScreen(Cpu *), PauseScreen(Cpu *), CursorSpriteTop(Cpu *), CursorSpriteLow(Cpu *), SlotFlipTop(Cpu *), SlotFlipLow(Cpu *), ListButtons(Cpu *), ScreenSetup(Cpu *), MenuReset(Cpu *);
+void NumText(Cpu *), CharAt(Cpu *), ScrollWindow(Cpu *), WindowFrame(Cpu *), WindowRow(Cpu *), TileUnder(Cpu *), WindowRestore(Cpu *), NewLine(Cpu *), MoreBlink(Cpu *), MoreHide(Cpu *), MoreShow(Cpu *), ChoiceBlink(Cpu *), ChoiceHide(Cpu *), ChoiceShow(Cpu *), PriceOf(Cpu *), NameOf(Cpu *), NameText(Cpu *), FoundThing(Cpu *), FoundGold(Cpu *), BoxText(Cpu *), BoxRows(Cpu *), BoxRow(Cpu *), ShowFoundGold(Cpu *), ShowFound(Cpu *), WindowGeometry(Cpu *), Cheaper(Cpu *), Owns(Cpu *), Give(Cpu *), Take(Cpu *), ItemCell(Cpu *), FlagCell(Cpu *), MessageData(Cpu *), OpenWindow(Cpu *), WindowAt(Cpu *);   /* message.c */
 #define CT_ALL 0x3FFFF                /* every register and flag compared */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
      FindFreeEffect(Cpu *), CheckGrounded(Cpu *);
@@ -214,6 +215,40 @@ const PortRoutine port_routines[] = {
     {0x008522, 0x00853C, "Div10", Div10, CT_ALL},
     {0x00853C, 0x008552, "Level", Level, CT_ALL},
     {0x008552, 0x008596, "TwoDigits", TwoDigits, CT_ALL},
+    {0x00183E, 0x001864, "NumText", NumText, CT_ALL},   /* message.c: the message window, every register and flag as the original */
+    {0x002050, 0x002082, "CharAt", CharAt, CT_ALL},
+    {0x002082, 0x002110, "ScrollWindow", ScrollWindow, CT_ALL},
+    {0x002110, 0x0021E8, "WindowFrame", WindowFrame, CT_ALL},   /* entered by jmp from $27B0 */
+    {0x0021E8, 0x00220A, "WindowRow", WindowRow, CT_ALL},
+    {0x00220A, 0x00225C, "TileUnder", TileUnder, CT_ALL},
+    {0x00225C, 0x0022A8, "WindowRestore", WindowRestore, CT_SP},   /* it can end in PlayerInput ($DE6A), CT_SP */
+    {0x0016C6, 0x00172E, "NewLine", NewLine, CT_ALL},
+    {0x00172E, 0x00173C, "MoreBlink", MoreBlink, CT_ALL},
+    {0x00173C, 0x001754, "MoreHide", MoreHide, CT_ALL},   /* with $174C (shown) */
+    {0x001754, 0x001772, "MoreShow", MoreShow, CT_ALL},
+    {0x001774, 0x001782, "ChoiceBlink", ChoiceBlink, CT_ALL},
+    {0x001782, 0x001790, "ChoiceHide", ChoiceHide, CT_ALL},
+    {0x001790, 0x0017C2, "ChoiceShow", ChoiceShow, CT_ALL},
+    {0x001D92, 0x001DAE, "PriceOf", PriceOf, CT_ALL},
+    {0x001E6A, 0x001ED0, "NameOf", NameOf, CT_ALL},
+    {0x001ED0, 0x001EEC, "NameText", NameText, CT_ALL},
+    {0x001EEC, 0x001F46, "FoundThing", FoundThing, CT_ALL},
+    {0x001F46, 0x001F8E, "FoundGold", FoundGold, CT_ALL},
+    {0x001F8E, 0x001FAC, "BoxText", BoxText, CT_ALL},
+    {0x001FAC, 0x001FBC, "BoxRows", BoxRows, CT_ALL},
+    {0x001FBC, 0x001FCA, "BoxRow", BoxRow, CT_ALL},
+    {0x001FCA, 0x001FD0, "ShowFoundGold", ShowFoundGold, CT_ALL},
+    {0x001FD0, 0x001FE6, "ShowFound", ShowFound, CT_ALL},   /* with $1FD4 */
+    {0x002002, 0x00203A, "WindowGeometry", WindowGeometry, CT_ALL},
+    {0x00203A, 0x002050, "Cheaper", Cheaper, CT_ALL},
+    {0x0023E4, 0x00245A, "Owns", Owns, CT_ALL},
+    {0x00245A, 0x0024D8, "Give", Give, CT_SP},   /* it can end in HudRedraw ($76C4), CT_SP */
+    {0x0024DC, 0x002510, "Take", Take, CT_SP},   /* it calls SlotEmptied ($882C), CT_SP */
+    {0x002510, 0x002536, "ItemCell", ItemCell, CT_ALL},
+    {0x002536, 0x002542, "FlagCell", FlagCell, CT_ALL},
+    {0x00276C, 0x00279C, "MessageData", MessageData, CT_ALL},
+    {0x00279C, 0x0027B0, "OpenWindow", OpenWindow, CT_ALL},
+    {0x0027B0, 0x0027E6, "WindowAt", WindowAt, CT_ALL},
     {0x0080A8, 0x0080C4, "UpBlink", UpBlink, CT_ALL},
     {0x0080C4, 0x0080FA, "UpHide", UpHide, CT_ALL},   /* with $80D4 (shown), $80E8 */
     {0x0080FA, 0x008116, "DownBlink", DownBlink, CT_ALL},
