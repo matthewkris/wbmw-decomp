@@ -722,6 +722,21 @@ int hybrid_fuzz(const char *name, long count)
         if (!strcmp(name, "TwoDigits") || !strcmp(name, "Level")) { ram[0x95E1] = (uint8_t)(rnd() % 100); ram[0x9F00] = (uint8_t)(rnd() % 100); }
         if (!strcmp(name, "String") || !strncmp(name, "String", 6))               /* a string: in ROM, or a short one in RAM */
             if (rnd() % 2) { m68k_set_reg(M68K_REG_A1, 0xFF4E00); for (int k3 = 0, n3 = (int)(rnd() % 12); k3 <= n3; k3++) ram[0x4E00 + k3] = (uint8_t)(k3 == n3 ? 0 : 0x20 + rnd() % 0x5F); }
+        if (strstr(name, "Blink") || strstr(name, "Hide") || strstr(name, "Show") || !strcmp(name, "ListMove")) {
+            for (uint32_t k3 = 0x9614; k3 < 0x9628; k3 += 2) {                /* the blinks: on, shown, counts */
+                ram[k3] = (uint8_t)(rnd() % 4); ram[k3 + 1] = (uint8_t)(rnd() % 2 ? 1 : 1 + rnd() % 20);
+            }
+            ram[0x9624] = (uint8_t)(rnd() % 32); ram[0x9625] = (uint8_t)(rnd() % 28);
+            ram[0x9626] = (uint8_t)(rnd() % 32); ram[0x9627] = (uint8_t)(rnd() % 28);
+            uint32_t len = rnd() % 10;                                        /* the list: length, top, line */
+            put_word(0x9610, len); put_word(0x9612, len ? rnd() % len : 0); put_word(0x9606, len ? rnd() % len : 0);
+            ram[0x95D9] = (uint8_t)(rnd() % 4);
+            put_word(0x95FA, 1 + rnd() % 4);                               /* the page, and its entries ($1E6A hangs on a bad name) */
+            for (uint32_t k3 = 0; k3 < 8; k3++) ram[0x9608 + k3] = (uint8_t)(rnd() % 8 | (rnd() % 4 ? 0 : 0x80));
+            ram[0x95DB] = (uint8_t)(rnd() % 2);
+        }
+        if (!strcmp(name, "TilesAt") || !strcmp(name, "FrameBox")) m68k_set_reg(M68K_REG_A0, 0x8C82 + 2 * (rnd() % 0x80));
+        if (!strcmp(name, "TileRow") || !strcmp(name, "TileRowAt")) m68k_set_reg(M68K_REG_A0, 0x8C82 + rnd() % 0x1A0);
         if (!strcmp(name, "SetGfxSlots")) {         /* a random valid slot list in scratch RAM */
             uint32_t p = 0x4E00;                    /* restored after every case, so any RAM will do */
             int slot = (int)(rnd() % 48);
