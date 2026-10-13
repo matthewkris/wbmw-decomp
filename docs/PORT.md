@@ -1923,6 +1923,36 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 instruction is covered, the handlers included, except the skipped lines. Self-test caught 100 in
 100 for each. Replace mode: thirteen runs, no problems.
 
+#### The room changes, batch T17: their helpers (2026-10-13)
+
+The room changes (`$B000`-`$CFFF`) are sequences the game's task jumps to from its table at
+`$91F4`. They wait for frames and go back to the game's loop (`$8FFC`) or load the next room
+(`$9100`). First the routines they call between their waits, in `port/rooms.c`, with every
+register and flag in the contract:
+
+* The door's frame. Going through a door or into a house draws a frame (entity 8) over the
+  doorway while the screen changes. Its place is kept at `$9BC6`/`$9BC8`, with its size in 8s
+  at `$9BCA`/`$9BCC`. `$B912` places it. `$BA34` keeps the one to four blocks under it
+  (`$9BEA`-`$9BF0`) and blanks them, and `$BAA8` puts them back (`$BA92`: the door's cell).
+* The events' pictures. A shop's or a house's inside is a rectangle of 10-bit cells, packed four
+  to five bytes, swapped onto plane A over what was there:
+  * `$B986` sets one up from its record in the directory's table at `$1CC08` (by `$9964`): its
+    place and size, its frame's picture, its triggers (the room's are kept at `$9970`), its
+    things and its cells. It then saves what is under it (`$A1FE`).
+  * `$BB2C` reads a cell, `$BB8E` swaps one in, `$BBB4` swaps the whole picture and `$BAEE`
+    its corner.
+  * `$B94A` and `$B946` place its frame.
+* `$B8D4`: a cracked wall at a cell (blocks `$49`-`$4B`, or `$2B4` once broken; a cracked one
+  becomes `$2B4`). `$B90A` empties the continuations' stack (`$9C14`).
+
+The fuzz gives these doors at real cells, one or two blocks each way, frames of the pictures
+the sequences use, and any of the table's events with their pictures and records.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions (now with `rooms`)
+and the title runs (38 runs, 579,724 checked calls). 390,000 fuzz cases from six states, 0
+mismatches, every instruction covered. Self-test caught 100 in 100 for each. Replace mode:
+thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

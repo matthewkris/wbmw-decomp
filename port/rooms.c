@@ -19,6 +19,7 @@
  * the start points and the palette's fade step.
  * Batch T16, the room's triggers: exits, doors, houses, chests, entrances, and what pressing up
  * at them does.
+ * Batch T17, the room changes' helpers: the door's frame and blocks, the events' pictures.
  * Ported register for register, with every register and flag in the contract. */
 #include "world.h"
 
@@ -2399,3 +2400,334 @@ ENTRY(UpEntrance, up_entrance)             /* $A898 */
 ENTRY(UpEntrance2, up_entrance2)           /* $A8A6 */
 ENTRY(UpEventA, up_event_a)                /* $A8D8 */
 ENTRY(UpEventB, up_event_b)                /* $A902 */
+
+/* ---- batch T17: the room changes' helpers ----
+ * Going through a door or into a house draws a door's frame (entity 8) over the doorway while
+ * the screen changes: its place is kept at $9BC6/$9BC8 (pixels) with its size in 8s at
+ * $9BCA/$9BCC, and the four blocks under it at $9BEA-$9BF0. An event's picture (a shop's or a
+ * house's inside, from the directory's table 2 by $9964) is a rectangle of 10-bit cells packed
+ * four to five bytes ($997C), swapped onto plane A over what was there ($A1FE keeps it). */
+
+#define INIT_ENTITY   0x0A1Au
+#define SET_ANIM      0x07E8u
+#define DOOR          0xFFFF9BC6u   /* words: x, y, width and height (in 8s) of the door's frame */
+#define PICTURE       0xFFFF997Cu   /* long: the event's packed cells */
+
+/* $B8D4: whether the block at (d6, d7) is a cracked wall (blocks $49-$4B, or $2B4 once broken;
+ * d0 -1, and a cracked one becomes $2B4), inside the room's columns */
+static void cracked_at(void)
+{
+    c->d[1] = set_w(c->d[1], 0x100); F_W(0x100);
+    cmp_w(&c->ccr, c->d[1], c->d[6]);
+    if ((c->d[6] & 0xFFFF) < 0x100) goto no;
+    c->d[0] = set_w(c->d[0], rd16(0xFFFF9798u)); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, c->d[1], c->d[0]));
+    cmp_w(&c->ccr, c->d[0], c->d[6]);
+    if ((c->d[6] & 0xFFFF) >= (c->d[0] & 0xFFFF)) goto no;
+    call(MAP_BLOCK_AT);
+    cmp_w(&c->ccr, 0x2B4, c->d[0]);
+    if ((c->d[0] & 0xFFFF) == 0x2B4) goto yes;
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 0x49, c->d[0]));
+    if (c->ccr & CC_C) goto no;
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 2, c->d[0]));
+    if (!(c->ccr & (CC_C | CC_Z))) goto no;
+    c->d[0] = set_w(c->d[0], 0x2B4); F_W(0x2B4);
+    push32(0xB906); cell_set_draw_if_shown(); c->a[7] += 4;
+yes:
+    c->d[0] = 0xFFFFFFFFu; F_L(c->d[0]);
+    return;
+no:
+    c->d[0] = 0; F_L(0);
+}
+
+/* $B90A: the continuations' stack ($9C14) emptied */
+static void reset_continuations(void) { put16m(0xFFFF9C14u, 0x9BF4); }
+
+/* $B912: the door's frame (entity 8, picture $400 | d0) at the door's place, its middle */
+static void door_frame(void)
+{
+    c->a[4] = 8;
+    c->d[1] = set_w(c->d[1], 0x400);
+    c->d[1] = set_b(c->d[1], c->d[0]);
+    put16m(c->a[4] - 0x3D00, c->d[1]);
+    call(INIT_ENTITY);
+    c->d[0] = set_w(c->d[0], rd16(DOOR + 4)); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 3, 16));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(DOOR), c->d[0]));
+    put16m(c->a[4] - 0x3800, c->d[0]);
+    c->d[0] = set_w(c->d[0], rd16(DOOR + 6)); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 3, 16));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(DOOR + 2), c->d[0]));
+    put16m(c->a[4] - 0x3700, c->d[0]);
+    c->d[0] = 0; F_L(0);
+    call(SET_ANIM);
+}
+
+/* $B94A, $B946: the picture's frame (entity 8, picture $400 | $9BF2, or 2) round the event's
+ * rectangle ($9BDA/$9BDC, its size in 16s at $9BE2/$9BE4) */
+static void picture_frame_with(void)
+{
+    c->a[4] = 8;
+    c->d[1] = set_w(c->d[1], 0x400);
+    c->d[1] = set_b(c->d[1], c->d[0]);
+    put16m(c->a[4] - 0x3D00, c->d[1]);
+    call(INIT_ENTITY);
+    c->d[0] = set_w(c->d[0], rd16(0xFFFF9BE2u)); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, 1, c->d[0]));
+    c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 4, 16));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(0xFFFF9BDAu), c->d[0]));
+    put16m(c->a[4] - 0x3800, c->d[0]);
+    c->d[0] = set_w(c->d[0], rd16(0xFFFF9BE4u)); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, 1, c->d[0]));
+    c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 4, 16));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(0xFFFF9BDCu), c->d[0]));
+    put16m(c->a[4] - 0x3700, c->d[0]);
+    c->d[0] = 0; F_L(0);
+    call(SET_ANIM);
+}
+static void picture_frame(void) { move_b(0, rd8(0xFFFF9BF2u)); picture_frame_with(); }   /* $B94A */
+static void picture_frame_2(void) { c->d[0] = 2; F_L(2); picture_frame_with(); }       /* $B946 */
+
+/* $B986: event $9964's picture set up from its record (the directory's table 2, 16 bytes each):
+ * its place and size, the frame's picture, its triggers (the room's kept at $9970), its things'
+ * list ($A11E), the cells' rectangle; then what is under it saved ($A1FE) */
+static void picture_setup(void)
+{
+    c->d[0] = set_w(c->d[0], rd16(0xFFFF9964u)); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 4, 16));
+    uint16_t m = rd16(0xFFFF9994u) & 0xBF7F; wr16(0xFFFF9994u, m); F_W(m);
+    c->a[0] = rd32(DATA_DIR + 8);
+    uint32_t r = c->a[0] + sx(c->d[0]);
+    c->d[4] = set_w(c->d[4], rd16(r)); F_W(c->d[4]);
+    put16m(0xFFFF9BDAu, c->d[4]);
+    c->d[1] = set_w(c->d[1], c->d[4]); F_W(c->d[4]);
+    c->d[1] = set_w(c->d[1], lsr_n(&c->ccr, c->d[1], 4, 16));
+    put16m(RECT, c->d[1]);
+    c->d[5] = set_w(c->d[5], rd16(r + 2)); F_W(c->d[5]);
+    put16m(0xFFFF9BDCu, c->d[5]);
+    c->d[1] = set_w(c->d[1], c->d[5]); F_W(c->d[5]);
+    c->d[1] = set_w(c->d[1], lsl_n(&c->ccr, c->d[1], 2, 16));
+    put16m(RECT + 2, c->d[1]);
+    c->d[1] = 0;
+    move_b(1, rd8(r + 4));
+    c->d[4] = set_w(c->d[4], add_w(&c->ccr, c->d[1], c->d[4]));
+    put16m(0xFFFF9BCEu, c->d[4]);
+    c->d[1] = set_w(c->d[1], lsr_n(&c->ccr, c->d[1], 4, 16));
+    put16m(0xFFFF9BE2u, c->d[1]);
+    c->d[1] = 0;
+    move_b(1, rd8(r + 5));
+    c->d[5] = set_w(c->d[5], add_w(&c->ccr, c->d[1], c->d[5]));
+    put16m(0xFFFF9BD0u, c->d[5]);
+    c->d[1] = set_w(c->d[1], lsr_n(&c->ccr, c->d[1], 4, 16));
+    put16m(0xFFFF9BE4u, c->d[1]);
+    put8(0xFFFF9BF2u, rd8(r + 6));
+    c->d[1] = 2; F_L(2);
+    F_B(rd8(r + 7));
+    if (rd8(r + 7)) { c->d[1] = 1; F_L(1); }
+    put16m(0xFFFF9BD2u, c->d[1]);
+    put16m(0xFFFF9BD4u, c->d[1]);
+    c->d[1] = set_w(c->d[1], rd16(r + 8)); F_W(c->d[1]);
+    c->d[1] = (uint32_t)(int32_t)(int16_t)c->d[1]; F_L(c->d[1]);
+    if (c->d[1]) c->d[1] = add_l(&c->ccr, c->a[0], c->d[1]);
+    put32m(0xFFFFA11Eu, c->d[1]);
+    put32m(0xFFFF9970u, rd32(TRIGGERS));
+    c->a[1] = c->a[0];
+    c->a[1] += sx(rd16(r + 0xC));
+    put32m(TRIGGERS, c->a[1]);
+    c->a[0] += sx(rd16(r + 0xE));
+    c->d[0] = 0;
+    move_b(0, next8(0));
+    put16m(0xFFFF9BDEu, c->d[0]);
+    put16m(RECT + 4, c->d[0]);
+    move_b(0, next8(0));
+    put16m(0xFFFF9BE0u, c->d[0]);
+    put16m(RECT + 6, c->d[0]);
+    put32m(PICTURE, c->a[0]);
+    rect_save();
+}
+
+/* $BA92: d6, d7 the door's cell; a3 plane A */
+static void door_cell(void)
+{
+    c->d[6] = set_w(c->d[6], rd16(DOOR)); F_W(c->d[6]);
+    c->d[7] = set_w(c->d[7], rd16(DOOR + 2)); F_W(c->d[7]);
+    c->d[6] = set_w(c->d[6], lsr_n(&c->ccr, c->d[6], 4, 16));
+    and_w(7, 0xFFF0);
+    c->d[7] = set_w(c->d[7], lsl_n(&c->ccr, c->d[7], 2, 16));
+    c->a[3] = LAYER_A;
+}
+
+/* $BA34: the door's blocks (1 or 2 across and down) kept at $9BEA-$9BF0 and blanked (block 1);
+ * $BAA8 puts them back */
+static int door_wide(void) { cmp_w(&c->ccr, 1, rd16(DOOR + 4)); return rd16(DOOR + 4) != 1; }
+static int door_tall(void) { cmp_w(&c->ccr, 1, rd16(DOOR + 6)); return rd16(DOOR + 6) != 1; }
+static void blank_one(uint32_t keep)
+{
+    call(MAP_BLOCK_AT);
+    put16m(keep, c->d[0]);
+    c->d[0] = 1; F_L(1);
+}
+static void door_blank(void)
+{
+    push32(0xBA36); door_cell(); c->a[7] += 4;
+    blank_one(0xFFFF9BEAu);
+    push32(0xBA44); cell_set_draw_if_shown(); c->a[7] += 4;
+    if (door_wide()) {
+        c->d[6] = set_w(c->d[6], add_w(&c->ccr, 1, c->d[6]));
+        blank_one(0xFFFF9BECu);
+        push32(0xBA5C); cell_set_draw_if_shown(); c->a[7] += 4;
+        c->d[6] = set_w(c->d[6], sub_w(&c->ccr, 1, c->d[6]));
+    }
+    if (!door_tall()) return;
+    c->d[7] = set_w(c->d[7], add_w(&c->ccr, 0x40, c->d[7]));
+    blank_one(0xFFFF9BEEu);
+    push32(0xBA78); cell_set_draw_if_shown(); c->a[7] += 4;
+    if (!door_wide()) return;
+    c->d[6] = set_w(c->d[6], add_w(&c->ccr, 1, c->d[6]));
+    blank_one(0xFFFF9BF0u);
+    cell_set_draw_if_shown();
+}
+static void put_one(uint32_t keep) { c->d[0] = set_w(c->d[0], rd16(keep)); F_W(c->d[0]); }
+static void door_restore(void)
+{
+    push32(0xBAAA); door_cell(); c->a[7] += 4;
+    put_one(0xFFFF9BEAu);
+    push32(0xBAB2); cell_set_draw_if_shown(); c->a[7] += 4;
+    if (door_wide()) {
+        c->d[6] = set_w(c->d[6], add_w(&c->ccr, 1, c->d[6]));
+        put_one(0xFFFF9BECu);
+        push32(0xBAC4); cell_set_draw_if_shown(); c->a[7] += 4;
+        c->d[6] = set_w(c->d[6], sub_w(&c->ccr, 1, c->d[6]));
+    }
+    if (!door_tall()) return;
+    c->d[7] = set_w(c->d[7], add_w(&c->ccr, 0x40, c->d[7]));
+    put_one(0xFFFF9BEEu);
+    push32(0xBADA); cell_set_draw_if_shown(); c->a[7] += 4;
+    if (!door_wide()) return;
+    c->d[6] = set_w(c->d[6], add_w(&c->ccr, 1, c->d[6]));
+    put_one(0xFFFF9BF0u);
+    cell_set_draw_if_shown();
+}
+
+/* $BB2C: cell (d6, d7) of the picture: 10 bits from its packed bytes ($997C, $9BDE across) */
+static void picture_cell(void)
+{
+    c->a[1] = rd32(PICTURE);
+    c->d[0] = set_w(c->d[0], c->d[7]); F_W(c->d[7]);
+    c->d[1] = set_w(c->d[1], rd16(0xFFFF9BDEu)); F_W(c->d[1]);
+    c->d[1] = (c->d[1] & 0xFFFF) * (c->d[0] & 0xFFFF); F_L(c->d[1]);   /* mulu.w */
+    c->d[1] = set_w(c->d[1], add_w(&c->ccr, c->d[6], c->d[1]));
+    c->d[0] = set_w(c->d[0], c->d[1]); F_W(c->d[1]);
+    c->d[1] = set_w(c->d[1], lsl_n(&c->ccr, c->d[1], 2, 16));
+    c->d[1] = set_w(c->d[1], add_w(&c->ccr, c->d[0], c->d[1]));
+    c->d[0] = 3;
+    and_w(0, c->d[1]);
+    c->d[1] = set_w(c->d[1], lsr_n(&c->ccr, c->d[1], 2, 16));
+    F_W(c->d[0]);
+    uint32_t a = c->a[1] + sx(c->d[1]);
+    if (!(c->d[0] & 0xFFFF)) {
+        move_b(0, rd8(a));
+        c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 2, 16));
+        move_b(1, rd8(a + 1));
+        c->d[1] = set_b(c->d[1], lsr_n(&c->ccr, c->d[1], 6, 8));
+    } else {
+        c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 2, c->d[0]));
+        if (c->ccr & CC_C) {
+            c->d[0] = 63;
+            and_b(0, rd8(a));
+            c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 4, 16));
+            move_b(1, rd8(a + 1));
+            c->d[1] = set_b(c->d[1], lsr_n(&c->ccr, c->d[1], 4, 8));
+        } else if (!(c->ccr & CC_Z)) {
+            c->d[0] = 3;
+            and_b(0, rd8(a));
+            c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 8, 16));
+            move_b(0, rd8(a + 1));
+            return;
+        } else {
+            c->d[0] = 15;
+            and_b(0, rd8(a));
+            c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 6, 16));
+            move_b(1, rd8(a + 1));
+            c->d[1] = set_b(c->d[1], lsr_n(&c->ccr, c->d[1], 2, 8));
+        }
+    }
+    or_b(0, c->d[1]);
+}
+
+/* $BB8E: cell (d6, d7) of the picture swapped in on plane A (at the rectangle's place, $974C) */
+static void picture_cell_put(void)
+{
+    c->d[0] = set_w(c->d[0], c->d[6]); F_W(c->d[6]);
+    c->d[6] = swap_l(c->d[6]);
+    c->d[6] = set_w(c->d[6], c->d[0]); F_W(c->d[0]);
+    c->d[6] = set_w(c->d[6], add_w(&c->ccr, rd16(RECT), c->d[6]));
+    c->d[0] = set_w(c->d[0], c->d[7]); F_W(c->d[7]);
+    c->d[7] = swap_l(c->d[7]);
+    c->d[7] = set_w(c->d[7], c->d[0]); F_W(c->d[0]);
+    c->d[7] = set_w(c->d[7], lsl_n(&c->ccr, c->d[7], 6, 16));
+    c->d[7] = set_w(c->d[7], add_w(&c->ccr, rd16(RECT + 2), c->d[7]));
+    push32(0xBBA8); cell_at(); c->a[7] += 4;
+    c->d[6] = swap_l(c->d[6]);
+    c->d[7] = swap_l(c->d[7]);
+    push32(0xBBB0); picture_cell(); c->a[7] += 4;
+    put16m(c->a[0], c->d[0]);
+}
+
+/* $BAEE: the picture's frame's corner cells (1 or 2 across and down, from $9BE2/$9BE4) */
+static void picture_corner(void)
+{
+    c->a[3] = LAYER_A;
+    c->d[6] = set_w(c->d[6], rd16(0xFFFF9BE2u)); F_W(c->d[6]);
+    c->d[7] = set_w(c->d[7], rd16(0xFFFF9BE4u)); F_W(c->d[7]);
+    push32(0xBAFE); picture_cell_put(); c->a[7] += 4;
+    cmp_w(&c->ccr, 1, rd16(0xFFFF9BD2u));
+    if (rd16(0xFFFF9BD2u) != 1) {
+        c->d[6] = set_w(c->d[6], add_w(&c->ccr, 1, c->d[6]));
+        push32(0xBB0C); picture_cell_put(); c->a[7] += 4;
+        c->d[6] = set_w(c->d[6], sub_w(&c->ccr, 1, c->d[6]));
+    }
+    cmp_w(&c->ccr, 1, rd16(0xFFFF9BD4u));
+    if (rd16(0xFFFF9BD4u) == 1) return;
+    c->d[7] = set_w(c->d[7], add_w(&c->ccr, 1, c->d[7]));
+    push32(0xBB1C); picture_cell_put(); c->a[7] += 4;
+    cmp_w(&c->ccr, 1, rd16(0xFFFF9BD2u));
+    if (rd16(0xFFFF9BD2u) == 1) return;
+    c->d[6] = set_w(c->d[6], add_w(&c->ccr, 1, c->d[6]));
+    picture_cell_put();
+}
+
+/* $BBB4: the whole picture swapped in, row by row */
+static void picture_put(void)
+{
+    link(-4);
+    c->a[3] = LAYER_A;
+    c->a[1] = rd32(PICTURE);
+    c->d[7] = 0;
+    put16m(c->a[6] - 4, rd16(RECT + 6));
+    do {
+        c->d[6] = 0;
+        put16m(c->a[6] - 2, rd16(RECT + 4));
+        do {
+            push32(0xBBD4); picture_cell(); c->a[7] += 4;
+            push32(0xBBD6); picture_cell_put(); c->a[7] += 4;
+            c->d[6] = set_w(c->d[6], add_w(&c->ccr, 1, c->d[6]));
+        } while (mem_sub_w(c->a[6] - 2, 1));
+        c->d[7] = set_w(c->d[7], add_w(&c->ccr, 1, c->d[7]));
+    } while (mem_sub_w(c->a[6] - 4, 1));
+    unlk();
+}
+
+ENTRY(CrackedAt, cracked_at)               /* $B8D4 */
+ENTRY(ResetContinuations, reset_continuations)   /* $B90A */
+ENTRY(DoorFrame, door_frame)               /* $B912 */
+ENTRY(PictureFrame2, picture_frame_2)      /* $B946 */
+ENTRY(PictureFrame, picture_frame)         /* $B94A */
+ENTRY(PictureSetup, picture_setup)         /* $B986 */
+ENTRY(DoorBlank, door_blank)               /* $BA34 */
+ENTRY(DoorCell, door_cell)                 /* $BA92 */
+ENTRY(DoorRestore, door_restore)           /* $BAA8 */
+ENTRY(PictureCorner, picture_corner)       /* $BAEE */
+ENTRY(PictureCell, picture_cell)           /* $BB2C */
+ENTRY(PictureCellPut, picture_cell_put)    /* $BB8E */
+ENTRY(PicturePut, picture_put)             /* $BBB4 */
