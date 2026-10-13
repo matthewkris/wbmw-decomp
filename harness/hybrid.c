@@ -735,7 +735,7 @@ int hybrid_fuzz(const char *name, long count)
             for (uint32_t k3 = 0; k3 < 8; k3++) ram[0x9608 + k3] = (uint8_t)(rnd() % 8 | (rnd() % 4 ? 0 : 0x80));
             ram[0x95DB] = (uint8_t)(rnd() % 2);
         }
-        static const char *t5[] = { "NumText", "CharAt", "ScrollWindow", "WindowFrame", "WindowRow", "TileUnder", "WindowRestore",
+        static const char *t5[] = { "NumText", "MsgStep", "CharIn", "CharAt", "ScrollWindow", "WindowFrame", "WindowRow", "TileUnder", "WindowRestore",
             "NewLine", "MoreBlink", "MoreHide", "MoreShow", "ChoiceBlink", "ChoiceHide", "ChoiceShow", "PriceOf", "NameOf", "NameText",
             "FoundThing", "FoundGold", "BoxText", "BoxRows", "BoxRow", "ShowFoundGold", "ShowFound", "WindowGeometry", "Cheaper",
             "Owns", "Give", "Take", "ItemCell", "FlagCell", "MessageData", "OpenWindow", "WindowAt", NULL };
@@ -768,6 +768,27 @@ int hybrid_fuzz(const char *name, long count)
                 ram[0x958C + 18] = (uint8_t)(rnd() % 4 ? rnd() % 5 : 0xFF);
                 ram[0x9F10] = (uint8_t)(rnd() % 2 ? 8 + rnd() % 4 : rnd()); ram[0x9F11] = (uint8_t)(rnd() % 2 ? 8 + rnd() % 4 : rnd());
                 for (uint32_t k4 = 0; k4 < 16; k4++) ram[0x95BE + k4] = (uint8_t)(rnd() % 13);
+            }
+            if (!strcmp(name, "MsgStep") || !strcmp(name, "CharIn")) {         /* a real message, at its start or part-way */
+                uint32_t t = (uint32_t)bus_read16(0x1CC14) << 16 | bus_read16(0x1CC16), m = 3 * (rnd() % 64);
+                uint32_t text = t + (uint32_t)(int32_t)(int16_t)(bus_read8(t + m + 1) << 8 | bus_read8(t + m + 2));
+                if (rnd() % 3 == 0) text += rnd() % 24;
+                if (rnd() % 8 == 0) {                                         /* a marked character ($FE/$FF before it) */
+                    static const uint8_t marked[] = { 0x41, 0xFE, 0x42, 0x43, 0xFF, 0x44, 0x05, 0x00 };
+                    for (uint32_t k4 = 0; k4 < sizeof marked; k4++) ram[0x4E00 + k4] = marked[k4];
+                    text = 0xFF4E00;
+                }
+                put_long(0x8C7A, text); put_word(0x8CA8, 0);
+                uint8_t f = 0x80 | (rnd() % 2 ? 0x40 : 0);
+                f |= (uint8_t)((rnd() % 4 ? 0 : 0x20) | (rnd() % 4 ? 0 : 0x10) | (rnd() % 4 ? 0 : 0x01));
+                f |= (uint8_t)((rnd() % 16 ? 0 : 0x04) | (rnd() % 16 ? 0 : 0x08));
+                if (rnd() % 16 == 0) f = (uint8_t)rnd() & 0x7F;
+                ram[0x8CA4] = f;
+                put_long(0x8CDA, rnd() % 2 ? 0x1BE6 : 0x1CBC);
+                ram[0x8CA2] = (uint8_t)(rnd() % 3 ? 0 : rnd() % 4); ram[0x8CA3] = (uint8_t)(rnd() % 2 ? 0 : 1 + rnd() % 3);
+                put_word(0x8CA6, 0x8000 | (rnd() % 8) << 8);
+                ram[0x8A7C] = (uint8_t)(rnd() % 2 ? 0 : 1u << (rnd() % 8)); ram[0x8A7A] = (uint8_t)(rnd() % 2 ? 0 : 1u << (rnd() % 8));
+                ram[0x8CC3] = (uint8_t)(1u << (rnd() % 8));
             }
             if (!strcmp(name, "WindowAt")) {                                              /* a window's record */
                 uint32_t t = (uint32_t)bus_read16(0x1CC18) << 16 | bus_read16(0x1CC1A);

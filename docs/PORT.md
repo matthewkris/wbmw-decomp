@@ -1500,6 +1500,39 @@ Results: 0 mismatches over the standard runs, every owner state, the three sessi
 instruction covered. Self-test caught 100 in 100 for each. Replace mode plays the new-game
 script, four states, the three sessions and `pause`.
 
+#### The messages, batch T6: the interpreter's core (2026-10-13)
+
+`$13BC` runs once a frame while a message is open (`$8CA4` bit 7): it writes characters until a
+delay, a "more" (waiting for a button), a choice or the end, and returns. It does not wait inside
+itself: its place in the text, and in any texts it has stepped into, is a stack of pointers at
+`$FF8C7A` (`$8CA8` bytes deep), and the shop's menu keeps a step address at `$8CDA` that the next
+frames jump to. So unlike the status screen it needs no coroutine: it is ordinary C, called each
+frame.
+
+In C now (`port/message.c`): the first frame's setup; the choice between two answers (left/right
+move the cursor, B picks the second, A or C the one shown; the text then skips past the first
+answer's part); the "more" wait; the delays (C held fast-forwards, unless `$8CA4` bit 4); the
+characters (two rows each, the mark above; `$FE`/`$FF` before one sets its row of marks), with a
+new line at the window's width; stepping into a name's text (`$0C`-`$0F`); and the 12 basic codes
+(`$15A0`: the end of a text, the attributes, a new line, the delay, spaces, "more", a jump, fast-
+forward on or off, an indented line, the indent). Also `$13AE`, a character inside the frame.
+
+Still the original's: the 51 further commands (code `$0B` and a number, `$15C8`: game flags,
+items, gold, prices, sounds, choices of three, the shop and so on), the three-way choice
+(`$8CA4` bit 3, `$1CBC`) and the shop's menu step (bit 2, `$8CDA`). The C hands over to them as
+the original jumps to them (`port_continue_at`, with d0 and a0 as the original's jump leaves
+them), and they carry on there and back into the original's loop. They are next.
+
+The fuzz opens a real message (one of 64, from `$1CC14`), at its start or part-way, with the
+message's state bits (a choice, "more", fast-forward, rarely the shop or the three-way choice),
+delays, attributes and buttons, and sometimes a short text with marked characters. The owner's
+shop and talk sessions run it throughout.
+
+Results: 0 mismatches over the standard runs, every owner state, the three sessions and `pause`
+(30 runs, 486,304 checked calls); 50,000 fuzz cases from five states, 0 mismatches, every
+instruction covered. Self-test caught 100 in 100 for each. Replace mode plays the new-game
+script, four states, the three sessions and `pause`.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
