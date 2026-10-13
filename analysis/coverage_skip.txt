@@ -22,3 +22,18 @@
 001EB0
 001EB2
 001772  # an unreachable rts after $1754 (MoreShow), inside MsgStep's range
+00A7EE  # $A79A, start points of kinds 2, 6 and 12: no start point in the ROM has them (the 138 at $1CC00 are of kinds 0, 4, 8, 10, 14, 16, 18 and 20)
+00A7F2
+00A7F8
+00A848
+00A84E
+00A850
+00A856
+00A858
+00A85A
+00A85E
+00A862
+00A864
+00A866
+00A868
+00A86E

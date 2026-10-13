@@ -72,7 +72,8 @@ void TextAt(Cpu *), TextAtRC(Cpu *), String(Cpu *), StringPlain(Cpu *), StringBr
      LoadRoom(Cpu *), InitLayers(Cpu *), InitLayer(Cpu *), SetupLayer(Cpu *), ReadRoomPointer(Cpu *), LoadScene(Cpu *), RoomMusic(Cpu *), RoomLayer(Cpu *), RoomLayerAt(Cpu *), RoomGfx(Cpu *), RoomPalettes(Cpu *), RoomPalette2(Cpu *), RoomCmd4(Cpu *), RoomCmd5(Cpu *), RoomCmd6(Cpu *), RoomCmd7(Cpu *), RoomCmd8(Cpu *), RoomCmd9(Cpu *), RoomCmd11(Cpu *), RoomCmd12(Cpu *), RoomCmd13(Cpu *), RoomCmd14(Cpu *), RoomCmd15(Cpu *), RoomCmd18(Cpu *), RoomCmd19(Cpu *), RoomCmd20(Cpu *),
      LayersSetup(Cpu *), LayerSetup(Cpu *), LayerXParallax(Cpu *), LayerXFixed(Cpu *), LayerXMoving(Cpu *), LayerYParallax(Cpu *), LayerFixedY(Cpu *), LayerYFixed(Cpu *), LayerYMoving(Cpu *), LayerYMover(Cpu *), LayerColumns(Cpu *), LayerColumnsStrip(Cpu *), LayerRows(Cpu *), LayerRowsStrip(Cpu *), LayerRowsWrap(Cpu *), LayerX(Cpu *), LayerY(Cpu *), Parallax(Cpu *), MoverPlace(Cpu *), ScrollX(Cpu *), ScrollY(Cpu *),
      Camera(Cpu *), LayersDraw(Cpu *), DrawLayer(Cpu *), LayerXFollow(Cpu *), LayerYFollow(Cpu *), LayerXDrift(Cpu *), LayerXDriftA(Cpu *), LayerYDrift(Cpu *), MoverDelta(Cpu *), MoverStep(Cpu *), LayerMove(Cpu *), ScrollOut(Cpu *), LayersFrame(Cpu *), LayerFrame(Cpu *), ColumnsIn(Cpu *), DrawColumn(Cpu *), RowsIn(Cpu *), DrawRow(Cpu *),
-     CellAt(Cpu *), CellSet(Cpu *), CellSetA(Cpu *), CellSetShown(Cpu *), DrawIfShown(Cpu *), CellSetDraw(Cpu *), DrawBlock(Cpu *), BlockByte(Cpu *), Flag2At(Cpu *), Flag2Test(Cpu *), Flag2Set(Cpu *), GameFlagAddr(Cpu *), TestGameFlag(Cpu *), SetGameFlag(Cpu *), RoomFlagBit(Cpu *), RectSave(Cpu *), RectMark(Cpu *), RectRestore(Cpu *), RectRedraw(Cpu *), BlocksToVram(Cpu *), StartPoint(Cpu *), StartAt(Cpu *), ToPosition(Cpu *), WaterDouble(Cpu *), FadeStep(Cpu *);
+     CellAt(Cpu *), CellSet(Cpu *), CellSetA(Cpu *), CellSetShown(Cpu *), DrawIfShown(Cpu *), CellSetDraw(Cpu *), DrawBlock(Cpu *), BlockByte(Cpu *), Flag2At(Cpu *), Flag2Test(Cpu *), Flag2Set(Cpu *), GameFlagAddr(Cpu *), TestGameFlag(Cpu *), SetGameFlag(Cpu *), RoomFlagBit(Cpu *), RectSave(Cpu *), RectMark(Cpu *), RectRestore(Cpu *), RectRedraw(Cpu *), BlocksToVram(Cpu *), StartPoint(Cpu *), StartAt(Cpu *), ToPosition(Cpu *), WaterDouble(Cpu *), FadeStep(Cpu *),
+     Triggers(Cpu *), TrigExitX(Cpu *), TrigExitY(Cpu *), TrigExit(Cpu *), TrigExitAdd(Cpu *), TrigWarp(Cpu *), TrigDoor(Cpu *), UpWarp(Cpu *), TrigHouse(Cpu *), UpHouse(Cpu *), TrigChest(Cpu *), ChestOpen(Cpu *), UpChest(Cpu *), TrigEntrance(Cpu *), NearX(Cpu *), UpEntrance(Cpu *), UpEntrance2(Cpu *), TrigEventA(Cpu *), UpEventA(Cpu *), TrigEventB(Cpu *), UpEventB(Cpu *), TrigSound(Cpu *), ZonePlace(Cpu *), InZone(Cpu *), ExitTo(Cpu *);
 void NumText(Cpu *), CharAt(Cpu *), ScrollWindow(Cpu *), WindowFrame(Cpu *), WindowRow(Cpu *), TileUnder(Cpu *), WindowRestore(Cpu *), NewLine(Cpu *), MoreBlink(Cpu *), MoreHide(Cpu *), MoreShow(Cpu *), ChoiceBlink(Cpu *), ChoiceHide(Cpu *), ChoiceShow(Cpu *), PriceOf(Cpu *), NameOf(Cpu *), NameText(Cpu *), FoundThing(Cpu *), FoundGold(Cpu *), BoxText(Cpu *), BoxRows(Cpu *), BoxRow(Cpu *), ShowFoundGold(Cpu *), ShowFound(Cpu *), WindowGeometry(Cpu *), Cheaper(Cpu *), Owns(Cpu *), Give(Cpu *), Take(Cpu *), ItemCell(Cpu *), FlagCell(Cpu *), MessageData(Cpu *), OpenWindow(Cpu *), WindowAt(Cpu *), MsgStep(Cpu *), CharIn(Cpu *), NoteIn(Cpu *), OcarinaTune(Cpu *);   /* message.c */
 #define CT_ALL 0x3FFFF                /* every register and flag compared */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
@@ -437,6 +438,31 @@ const PortRoutine port_routines[] = {
     {0x00A3B4, 0x00A3CA, "ToPosition", ToPosition, CT_ALL},
     {0x00A3CA, 0x00A3D8, "WaterDouble", WaterDouble, CT_ALL},
     {0x0092A4, 0x0092D4, "FadeStep", FadeStep, CT_ALL},
+    {0x00A3D8, 0x00A4EE, "Triggers", Triggers, CT_ALL},   /* rooms.c: the room's triggers (the handlers go on in the original at $A46E) */
+    {0x00A4EE, 0x00A506, "TrigExitX", TrigExitX, CT_SP},
+    {0x00A506, 0x00A51E, "TrigExitY", TrigExitY, CT_SP},
+    {0x00A51E, 0x00A52E, "TrigExit", TrigExit, CT_SP},
+    {0x00A52E, 0x00A552, "TrigExitAdd", TrigExitAdd, CT_SP},
+    {0x00A552, 0x00A562, "TrigWarp", TrigWarp, CT_SP},
+    {0x00A562, 0x00A5AA, "TrigDoor", TrigDoor, CT_SP},
+    {0x00A5AA, 0x00A5BC, "UpWarp", UpWarp, CT_ALL},
+    {0x00A5BC, 0x00A60A, "TrigHouse", TrigHouse, CT_SP},
+    {0x00A60A, 0x00A612, "UpHouse", UpHouse, CT_ALL},
+    {0x00A612, 0x00A666, "TrigChest", TrigChest, CT_SP},
+    {0x00A666, 0x00A68E, "ChestOpen", ChestOpen, CT_ALL},
+    {0x00A68E, 0x00A6CA, "UpChest", UpChest, CT_ALL},
+    {0x00A79A, 0x00A88C, "TrigEntrance", TrigEntrance, CT_SP},
+    {0x00A88C, 0x00A898, "NearX", NearX, CT_ALL},
+    {0x00A898, 0x00A8A6, "UpEntrance", UpEntrance, CT_ALL},
+    {0x00A8A6, 0x00A8B4, "UpEntrance2", UpEntrance2, CT_ALL},
+    {0x00A8B4, 0x00A8D8, "TrigEventA", TrigEventA, CT_SP},
+    {0x00A8D8, 0x00A8E6, "UpEventA", UpEventA, CT_ALL},
+    {0x00A8E6, 0x00A902, "TrigEventB", TrigEventB, CT_SP},
+    {0x00A902, 0x00A90A, "UpEventB", UpEventB, CT_ALL},
+    {0x00A90A, 0x00A914, "TrigSound", TrigSound, CT_SP},
+    {0x00A914, 0x00A92C, "ZonePlace", ZonePlace, CT_ALL},
+    {0x00A92C, 0x00A962, "InZone", InZone, CT_ALL},
+    {0x00A962, 0x00A990, "ExitTo", ExitTo, CT_ALL},
     {0x01090C, 0x010910, "SpawnItem", SpawnItem},                 /* effects.c: every register as the original */
     {0x010910, 0x010A1E, "SpawnItemAt", SpawnItemAt},
     {0x010A1E, 0x011094, "RunItems", RunItems, CT_SP},
