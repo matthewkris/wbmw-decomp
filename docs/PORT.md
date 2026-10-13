@@ -1980,6 +1980,41 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 instruction covered. Self-test caught 100 in 100 for each fuzzed routine. Replace mode: thirteen
 runs, no problems.
 
+#### The room changes, batch T19: the sequences for doors, shops and houses (2026-10-13)
+
+When a trigger's routine sets `$9962`, the game's task jumps from its table at `$91F4` to a
+sequence. The sequences run on the task's coroutine and wait for frames at the original's resume
+addresses. They leave as the original does: back to the game's loop (`$8FFC`), to the next room
+(`$9100`) or to the exits' code (`$F76C`). In `port/rooms.c`:
+
+* `$BDDE` (2): a start point's door. Its frame (`$BE18`: placed, the blocks under it blanked,
+  opening) and then the next room. A point of kind `$10` is an exit instead.
+* `$BE6C` (3): into a shop or house. Its picture is swapped in behind a frame that opens and
+  its things are spawned. The picture then grows from the middle every 3 frames (`$BBEA`).
+* `$BEF2` (4): out of it. The picture shrinks back from the largest step still inside, the
+  frame closes, and the room's triggers come back.
+* `$C128`, `$C152`: the frame's animation waited for (`$C152` restarts it first). Like the door's
+  animations, they keep their caller's return address on the continuations' stack.
+* `$C0C2`: walking into a building from start point `$9676`. The room is left and a frame of one
+  block by two is placed at the point, with a routine kept for the walk.
+
+Four more are written but not yet registered, so the original still runs them: no recorded
+session reaches them.
+* `$BDB0` (11): an item that sends the player to a start point.
+* `$BDC0` (13): the door object at `$1822A`.
+* `$BE50` (12): a warp.
+* `$BF80` (5): walking through a house's door.
+
+How it is checked: the sequences wait, so they are not fuzzed (registered with a plain
+contract). The owner's sessions (`rooms`, `shop`, `talk` and the others) run every instruction
+of the registered ones but two branches: a door of kind 8 (`$BE16`) and the largest step on the
+last axis (`$BF32`). `$C0C2` is fuzzed with real start points.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(38 runs, 579,724 checked calls; the sequences are checked as part of the game's task passes).
+30,000 fuzz cases, 0 mismatches. Self-test caught 100 in 100. Replace mode: thirteen runs, no
+problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

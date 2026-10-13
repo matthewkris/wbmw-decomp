@@ -75,7 +75,8 @@ void TextAt(Cpu *), TextAtRC(Cpu *), String(Cpu *), StringPlain(Cpu *), StringBr
      CellAt(Cpu *), CellSet(Cpu *), CellSetA(Cpu *), CellSetShown(Cpu *), DrawIfShown(Cpu *), CellSetDraw(Cpu *), DrawBlock(Cpu *), BlockByte(Cpu *), Flag2At(Cpu *), Flag2Test(Cpu *), Flag2Set(Cpu *), GameFlagAddr(Cpu *), TestGameFlag(Cpu *), SetGameFlag(Cpu *), RoomFlagBit(Cpu *), RectSave(Cpu *), RectMark(Cpu *), RectRestore(Cpu *), RectRedraw(Cpu *), BlocksToVram(Cpu *), StartPoint(Cpu *), StartAt(Cpu *), ToPosition(Cpu *), WaterDouble(Cpu *), FadeStep(Cpu *),
      Triggers(Cpu *), TrigExitX(Cpu *), TrigExitY(Cpu *), TrigExit(Cpu *), TrigExitAdd(Cpu *), TrigWarp(Cpu *), TrigDoor(Cpu *), UpWarp(Cpu *), TrigHouse(Cpu *), UpHouse(Cpu *), TrigChest(Cpu *), ChestOpen(Cpu *), UpChest(Cpu *), TrigEntrance(Cpu *), NearX(Cpu *), UpEntrance(Cpu *), UpEntrance2(Cpu *), TrigEventA(Cpu *), UpEventA(Cpu *), TrigEventB(Cpu *), UpEventB(Cpu *), TrigSound(Cpu *), ZonePlace(Cpu *), InZone(Cpu *), ExitTo(Cpu *),
      CrackedAt(Cpu *), ResetContinuations(Cpu *), DoorFrame(Cpu *), PictureFrame2(Cpu *), PictureFrame(Cpu *), PictureSetup(Cpu *), DoorBlank(Cpu *), DoorCell(Cpu *), DoorRestore(Cpu *), PictureCorner(Cpu *), PictureCell(Cpu *), PictureCellPut(Cpu *), PicturePut(Cpu *),
-     PictureGrow(Cpu *), GrowRow(Cpu *), GrowColumn(Cpu *), DoorOpen(Cpu *), DoorClose(Cpu *), RoomLeave(Cpu *);
+     PictureGrow(Cpu *), GrowRow(Cpu *), GrowColumn(Cpu *), DoorOpen(Cpu *), DoorClose(Cpu *), RoomLeave(Cpu *),
+     SeqExit(Cpu *), SeqKeptDoor(Cpu *), SeqDoor(Cpu *), SeqWarp(Cpu *), SeqInside(Cpu *), SeqOutside(Cpu *), SeqHouse(Cpu *), WalkInSetup(Cpu *), FrameWait(Cpu *), FrameRestart(Cpu *);
 void NumText(Cpu *), CharAt(Cpu *), ScrollWindow(Cpu *), WindowFrame(Cpu *), WindowRow(Cpu *), TileUnder(Cpu *), WindowRestore(Cpu *), NewLine(Cpu *), MoreBlink(Cpu *), MoreHide(Cpu *), MoreShow(Cpu *), ChoiceBlink(Cpu *), ChoiceHide(Cpu *), ChoiceShow(Cpu *), PriceOf(Cpu *), NameOf(Cpu *), NameText(Cpu *), FoundThing(Cpu *), FoundGold(Cpu *), BoxText(Cpu *), BoxRows(Cpu *), BoxRow(Cpu *), ShowFoundGold(Cpu *), ShowFound(Cpu *), WindowGeometry(Cpu *), Cheaper(Cpu *), Owns(Cpu *), Give(Cpu *), Take(Cpu *), ItemCell(Cpu *), FlagCell(Cpu *), MessageData(Cpu *), OpenWindow(Cpu *), WindowAt(Cpu *), MsgStep(Cpu *), CharIn(Cpu *), NoteIn(Cpu *), OcarinaTune(Cpu *);   /* message.c */
 #define CT_ALL 0x3FFFF                /* every register and flag compared */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
@@ -484,6 +485,12 @@ const PortRoutine port_routines[] = {
     {0x00BD0A, 0x00BD52, "DoorOpen", DoorOpen, CT_SP},   /* they wait for frames: checked by the task passes, not fuzzed */
     {0x00BD52, 0x00BD9A, "DoorClose", DoorClose, CT_SP},
     {0x00BD9A, 0x00BDB0, "RoomLeave", RoomLeave, CT_ALL},
+    {0x00BDDE, 0x00BE50, "SeqDoor", SeqDoor, CT_SP},   /* the sequences wait for frames: checked by the task passes, not fuzzed ($BDB0, $BDC0, $BE50 and $BF80 wait for a session that runs them) */
+    {0x00BE6C, 0x00BEF2, "SeqInside", SeqInside, CT_SP},
+    {0x00BEF2, 0x00BF80, "SeqOutside", SeqOutside, CT_SP},
+    {0x00C0C2, 0x00C128, "WalkInSetup", WalkInSetup, CT_ALL},
+    {0x00C128, 0x00C152, "FrameWait", FrameWait, CT_SP},
+    {0x00C152, 0x00C184, "FrameRestart", FrameRestart, CT_SP},
     {0x01090C, 0x010910, "SpawnItem", SpawnItem},                 /* effects.c: every register as the original */
     {0x010910, 0x010A1E, "SpawnItemAt", SpawnItemAt},
     {0x010A1E, 0x011094, "RunItems", RunItems, CT_SP},
