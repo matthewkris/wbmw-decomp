@@ -1389,6 +1389,37 @@ Results: 0 mismatches over the standard runs, every owner state and the three se
 covered. Self-test caught 100 in 100 for each. Replace mode plays the new-game script, four
 states and the three sessions.
 
+#### The status screen, batch T3: the icons, the list and the pages (2026-10-13)
+
+25 routines: everything the screen draws. The icons: a 2 x 2 icon `$85F0`/`$85FC`, two rows of
+two tiles `$8608`, the marks `$85CE`/`$85CC`, and the A + left/right slots' icons `$8620`/`$863C`
+(the thing's graphics copied in by CopyRawTiles when the slot changed since last drawn; shields
+and armour from `$8690`, swords from `$869C`, none from `$8C80`) with the items page's `$8666`.
+The lists (pages 1-4: swords, armour, shields, boots): `$82F4` builds one from the bits of the
+menu's byte (the things owned; the one in use marked) and sets the scroll arrows (`$8326`);
+`$83D0` draws four lines from the list's top, each name (`$1E6A`, still the original's) centred
+in 14 columns, with blank lines past the end; `$76B4` is a list page. The pages: the title in its
+box `$8272`, the main menu `$77CA` (six lines, the cursor on the line chosen), the panel cleared
+`$7808`, moving round the menu `$7D00`, opening a line's page `$7820`, the special actions' page
+`$7BB2` (each name with its meter of uses), the items page `$7AC0` (names, pictures, counts and
+the icon of the thing in use), `$7B86`, taking a thing out of its slot `$7CA4`, the stats bars
+`$76E8` (AP, DP, SP from the points of the things in use, `$77A2`, as bars of five) and the view
+limits for after the screen `$86BC`. And the fills `$8762`/`$875C`, `$7E72`, `$757A`.
+
+`$83D0` keeps its locals in a `link` frame as the original does (the line count, the blank
+lines, the entry, the tile base, the two pads), so the stack below the final pointer and a6
+come out the same. Its pads: `lsr.w #1` then `addx.w`, the odd column goes right.
+
+The fuzz gives these the screen's state as the game keeps it: the list's length and top, the
+line, the menu's own line, the page, real entries (`$1E6A` hangs on purpose on a bad name), the
+marks' states, the slots' things and what was last drawn, the things in use, the things owned
+and each list's owned bits.
+
+Results: 0 mismatches over the standard runs, every owner state and the three sessions (29 runs,
+481,775 checked calls); 625,000 fuzz cases from five states, 0 mismatches, every instruction
+covered. Self-test caught 100 in 100 for each. Replace mode plays the new-game script, four
+states and the three sessions. Of the status screen only the menu loops are left (T4).
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
