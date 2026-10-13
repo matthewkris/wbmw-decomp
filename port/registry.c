@@ -77,7 +77,8 @@ void TextAt(Cpu *), TextAtRC(Cpu *), String(Cpu *), StringPlain(Cpu *), StringBr
      CrackedAt(Cpu *), ResetContinuations(Cpu *), DoorFrame(Cpu *), PictureFrame2(Cpu *), PictureFrame(Cpu *), PictureSetup(Cpu *), DoorBlank(Cpu *), DoorCell(Cpu *), DoorRestore(Cpu *), PictureCorner(Cpu *), PictureCell(Cpu *), PictureCellPut(Cpu *), PicturePut(Cpu *),
      PictureGrow(Cpu *), GrowRow(Cpu *), GrowColumn(Cpu *), DoorOpen(Cpu *), DoorClose(Cpu *), RoomLeave(Cpu *),
      SeqExit(Cpu *), SeqKeptDoor(Cpu *), SeqDoor(Cpu *), SeqWarp(Cpu *), SeqInside(Cpu *), SeqOutside(Cpu *), SeqHouse(Cpu *), WalkInSetup(Cpu *), FrameWait(Cpu *), FrameRestart(Cpu *),
-     SeqWalkIn(Cpu *), WalkLeft(Cpu *), DoorAtPlayer(Cpu *), FadeInWait(Cpu *), ArriveDoor(Cpu *), ArriveStill(Cpu *), InsideSetup(Cpu *), ArriveInside(Cpu *), ArriveWalkOut(Cpu *), WalkRight(Cpu *), ArriveInsideDoor(Cpu *), ArriveFade(Cpu *), ArriveTalk(Cpu *);
+     SeqWalkIn(Cpu *), WalkLeft(Cpu *), DoorAtPlayer(Cpu *), FadeInWait(Cpu *), ArriveDoor(Cpu *), ArriveStill(Cpu *), InsideSetup(Cpu *), ArriveInside(Cpu *), ArriveWalkOut(Cpu *), WalkRight(Cpu *), ArriveInsideDoor(Cpu *), ArriveFade(Cpu *), ArriveTalk(Cpu *),
+     BreakCheck(Cpu *), BreakLeft(Cpu *), BreakRight(Cpu *), BreakSpawn(Cpu *), DoorAdd(Cpu *), DoorsClear(Cpu *), CrumbleClear(Cpu *), CrumbleWalls(Cpu *);
 void NumText(Cpu *), CharAt(Cpu *), ScrollWindow(Cpu *), WindowFrame(Cpu *), WindowRow(Cpu *), TileUnder(Cpu *), WindowRestore(Cpu *), NewLine(Cpu *), MoreBlink(Cpu *), MoreHide(Cpu *), MoreShow(Cpu *), ChoiceBlink(Cpu *), ChoiceHide(Cpu *), ChoiceShow(Cpu *), PriceOf(Cpu *), NameOf(Cpu *), NameText(Cpu *), FoundThing(Cpu *), FoundGold(Cpu *), BoxText(Cpu *), BoxRows(Cpu *), BoxRow(Cpu *), ShowFoundGold(Cpu *), ShowFound(Cpu *), WindowGeometry(Cpu *), Cheaper(Cpu *), Owns(Cpu *), Give(Cpu *), Take(Cpu *), ItemCell(Cpu *), FlagCell(Cpu *), MessageData(Cpu *), OpenWindow(Cpu *), WindowAt(Cpu *), MsgStep(Cpu *), CharIn(Cpu *), NoteIn(Cpu *), OcarinaTune(Cpu *);   /* message.c */
 #define CT_ALL 0x3FFFF                /* every register and flag compared */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
@@ -502,6 +503,14 @@ const PortRoutine port_routines[] = {
     {0x00C6EE, 0x00C6F6, "WalkRight", WalkRight, CT_ALL},
     {0x00C71C, 0x00C728, "ArriveFade", ArriveFade, CT_SP | CT_WAITS},
     {0x00C728, 0x00C75C, "ArriveTalk", ArriveTalk, CT_SP | CT_WAITS},
+    {0x00B32E, 0x00B394, "BreakCheck", BreakCheck, CT_ALL},   /* rooms.c: breaking and crumbling walls, the doors' records */
+    {0x00B394, 0x00B3C8, "BreakLeft", BreakLeft, CT_ALL},
+    {0x00B3C8, 0x00B400, "BreakRight", BreakRight, CT_ALL},
+    {0x00B400, 0x00B42A, "BreakSpawn", BreakSpawn, CT_ALL},
+    {0x00B49C, 0x00B4FA, "DoorAdd", DoorAdd, CT_ALL},
+    {0x00B4FA, 0x00B50C, "DoorsClear", DoorsClear, CT_ALL},
+    {0x00B852, 0x00B864, "CrumbleClear", CrumbleClear, CT_ALL},
+    {0x00B864, 0x00B8D4, "CrumbleWalls", CrumbleWalls, CT_ALL},
     {0x01090C, 0x010910, "SpawnItem", SpawnItem},                 /* effects.c: every register as the original */
     {0x010910, 0x010A1E, "SpawnItemAt", SpawnItemAt},
     {0x010A1E, 0x011094, "RunItems", RunItems, CT_SP},
