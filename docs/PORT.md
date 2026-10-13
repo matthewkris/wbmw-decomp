@@ -1594,6 +1594,40 @@ Results: 0 mismatches over the standard runs, every owner state, the three sessi
 100 in 100. Of the message interpreter, 22 instructions are not yet covered: saving and loading
 (commands 11, 21) and command 26's.
 
+#### The HUD's last routines, batch T9: the boss's bar, the special actions' uses (2026-10-13)
+
+The routines left beside the status screen, in `port/status.c`, every register and flag in the
+contract. 12 entries:
+
+* The boss's life bar: three rows of 16 cells on the window plane, column 4, row 2. A hit leaves
+  two words in `$9628` (the boss's full life, its life now). Each frame of the game `$885A` takes
+  them and redraws the bar if they changed. The scale depends on the full life: under `$200`, a
+  cell is `$20` of life; `$200`-`$3FF` is shown as `$200`; from `$400`, a cell is `$100`. The life
+  now is rounded up to half a cell and kept under the full life (`$88B4`). The bar is drawn by
+  `$893C` or `$8950` (reached with `jmp (a1)` from a table at `$88C2`), then the rows (`$88D6`:
+  whole cells, a half, the rest of the full life, blanks to 16). It is cleared `$C0` frames after
+  the last hit (`$89B6`, also when the status screen opens and closes).
+* The special actions' uses, given through the messages (`$245A`):
+  * `$8A04` raises one's most by 3, 2 or 1 (more for the cheaper ones), up to 12, or by 1 for the
+    last, and adds the gain to its uses (the gain is kept at `$95B2`).
+  * `$8A3A` (a slot's thing) gives a use back to the action in a slot, the left first, else to
+    the first action short of its most (`$8A88`).
+* The game's start (`$8E56`: the player's entity, health full) and the things in use kept and
+  compared (`$8E72`, `$8E9C`, by address pairs at `$8E84`).
+
+What they needed: nothing new. The fuzz gives the bar real hits (full lives up to `$1000`, now
+and then the words already shown, so the unchanged path runs too), the drawing a life the bar
+can show, the special actions their uses and most, and the slots their things. Two names
+first began with `Act`, which the fuzz keeps for the monsters' actions (it sets up an entity
+and overwrote d0), so they are `SpecialGiven` and `SpecialUseBack`. `$8148`, a cursor blink with
+no callers, stays as it is.
+
+Results: 0 mismatches over the standard runs, every owner state and the sessions (31 runs, 505,205
+checked calls). The bar runs inside the game's task pass, so it is checked as part of that pass.
+300,000 fuzz cases from five states, 0 mismatches, every instruction covered. Play alone covers
+the bar's drawing and clearing, and the game's start. Self-test caught 100 in 100 for each. Replace
+mode: ten runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

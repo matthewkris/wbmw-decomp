@@ -1774,3 +1774,274 @@ ENTRY(SlotFlipLow, slot_flip_low) /* $7938 */
 ENTRY(ListButtons, list_buttons) /* $7D9C */
 ENTRY(ScreenSetup, screen_setup) /* $8BB6 */
 ENTRY(MenuReset, menu_reset)    /* $8C34 */
+
+/* ---- batch T9: the boss's bar, the special actions' uses, the game's start ----
+ * The boss's life bar is three rows of 16 cells on the window plane at column 4, row 2. A hit
+ * leaves two words in $9628 (the boss's full life, then its life now); the bar is redrawn when
+ * they change, and cleared ($89B6) $C0 frames after the last hit. */
+
+#define BAR_HIT       0xFFFF9628u   /* long: a hit's two words, cleared when seen */
+#define BAR_SHOWN     0xFFFF9602u   /* long: the two words the bar shows */
+#define BAR_TIMER     0xFFFF95F2u   /* word: frames until the bar is cleared */
+#define BAR_CELLS     0xFFFF95FCu   /* word: the cells of the full life */
+#define BAR_EMPTY     0xFFFF9600u   /* word: the cells after them, to 16 */
+#define BAR_WHOLE     0xFFFF95FEu   /* word: the life's whole cells */
+
+static uint32_t swap32(uint32_t v) { uint32_t r = v << 16 | v >> 16; F_L(r); return r; }
+
+/* $88B4: d0's low word made the smaller of its two words */
+static void bar_smaller(void)
+{
+    c->d[0] = swap32(c->d[0]);
+    c->d[1] = set_w(c->d[1], c->d[0]); F_W(c->d[0]);
+    c->d[0] = swap32(c->d[0]);
+    cmp_w(&c->ccr, c->d[0], c->d[1]);
+    if ((c->d[1] & 0xFFFF) < (c->d[0] & 0xFFFF)) { c->d[0] = set_w(c->d[0], c->d[1]); F_W(c->d[1]); }
+}
+
+static void put_w(uint32_t a) { uint16_t t = rd16(a); wr16(c->a[0], t); F_W(t); }
+
+/* $88D6: the bar's three rows: the life's whole cells (a1), the part (a2, if d2), the rest of
+ * the full life's cells (a3), then blanks ($8936); a word apiece for each row */
+static void bar_rows(void)
+{
+    c->d[7] = set_w(c->d[7], 0x204); F_W(0x204);
+    c->d[5] = 2;
+    c->a[0] = VDP_DATA;
+    do {
+        text_at();
+        c->d[6] = set_w(c->d[6], c->d[5]);
+        c->d[6] = set_w(c->d[6], add_w(&c->ccr, c->d[6], c->d[6]));
+        c->d[0] = set_w(c->d[0], rd16(BAR_WHOLE));
+        c->d[1] = set_w(c->d[1], rd16(BAR_CELLS));
+        for (;;) {
+            F_W(c->d[0]);
+            if (!(c->d[0] & 0xFFFF)) break;
+            put_w(c->a[1] + sx(c->d[6]));
+            c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 1, c->d[0]));
+            c->d[1] = set_w(c->d[1], sub_w(&c->ccr, 1, c->d[1]));
+        }
+        F_W(c->d[2]);
+        if (c->d[2] & 0xFFFF) {
+            put_w(c->a[2] + sx(c->d[6]));
+            c->d[1] = set_w(c->d[1], sub_w(&c->ccr, 1, c->d[1]));
+        }
+        for (;;) {
+            F_W(c->d[1]);
+            if (!(c->d[1] & 0xFFFF)) break;
+            c->d[1] = set_w(c->d[1], sub_w(&c->ccr, 1, c->d[1]));
+            put_w(c->a[3] + sx(c->d[6]));
+        }
+        c->d[0] = set_w(c->d[0], rd16(BAR_EMPTY));
+        for (;;) {
+            F_W(c->d[0]);
+            if (!(c->d[0] & 0xFFFF)) break;
+            c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 1, c->d[0]));
+            put_w(0x8936u + sx(c->d[6]));
+        }
+        c->d[7] = set_w(c->d[7], add_w(&c->ccr, 1, c->d[7]));
+        c->d[5] = set_w(c->d[5], c->d[5] - 1);
+    } while ((c->d[5] & 0xFFFF) != 0xFFFF);
+    wr16(BAR_TIMER, 0xC0); F_W(0xC0);
+}
+
+/* $893C, $8950: the bar at a cell for $20 of life (a1-a3, the unit at a0) or $100: the full
+ * life's cells, the blanks to 16, the whole cells of the life now and whether a part is left */
+static void bar_draw(uint32_t whole, uint32_t part, uint32_t rest, uint32_t unit, uint32_t shift)
+{
+    c->a[1] = whole; c->a[2] = part; c->a[3] = rest; c->a[0] = unit;
+    c->d[2] = shift; F_L(shift);
+    c->d[0] = set_w(c->d[0], rd16(BAR_SHOWN));
+    c->d[0] = set_w(c->d[0], lsr_n(&c->ccr, c->d[0], c->d[2] & 63, 16));
+    wr16(BAR_CELLS, (uint16_t)c->d[0]); F_W(c->d[0]);
+    c->d[4] = set_w(c->d[4], 0x10);
+    c->d[4] = set_w(c->d[4], sub_w(&c->ccr, c->d[0], c->d[4]));
+    wr16(BAR_EMPTY, (uint16_t)c->d[4]); F_W(c->d[4]);
+    c->d[2] = set_w(c->d[2], rd16(BAR_SHOWN + 2));
+    c->d[1] = 0;
+    for (;;) {
+        c->d[2] = set_w(c->d[2], sub_w(&c->ccr, rd16(c->a[0]), c->d[2]));
+        if (c->ccr & CC_C) break;
+        c->d[1] = set_w(c->d[1], add_w(&c->ccr, 1, c->d[1]));
+    }
+    wr16(BAR_WHOLE, (uint16_t)c->d[1]); F_W(c->d[1]);
+    c->d[2] = set_w(c->d[2], add_w(&c->ccr, rd16(c->a[0]), c->d[2]));
+    bar_rows();
+}
+
+/* $89B6: the bar's place cleared (the frame's edges and blanks) */
+static void bar_clear(void)
+{
+    c->a[0] = VDP_DATA;
+    c->a[1] = 0x89ECu;
+    c->a[2] = 0x89F8u;
+    c->d[7] = set_w(c->d[7], 0x104);
+    c->d[2] = 2;
+    do {
+        text_at();
+        wr16(c->a[0], rd16(c->a[2])); c->a[2] += 2;
+        c->d[4] = rd32(c->a[1]); c->a[1] += 4;
+        c->d[3] = 7;
+        do { wr32(c->a[0], c->d[4]); c->d[3] = set_w(c->d[3], c->d[3] - 1); } while ((c->d[3] & 0xFFFF) != 0xFFFF);
+        put_w(c->a[2]); c->a[2] += 2;
+        c->d[7] = set_w(c->d[7], add_w(&c->ccr, 1, c->d[7]));
+        c->d[2] = set_w(c->d[2], c->d[2] - 1);
+    } while ((c->d[2] & 0xFFFF) != 0xFFFF);
+    wr32(BAR_SHOWN, 0); f_clr();
+}
+
+/* $885A: each frame of the game: a new hit redraws the bar. A full life under $200 has a cell
+ * for each $20, $200-$3FF is shown as $200, from $400 a cell is $100; the life now is rounded
+ * up to the cell's part and kept under the full life. The bar goes $C0 frames after */
+static void boss_bar(void)
+{
+    c->d[0] = rd32(BAR_HIT); F_L(c->d[0]);
+    if (c->d[0]) {
+        wr32(BAR_HIT, 0);
+        c->a[0] = 0x88CCu;
+        c->d[0] = swap32(c->d[0]);
+        cmp_w(&c->ccr, 0x400, c->d[0]);
+        if ((c->d[0] & 0xFFFF) < 0x400) {
+            cmp_w(&c->ccr, 0x200, c->d[0]);
+            if ((c->d[0] & 0xFFFF) >= 0x200) { c->d[0] = set_w(c->d[0], 0x200); F_W(0x200); }
+            c->a[0] -= 0xA;
+        }
+        c->d[0] = swap32(c->d[0]);
+        c->d[1] = set_w(c->d[1], rd16(c->a[0])); c->a[0] += 2;
+        c->d[2] = set_w(c->d[2], c->d[0] & c->d[1]); F_W(c->d[2]);
+        if (c->d[2] & 0xFFFF) {
+            c->d[1] = set_w(c->d[1], add_w(&c->ccr, 1, c->d[1]));
+            c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[1], c->d[0]));
+        }
+        c->d[0] &= rd32(c->a[0]); c->a[0] += 4; F_L(c->d[0]);
+        wr16(BAR_TIMER, 0xC0);
+        cmp_l(&c->ccr, rd32(BAR_SHOWN), c->d[0]);
+        if (c->d[0] != rd32(BAR_SHOWN)) {
+            bar_smaller();
+            wr32(BAR_SHOWN, c->d[0]);
+            c->a[1] = rd32(c->a[0]);                /* jmp (a1) */
+            if (c->a[1] == 0x893Cu) bar_draw(0x898Eu, 0x899Au, 0x89A6u, 0x89B2u, 5);
+            else bar_draw(0x8994u, 0x89A0u, 0x89ACu, 0x89B4u, 8);
+            return;
+        }
+    }
+    F_W(rd16(BAR_TIMER));
+    if (!rd16(BAR_TIMER)) return;
+    uint16_t t = (uint16_t)sub_w(&c->ccr, 1, rd16(BAR_TIMER));
+    wr16(BAR_TIMER, t);
+    if (!t) bar_clear();
+}
+
+/* $8A04: special action d0 given: its most uses up 3, 2 or 1 (the cheaper ones more), to 12;
+ * from d0 5 (the last) just 1. The uses gained ($95B2) are added to its uses */
+static void action_refill(void)
+{
+    c->a[0] = sx(c->d[0]);
+    c->d[1] = set_b(c->d[1], rd8(c->a[0] - 0x6A42));
+    c->d[2] = set_b(c->d[2], c->d[1]); F_B(c->d[1]);
+    c->d[1] = set_b(c->d[1], add_b(&c->ccr, rd8(0x8A34u + c->a[0]), c->d[1]));
+    cmp_w(&c->ccr, 5, c->d[0]);
+    if ((c->d[0] & 0xFFFF) >= 5) c->d[1] = 1;
+    else {
+        cmp_byte(0xC, c->d[1]);
+        if ((c->d[1] & 0xFF) >= 0xC) c->d[1] = 12;
+    }
+    c->d[3] = set_b(c->d[3], c->d[1]);
+    c->d[3] = set_b(c->d[3], sub_b(&c->ccr, c->d[2], c->d[3]));
+    wr8(0xFFFF95B2u, (uint8_t)c->d[3]);
+    wr8(c->a[0] - 0x6A42, (uint8_t)c->d[1]);
+    wr8(c->a[0] - 0x6A48, (uint8_t)add_b(&c->ccr, c->d[3], rd8(c->a[0] - 0x6A48)));
+}
+
+/* $8A88: a use back to special action a0 (uses d1, most d2), if not past its most (mi then) */
+static void action_add(void)
+{
+    c->d[1] = set_b(c->d[1], add_b(&c->ccr, rd8(0x8A9Cu + c->a[0]), c->d[1]));
+    cmp_byte(c->d[1], c->d[2]);
+    if ((c->d[2] & 0xFF) < (c->d[1] & 0xFF)) { c->d[3] = 0; F_L(0); return; }
+    wr8(c->a[0] - 0x6A48, (uint8_t)c->d[1]);
+    c->d[3] = 0xFFFFFFFFu; F_L(c->d[3]);
+}
+
+/* $8A3A: a slot's thing given: a use back to the special action in a slot (the left first),
+ * else to the first one short of its most */
+static void slot_refill(void)
+{
+    int slot = 0;
+    c->d[0] = set_b(c->d[0], rd8(0xFFFF9F10u)); F_B(c->d[0]);
+    if (!(c->d[0] & 0x80)) { cmp_byte(8, c->d[0]); slot = (c->d[0] & 0xFF) < 8; }
+    if (!slot) {
+        c->d[0] = set_b(c->d[0], rd8(0xFFFF9F11u)); F_B(c->d[0]);
+        if (!(c->d[0] & 0x80)) { cmp_byte(8, c->d[0]); slot = (c->d[0] & 0xFF) < 8; }
+    }
+    if (slot) {
+        c->a[0] = sx(c->d[0]);
+        c->d[1] = set_b(c->d[1], rd8(c->a[0] - 0x6A48));
+        c->d[2] = set_b(c->d[2], rd8(c->a[0] - 0x6A42)); F_B(c->d[2]);
+        action_add();
+        if (c->ccr & CC_N) return;
+    }
+    c->d[0] = 0;
+    do {
+        c->a[0] = sx(c->d[0]);
+        c->d[1] = set_b(c->d[1], rd8(c->a[0] - 0x6A48));
+        c->d[2] = set_b(c->d[2], rd8(c->a[0] - 0x6A42)); F_B(c->d[2]);
+        if (c->d[2] & 0xFF) {
+            cmp_byte(c->d[1], c->d[2]);
+            if ((c->d[1] & 0xFF) != (c->d[2] & 0xFF)) { action_add(); return; }
+        }
+        c->d[0] = set_w(c->d[0], add_w(&c->ccr, 1, c->d[0]));
+        cmp_w(&c->ccr, 6, c->d[0]);
+    } while ((c->d[0] & 0xFFFF) < 6);
+}
+
+/* $8E72: the things in use kept ($95BE-$95C3 to $95B8-$95BD, by the address pairs at $8E84) */
+static void uses_keep(void)
+{
+    c->a[0] = 0x8E84u;
+    c->d[0] = 5;
+    do {
+        c->a[1] = sx(rd16(c->a[0])); c->a[2] = sx(rd16(c->a[0] + 2)); c->a[0] += 4;
+        uint8_t v = rd8(c->a[1]); wr8(c->a[2], v); F_B(v);
+        c->d[0] = set_w(c->d[0], c->d[0] - 1);
+    } while ((c->d[0] & 0xFFFF) != 0xFFFF);
+}
+
+/* $8E9C: whether they are as kept (ne: not) */
+static void uses_same(void)
+{
+    c->a[0] = 0x8E84u;
+    c->d[0] = 5;
+    for (;;) {
+        c->a[1] = sx(rd16(c->a[0])); c->a[2] = sx(rd16(c->a[0] + 2)); c->a[0] += 4;
+        c->d[1] = set_b(c->d[1], rd8(c->a[1]));
+        cmp_byte(rd8(c->a[2]), c->d[1]);
+        if (!(c->ccr & CC_Z)) break;
+        c->d[0] = set_w(c->d[0], c->d[0] - 1);
+        if ((c->d[0] & 0xFFFF) == 0xFFFF) break;
+    }
+}
+
+/* $8E56: the game's start: the player's entity, its health the full ($9F00), the things in
+ * use kept */
+static void game_start(void)
+{
+    wr16(0xFFFF9EEEu, 0); wr16(0xFFFF9EF0u, 0);
+    wr16(0xFFFF9EF4u, 1);
+    uint16_t h = rd16(0xFFFF9F00u); wr16(0xFFFFDA00u, h);
+    uses_keep();
+    wr8(0xFFFF9F32u, 0xFF);
+}
+
+ENTRY(BossBar, boss_bar)               /* $885A */
+ENTRY(BarSmaller, bar_smaller)         /* $88B4 */
+ENTRY(BarClear, bar_clear)             /* $89B6 */
+ENTRY(BarRows, bar_rows)               /* $88D6 */
+void BarBig(Cpu *cpu)    { c = cpu; bar_draw(0x898Eu, 0x899Au, 0x89A6u, 0x89B2u, 5); c->ret = 0; }   /* $893C */
+void BarBigger(Cpu *cpu) { c = cpu; bar_draw(0x8994u, 0x89A0u, 0x89ACu, 0x89B4u, 8); c->ret = 0; }   /* $8950 */
+ENTRY(SpecialGiven, action_refill)     /* $8A04 */
+ENTRY(SlotRefill, slot_refill)         /* $8A3A */
+ENTRY(SpecialUseBack, action_add)           /* $8A88 */
+ENTRY(GameStart, game_start)           /* $8E56 */
+ENTRY(UsesKeep, uses_keep)             /* $8E72 */
+ENTRY(UsesSame, uses_same)             /* $8E9C */
