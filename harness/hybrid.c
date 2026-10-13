@@ -16,6 +16,7 @@
 #include "md.h"
 #include "../port/port.h"
 #include "../third_party/musashi/m68k.h"
+int task_in_pass(void);
 
 /* ported code waiting on the Z80: let sound time pass (undone with the snapshot in shadow mode) */
 void port_idle(void) { sound_idle(); }
@@ -303,8 +304,8 @@ static void run_port(int idx)
             if (!(R(idx)->contract >> (8 + i) & 1)) c.a[i] ^= 0x10u;
         }
     uint32_t ret;
-    if (pops(idx)) ret = c.ret;                     /* generated: it did the rts (maybe elsewhere) */
-    else if (c.ret) ret = c.ret;                    /* hand port that carries on in the original there (world.h) */
+    if (pops(idx)) ret = c.ret & 0xFFFFFF;          /* generated: it did the rts (maybe elsewhere) */
+    else if (c.ret) ret = c.ret & 0xFFFFFF;         /* hand port that carries on in the original there (world.h) */
     else { ret = rd32(c.a[7]); c.a[7] += 4; }       /* hand port: the original's rts */
     set_cpu(&c);
     m68k_set_reg(M68K_REG_PC, ret);
@@ -405,6 +406,9 @@ int md_instr_hook(unsigned int pc)
     }
     if (pc >= SLOTS || slot_of[pc] < 0) return 0;
     int idx = slot_of[pc];
+    /* a routine that waits for frames, reached outside a task pass (a pass the harness finished on
+     * the 68000 when the translated code could not go on): the original runs it */
+    if ((R(idx)->contract & CT_WAITS) && !task_in_pass()) return 0;
     stats[idx].calls++;
     if (mode == PORT_REPLACE) { run_port(idx); return 0; }
 

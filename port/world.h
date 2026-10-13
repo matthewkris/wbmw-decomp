@@ -36,5 +36,9 @@ static inline void port_continue_at(Cpu *c, uint32_t addr, uint32_t pushed)
     if (pushed) { c->a[7] -= 4; wr32(c->a[7], pushed); }
     c->ret = addr;
 }
+/* the same, but on the 68000 even where the address has a C version (the harness only): for a
+ * routine that cannot run here, such as one that waits for frames outside a task pass */
+#define RT_TO_68K 0x80000000u
+static inline void port_leave_to_68k(Cpu *c, uint32_t addr) { c->ret = addr | RT_TO_68K; }
 
 #endif

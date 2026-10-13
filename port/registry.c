@@ -76,7 +76,8 @@ void TextAt(Cpu *), TextAtRC(Cpu *), String(Cpu *), StringPlain(Cpu *), StringBr
      Triggers(Cpu *), TrigExitX(Cpu *), TrigExitY(Cpu *), TrigExit(Cpu *), TrigExitAdd(Cpu *), TrigWarp(Cpu *), TrigDoor(Cpu *), UpWarp(Cpu *), TrigHouse(Cpu *), UpHouse(Cpu *), TrigChest(Cpu *), ChestOpen(Cpu *), UpChest(Cpu *), TrigEntrance(Cpu *), NearX(Cpu *), UpEntrance(Cpu *), UpEntrance2(Cpu *), TrigEventA(Cpu *), UpEventA(Cpu *), TrigEventB(Cpu *), UpEventB(Cpu *), TrigSound(Cpu *), ZonePlace(Cpu *), InZone(Cpu *), ExitTo(Cpu *),
      CrackedAt(Cpu *), ResetContinuations(Cpu *), DoorFrame(Cpu *), PictureFrame2(Cpu *), PictureFrame(Cpu *), PictureSetup(Cpu *), DoorBlank(Cpu *), DoorCell(Cpu *), DoorRestore(Cpu *), PictureCorner(Cpu *), PictureCell(Cpu *), PictureCellPut(Cpu *), PicturePut(Cpu *),
      PictureGrow(Cpu *), GrowRow(Cpu *), GrowColumn(Cpu *), DoorOpen(Cpu *), DoorClose(Cpu *), RoomLeave(Cpu *),
-     SeqExit(Cpu *), SeqKeptDoor(Cpu *), SeqDoor(Cpu *), SeqWarp(Cpu *), SeqInside(Cpu *), SeqOutside(Cpu *), SeqHouse(Cpu *), WalkInSetup(Cpu *), FrameWait(Cpu *), FrameRestart(Cpu *);
+     SeqExit(Cpu *), SeqKeptDoor(Cpu *), SeqDoor(Cpu *), SeqWarp(Cpu *), SeqInside(Cpu *), SeqOutside(Cpu *), SeqHouse(Cpu *), WalkInSetup(Cpu *), FrameWait(Cpu *), FrameRestart(Cpu *),
+     SeqWalkIn(Cpu *), WalkLeft(Cpu *), DoorAtPlayer(Cpu *), FadeInWait(Cpu *), ArriveDoor(Cpu *), ArriveStill(Cpu *), InsideSetup(Cpu *), ArriveInside(Cpu *), ArriveWalkOut(Cpu *), WalkRight(Cpu *), ArriveInsideDoor(Cpu *), ArriveFade(Cpu *), ArriveTalk(Cpu *);
 void NumText(Cpu *), CharAt(Cpu *), ScrollWindow(Cpu *), WindowFrame(Cpu *), WindowRow(Cpu *), TileUnder(Cpu *), WindowRestore(Cpu *), NewLine(Cpu *), MoreBlink(Cpu *), MoreHide(Cpu *), MoreShow(Cpu *), ChoiceBlink(Cpu *), ChoiceHide(Cpu *), ChoiceShow(Cpu *), PriceOf(Cpu *), NameOf(Cpu *), NameText(Cpu *), FoundThing(Cpu *), FoundGold(Cpu *), BoxText(Cpu *), BoxRows(Cpu *), BoxRow(Cpu *), ShowFoundGold(Cpu *), ShowFound(Cpu *), WindowGeometry(Cpu *), Cheaper(Cpu *), Owns(Cpu *), Give(Cpu *), Take(Cpu *), ItemCell(Cpu *), FlagCell(Cpu *), MessageData(Cpu *), OpenWindow(Cpu *), WindowAt(Cpu *), MsgStep(Cpu *), CharIn(Cpu *), NoteIn(Cpu *), OcarinaTune(Cpu *);   /* message.c */
 #define CT_ALL 0x3FFFF                /* every register and flag compared */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
@@ -231,7 +232,7 @@ const PortRoutine port_routines[] = {
     {0x00183E, 0x001864, "NumText", NumText, CT_ALL},   /* message.c: the message window, every register and flag as the original */
     {0x0013BC, 0x001D92, "MsgStep", MsgStep, CT_SP},   /* with its commands, the quiz and the inn ($14F4-$1D90; the T5 entries inside are their own) */
     {0x0013AE, 0x0013BC, "CharIn", CharIn, CT_ALL},
-    {0x002AAE, 0x002B08, "OcarinaTune", OcarinaTune, CT_SP},   /* waits for frames: checked by the task passes, not fuzzed */
+    {0x002AAE, 0x002B08, "OcarinaTune", OcarinaTune, CT_SP | CT_WAITS},   /* waits for frames: checked by the task passes, not fuzzed */
     {0x002B08, 0x002B34, "NoteIn", NoteIn, CT_ALL},
     {0x002050, 0x002082, "CharAt", CharAt, CT_ALL},
     {0x002082, 0x002110, "ScrollWindow", ScrollWindow, CT_ALL},
@@ -316,8 +317,8 @@ const PortRoutine port_routines[] = {
     {0x007AC0, 0x007B70, "ItemsPage", ItemsPage, CT_ALL},
     {0x007B86, 0x007BB2, "MaybePicture", MaybePicture, CT_ALL},
     {0x0076E8, 0x0077CA, "Stats", Stats, CT_ALL},
-    {0x007582, 0x0076B4, "StatusScreen", StatusScreen, CT_SP},   /* waits for frames: checked by the task passes, not fuzzed */
-    {0x007F0E, 0x007F54, "PauseScreen", PauseScreen, CT_SP},   /* likewise */
+    {0x007582, 0x0076B4, "StatusScreen", StatusScreen, CT_SP | CT_WAITS},   /* waits for frames: checked by the task passes, not fuzzed */
+    {0x007F0E, 0x007F54, "PauseScreen", PauseScreen, CT_SP | CT_WAITS},   /* likewise */
     {0x00794E, 0x007952, "CursorSpriteTop", CursorSpriteTop, CT_ALL},
     {0x007952, 0x00799E, "CursorSpriteLow", CursorSpriteLow, CT_ALL},
     {0x007924, 0x007938, "SlotFlipTop", SlotFlipTop, CT_ALL},
@@ -337,10 +338,10 @@ const PortRoutine port_routines[] = {
     {0x008E56, 0x008E72, "GameStart", GameStart, CT_ALL},
     {0x008E72, 0x008E84, "UsesKeep", UsesKeep, CT_ALL},
     {0x008E9C, 0x008EB0, "UsesSame", UsesSame, CT_ALL},
-    {0x007042, 0x0070D6, "TitleOpening", TitleOpening, CT_SP},   /* title.c: the title's tasks wait for frames: checked by the task passes, not fuzzed */
-    {0x00713A, 0x007158, "TitleShown", TitleShown, CT_SP},
-    {0x00715C, 0x0071C2, "TitleScreen", TitleScreen, CT_SP},
-    {0x0071C6, 0x00724E, "TitleMenu", TitleMenu, CT_SP},
+    {0x007042, 0x0070D6, "TitleOpening", TitleOpening, CT_SP | CT_WAITS},   /* title.c: the title's tasks wait for frames: checked by the task passes, not fuzzed */
+    {0x00713A, 0x007158, "TitleShown", TitleShown, CT_SP | CT_WAITS},
+    {0x00715C, 0x0071C2, "TitleScreen", TitleScreen, CT_SP | CT_WAITS},
+    {0x0071C6, 0x00724E, "TitleMenu", TitleMenu, CT_SP | CT_WAITS},
     {0x0070D6, 0x00711C, "TitleSetup", TitleSetup, CT_ALL},
     {0x00711C, 0x007136, "TitlePlace", TitlePlace, CT_ALL},
     {0x007272, 0x007294, "TitleCursor", TitleCursor, CT_ALL},
@@ -482,15 +483,25 @@ const PortRoutine port_routines[] = {
     {0x00BBEA, 0x00BCAC, "PictureGrow", PictureGrow, CT_ALL},
     {0x00BCAC, 0x00BCDA, "GrowRow", GrowRow, CT_ALL},
     {0x00BCDA, 0x00BD0A, "GrowColumn", GrowColumn, CT_ALL},
-    {0x00BD0A, 0x00BD52, "DoorOpen", DoorOpen, CT_SP},   /* they wait for frames: checked by the task passes, not fuzzed */
-    {0x00BD52, 0x00BD9A, "DoorClose", DoorClose, CT_SP},
+    {0x00BD0A, 0x00BD52, "DoorOpen", DoorOpen, CT_SP | CT_WAITS},   /* they wait for frames: checked by the task passes, not fuzzed */
+    {0x00BD52, 0x00BD9A, "DoorClose", DoorClose, CT_SP | CT_WAITS},
     {0x00BD9A, 0x00BDB0, "RoomLeave", RoomLeave, CT_ALL},
-    {0x00BDDE, 0x00BE50, "SeqDoor", SeqDoor, CT_SP},   /* the sequences wait for frames: checked by the task passes, not fuzzed ($BDB0, $BDC0, $BE50 and $BF80 wait for a session that runs them) */
-    {0x00BE6C, 0x00BEF2, "SeqInside", SeqInside, CT_SP},
-    {0x00BEF2, 0x00BF80, "SeqOutside", SeqOutside, CT_SP},
+    {0x00BDDE, 0x00BE50, "SeqDoor", SeqDoor, CT_SP | CT_WAITS},   /* the sequences wait for frames: checked by the task passes, not fuzzed ($BDB0, $BDC0, $BE50 and $BF80 wait for a session that runs them) */
+    {0x00BE6C, 0x00BEF2, "SeqInside", SeqInside, CT_SP | CT_WAITS},
+    {0x00BEF2, 0x00BF80, "SeqOutside", SeqOutside, CT_SP | CT_WAITS},
     {0x00C0C2, 0x00C128, "WalkInSetup", WalkInSetup, CT_ALL},
-    {0x00C128, 0x00C152, "FrameWait", FrameWait, CT_SP},
-    {0x00C152, 0x00C184, "FrameRestart", FrameRestart, CT_SP},
+    {0x00C128, 0x00C152, "FrameWait", FrameWait, CT_SP | CT_WAITS},
+    {0x00C152, 0x00C184, "FrameRestart", FrameRestart, CT_SP | CT_WAITS},
+    {0x00C184, 0x00C1E0, "SeqWalkIn", SeqWalkIn, CT_SP | CT_WAITS},   /* arriving in a room: those that wait are checked by the task passes, not fuzzed ($C614, $C67E, $C6F6 wait for a session that runs them) */
+    {0x00C1E0, 0x00C1E8, "WalkLeft", WalkLeft, CT_ALL},
+    {0x00C572, 0x00C5D2, "DoorAtPlayer", DoorAtPlayer, CT_SP},
+    {0x00C5D2, 0x00C5F8, "FadeInWait", FadeInWait, CT_SP | CT_WAITS},
+    {0x00C5F8, 0x00C614, "ArriveDoor", ArriveDoor, CT_SP | CT_WAITS},
+    {0x00C634, 0x00C67E, "InsideSetup", InsideSetup, CT_SP},
+    {0x00C698, 0x00C6EE, "ArriveWalkOut", ArriveWalkOut, CT_SP | CT_WAITS},
+    {0x00C6EE, 0x00C6F6, "WalkRight", WalkRight, CT_ALL},
+    {0x00C71C, 0x00C728, "ArriveFade", ArriveFade, CT_SP | CT_WAITS},
+    {0x00C728, 0x00C75C, "ArriveTalk", ArriveTalk, CT_SP | CT_WAITS},
     {0x01090C, 0x010910, "SpawnItem", SpawnItem},                 /* effects.c: every register as the original */
     {0x010910, 0x010A1E, "SpawnItemAt", SpawnItemAt},
     {0x010A1E, 0x011094, "RunItems", RunItems, CT_SP},

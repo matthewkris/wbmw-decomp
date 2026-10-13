@@ -22,6 +22,7 @@
  * Batch T17, the room changes' helpers: the door's frame and blocks, the events' pictures.
  * Batch T18, the picture growing, the door's animations (they wait for frames), leaving a room.
  * Batch T19, the room changes' sequences: doors, warps, shops and houses.
+ * Batch T20, arriving in a room: through a door, inside, walking in or out, fading in.
  * Ported register for register, with every register and flag in the contract. */
 #include "world.h"
 #include "task.h"
@@ -2894,8 +2895,11 @@ ENTRY(GrowRow, grow_row)                   /* $BCAC */
 ENTRY(GrowColumn, grow_column)             /* $BCDA */
 ENTRY(RoomLeave, room_leave)               /* $BD9A */
 /* the two that wait leave by port_continue_at, so ret is theirs to set */
-void DoorOpen(Cpu *cpu)  { c = cpu; door_animation_68k(0); }   /* $BD0A */
-void DoorClose(Cpu *cpu) { c = cpu; door_animation_68k(1); }   /* $BD52 */
+/* a routine that waits for frames runs only on a task pass; reached outside one (a pass the harness
+ * finished on the 68000), it goes on in the original at its own address (port/task.h, CT_WAITS) */
+#define NEEDS_PASS(self) do { if (!task_in_pass()) { port_leave_to_68k(c, (self)); return; } } while (0)
+void DoorOpen(Cpu *cpu)  { c = cpu; NEEDS_PASS(0xBD0A); door_animation_68k(0); }   /* $BD0A */
+void DoorClose(Cpu *cpu) { c = cpu; NEEDS_PASS(0xBD52); door_animation_68k(1); }   /* $BD52 */
 
 /* ---- batch T19: the room changes' sequences: doors, warps, shops and houses ----
  * When a trigger's routine sets $9962, the game's task jumps (from its table at $91F4) to one of
@@ -3200,18 +3204,229 @@ static void seq_house(void)
 
 ENTRY(WalkInSetup, walk_in_setup)          /* $C0C2 */
 /* the sequences and waits leave by port_continue_at, so ret is theirs to set */
-void SeqExit(Cpu *cpu)      { c = cpu; seq_exit(); }        /* $BDB0 */
-void SeqKeptDoor(Cpu *cpu)  { c = cpu; seq_kept_door(); }   /* $BDC0 */
-void SeqDoor(Cpu *cpu)      { c = cpu; seq_door(); }        /* $BDDE */
-void SeqWarp(Cpu *cpu)      { c = cpu; seq_warp(); }        /* $BE50 */
-void SeqInside(Cpu *cpu)    { c = cpu; seq_inside(); }      /* $BE6C */
-void SeqOutside(Cpu *cpu)   { c = cpu; seq_outside(); }     /* $BEF2 */
-void SeqHouse(Cpu *cpu)     { c = cpu; seq_house(); }       /* $BF80 */
+void SeqExit(Cpu *cpu)      { c = cpu; NEEDS_PASS(0xBDB0); seq_exit(); }        /* $BDB0 */
+void SeqKeptDoor(Cpu *cpu)  { c = cpu; NEEDS_PASS(0xBDC0); seq_kept_door(); }   /* $BDC0 */
+void SeqDoor(Cpu *cpu)      { c = cpu; NEEDS_PASS(0xBDDE); seq_door(); }        /* $BDDE */
+void SeqWarp(Cpu *cpu)      { c = cpu; NEEDS_PASS(0xBE50); seq_warp(); }        /* $BE50 */
+void SeqInside(Cpu *cpu)    { c = cpu; NEEDS_PASS(0xBE6C); seq_inside(); }      /* $BE6C */
+void SeqOutside(Cpu *cpu)   { c = cpu; NEEDS_PASS(0xBEF2); seq_outside(); }     /* $BEF2 */
+void SeqHouse(Cpu *cpu)     { c = cpu; NEEDS_PASS(0xBF80); seq_house(); }       /* $BF80 */
 static void frame_wait_68k(int restart)
 {
     uint32_t ret = rd32(c->a[7]); c->a[7] += 4;
     frame_wait(ret, restart);
     port_continue_at(c, c->a[0], 0);
 }
-void FrameWait(Cpu *cpu)    { c = cpu; frame_wait_68k(0); }   /* $C128 */
-void FrameRestart(Cpu *cpu) { c = cpu; frame_wait_68k(1); }   /* $C152 */
+void FrameWait(Cpu *cpu)    { c = cpu; NEEDS_PASS(0xC128); frame_wait_68k(0); }   /* $C128 */
+void FrameRestart(Cpu *cpu) { c = cpu; NEEDS_PASS(0xC152); frame_wait_68k(1); }   /* $C152 */
+
+/* ---- batch T20: arriving in a room ----
+ * After loading a room the game's task jumps by how the player arrived ($9678, its table at
+ * $8F6C) to one of these: through a door (its frame closing behind), into a shop or house (its
+ * picture already in), walking out of a building, or a plain fade in. Walking into a building
+ * ($C184) is a room change ($9962 6). Their helpers keep their callers' return addresses on the
+ * continuations' stack, as the original's do. $C614, $C67E and $C6F6 are not yet registered: no
+ * session runs them yet. */
+
+static void push_cont(uint32_t ret)
+{
+    c->a[0] = sx(rd16(CONTINUATIONS));
+    wr32(c->a[0], ret); c->a[0] += 4; F_L(ret);
+    put16m(CONTINUATIONS, c->a[0]);
+}
+static void pop_cont(void)
+{
+    c->a[1] = sx(rd16(CONTINUATIONS));
+    c->a[1] -= 4;
+    c->a[0] = rd32(c->a[1]);
+    put16m(CONTINUATIONS, c->a[1]);
+}
+
+/* $C572: the door's frame round the player (one block for a kind 8 arrival, else two), closed,
+ * the blocks under it blanked */
+static void door_at_player(uint32_t ret)
+{
+    push_cont(ret);
+    c->d[1] = 2;
+    move_b(0, rd8(0xFFFF9679u));
+    cmp_byte(8, c->d[0]);
+    if ((c->d[0] & 0xFF) == 8) { c->d[1] = 1; F_L(1); }
+    put16m(DOOR + 4, c->d[1]);
+    put16m(DOOR + 6, c->d[1]);
+    c->d[1] = set_w(c->d[1], lsl_n(&c->ccr, c->d[1], 3, 16));
+    player_a4();
+    c->d[2] = set_w(c->d[2], rd16(c->a[4] - 0x3800)); F_W(c->d[2]);
+    c->d[2] = set_w(c->d[2], sub_w(&c->ccr, c->d[1], c->d[2]));
+    put16m(DOOR, c->d[2]);
+    feet(2);
+    c->d[1] = set_w(c->d[1], add_w(&c->ccr, c->d[1], c->d[1]));
+    c->d[2] = set_w(c->d[2], sub_w(&c->ccr, c->d[1], c->d[2]));
+    put16m(DOOR + 2, c->d[2]);
+    push32(0xC5B8); door_frame(); c->a[7] += 4;
+    put8(c->a[4] - 0x3CFD, 8);
+    push32(0xC5C2); door_blank(); c->a[7] += 4;
+    call(DOOR_FREE);
+    pop_cont();
+}
+/* $C5D2: the screen faded in, waiting for the fade's end */
+static void fade_in_wait(uint32_t ret)
+{
+    push_cont(ret);
+    call(0x581A);
+    do {
+        wait_frame(0xC5E4);
+        f_bit(rd8(0xFFFF8C56u) >> 4 & 1);
+    } while (!(rd8(0xFFFF8C56u) & 0x10));
+    pop_cont();
+}
+/* $C634: arriving inside: the event $996A's picture swapped in and its things spawned */
+static void inside_setup(uint32_t ret)
+{
+    push_cont(ret);
+    uint8_t v = rd8(0xFFFF9659u); f_bit(v >> 4 & 1); wr8(0xFFFF9659u, v | 0x10);
+    call(0x136A6);
+    c->d[0] = 0;
+    move_b(0, rd8(0xFFFF996Au));
+    put16m(0xFFFF9964u, c->d[0]);
+    push32(0xC656); picture_setup(); c->a[7] += 4;
+    v = rd8(0xFFFF9659u); f_bit(v & 1); wr8(0xFFFF9659u, v | 1);
+    call(SPAWN_ENEMIES);
+    call(0x133B2);
+    v = rd8(0xFFFF9659u); f_bit(v & 1); wr8(0xFFFF9659u, v & ~1);
+    push32(0xC66E); picture_put(); c->a[7] += 4;
+    push32(0xC672); rect_redraw(); c->a[7] += 4;
+    pop_cont();
+}
+
+/* the arrivals ($8F6C) */
+static void arrive_door(void)        /* $C5F8 (2, 4): through a door, its frame closing */
+{
+    push32(0xC5FC); reset_continuations(); c->a[7] += 4;
+    door_at_player(0xC600);
+    fade_in_wait(0xC604);
+    door_animation(0xC608, 1);
+    push32(0xC60C); door_restore(); c->a[7] += 4;
+    wr8(0xFFFFC008u, 0); c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z);
+    leave_to(GAME_LOOP);
+}
+static void arrive_still(void)       /* $C614 (10): a fade in, then 20 frames */
+{
+    push32(0xC618); reset_continuations(); c->a[7] += 4;
+    call(DOOR_FREE);
+    fade_in_wait(0xC620);
+    put16m(0xFFFF9C1Cu, 0x14);
+    do wait_frame(0xC62A); while (mem_sub_w(0xFFFF9C1Cu, 1));
+    leave_to(GAME_LOOP);
+}
+static void arrive_inside(void)      /* $C67E (3): inside a shop or house */
+{
+    push32(0xC682); reset_continuations(); c->a[7] += 4;
+    inside_setup(0xC686);
+    push32(0xC68A); picture_frame_2(); c->a[7] += 4;
+    put8(c->a[4] - 0x3CFD, 8);
+    fade_in_wait(0xC694);
+    leave_to(GAME_LOOP);
+}
+static void arrive_walk_out(void)    /* $C698 (5): walking out of a building, to its door's right */
+{
+    push32(0xC69C); reset_continuations(); c->a[7] += 4;
+    player_a4();
+    mem_sub_w(c->a[4] - 0x3800, 0x18);
+    fade_in_wait(0xC6AA);
+    c->a[0] = 0xC6EEu;
+    push32(0xC6B2); walk_in_setup(); c->a[7] += 4;
+    wait_frame(0xC6B6);
+    push32(0xC6BA); door_blank(); c->a[7] += 4;
+    frame_wait(0xC6BE, 0);
+    for (;;) {
+        wait_frame(0xC6C2);
+        call(0xDD08);
+        player_a4();
+        c->d[0] = set_w(c->d[0], rd16(c->a[4] - 0x3800)); F_W(c->d[0]);
+        c->d[0] = set_w(c->d[0], sub_w(&c->ccr, rd16(0xFFFF9BD6u), c->d[0]));
+        cmp_w(&c->ccr, 0x14, c->d[0]);
+        if ((int16_t)c->d[0] > 0x14) break;
+    }
+    frame_wait(0xC6DE, 1);
+    push32(0xC6E2); door_restore(); c->a[7] += 4;
+    wr8(0xFFFFC008u, 0); wr8(0xFFFF9F05u, 0); c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z);
+    leave_to(GAME_LOOP);
+}
+static void arrive_inside_door(void) /* $C6F6 (6, 7): inside, through its door */
+{
+    push32(0xC6FA); reset_continuations(); c->a[7] += 4;
+    inside_setup(0xC6FE);
+    door_at_player(0xC702);
+    fade_in_wait(0xC706);
+    door_animation(0xC70A, 1);
+    push32(0xC70E); door_restore(); c->a[7] += 4;
+    push32(0xC712); picture_frame_2(); c->a[7] += 4;
+    put8(c->a[4] - 0x3CFD, 8);
+    leave_to(GAME_LOOP);
+}
+static void arrive_fade(void)        /* $C71C (8): a fade in, then the exits' arrival ($F7EA) */
+{
+    push32(0xC720); reset_continuations(); c->a[7] += 4;
+    fade_in_wait(0xC724);
+    leave_to(0xF7EA);
+}
+static void arrive_talk(void)        /* $C728 (9): inside, then a conversation after 30 frames ($C1E8) */
+{
+    push32(0xC72C); reset_continuations(); c->a[7] += 4;
+    inside_setup(0xC730);
+    push32(0xC734); picture_frame_2(); c->a[7] += 4;
+    put8(c->a[4] - 0x3CFD, 8);
+    fade_in_wait(0xC73E);
+    uint8_t v = rd8(0xFFFF965Fu); f_bit(v & 1); wr8(0xFFFF965Fu, v & ~1);
+    if (v & 1) { leave_to(0xF7EA); return; }
+    put16m(0xFFFF9C32u, 0x1E);
+    do wait_frame(0xC752); while (mem_sub_w(0xFFFF9C32u, 1));
+    leave_to(0xC1E8);
+}
+/* $C184 (6): walking into a building to start point $9982 (going left), then $9984's room */
+static void seq_walk_in(void)
+{
+    push32(0xC188); reset_continuations(); c->a[7] += 4;
+    put16m(0xFFFF9676u, rd16(0xFFFF9982u));
+    c->a[0] = 0xC1E0u;
+    push32(0xC196); walk_in_setup(); c->a[7] += 4;
+    player_a4();
+    c->d[0] = 0; F_L(0);
+    call(SET_ANIM);
+    wait_frame(0xC1A4);
+    push32(0xC1A8); door_blank(); c->a[7] += 4;
+    frame_wait(0xC1AC, 0);
+    for (;;) {
+        wait_frame(0xC1B0);
+        call(0xDD08);
+        player_a4();
+        c->d[0] = set_w(c->d[0], rd16(c->a[4] - 0x3800)); F_W(c->d[0]);
+        c->d[0] = set_w(c->d[0], sub_w(&c->ccr, rd16(0xFFFF9BD6u), c->d[0]));
+        cmp_w(&c->ccr, 0xFFE8, c->d[0]);
+        if ((int16_t)c->d[0] < -0x18) break;
+    }
+    frame_wait(0xC1CC, 1);
+    put16m(0xFFFF9676u, rd16(0xFFFF9984u));
+    wr8(0xFFFF9F05u, 0); c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z);
+    put8(0xFFFF966Au, 3);
+    leave_to(NEXT_ROOM);
+}
+/* $C1E0, $C6EE: the walking's buttons for the frame's routine ($9F22): left, right */
+static void walk_left(void) { put8(0xFFFF9F0Bu, 4); }
+static void walk_right(void) { put8(0xFFFF9F0Bu, 8); }
+
+ENTRY(WalkLeft, walk_left)                 /* $C1E0 */
+ENTRY(WalkRight, walk_right)               /* $C6EE */
+/* those that wait, or go on at a popped address, leave by port_continue_at */
+static void cont_68k(void (*fn)(uint32_t)) { uint32_t ret = rd32(c->a[7]); c->a[7] += 4; fn(ret); port_continue_at(c, c->a[0], 0); }
+void DoorAtPlayer(Cpu *cpu) { c = cpu; cont_68k(door_at_player); }   /* $C572 */
+void FadeInWait(Cpu *cpu)   { c = cpu; NEEDS_PASS(0xC5D2); cont_68k(fade_in_wait); }     /* $C5D2 */
+void InsideSetup(Cpu *cpu)  { c = cpu; cont_68k(inside_setup); }     /* $C634 */
+void ArriveDoor(Cpu *cpu)       { c = cpu; NEEDS_PASS(0xC5F8); arrive_door(); }          /* $C5F8 */
+void ArriveStill(Cpu *cpu)      { c = cpu; NEEDS_PASS(0xC614); arrive_still(); }         /* $C614 */
+void ArriveInside(Cpu *cpu)     { c = cpu; NEEDS_PASS(0xC67E); arrive_inside(); }        /* $C67E */
+void ArriveWalkOut(Cpu *cpu)    { c = cpu; NEEDS_PASS(0xC698); arrive_walk_out(); }      /* $C698 */
+void ArriveInsideDoor(Cpu *cpu) { c = cpu; NEEDS_PASS(0xC6F6); arrive_inside_door(); }   /* $C6F6 */
+void ArriveFade(Cpu *cpu)       { c = cpu; NEEDS_PASS(0xC71C); arrive_fade(); }          /* $C71C */
+void ArriveTalk(Cpu *cpu)       { c = cpu; NEEDS_PASS(0xC728); arrive_talk(); }          /* $C728 */
+void SeqWalkIn(Cpu *cpu)        { c = cpu; NEEDS_PASS(0xC184); seq_walk_in(); }          /* $C184 */

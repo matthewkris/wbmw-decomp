@@ -1691,8 +1691,11 @@ static void pause_screen(void)
 }
 
 /* the two that wait: they leave by port_continue_at, so ret is theirs to set */
-void StatusScreen(Cpu *cpu) { c = cpu; status_screen(); }   /* $7582 */
-void PauseScreen(Cpu *cpu)  { c = cpu; pause_screen(); }    /* $7F0E */
+/* a routine that waits for frames runs only on a task pass; reached outside one (a pass the harness
+ * finished on the 68000), it goes on in the original at its own address (port/task.h, CT_WAITS) */
+#define NEEDS_PASS(self) do { if (!task_in_pass()) { port_leave_to_68k(c, (self)); return; } } while (0)
+void StatusScreen(Cpu *cpu) { c = cpu; NEEDS_PASS(0x7582); status_screen(); }   /* $7582 */
+void PauseScreen(Cpu *cpu)  { c = cpu; NEEDS_PASS(0x7F0E); pause_screen(); }    /* $7F0E */
 
 /* call_68k leaves its mark in ret: cleared, as none of these goes on elsewhere */
 #define ENTRY(name, fn) void name(Cpu *cpu) { c = cpu; fn(); c->ret = 0; }
