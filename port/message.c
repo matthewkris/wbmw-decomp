@@ -757,6 +757,226 @@ static void take(void)
     wr8(c->a[0], (uint8_t)sub_b(&c->ccr, c->d[1], rd8(c->a[0])));
 }
 
+/* ---- batch T6: the message interpreter's core ----
+ * $13BC runs once a frame while a message is open (MSG bit 7): it writes characters until a
+ * delay, a "more" (waiting for a button), a choice or the end, and returns; its place in the
+ * text (and any texts it has stepped into) is a stack of pointers at $FF8C7A, MSG_DEPTH bytes
+ * deep. Here the core is C: the choice between two answers, the "more" wait, the delays, the
+ * characters, the 12 basic codes and stepping into a name's text. The 51 further commands
+ * (code $0B and a number, $15C8), the three-way choice (MSG bit 3, $1CBC) and the shop's menu
+ * (MSG bit 2, the step at $8CDA) are still the original's: the C hands over to them, as the
+ * original jumps to them, and they carry on there. */
+
+#define MSG           0xFFFF8CA4u   /* byte: 7 open, 6 begun, 5 a choice, 4 no fast-forward, 3 the three-way choice, 2 the shop, 0 "more" */
+#define MSG_DEPTH     0xFFFF8CA8u   /* word: the texts' stack, in bytes */
+#define MSG_TEXTS     0xFFFF8C7Au   /* the stack of text pointers (-$7386 from the depth) */
+#define MSG_DELAY     0xFFFF8CA2u   /* byte: frames after each character */
+#define MSG_WAIT      0xFFFF8CA3u   /* byte: frames still to wait */
+#define MSG_ATTR      0xFFFF8CA6u   /* word: the characters' tile attributes */
+#define PAD_HELD_MSG  0xFFFF8A7Au   /* byte: buttons held */
+#define PAD_NEW_MSG   0xFFFF8A7Cu   /* byte: buttons pressed this frame */
+
+static int handed_over;
+static void hand_over(uint32_t addr) { port_continue_at(c, addr, 0); handed_over = 1; }
+
+/* $13AE: the character d0 at column d6 + 1, row d7 + 1 (inside the frame) */
+static void char_in(void)
+{
+    c->d[6] = set_w(c->d[6], add_w(&c->ccr, 1, c->d[6]));
+    c->d[7] = set_w(c->d[7], add_w(&c->ccr, 1, c->d[7]));
+    char_at();
+    c->d[6] = set_w(c->d[6], sub_w(&c->ccr, 1, c->d[6]));
+    c->d[7] = set_w(c->d[7], sub_w(&c->ccr, 1, c->d[7]));
+}
+
+static uint32_t text_slot(void) { return sx(rd16(MSG_DEPTH)) - 0x7386; }   /* -$7386(a0), a0 the depth */
+
+/* $1596: the place in the text kept, until the next frame */
+static void msg_pause(void)
+{
+    c->a[0] = sx(rd16(MSG_DEPTH));
+    wr32(c->a[0] - 0x7386, c->a[2]);
+}
+
+/* $14F4: the text from a2 until something waits; 0 when the frame's part is done, 1 handed over */
+static void msg_text(void)
+{
+    for (;;) {
+        c->d[3] = set_b(c->d[3], rd8(c->a[2]++));
+        cmp_byte(0x10, c->d[3]);
+        uint8_t ch = (uint8_t)c->d[3];
+        if (ch >= 0x10) {                           /* a character (two rows: its mark above) */
+            c->d[6] = set_w(c->d[6], rd16(TEXT_COL)); F_W(c->d[6]);
+            cmp_word(rd16(TEXT_W), c->d[6]);
+            if ((c->d[6] & 0xFFFF) >= rd16(TEXT_W)) {
+                new_line();
+                c->d[3] = set_b(c->d[3], rd8(c->a[2] - 1)); F_B(c->d[3]);
+            }
+            c->d[0] = set_w(c->d[0], rd16(MSG_ATTR));
+            c->d[0] = set_b(c->d[0], 0x20); F_B(0x20);
+            cmp_byte(0xFE, c->d[3]);
+            if ((c->d[3] & 0xFF) >= 0xFE) {
+                c->d[3] = set_b(c->d[3], sub_b(&c->ccr, 0x40, c->d[3]));
+                c->d[0] = set_b(c->d[0], c->d[3]);
+                c->d[3] = set_b(c->d[3], rd8(c->a[2]++));
+            }
+            c->d[6] = set_w(c->d[6], rd16(TEXT_COL));
+            c->d[7] = set_w(c->d[7], rd16(TEXT_LINE));
+            c->d[7] = set_w(c->d[7], add_w(&c->ccr, c->d[7], c->d[7]));
+            char_in();
+            c->d[7] = set_w(c->d[7], add_w(&c->ccr, 1, c->d[7]));
+            c->d[0] = set_b(c->d[0], c->d[3]);
+            char_in();
+            c->d[0] = set_b(c->d[0], rd8(0xFFFF8CC3u));
+            wr8(0xFFFF8CC2u, (uint8_t)(rd8(0xFFFF8CC2u) | c->d[0]));
+            mem_addq_w(TEXT_COL, 1);
+        } else if (ch >= 0x0C) {                    /* $0C-$0F: step into text d2 of table d3 & 3 */
+            c->d[2] = set_b(c->d[2], rd8(c->a[2]++));
+            c->d[3] = set_w(c->d[3], c->d[3] & 3);
+            c->d[3] = set_w(c->d[3], lsl_n(&c->ccr, c->d[3], 2, 16));
+            c->a[1] = rd32(rd32(DATA_DIR + 0x10) + sx(c->d[3]));
+            c->d[3] = set_b(c->d[3], c->d[2]);
+            c->d[3] = set_w(c->d[3], add_w(&c->ccr, c->d[3], c->d[3]));
+            c->d[2] = set_w(c->d[2], rd16(c->a[1] + sx(c->d[3]))); F_W(c->d[2]);
+            c->a[0] = sx(rd16(MSG_DEPTH));
+            wr32(c->a[0] - 0x7386, c->a[2]);
+            c->a[0] += 4;
+            wr16(MSG_DEPTH, (uint16_t)c->a[0]);
+            c->a[2] = c->a[1] + sx(c->d[2]);
+            continue;
+        } else {
+            c->d[0] = ch;
+            c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+            c->a[0] = 0x15A0u + sx(rd16(0x15A0u + sx(c->d[0])));
+            switch (ch) {
+            case 0:                                 /* the end of a text: back out, or the message is over */
+                c->d[0] = set_w(c->d[0], rd16(MSG_DEPTH)); F_W(c->d[0]);
+                if (!(c->d[0] & 0xFFFF)) { wr8(MSG, 0); c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z); return; }
+                c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 4, c->d[0]));
+                wr16(MSG_DEPTH, (uint16_t)c->d[0]);
+                c->a[0] = sx(c->d[0]);
+                c->a[2] = rd32(c->a[0] - 0x7386);
+                continue;
+            case 1:                                 /* the attributes */
+                c->d[0] = set_b(c->d[0], rd8(c->a[2]++));
+                c->d[0] = set_w(c->d[0], c->d[0] << 8);
+                wr16(MSG_ATTR, (uint16_t)c->d[0]);
+                continue;
+            case 2:                                 /* a new line */
+                new_line();
+                break;
+            case 3:                                 /* the delay per character */
+                c->d[0] = set_b(c->d[0], rd8(c->a[2]++));
+                cheaper();
+                wr8(MSG_DELAY, (uint8_t)c->d[0]);
+                continue;
+            case 4:                                 /* spaces */
+                c->d[0] = rd8(c->a[2]++);
+                mem_addq_w(TEXT_COL, c->d[0]);
+                continue;
+            case 5:                                 /* "more": wait for a button */
+                wr8(MSG, rd8(MSG) | 1);
+                more_show();
+                mem_bset(MARKS, 0);
+                msg_pause();
+                return;
+            case 6:                                 /* a jump in the text */
+                c->d[0] = set_b(c->d[0], rd8(c->a[2]++));
+                c->d[0] = set_w(c->d[0], c->d[0] << 8);
+                c->d[0] = set_b(c->d[0], rd8(c->a[2]));
+                c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 1, c->d[0]));
+                c->a[2] += sx(c->d[0]);
+                continue;
+            case 7:
+                wr8(MSG, rd8(MSG) | 0x10); F_B(rd8(MSG));
+                continue;
+            case 8:
+                wr8(MSG, rd8(MSG) & 0xEF); F_B(rd8(MSG));
+                continue;
+            case 9:                                 /* a new line, indented */
+                new_line();
+                c->d[0] = rd8(0xFFFF8CABu);
+                mem_addq_w(TEXT_COL, c->d[0]);
+                continue;
+            case 10:                                /* the indent */
+                wr8(0xFFFF8CABu, rd8(c->a[2]++));
+                continue;
+            default:                                /* 11: a further command ($15C8): the original's */
+                c->d[0] = rd8(c->a[2]++);
+                c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+                c->a[0] = 0x15C8u + sx(rd16(0x15C8u + sx(c->d[0])));
+                hand_over(c->a[0]);
+                return;
+            }
+        }
+        wr8(MSG_WAIT, rd8(MSG_DELAY)); F_B(rd8(MSG_DELAY));   /* $1546 */
+        if (rd8(MSG_DELAY)) { msg_pause(); return; }
+    }
+}
+
+/* $13BC: a frame of the open message */
+static void msg_step(void)
+{
+    F_B(rd8(MSG));
+    if (!(rd8(MSG) & 0x80)) return;
+    if (!mem_bset(MSG, 6)) {                        /* its first frame */
+        wr8(MARKS, 0); wr16(MSG_DEPTH, 0); wr32(TEXT_COL, 0); wr16(MSG_DELAY, 0);
+        wr8(0xFFFF8CC2u, 0); wr8(0xFFFF8CC3u, 1); wr16(MSG_ATTR, 0x8000); F_W(0x8000);
+    }
+    if (mem_bit(MSG, 2)) { c->a[0] = rd32(0xFFFF8CDAu); hand_over(c->a[0]); return; }
+    if (mem_bit(MSG, 3)) { hand_over(0x1CBC); return; }
+    if (mem_bit(MSG, 5)) {                          /* a choice of two: left/right, A/B/C */
+        choice_blink();
+        int change = 0;
+        if (mem_bit(PAD_NEW_MSG, 2)) change = mem_bit(MARKS, 1);
+        else if (mem_bit(PAD_NEW_MSG, 3)) change = !mem_bit(MARKS, 1);
+        if (change) {
+            c->d[0] = 37; call_68k(c, 0x366);
+            choice_hide();
+            uint8_t m = rd8(MARKS);
+            f_bit(m >> 1 & 1);
+            wr8(MARKS, m ^ 2);
+            choice_show();
+        }
+        int chosen = 0;
+        if (mem_bit(PAD_NEW_MSG, 4)) {              /* B: the second */
+            if (!mem_bit(MARKS, 1)) { choice_hide(); mem_bset(MARKS, 1); }
+            chosen = 1;
+        } else if (mem_bit(PAD_NEW_MSG, 6) || mem_bit(PAD_NEW_MSG, 5)) chosen = 1;
+        if (!chosen) return;
+        c->d[0] = 38; call_68k(c, 0x366);
+        wr8(MSG, rd8(MSG) & 0xDF); F_B(rd8(MSG));
+        choice_show();
+        c->a[0] = sx(rd16(MSG_DEPTH));
+        c->a[2] = rd32(c->a[0] - 0x7386);
+        c->d[0] = set_b(c->d[0], rd8(c->a[2]++));
+        c->d[0] = set_w(c->d[0], c->d[0] << 8);
+        c->d[0] = set_b(c->d[0], rd8(c->a[2]++));
+        if (mem_bit(MARKS, 1)) {                    /* the second: past the first's text */
+            c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 2, c->d[0]));
+            c->a[2] += sx(c->d[0]);
+        }
+        wr32(c->a[0] - 0x7386, c->a[2]);
+    }
+    if (mem_bit(MSG, 0)) {                          /* "more": a button goes on */
+        more_blink();
+        c->d[0] = set_b(c->d[0], rd8(PAD_NEW_MSG) & 0x70); F_B(c->d[0]);
+        if (!(c->d[0] & 0xFF)) return;
+        mem_bclr(MSG, 0);
+        more_hide();
+    }
+    F_B(rd8(MSG_WAIT));
+    if (rd8(MSG_WAIT)) {                            /* a delay: C held fast-forwards, unless MSG bit 4 */
+        if (!mem_bit(MSG, 4) && mem_bit(PAD_HELD_MSG, 5)) { wr8(MSG_WAIT, 0); F_B(0); }
+        else if (mem_subq_b(MSG_WAIT, 1)) return;
+    }
+    c->a[0] = sx(rd16(MSG_DEPTH));
+    c->a[2] = rd32(c->a[0] - 0x7386);
+    msg_text();
+}
+
+void MsgStep(Cpu *cpu) { c = cpu; handed_over = 0; msg_step(); if (!handed_over) c->ret = 0; }   /* $13BC */
+
 /* call_68k leaves its mark in ret: cleared, as none of these goes on elsewhere */
 #define ENTRY(name, fn) void name(Cpu *cpu) { c = cpu; fn(); c->ret = 0; }
 ENTRY(NumText, num_text)                /* $183E */
@@ -793,3 +1013,4 @@ ENTRY(FlagCell, flag_cell)              /* $2536 */
 ENTRY(Owns, owns)                       /* $23E4 */
 ENTRY(Give, give)                       /* $245A */
 ENTRY(Take, take)                       /* $24DC */
+ENTRY(CharIn, char_in)                  /* $13AE */
