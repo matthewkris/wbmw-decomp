@@ -908,6 +908,23 @@ int hybrid_fuzz(const char *name, long count)
             ram[0x8A81] = (uint8_t)(rnd() % 3 ? 0 : 1u << (rnd() % 8)); ram[0x8A84] = (uint8_t)(rnd() % 3 ? 0 : 1u << (rnd() % 8));
             m68k_set_reg(M68K_REG_D0, (rnd() << 16) | (rnd() % 4 ? rnd() % 2 : rnd() & 0xFFFF));
         }
+        if (!strcmp(name, "UnpackBlocks") || !strcmp(name, "UnpackRoomBlocks") || !strcmp(name, "UnpackLayerMap")) {   /* a room's layer, or the shared blocks */
+            uint32_t r = rnd() % 2 ? 0xFF9754 : 0xFF97D4, k = rnd() % 5;
+            uint32_t data = (bus_read16(r + 0x34) << 16 | bus_read16((r + 0x34) + 2)), table = (bus_read16(r + 0x1C) << 16 | bus_read16((r + 0x1C) + 2));
+            if (!strcmp(name, "UnpackLayerMap")) m68k_set_reg(M68K_REG_A3, r | 0xFF000000u);
+            else if (!strcmp(name, "UnpackRoomBlocks")) { m68k_set_reg(M68K_REG_A4, data); m68k_set_reg(M68K_REG_A1, table); }
+            else if (k < 3) {
+                static const uint32_t to[] = { 0xFFFFE500, 0xFFFFEE00, 0xFFFFF700 };
+                uint32_t shared = (bus_read16(0x1CC04) << 16 | bus_read16(0x1CC06)) + 4 * k;
+                m68k_set_reg(M68K_REG_A3, bus_read16(shared) << 16 | bus_read16(shared + 2)); m68k_set_reg(M68K_REG_A1, to[k]);
+            } else { m68k_set_reg(M68K_REG_A3, data + (uint32_t)(int16_t)bus_read16(data)); m68k_set_reg(M68K_REG_A1, table); }
+        }
+        if (!strcmp(name, "ExpandZeroRuns")) {      /* random zero runs in scratch RAM: a count, a mask's length, the mask, bytes */
+            uint32_t p = 0x4E00, n = rnd() % 8 ? 1 + rnd() % 255 : 0, m = rnd() % 4 ? (n + 7) / 8 : rnd() % 40;
+            ram[p++] = (uint8_t)n; ram[p++] = (uint8_t)m;
+            for (uint32_t k4 = 0; k4 < m + n + 2; k4++) ram[p++] = (uint8_t)(rnd() % 3 ? rnd() : 0xFF);
+            m68k_set_reg(M68K_REG_A2, 0xFFFF4E00);
+        }
         if (!strcmp(name, "TilesAt") || !strcmp(name, "FrameBox")) m68k_set_reg(M68K_REG_A0, 0x8C82 + 2 * (rnd() % 0x80));
         if (!strcmp(name, "TileRow") || !strcmp(name, "TileRowAt")) m68k_set_reg(M68K_REG_A0, 0x8C82 + rnd() % 0x1A0);
         if (!strcmp(name, "SetGfxSlots")) {         /* a random valid slot list in scratch RAM */

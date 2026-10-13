@@ -67,7 +67,8 @@ void TextAt(Cpu *), TextAtRC(Cpu *), String(Cpu *), StringPlain(Cpu *), StringBr
      BossBar(Cpu *), BarSmaller(Cpu *), BarRows(Cpu *), BarBig(Cpu *), BarBigger(Cpu *), BarClear(Cpu *),
      SpecialGiven(Cpu *), SlotRefill(Cpu *), SpecialUseBack(Cpu *), GameStart(Cpu *), UsesKeep(Cpu *), UsesSame(Cpu *),
      TitleOpening(Cpu *), TitleShown(Cpu *), TitleScreen(Cpu *), TitleMenu(Cpu *), TitleSetup(Cpu *), TitlePlace(Cpu *),
-     TitleCursor(Cpu *), TitleMenuSetup(Cpu *), TitlePad(Cpu *);
+     TitleCursor(Cpu *), TitleMenuSetup(Cpu *), TitlePad(Cpu *),
+     UnpackBlocks(Cpu *), UnpackRoomBlocks(Cpu *), LoadSharedBlocks(Cpu *), ExpandZeroRuns(Cpu *), UnpackLayerMap(Cpu *);
 void NumText(Cpu *), CharAt(Cpu *), ScrollWindow(Cpu *), WindowFrame(Cpu *), WindowRow(Cpu *), TileUnder(Cpu *), WindowRestore(Cpu *), NewLine(Cpu *), MoreBlink(Cpu *), MoreHide(Cpu *), MoreShow(Cpu *), ChoiceBlink(Cpu *), ChoiceHide(Cpu *), ChoiceShow(Cpu *), PriceOf(Cpu *), NameOf(Cpu *), NameText(Cpu *), FoundThing(Cpu *), FoundGold(Cpu *), BoxText(Cpu *), BoxRows(Cpu *), BoxRow(Cpu *), ShowFoundGold(Cpu *), ShowFound(Cpu *), WindowGeometry(Cpu *), Cheaper(Cpu *), Owns(Cpu *), Give(Cpu *), Take(Cpu *), ItemCell(Cpu *), FlagCell(Cpu *), MessageData(Cpu *), OpenWindow(Cpu *), WindowAt(Cpu *), MsgStep(Cpu *), CharIn(Cpu *), NoteIn(Cpu *), OcarinaTune(Cpu *);   /* message.c */
 #define CT_ALL 0x3FFFF                /* every register and flag compared */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
@@ -337,6 +338,11 @@ const PortRoutine port_routines[] = {
     {0x007272, 0x007294, "TitleCursor", TitleCursor, CT_ALL},
     {0x007294, 0x0072F0, "TitleMenuSetup", TitleMenuSetup, CT_ALL},
     {0x00724E, 0x007272, "TitlePad", TitlePad, CT_ALL},
+    {0x009F6A, 0x00A068, "UnpackBlocks", UnpackBlocks, CT_ALL},   /* rooms.c: the rooms' data */
+    {0x009F64, 0x009F6A, "UnpackRoomBlocks", UnpackRoomBlocks, CT_ALL},
+    {0x009F46, 0x009F64, "LoadSharedBlocks", LoadSharedBlocks, CT_ALL},
+    {0x00A1C4, 0x00A1FE, "ExpandZeroRuns", ExpandZeroRuns, CT_ALL},
+    {0x00A068, 0x00A1C4, "UnpackLayerMap", UnpackLayerMap, CT_ALL},
     {0x01090C, 0x010910, "SpawnItem", SpawnItem},                 /* effects.c: every register as the original */
     {0x010910, 0x010A1E, "SpawnItemAt", SpawnItemAt},
     {0x010A1E, 0x011094, "RunItems", RunItems, CT_SP},
