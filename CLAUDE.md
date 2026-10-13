@@ -145,7 +145,7 @@ the status screen used throughout, a shop, conversations. Ask the owner for reco
    to large, in batches of related routines: batches 7-27 (`port/actions.c`, appearing,
    defeated, hurt, walking, choosing, patrolling, jumping, attacking, swimming, flying,
    Gragg & Glagg, the water creatures, the chain, bouncers, a dodger, a boss and its brood, the two-part boss, two riders and their followers, a hoverer, a runner, a node walker and the last boss, $140F2-$1A437: all 135) are done. `tools/accept.sh OUTDIR NAMES...` runs the whole acceptance. Now the rest of the text system (status screen, shops,
-   dialogue, $7600-$8900). In progress: the status screen ($7582 and $7294-$8C34, `port/status.c`; batches T1-T4: all of it, the menus as coroutines, and the pause screen); next the shops and dialogue ($1609E, $164B8 and what they call). The angle maths ($EE2-$1278, `port/maths.c`, exact) and the HUD
+   dialogue, $7600-$8900). In progress: the status screen ($7582 and $7294-$8C34, `port/status.c`; batches T1-T4: all of it, the menus as coroutines, and the pause screen); next the shops and dialogue: the message interpreter ($13BC, called each frame, its commands at $14F4-$1CBC; batch T5, the window and its helpers, `port/message.c`, done), then the townspeople's $1609E, $164B8. The angle maths ($EE2-$1278, `port/maths.c`, exact) and the HUD
    bar (magic name and uses, meter, slot icons, gold: `port/hud.c`) are C too. The items and effects each frame ($10A1E, `port/items.c`), the big items
    ($B42A) and exact kernel helpers (ClearEntity, Freeze/UnfreezeEntities, FindFreeEffect,
    CheckGrounded, in `port/entity.c`) are C too. Readable C

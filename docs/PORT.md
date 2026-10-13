@@ -1457,6 +1457,49 @@ Results: 0 mismatches over the standard runs, every owner state, the three sessi
 instruction covered. Self-test caught 100 in 100 for each fuzzed routine. Replace mode plays the
 new-game script, four states, the three sessions and `pause`. The whole status screen is C.
 
+#### The messages, batch T5: the window and its helpers (2026-10-13)
+
+Conversations, shops, signs and the "Found ..." boxes all go through the message interpreter
+(`$13BC`), with its command handlers between `$14F4` and `$183A`. It waits for frames and comes
+next (T6); first the routines under it, in a new `port/message.c`, ported register for register
+with every register and flag in the contract, as the status screen's are. 34 routines:
+
+* The window: a message's header (`$276C`, from the tables at `$1CC14`/`$1CC18`) gives the window's
+  column, row, text width and lines; `$27B0` opens it and `$2110` (entered by `jmp`) draws the
+  frame where plane A is scrolled to and hides the sprites it covers (ATTR bit 7 off, ALIVE bit 2
+  on); `$225C` redraws the map under it (`$220A`, a block's quarter through MapBlockAt) and shows
+  them again. Characters go in with `$2050` (column d6, row d7 in the window); `$21E8` is a frame
+  row; `$2082` scrolls the text up a line by reading the window back from VRAM; `$16C6` is a new
+  line (scrolling at the last). `$2002` places a window without its frame; `$279C` opens one
+  with its sound.
+* The blinking marks, every 20 frames: the "more" arrow (`$172E`, `$173C`, `$1754`) and the choice
+  cursor (`$1774`, `$1782`, `$1790`).
+* Numbers (`$183E`: decimal digits written backwards to a 0, by 32 shifts per digit), names
+  (`$1E6A`/`$1ED0`: a thing's name from table 1 of the names at `$1CC10`, two rows, marks above),
+  the "Found the X." and "Found N GOLD." boxes (`$1EEC`, `$1F46`, `$1F8E`, `$1FAC`/`$1FBC`, shown
+  by `$1FCA`/`$1FD0` for a second), prices (`$1D92`) and the cheaper towns' 5/6 (`$203A`).
+* The things owned: `$23E4` tests, `$245A` gives, `$24DC` takes thing d0 (under `$20` a bit of
+  `$95CA`, `$20`-`$25` a special action's count, `$26`-`$27` the slots', `$28`-`$5F` an item's count
+  at `$958C`, the potions `$2B`-`$2E` sharing one cell that holds their level, `$60` up a game
+  flag; `$2510`, `$2536` find the cells). The thresholds are the bytes at `$24D8`, which are also
+  a `bra.s`: the original reads its own instruction as data.
+
+What they needed: `$1FCA` reaches `$1F46` with a `bsr`, and `$1F46`'s digits sit in its link frame
+with a1 left pointing at them, so the C pushes that return address too. Three routines end in, or
+call, hand ports that only promise the stack pointer (`$225C` PlayerInput, `$24DC` SlotEmptied,
+`$245A` HudRedraw) and inherit their leftovers, so they have a plain contract (the other
+registers watched, as for every routine). `$1E6A`'s nested names (bytes `$0C`-`$0F`) and its hang
+on a bad name never happen: no name in the ROM's names table (65 of them) has either, so those
+instructions are in `analysis/coverage_skip.txt`. The fuzz gives these the window's place and
+size, the text's size and line, the marks, scrolling, real things (under 65) and messages,
+buffers for numbers and texts, a window's record, potions, the slots' things and the counts.
+`tools/quickfuzz.sh` now stops a run after 120 s instead of 600.
+
+Results: 0 mismatches over the standard runs, every owner state, the three sessions and `pause`
+(30 runs, 485,890 checked calls); 850,000 fuzz cases from five states, 0 mismatches, every
+instruction covered. Self-test caught 100 in 100 for each. Replace mode plays the new-game
+script, four states, the three sessions and `pause`.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

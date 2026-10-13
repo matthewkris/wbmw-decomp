@@ -8,3 +8,16 @@
 019368  # $192EC: after EnemyCheckHit (which leaves past the action when hit) its bpl is always taken
 01936E
 019370
+001E88  # $1E6A: a name that includes another, and the hang on a bad name: no name in the ROM's names table ($21720, 65) has either
+001E8A
+001E8C
+001E90
+001E98
+001E9C
+001EA0
+001EA2
+001EA6
+001EAA
+001EAC
+001EB0
+001EB2

@@ -735,6 +735,45 @@ int hybrid_fuzz(const char *name, long count)
             for (uint32_t k3 = 0; k3 < 8; k3++) ram[0x9608 + k3] = (uint8_t)(rnd() % 8 | (rnd() % 4 ? 0 : 0x80));
             ram[0x95DB] = (uint8_t)(rnd() % 2);
         }
+        static const char *t5[] = { "NumText", "CharAt", "ScrollWindow", "WindowFrame", "WindowRow", "TileUnder", "WindowRestore",
+            "NewLine", "MoreBlink", "MoreHide", "MoreShow", "ChoiceBlink", "ChoiceHide", "ChoiceShow", "PriceOf", "NameOf", "NameText",
+            "FoundThing", "FoundGold", "BoxText", "BoxRows", "BoxRow", "ShowFoundGold", "ShowFound", "WindowGeometry", "Cheaper",
+            "Owns", "Give", "Take", "ItemCell", "FlagCell", "MessageData", "OpenWindow", "WindowAt", NULL };
+        for (int k3 = 0; t5[k3]; k3++) if (!strcmp(name, t5[k3])) {          /* the message window's state (port/message.c) */
+            uint32_t lines = 1 + rnd() % 4, w = 1 + rnd() % 24;
+            put_word(0x8D92, rnd() % 20); put_word(0x8D94, rnd() % 14); put_word(0x8D96, w + 2); put_word(0x8D98, 2 * lines + 3);
+            put_word(0x8D9A, rnd() % 64); put_word(0x8D9C, rnd() % 32);
+            put_word(0x8C9E, w); put_word(0x8CA0, lines); put_word(0x8C9C, rnd() % (lines + 1)); put_word(0x8C9A, rnd() % w);
+            put_word(0x8D9E, 1); put_word(0x8DA0, 1); put_word(0x8DA2, w); put_word(0x8DA4, 1 + rnd() % 6); put_word(0x8DA6, 2);
+            ram[0x8CA5] = (uint8_t)(rnd() % 8); ram[0x8CAA] = (uint8_t)(1 + rnd() % 3);
+            ram[0x8CAC] = (uint8_t)(rnd() % 20); ram[0x8CAD] = (uint8_t)(rnd() % 20);
+            ram[0x8A8B] = (uint8_t)(rnd() % 2 ? 0 : rnd()); ram[0x959C] = (uint8_t)rnd(); ram[0x8A51] = (uint8_t)rnd();
+            put_word(0x965C, rnd() % 2 ? 0 : rnd()); put_word(0x9758, rnd()); put_word(0x975A, rnd());
+            uint32_t d0 = m68k_get_reg(NULL, M68K_REG_D0) & ~0xFFFFu;
+            if (strstr(name, "Name") || strstr(name, "Found")) d0 |= rnd() % 65;             /* a thing: the names table has 65 */
+            else if (strstr(name, "Message") || strstr(name, "Window")) d0 |= rnd() % 0x40;  /* a message */
+            else d0 |= rnd() % 0x100;
+            m68k_set_reg(M68K_REG_D0, d0);
+            m68k_set_reg(M68K_REG_D3, (m68k_get_reg(NULL, M68K_REG_D3) & ~0xFFu) | rnd() % 4);
+            m68k_set_reg(M68K_REG_D6, rnd() % (w + 2)); m68k_set_reg(M68K_REG_D7, rnd() % (2 * lines + 3));
+            m68k_set_reg(M68K_REG_A1, 0xFF4E40);                                           /* a number's buffer */
+            if (!strcmp(name, "NumText")) m68k_set_reg(M68K_REG_D1, rnd() % 4 ? rnd() % 100000 : rnd() << 16 | rnd());
+            if (!strcmp(name, "BoxText")) { m68k_set_reg(M68K_REG_A0, rnd() % 2 ? 0x1FE6 + rnd() % 0x18 : 0xFF4E00);
+                for (int k4 = 0, n4 = (int)(rnd() % 12); k4 <= n4; k4++) ram[0x4E00 + k4] = (uint8_t)(k4 == n4 ? 0 : rnd() % 4 == 0 ? 0xFE + rnd() % 2 : 0x20 + rnd() % 0x5F);
+                m68k_set_reg(M68K_REG_A2, 0xFF8D12 + 2 * (rnd() % 10)); }
+            if (!strcmp(name, "BoxRow")) m68k_set_reg(M68K_REG_A0, 0xFF8D12 + 0x40 * (rnd() % 2));
+            if (!strcmp(name, "Owns") || !strcmp(name, "Give") || !strcmp(name, "Take")) {    /* potions; the slots; the counts */
+                if (rnd() % 3 == 0) m68k_set_reg(M68K_REG_D0, (m68k_get_reg(NULL, M68K_REG_D0) & ~0xFFu) | (0x2B + rnd() % 4));
+                else if (rnd() % 3 == 0) m68k_set_reg(M68K_REG_D0, (m68k_get_reg(NULL, M68K_REG_D0) & ~0xFFu) | (0x20 + rnd() % 6));
+                ram[0x958C + 18] = (uint8_t)(rnd() % 4 ? rnd() % 5 : 0xFF);
+                ram[0x9F10] = (uint8_t)(rnd() % 2 ? 8 + rnd() % 4 : rnd()); ram[0x9F11] = (uint8_t)(rnd() % 2 ? 8 + rnd() % 4 : rnd());
+                for (uint32_t k4 = 0; k4 < 16; k4++) ram[0x95BE + k4] = (uint8_t)(rnd() % 13);
+            }
+            if (!strcmp(name, "WindowAt")) {                                              /* a window's record */
+                uint32_t t = (uint32_t)bus_read16(0x1CC18) << 16 | bus_read16(0x1CC1A);
+                m68k_set_reg(M68K_REG_A1, t + 4 * (rnd() % 16));
+            }
+        }
         static const char *t3[] = { "FillZero", "CursorSpriteTop", "CursorSpriteLow", "SlotFlipTop", "SlotFlipLow", "ListButtons", "ScreenSetup", "MenuReset", "FillBlank", "TilePair", "TileRows", "Mark", "MarkTwo", "LeftSlot", "RightSlot",
             "ItemsIcon", "ViewLimits", "Title", "BuildList", "DrawList", "ListPage", "ClearPanel", "Blank13", "LineX2", "OpenLine",
             "MainMenu", "MenuMove", "TakeOff", "MagicPage", "ItemsPage", "MaybePicture", "Stats", NULL };
