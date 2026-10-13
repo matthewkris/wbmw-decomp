@@ -79,6 +79,7 @@ static void run_pass(Cpu *c, uint32_t cont)
     }
     if (resume) {
         for (uint32_t k = 0; k < s->base - s->wait_sp; k++) wr8(s->wait_sp + k, s->stack[k]);
+        s->cpu = *c;                            /* the original resumes with the scheduler's registers */
         s->cpu.a[7] = s->wait_sp;
         s->suspended = 0;
     } else {

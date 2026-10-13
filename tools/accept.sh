@@ -8,7 +8,7 @@
 #
 # Environment: PYTHON (python3), LIMIT (seconds per harness run, 1200), JOBS (fuzz runs at once, 12), CASES (fuzz cases per routine and state, 5000), FUZZ_STATES
 # (state names in work/, "castle platform after-boss2 boss2 thunder"), REPLACE_STATES (states
-# for replace mode, "boss2 thunder door-crash castle status shop talk"), ROM. Each state's input is
+# for replace mode, "boss2 thunder door-crash castle status shop talk pause"), ROM. Each state's input is
 # work/runs/inputs/STATE.txt: made once (3,000 frames of random buttons) and kept, or recorded by play --record (to its "# end"). Run from the
 # repository root in Git Bash, after building the harness.
 set -u
@@ -18,7 +18,7 @@ PY="${PYTHON:-python3}"
 CASES="${CASES:-5000}"
 JOBS="${JOBS:-12}"                # fuzz runs at once: the cores
 FUZZ_STATES="${FUZZ_STATES:-castle platform after-boss2 boss2 thunder}"
-REPLACE_STATES="${REPLACE_STATES:-boss2 thunder door-crash castle status shop talk}"
+REPLACE_STATES="${REPLACE_STATES:-boss2 thunder door-crash castle status shop talk pause}"
 ROM="${ROM:-rom/Wonder Boy in Monster World (USA, Europe).md}"
 H=work/harness/harness.exe; [ -x "$H" ] || H=work/harness/harness
 T="timeout ${LIMIT:-1200}"        # a run that loops in C (no cycle budget) is cut off: exit 124

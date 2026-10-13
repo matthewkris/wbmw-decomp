@@ -62,7 +62,8 @@ void TextAt(Cpu *), TextAtRC(Cpu *), String(Cpu *), StringPlain(Cpu *), StringBr
      PressedB(Cpu *), PressedBS(Cpu *), PressedAC(Cpu *), MoreBelow(Cpu *), Blank(Cpu *), Div10(Cpu *), Digits(Cpu *),
      TwoDigits(Cpu *), Level(Cpu *),
      UpBlink(Cpu *), UpHide(Cpu *), DownBlink(Cpu *), DownHide(Cpu *), DownShow(Cpu *), CursorBlink(Cpu *), CursorHide(Cpu *), CursorShow(Cpu *), ListMove(Cpu *), TileRowAt(Cpu *), TileRow(Cpu *), TilesAt(Cpu *), FrameFull(Cpu *), FrameLower(Cpu *), FrameStats(Cpu *), FrameFoot(Cpu *), FrameItems(Cpu *), FrameBox(Cpu *), FramePause(Cpu *), Palette8(Cpu *), BoxDim(Cpu *), StatsPage(Cpu *), SpriteInit(Cpu *), ClickBack(Cpu *), Click(Cpu *),
-     FillZero(Cpu *), FillBlank(Cpu *), TilePair(Cpu *), TileRows(Cpu *), Mark(Cpu *), MarkTwo(Cpu *), LeftSlot(Cpu *), RightSlot(Cpu *), ItemsIcon(Cpu *), ViewLimits(Cpu *), Title(Cpu *), BuildList(Cpu *), DrawList(Cpu *), ListPage(Cpu *), ClearPanel(Cpu *), Blank13(Cpu *), LineX2(Cpu *), OpenLine(Cpu *), MainMenu(Cpu *), MenuMove(Cpu *), TakeOff(Cpu *), MagicPage(Cpu *), ItemsPage(Cpu *), MaybePicture(Cpu *), Stats(Cpu *);
+     FillZero(Cpu *), FillBlank(Cpu *), TilePair(Cpu *), TileRows(Cpu *), Mark(Cpu *), MarkTwo(Cpu *), LeftSlot(Cpu *), RightSlot(Cpu *), ItemsIcon(Cpu *), ViewLimits(Cpu *), Title(Cpu *), BuildList(Cpu *), DrawList(Cpu *), ListPage(Cpu *), ClearPanel(Cpu *), Blank13(Cpu *), LineX2(Cpu *), OpenLine(Cpu *), MainMenu(Cpu *), MenuMove(Cpu *), TakeOff(Cpu *), MagicPage(Cpu *), ItemsPage(Cpu *), MaybePicture(Cpu *), Stats(Cpu *),
+     StatusScreen(Cpu *), PauseScreen(Cpu *), CursorSpriteTop(Cpu *), CursorSpriteLow(Cpu *), SlotFlipTop(Cpu *), SlotFlipLow(Cpu *), ListButtons(Cpu *), ScreenSetup(Cpu *), MenuReset(Cpu *);
 #define CT_ALL 0x3FFFF                /* every register and flag compared */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
      FindFreeEffect(Cpu *), CheckGrounded(Cpu *);
@@ -263,6 +264,15 @@ const PortRoutine port_routines[] = {
     {0x007AC0, 0x007B70, "ItemsPage", ItemsPage, CT_ALL},
     {0x007B86, 0x007BB2, "MaybePicture", MaybePicture, CT_ALL},
     {0x0076E8, 0x0077CA, "Stats", Stats, CT_ALL},
+    {0x007582, 0x0076B4, "StatusScreen", StatusScreen, CT_SP},   /* waits for frames: checked by the task passes, not fuzzed */
+    {0x007F0E, 0x007F54, "PauseScreen", PauseScreen, CT_SP},   /* likewise */
+    {0x00794E, 0x007952, "CursorSpriteTop", CursorSpriteTop, CT_ALL},
+    {0x007952, 0x00799E, "CursorSpriteLow", CursorSpriteLow, CT_ALL},
+    {0x007924, 0x007938, "SlotFlipTop", SlotFlipTop, CT_ALL},
+    {0x007938, 0x00794E, "SlotFlipLow", SlotFlipLow, CT_ALL},
+    {0x007D9C, 0x007E12, "ListButtons", ListButtons, CT_ALL},
+    {0x008BB6, 0x008C34, "ScreenSetup", ScreenSetup, CT_ALL},
+    {0x008C34, 0x008C80, "MenuReset", MenuReset, CT_ALL},
     {0x01090C, 0x010910, "SpawnItem", SpawnItem},                 /* effects.c: every register as the original */
     {0x010910, 0x010A1E, "SpawnItemAt", SpawnItemAt},
     {0x010A1E, 0x011094, "RunItems", RunItems, CT_SP},

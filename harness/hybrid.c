@@ -718,7 +718,7 @@ int hybrid_fuzz(const char *name, long count)
         if (!strcmp(name, "Meter") || !strcmp(name, "Cells")) { ram[0x95C8] = (uint8_t)(rnd() % 3 ? rnd() % 12 : 0); ram[0x95B7] = (uint8_t)(rnd() % 12); }
         if (!strcmp(name, "FixedName")) put_word(0x8CDE, 1 + rnd() % 14);
         if (!strcmp(name, "MoreBelow")) { put_word(0x9612, rnd() % 8); put_word(0x9610, rnd() % 12); }
-        if (!strncmp(name, "Pressed", 7)) ram[0x8A7C] = (uint8_t)(rnd() % 2 ? 0 : 1u << (rnd() % 8));
+        if (!strncmp(name, "Pressed", 7) || !strcmp(name, "ListButtons")) ram[0x8A7C] = (uint8_t)(rnd() % 2 ? 0 : 1u << (rnd() % 8));
         if (!strcmp(name, "TwoDigits") || !strcmp(name, "Level")) { ram[0x95E1] = (uint8_t)(rnd() % 100); ram[0x9F00] = (uint8_t)(rnd() % 100); }
         if (!strcmp(name, "String") || !strncmp(name, "String", 6))               /* a string: in ROM, or a short one in RAM */
             if (rnd() % 2) { m68k_set_reg(M68K_REG_A1, 0xFF4E00); for (int k3 = 0, n3 = (int)(rnd() % 12); k3 <= n3; k3++) ram[0x4E00 + k3] = (uint8_t)(k3 == n3 ? 0 : 0x20 + rnd() % 0x5F); }
@@ -735,7 +735,7 @@ int hybrid_fuzz(const char *name, long count)
             for (uint32_t k3 = 0; k3 < 8; k3++) ram[0x9608 + k3] = (uint8_t)(rnd() % 8 | (rnd() % 4 ? 0 : 0x80));
             ram[0x95DB] = (uint8_t)(rnd() % 2);
         }
-        static const char *t3[] = { "FillZero", "FillBlank", "TilePair", "TileRows", "Mark", "MarkTwo", "LeftSlot", "RightSlot",
+        static const char *t3[] = { "FillZero", "CursorSpriteTop", "CursorSpriteLow", "SlotFlipTop", "SlotFlipLow", "ListButtons", "ScreenSetup", "MenuReset", "FillBlank", "TilePair", "TileRows", "Mark", "MarkTwo", "LeftSlot", "RightSlot",
             "ItemsIcon", "ViewLimits", "Title", "BuildList", "DrawList", "ListPage", "ClearPanel", "Blank13", "LineX2", "OpenLine",
             "MainMenu", "MenuMove", "TakeOff", "MagicPage", "ItemsPage", "MaybePicture", "Stats", NULL };
         for (int k3 = 0; t3[k3]; k3++) if (!strcmp(name, t3[k3])) {          /* the status screen's state, as the game keeps it */
@@ -743,7 +743,7 @@ int hybrid_fuzz(const char *name, long count)
             put_word(0x9610, len); put_word(0x9612, len > 4 ? rnd() % (len - 3) : 0);
             put_word(0x9606, rnd() % 6); put_word(0x95E6, rnd() % 4); put_word(0x95FA, rnd() % 4 ? 1 + rnd() % 4 : rnd() % 7);
             if (!strcmp(name, "OpenLine")) put_word(0x9606, rnd() % 6);
-            if (!strcmp(name, "DrawList") || !strcmp(name, "ListPage")) put_word(0x95FA, 1 + rnd() % 4);
+            if (!strcmp(name, "DrawList") || !strcmp(name, "ListPage") || !strcmp(name, "ListButtons")) put_word(0x95FA, 1 + rnd() % 4);
             for (uint32_t k4 = 0; k4 < 8; k4++) ram[0x9608 + k4] = (uint8_t)(rnd() % 8 | (rnd() % 4 ? 0 : 0x80));
             ram[0x95DB] = (uint8_t)(rnd() % 2); ram[0x95D9] = (uint8_t)(rnd() % 2 ? 1u << (rnd() % 4) : 0);
             for (uint32_t k4 = 0x9614; k4 < 0x9624; k4 += 2) { ram[k4] = (uint8_t)(rnd() % 4); ram[k4 + 1] = (uint8_t)(1 + rnd() % 20); }
@@ -760,7 +760,7 @@ int hybrid_fuzz(const char *name, long count)
                 put_word(0x9612, rnd() % 5);
             }
             if (!strcmp(name, "ItemsPage")) for (uint32_t k4 = 0; k4 < 12; k4++) ram[0x958C + k4] = (uint8_t)(rnd() % 2);   /* things owned */
-            if (!strcmp(name, "Stats") || !strcmp(name, "BuildList"))
+            if (!strcmp(name, "Stats") || !strcmp(name, "BuildList") || !strcmp(name, "ScreenSetup"))
                 for (uint32_t k4 = 0; k4 < 4; k4++) ram[0x95CE + k4] = (uint8_t)(rnd() % 4 ? rnd() % 8 : 0xFF);           /* the things in use */
             if (!strcmp(name, "MaybePicture")) { m68k_set_reg(M68K_REG_A3, 0x7B92 + 2 * (rnd() % 4)); m68k_set_reg(M68K_REG_A2, 0xFF959C + rnd() % 6); }
         }
