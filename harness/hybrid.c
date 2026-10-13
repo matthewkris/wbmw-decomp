@@ -1008,6 +1008,23 @@ int hybrid_fuzz(const char *name, long count)
             }
             if (strcmp(name, "LayersSetup")) m68k_set_reg(M68K_REG_A3, 0xFFFF0000u | r);
         }
+        if (!strncmp(name, "Cell", 4) || !strcmp(name, "DrawIfShown") || !strcmp(name, "DrawBlock") || !strcmp(name, "BlockByte")
+            || !strncmp(name, "Rect", 4) || !strcmp(name, "BlocksToVram")) {   /* a layer, a cell of its map, a block */
+            uint32_t r = rnd() % 2 ? 0x9754 : 0x97D4;
+            m68k_set_reg(M68K_REG_A3, 0xFFFF0000u | r);
+            m68k_set_reg(M68K_REG_D6, (rnd() << 16) | (0x100 + rnd() % 0x100));
+            m68k_set_reg(M68K_REG_D7, (rnd() << 16) | ((0x4000 + rnd() % 0x1500) & ~0x3Fu));
+            m68k_set_reg(M68K_REG_D0, (rnd() << 16) | (rnd() % 2 ? 0x8000 : 0) | (rnd() & 0x3FF));
+            put_word(0x974C, 0x100 + rnd() % 0x80); put_word(0x974E, 0x4000 + 0x40 * (rnd() % 0x40));
+            put_word(0x9750, 1 + rnd() % 16); put_word(0x9752, 1 + rnd() % 12);
+            if (!strcmp(name, "BlocksToVram")) {   /* raw places: a column, a row; a VRAM address; a size */
+                m68k_set_reg(M68K_REG_D6, (rnd() << 16) | rnd() % 0x80); m68k_set_reg(M68K_REG_D7, (rnd() << 16) | rnd() % 0x40);
+                m68k_set_reg(M68K_REG_D3, rnd() << 16 ^ (rnd() & 0xFFFE));
+                m68k_set_reg(M68K_REG_D4, (rnd() << 16) | (1 + rnd() % 8)); m68k_set_reg(M68K_REG_D5, (rnd() << 16) | (1 + rnd() % 8));
+            }
+        }
+        if (!strcmp(name, "StartPoint")) put_word(0x9676, rnd() % 16);
+        if (!strcmp(name, "WaterDouble")) { ram[0x966B] = (uint8_t)(rnd() % 2); m68k_set_reg(M68K_REG_A4, 4 * (rnd() % 64)); }
         if (!strcmp(name, "TilesAt") || !strcmp(name, "FrameBox")) m68k_set_reg(M68K_REG_A0, 0x8C82 + 2 * (rnd() % 0x80));
         if (!strcmp(name, "TileRow") || !strcmp(name, "TileRowAt")) m68k_set_reg(M68K_REG_A0, 0x8C82 + rnd() % 0x1A0);
         if (!strcmp(name, "SetGfxSlots")) {         /* a random valid slot list in scratch RAM */
