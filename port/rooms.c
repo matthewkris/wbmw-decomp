@@ -20,8 +20,10 @@
  * Batch T16, the room's triggers: exits, doors, houses, chests, entrances, and what pressing up
  * at them does.
  * Batch T17, the room changes' helpers: the door's frame and blocks, the events' pictures.
+ * Batch T18, the picture growing, the door's animations (they wait for frames), leaving a room.
  * Ported register for register, with every register and flag in the contract. */
 #include "world.h"
+#include "task.h"
 
 #define DATA_DIR      0x0001CC00u   /* the ROM's directory of data tables */
 #define FILLED        0xFFFF970Cu   /* 24 bytes: a chunk's cells written (a bit each) */
@@ -2731,3 +2733,165 @@ ENTRY(PictureCorner, picture_corner)       /* $BAEE */
 ENTRY(PictureCell, picture_cell)           /* $BB2C */
 ENTRY(PictureCellPut, picture_cell_put)    /* $BB8E */
 ENTRY(PicturePut, picture_put)             /* $BBB4 */
+
+/* ---- batch T18: the picture growing, the door's animation, leaving a room ----
+ * An event's picture opens from its middle: each step ($BBEA, by $9BE6) redraws the edges of a
+ * rectangle a cell larger each way, with $9BE8 or'ed into its blocks (bit 15 in front, while it
+ * opens; 0 to take it away). The door's frame then plays its opening or closing animation
+ * ($BD0A, $BD52), waiting for it a frame at a time; those two keep their caller's return address
+ * on the game's continuation stack ($9C14) while they wait, as the ocarina's tune does. */
+
+#define CONTINUATIONS 0xFFFF9C14u   /* word: the continuations' stack pointer (from $9BF4) */
+#define RESET_ANIM    0x07F4u       /* ResetAnimTimer */
+
+/* $BCAC: a row (d7) of the rectangle's cells redrawn from column -2(a6) to -4(a6), each block
+ * with $9BE8; $BCDA a column (d6) from row -6(a6) to -8(a6). Their counts are in the caller's
+ * frame (a6 - 10) */
+static void grow_row(void)
+{
+    c->d[7] = set_w(c->d[7], lsl_n(&c->ccr, c->d[7], 6, 16));
+    c->d[7] = set_w(c->d[7], add_w(&c->ccr, rd16(RECT + 2), c->d[7]));
+    c->d[0] = set_w(c->d[0], rd16(c->a[6] - 4)); F_W(c->d[0]);
+    c->d[6] = set_w(c->d[6], rd16(c->a[6] - 2)); F_W(c->d[6]);
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, c->d[6], c->d[0]));
+    c->d[6] = set_w(c->d[6], add_w(&c->ccr, rd16(RECT), c->d[6]));
+    put16m(c->a[6] - 10, c->d[0]);
+    do {
+        call(MAP_BLOCK_AT);
+        or_w(0, rd16(0xFFFF9BE8u));
+        push32(0xBCD0); draw_if_shown(); c->a[7] += 4;
+        c->d[6] = set_w(c->d[6], add_w(&c->ccr, 1, c->d[6]));
+    } while (!(mem_sub_w(c->a[6] - 10, 1) & 0x8000));
+}
+static void grow_column(void)
+{
+    c->d[0] = set_w(c->d[0], rd16(c->a[6] - 8)); F_W(c->d[0]);
+    c->d[7] = set_w(c->d[7], rd16(c->a[6] - 6)); F_W(c->d[7]);
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, c->d[7], c->d[0]));
+    c->d[7] = set_w(c->d[7], lsl_n(&c->ccr, c->d[7], 6, 16));
+    c->d[7] = set_w(c->d[7], add_w(&c->ccr, rd16(RECT + 2), c->d[7]));
+    c->d[6] = set_w(c->d[6], add_w(&c->ccr, rd16(RECT), c->d[6]));
+    put16m(c->a[6] - 10, c->d[0]);
+    do {
+        call(MAP_BLOCK_AT);
+        or_w(0, rd16(0xFFFF9BE8u));
+        push32(0xBCFE); draw_if_shown(); c->a[7] += 4;
+        c->d[7] = set_w(c->d[7], add_w(&c->ccr, 0x40, c->d[7]));
+    } while (!(mem_sub_w(c->a[6] - 10, 1) & 0x8000));
+}
+
+/* $BBEA: step $9BE6 of the picture growing: its edges (those still inside the rectangle: bits
+ * 0-3 of d0 for top, bottom, left, right) redrawn */
+static void picture_grow(void)
+{
+    link(-12);
+    c->a[3] = LAYER_A;
+    put8(c->a[6] - 12, 0xF);
+    uint32_t step = 0xFFFF9BE6u;
+    /* left */
+    c->d[0] = set_w(c->d[0], rd16(0xFFFF9BE2u)); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, rd16(step), c->d[0]));
+    if (c->d[0] & 0x8000) { uint8_t v = rd8(c->a[6] - 12) & 0xB; wr8(c->a[6] - 12, v); F_B(v); c->d[0] = 0; F_L(0); }
+    put16m(c->a[6] - 2, c->d[0]);
+    /* right */
+    c->d[0] = set_w(c->d[0], rd16(0xFFFF9BE2u)); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(0xFFFF9BD2u), c->d[0]));
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 1, c->d[0]));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(step), c->d[0]));
+    c->d[1] = set_w(c->d[1], rd16(0xFFFF9BDEu)); F_W(c->d[1]);
+    cmp_w(&c->ccr, c->d[1], c->d[0]);
+    if ((c->d[0] & 0xFFFF) >= (c->d[1] & 0xFFFF)) {
+        uint8_t v = rd8(c->a[6] - 12) & 7; wr8(c->a[6] - 12, v); F_B(v);
+        c->d[0] = set_w(c->d[0], c->d[1]); F_W(c->d[1]);
+        c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 1, c->d[0]));
+    }
+    put16m(c->a[6] - 4, c->d[0]);
+    /* top */
+    c->d[0] = set_w(c->d[0], rd16(0xFFFF9BE4u)); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, rd16(step), c->d[0]));
+    if (c->d[0] & 0x8000) { uint8_t v = rd8(c->a[6] - 12) & 0xE; wr8(c->a[6] - 12, v); F_B(v); c->d[0] = 0; F_L(0); }
+    put16m(c->a[6] - 6, c->d[0]);
+    /* bottom */
+    c->d[0] = set_w(c->d[0], rd16(0xFFFF9BE4u)); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(0xFFFF9BD4u), c->d[0]));
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 1, c->d[0]));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(step), c->d[0]));
+    c->d[1] = set_w(c->d[1], rd16(0xFFFF9BE0u)); F_W(c->d[1]);
+    cmp_w(&c->ccr, c->d[1], c->d[0]);
+    if ((c->d[0] & 0xFFFF) >= (c->d[1] & 0xFFFF)) {
+        uint8_t v = rd8(c->a[6] - 12) & 0xD; wr8(c->a[6] - 12, v); F_B(v);
+        c->d[0] = set_w(c->d[0], c->d[1]); F_W(c->d[1]);
+        c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 1, c->d[0]));
+    }
+    put16m(c->a[6] - 8, c->d[0]);
+    f_bit(rd8(c->a[6] - 12) & 1);
+    if (rd8(c->a[6] - 12) & 1) { c->d[7] = set_w(c->d[7], rd16(c->a[6] - 6)); F_W(c->d[7]); push32(0xBC7A); grow_row(); c->a[7] += 4; }
+    f_bit(rd8(c->a[6] - 12) >> 1 & 1);
+    if (rd8(c->a[6] - 12) & 2) { c->d[7] = set_w(c->d[7], rd16(c->a[6] - 8)); F_W(c->d[7]); push32(0xBC88); grow_row(); c->a[7] += 4; }
+    f_bit(rd8(c->a[6] - 12) >> 2 & 1);
+    if (rd8(c->a[6] - 12) & 4) { c->d[6] = set_w(c->d[6], rd16(c->a[6] - 2)); F_W(c->d[6]); push32(0xBC96); grow_column(); c->a[7] += 4; }
+    f_bit(rd8(c->a[6] - 12) >> 3 & 1);
+    if (rd8(c->a[6] - 12) & 8) { c->d[6] = set_w(c->d[6], rd16(c->a[6] - 4)); F_W(c->d[6]); push32(0xBCA4); grow_column(); c->a[7] += 4; }
+    move_b(0, rd8(c->a[6] - 12));
+    unlk();
+}
+
+/* $BD0A, $BD52: the door's frame plays its animation (8 opening, $16 closing), with sounds 35 and
+ * 34; it waits a frame at a time, first while the frame is still moving ($C600), then for the
+ * animation's end ($C608). The caller's return address (ret) waits on the continuations' stack,
+ * as in the original, and is popped (a0) at the end */
+static void wait_frame(uint32_t resume) { Cpu *me = c; task_wait_frame(me, resume); c = me; }
+static void door_animation(uint32_t ret, int closing)
+{
+    c->a[0] = sx(rd16(CONTINUATIONS));
+    wr32(c->a[0], ret); c->a[0] += 4; F_L(ret);
+    put16m(CONTINUATIONS, c->a[0]);
+    c->d[0] = 35; F_L(35);
+    call(QUEUE_SOUND);
+    uint32_t base = closing ? 0xBD66 : 0xBD1E;
+    for (;;) {
+        wait_frame(base);
+        c->a[4] = 8;
+        F_B(rd8(c->a[4] - 0x3A00));
+        if (!rd8(c->a[4] - 0x3A00)) break;
+    }
+    put8(c->a[4] - 0x3CFD, closing ? 0x16 : 8);
+    call(RESET_ANIM);
+    for (;;) {
+        wait_frame(base + 0x1A);
+        F_B(rd8(0xFFFFC608u));
+        if (!rd8(0xFFFFC608u)) break;
+    }
+    c->d[0] = 34; F_L(34);
+    call(QUEUE_SOUND);
+    c->a[1] = sx(rd16(CONTINUATIONS));
+    c->a[1] -= 4;
+    c->a[0] = rd32(c->a[1]);
+    put16m(CONTINUATIONS, c->a[1]);
+}
+/* from the original's code: the return address taken off the stack, the animation, then on at
+ * the popped address (jmp (a0)) */
+static void door_animation_68k(int closing)
+{
+    uint32_t ret = rd32(c->a[7]); c->a[7] += 4;
+    door_animation(ret, closing);
+    port_continue_at(c, c->a[0], 0);
+}
+
+/* $BD9A: leaving a room: the things, effects and items stopped ($966A 3) */
+static void room_leave(void)
+{
+    put8(0xFFFF966Au, 3);
+    call(0xF99C);
+    call(0x13786);
+    call(0x11BA4);
+    call(0x1115E);
+}
+
+ENTRY(PictureGrow, picture_grow)           /* $BBEA */
+ENTRY(GrowRow, grow_row)                   /* $BCAC */
+ENTRY(GrowColumn, grow_column)             /* $BCDA */
+ENTRY(RoomLeave, room_leave)               /* $BD9A */
+/* the two that wait leave by port_continue_at, so ret is theirs to set */
+void DoorOpen(Cpu *cpu)  { c = cpu; door_animation_68k(0); }   /* $BD0A */
+void DoorClose(Cpu *cpu) { c = cpu; door_animation_68k(1); }   /* $BD52 */
