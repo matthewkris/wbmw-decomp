@@ -1628,6 +1628,54 @@ checked calls). The bar runs inside the game's task pass, so it is checked as pa
 the bar's drawing and clearing, and the game's start. Self-test caught 100 in 100 for each. Replace
 mode: ten runs, no problems.
 
+#### The title, batch T10: its tasks and menu (2026-10-13)
+
+The title screen is drawn by four tasks, each started by name from the scheduler's tables. They
+are in a new `port/title.c`:
+
+* Kttl (`$7042`): the opening. The two halves of the logo come in from either side, `$20` a frame,
+  until they meet at x `$80`.
+* Ktt2 (`$715C`): the title fading in, as when Start is pressed on the Sega logo or in the demo.
+* K_mn (`$713A`): the title shown at once, after the opening.
+* Kmnu (`$71C6`): the menu after Start. Without a saved game, Start begins a new one. With one,
+  up and down move the cursor between a new game (y `$78`) and continue (`$88`), and Start
+  chooses; a new game also resets the save's buffer (`$8E22`).
+
+Ktt2 and K_mn share the end (`$718A`): the music for `$314` frames, then a fade to the demo. Each
+task hands over to the next scene through `$4CA8` (the task ended, d0 the scene).
+
+These are the first plain tasks in C. A task's pass ends when it calls `Yield` (its resume
+address kept in the slot) or just returns (the address it had kept stays). Either way the next
+pass carries on there with the scheduler's registers. So each task is a function on its slot's
+coroutine (`port/task.c`) that waits with `task_wait_frame` at the original's resume addresses,
+and a pass that returns early is a wait at the same address. The routines under them that do not
+wait are ported with every register and flag in the contract:
+
+* `$70D6`: the screen, its graphics, two layouts, the logo's halves.
+* `$711C`: an entity placed with its picture.
+* `$7272`: the title's "press Start".
+* `$7294`: the menu's entities. The "continue" line appears only if the saved game can be
+  continued (`$1C430`, which reads the save EEPROM).
+* `$724E`: up or down, on the one pad in use or either.
+
+How it is checked: the tasks wait, so they are not fuzzed (registered with a plain contract
+for coverage, like the status screen). The harness has a new `--eeprom FILE` option, which loads
+the save EEPROM at power-on. With it, `tools/accept.sh` has three new runs from reset, in shadow
+and replace mode:
+
+* `harness/inputs/title-skip.txt`: Start on the Sega logo, so the title fades in.
+* `harness/inputs/title-continue.txt` and `title-new.txt`: with a saved game (`SAVE`, default
+  the owner's `play.sav`, run only if it is there), the menu's cursor moved down and up, then
+  continue or a new game.
+
+With the new-game and demo runs, they run every instruction of the four tasks. The routines under
+them are fuzzed as before.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the three title
+runs (34 runs, 517,965 checked calls), every instruction of the four tasks run. 125,000 fuzz cases
+from five states, 0 mismatches, every instruction covered. Self-test caught 100 in 100 for each.
+Replace mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

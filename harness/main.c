@@ -1,7 +1,7 @@
 /* Reference harness main loop.
  *
  *   harness ROM [--frames N] [--out DIR] [--png-every K] [--ram-every K] [--vdp-every K] [--input FILE]
- *               [--save-state-at F FILE] [--load-state FILE] [--pc-trace F] [--port replace|shadow] [--coverage FILE] [--fuzz NAME COUNT] [--call NAME] [--quiet]
+ *               [--save-state-at F FILE] [--load-state FILE] [--eeprom FILE] [--pc-trace F] [--port replace|shadow] [--coverage FILE] [--fuzz NAME COUNT] [--call NAME] [--quiet]
  *
  * Runs N NTSC frames (262 lines of 488 68000 cycles). Every K frames it writes DIR/frame_NNNNN.png
  * and/or DIR/ram_NNNNN.bin (the 64 KB of work RAM) and/or DIR/vdp_NNNNN.bin (VRAM 64 KB, CRAM 128 bytes,
@@ -9,7 +9,8 @@
  * "FRAME BUTTONS": from FRAME on, hold BUTTONS (any of U D L R A B C S, or - for none).
  * --save-state-at writes a save state after frame F. --load-state starts from a save state
  * instead of power-on; frame numbers (for --frames, the dumps and the input file) continue from
- * the frame it was saved at. --port runs the routines in port/ in place of the originals
+ * the frame it was saved at. --eeprom loads the save EEPROM from FILE (play's play.sav) at power-on,
+ * so that a run from reset finds a saved game. --port runs the routines in port/ in place of the originals
  * (replace) or checks every call of them against the originals (shadow); see hybrid.c.
  * --poke ADDR=HEX writes bytes into work RAM after loading (e.g. FF9F00=0200, a word);
  * --poke-at F ADDR=HEX writes them just before frame F runs (to set up a scene part-way).
@@ -67,7 +68,7 @@ static uint8_t buttons_at(int frame)
 
 int main(int argc, char **argv)
 {
-    const char *rom_path = NULL, *out = ".", *input = NULL, *save_path = NULL, *load_path = NULL;
+    const char *rom_path = NULL, *out = ".", *input = NULL, *save_path = NULL, *load_path = NULL, *eeprom_path = NULL;
     int save_at = -1, first = 0, port = PORT_OFF;
     const char *fuzz_name = NULL, *call_name = NULL, *wav_path = NULL; long fuzz_count = 0;
     const char *flog_path = NULL, *ginput = NULL, *dump_dir = NULL; long dump_at = -1;
@@ -83,6 +84,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--pc-trace") && i + 1 < argc) trace_frame = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--save-state-at") && i + 2 < argc) { save_at = atoi(argv[++i]); save_path = argv[++i]; }
         else if (!strcmp(argv[i], "--load-state") && i + 1 < argc) load_path = argv[++i];
+        else if (!strcmp(argv[i], "--eeprom") && i + 1 < argc) eeprom_path = argv[++i];
         else if (!strcmp(argv[i], "--port") && i + 1 < argc) {
             i++; port = !strcmp(argv[i], "replace") ? PORT_REPLACE : !strcmp(argv[i], "shadow") ? PORT_SHADOW : PORT_OFF;
         }
@@ -102,6 +104,7 @@ int main(int argc, char **argv)
     if (md_load_rom(rom_path)) return 1;
     if (input) load_input(input);
     md_power_on();
+    if (eeprom_path && eeprom_load(eeprom_path)) { fprintf(stderr, "cannot load %s\n", eeprom_path); return 1; }
     if (load_path && md_load_state(load_path, &first)) return 1;
     for (int k = 0; k < npokes; k++) if (!poke_at[k] && poke(pokes[k])) return 2;
     hybrid_init(port);

@@ -65,7 +65,9 @@ void TextAt(Cpu *), TextAtRC(Cpu *), String(Cpu *), StringPlain(Cpu *), StringBr
      FillZero(Cpu *), FillBlank(Cpu *), TilePair(Cpu *), TileRows(Cpu *), Mark(Cpu *), MarkTwo(Cpu *), LeftSlot(Cpu *), RightSlot(Cpu *), ItemsIcon(Cpu *), ViewLimits(Cpu *), Title(Cpu *), BuildList(Cpu *), DrawList(Cpu *), ListPage(Cpu *), ClearPanel(Cpu *), Blank13(Cpu *), LineX2(Cpu *), OpenLine(Cpu *), MainMenu(Cpu *), MenuMove(Cpu *), TakeOff(Cpu *), MagicPage(Cpu *), ItemsPage(Cpu *), MaybePicture(Cpu *), Stats(Cpu *),
      StatusScreen(Cpu *), PauseScreen(Cpu *), CursorSpriteTop(Cpu *), CursorSpriteLow(Cpu *), SlotFlipTop(Cpu *), SlotFlipLow(Cpu *), ListButtons(Cpu *), ScreenSetup(Cpu *), MenuReset(Cpu *),
      BossBar(Cpu *), BarSmaller(Cpu *), BarRows(Cpu *), BarBig(Cpu *), BarBigger(Cpu *), BarClear(Cpu *),
-     SpecialGiven(Cpu *), SlotRefill(Cpu *), SpecialUseBack(Cpu *), GameStart(Cpu *), UsesKeep(Cpu *), UsesSame(Cpu *);
+     SpecialGiven(Cpu *), SlotRefill(Cpu *), SpecialUseBack(Cpu *), GameStart(Cpu *), UsesKeep(Cpu *), UsesSame(Cpu *),
+     TitleOpening(Cpu *), TitleShown(Cpu *), TitleScreen(Cpu *), TitleMenu(Cpu *), TitleSetup(Cpu *), TitlePlace(Cpu *),
+     TitleCursor(Cpu *), TitleMenuSetup(Cpu *), TitlePad(Cpu *);
 void NumText(Cpu *), CharAt(Cpu *), ScrollWindow(Cpu *), WindowFrame(Cpu *), WindowRow(Cpu *), TileUnder(Cpu *), WindowRestore(Cpu *), NewLine(Cpu *), MoreBlink(Cpu *), MoreHide(Cpu *), MoreShow(Cpu *), ChoiceBlink(Cpu *), ChoiceHide(Cpu *), ChoiceShow(Cpu *), PriceOf(Cpu *), NameOf(Cpu *), NameText(Cpu *), FoundThing(Cpu *), FoundGold(Cpu *), BoxText(Cpu *), BoxRows(Cpu *), BoxRow(Cpu *), ShowFoundGold(Cpu *), ShowFound(Cpu *), WindowGeometry(Cpu *), Cheaper(Cpu *), Owns(Cpu *), Give(Cpu *), Take(Cpu *), ItemCell(Cpu *), FlagCell(Cpu *), MessageData(Cpu *), OpenWindow(Cpu *), WindowAt(Cpu *), MsgStep(Cpu *), CharIn(Cpu *), NoteIn(Cpu *), OcarinaTune(Cpu *);   /* message.c */
 #define CT_ALL 0x3FFFF                /* every register and flag compared */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
@@ -326,6 +328,15 @@ const PortRoutine port_routines[] = {
     {0x008E56, 0x008E72, "GameStart", GameStart, CT_ALL},
     {0x008E72, 0x008E84, "UsesKeep", UsesKeep, CT_ALL},
     {0x008E9C, 0x008EB0, "UsesSame", UsesSame, CT_ALL},
+    {0x007042, 0x0070D6, "TitleOpening", TitleOpening, CT_SP},   /* title.c: the title's tasks wait for frames: checked by the task passes, not fuzzed */
+    {0x00713A, 0x007158, "TitleShown", TitleShown, CT_SP},
+    {0x00715C, 0x0071C2, "TitleScreen", TitleScreen, CT_SP},
+    {0x0071C6, 0x00724E, "TitleMenu", TitleMenu, CT_SP},
+    {0x0070D6, 0x00711C, "TitleSetup", TitleSetup, CT_ALL},
+    {0x00711C, 0x007136, "TitlePlace", TitlePlace, CT_ALL},
+    {0x007272, 0x007294, "TitleCursor", TitleCursor, CT_ALL},
+    {0x007294, 0x0072F0, "TitleMenuSetup", TitleMenuSetup, CT_ALL},
+    {0x00724E, 0x007272, "TitlePad", TitlePad, CT_ALL},
     {0x01090C, 0x010910, "SpawnItem", SpawnItem},                 /* effects.c: every register as the original */
     {0x010910, 0x010A1E, "SpawnItemAt", SpawnItemAt},
     {0x010A1E, 0x011094, "RunItems", RunItems, CT_SP},

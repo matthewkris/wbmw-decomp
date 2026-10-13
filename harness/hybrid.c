@@ -898,6 +898,16 @@ int hybrid_fuzz(const char *name, long count)
                 m68k_set_reg(M68K_REG_D1, (rnd() << 8) | ram[0x95B8 + a]); m68k_set_reg(M68K_REG_D2, (rnd() << 8) | ram[0x95BE + a]);
             }
         }
+        if (!strcmp(name, "TitlePlace")) {          /* an entity, one of the title's pictures */
+            m68k_set_reg(M68K_REG_A4, 4 * (rnd() % 64));
+            m68k_set_reg(M68K_REG_D0, (rnd() << 16) | (0x800 + 2 * (rnd() % 6)));
+        }
+        if (!strcmp(name, "TitleMenuSetup")) m68k_set_reg(M68K_REG_A5, 0xFFFF8248 + 0x80 * (rnd() % 16));   /* a task's slot */
+        if (!strcmp(name, "TitlePad")) {            /* one pad or both, up or down */
+            ram[0x8A7D] = (uint8_t)(rnd() % 2 ? 0 : 0x80 | rnd() % 2);
+            ram[0x8A81] = (uint8_t)(rnd() % 3 ? 0 : 1u << (rnd() % 8)); ram[0x8A84] = (uint8_t)(rnd() % 3 ? 0 : 1u << (rnd() % 8));
+            m68k_set_reg(M68K_REG_D0, (rnd() << 16) | (rnd() % 4 ? rnd() % 2 : rnd() & 0xFFFF));
+        }
         if (!strcmp(name, "TilesAt") || !strcmp(name, "FrameBox")) m68k_set_reg(M68K_REG_A0, 0x8C82 + 2 * (rnd() % 0x80));
         if (!strcmp(name, "TileRow") || !strcmp(name, "TileRowAt")) m68k_set_reg(M68K_REG_A0, 0x8C82 + rnd() % 0x1A0);
         if (!strcmp(name, "SetGfxSlots")) {         /* a random valid slot list in scratch RAM */
