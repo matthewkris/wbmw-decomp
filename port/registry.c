@@ -69,7 +69,8 @@ void TextAt(Cpu *), TextAtRC(Cpu *), String(Cpu *), StringPlain(Cpu *), StringBr
      TitleOpening(Cpu *), TitleShown(Cpu *), TitleScreen(Cpu *), TitleMenu(Cpu *), TitleSetup(Cpu *), TitlePlace(Cpu *),
      TitleCursor(Cpu *), TitleMenuSetup(Cpu *), TitlePad(Cpu *),
      UnpackBlocks(Cpu *), UnpackRoomBlocks(Cpu *), LoadSharedBlocks(Cpu *), ExpandZeroRuns(Cpu *), UnpackLayerMap(Cpu *),
-     LoadRoom(Cpu *), InitLayers(Cpu *), InitLayer(Cpu *), SetupLayer(Cpu *), ReadRoomPointer(Cpu *), LoadScene(Cpu *), RoomMusic(Cpu *), RoomLayer(Cpu *), RoomLayerAt(Cpu *), RoomGfx(Cpu *), RoomPalettes(Cpu *), RoomPalette2(Cpu *), RoomCmd4(Cpu *), RoomCmd5(Cpu *), RoomCmd6(Cpu *), RoomCmd7(Cpu *), RoomCmd8(Cpu *), RoomCmd9(Cpu *), RoomCmd11(Cpu *), RoomCmd12(Cpu *), RoomCmd13(Cpu *), RoomCmd14(Cpu *), RoomCmd15(Cpu *), RoomCmd18(Cpu *), RoomCmd19(Cpu *), RoomCmd20(Cpu *);
+     LoadRoom(Cpu *), InitLayers(Cpu *), InitLayer(Cpu *), SetupLayer(Cpu *), ReadRoomPointer(Cpu *), LoadScene(Cpu *), RoomMusic(Cpu *), RoomLayer(Cpu *), RoomLayerAt(Cpu *), RoomGfx(Cpu *), RoomPalettes(Cpu *), RoomPalette2(Cpu *), RoomCmd4(Cpu *), RoomCmd5(Cpu *), RoomCmd6(Cpu *), RoomCmd7(Cpu *), RoomCmd8(Cpu *), RoomCmd9(Cpu *), RoomCmd11(Cpu *), RoomCmd12(Cpu *), RoomCmd13(Cpu *), RoomCmd14(Cpu *), RoomCmd15(Cpu *), RoomCmd18(Cpu *), RoomCmd19(Cpu *), RoomCmd20(Cpu *),
+     LayersSetup(Cpu *), LayerSetup(Cpu *), LayerXParallax(Cpu *), LayerXFixed(Cpu *), LayerXMoving(Cpu *), LayerYParallax(Cpu *), LayerFixedY(Cpu *), LayerYFixed(Cpu *), LayerYMoving(Cpu *), LayerYMover(Cpu *), LayerColumns(Cpu *), LayerColumnsStrip(Cpu *), LayerRows(Cpu *), LayerRowsStrip(Cpu *), LayerRowsWrap(Cpu *), LayerX(Cpu *), LayerY(Cpu *), Parallax(Cpu *), MoverPlace(Cpu *), ScrollX(Cpu *), ScrollY(Cpu *);
 void NumText(Cpu *), CharAt(Cpu *), ScrollWindow(Cpu *), WindowFrame(Cpu *), WindowRow(Cpu *), TileUnder(Cpu *), WindowRestore(Cpu *), NewLine(Cpu *), MoreBlink(Cpu *), MoreHide(Cpu *), MoreShow(Cpu *), ChoiceBlink(Cpu *), ChoiceHide(Cpu *), ChoiceShow(Cpu *), PriceOf(Cpu *), NameOf(Cpu *), NameText(Cpu *), FoundThing(Cpu *), FoundGold(Cpu *), BoxText(Cpu *), BoxRows(Cpu *), BoxRow(Cpu *), ShowFoundGold(Cpu *), ShowFound(Cpu *), WindowGeometry(Cpu *), Cheaper(Cpu *), Owns(Cpu *), Give(Cpu *), Take(Cpu *), ItemCell(Cpu *), FlagCell(Cpu *), MessageData(Cpu *), OpenWindow(Cpu *), WindowAt(Cpu *), MsgStep(Cpu *), CharIn(Cpu *), NoteIn(Cpu *), OcarinaTune(Cpu *);   /* message.c */
 #define CT_ALL 0x3FFFF                /* every register and flag compared */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
@@ -370,6 +371,27 @@ const PortRoutine port_routines[] = {
     {0x0095DA, 0x0095EE, "RoomCmd18", RoomCmd18, CT_ALL},
     {0x0095EE, 0x0095FE, "RoomCmd19", RoomCmd19, CT_ALL},
     {0x0095FE, 0x009622, "RoomCmd20", RoomCmd20, CT_ALL},
+    {0x009808, 0x00981A, "LayersSetup", LayersSetup, CT_ALL},   /* rooms.c: the layers set up */
+    {0x00981A, 0x009868, "LayerSetup", LayerSetup, CT_ALL},
+    {0x009884, 0x0098A6, "LayerXParallax", LayerXParallax, CT_ALL},
+    {0x0098A6, 0x0098BA, "LayerXFixed", LayerXFixed, CT_ALL},
+    {0x0098BA, 0x0098C8, "LayerXMoving", LayerXMoving, CT_ALL},
+    {0x0098C8, 0x0098F4, "LayerYParallax", LayerYParallax, CT_ALL},
+    {0x0098F4, 0x009906, "LayerFixedY", LayerFixedY, CT_ALL},
+    {0x009906, 0x00990C, "LayerYFixed", LayerYFixed, CT_ALL},
+    {0x00990C, 0x00991A, "LayerYMoving", LayerYMoving, CT_ALL},
+    {0x00991A, 0x009988, "LayerYMover", LayerYMover, CT_ALL},
+    {0x0099AC, 0x0099C8, "LayerColumns", LayerColumns, CT_ALL},
+    {0x0099C8, 0x0099F6, "LayerColumnsStrip", LayerColumnsStrip, CT_ALL},
+    {0x0099F6, 0x009A1A, "LayerRows", LayerRows, CT_ALL},
+    {0x009A1A, 0x009A4A, "LayerRowsStrip", LayerRowsStrip, CT_ALL},
+    {0x009A4A, 0x009A58, "LayerRowsWrap", LayerRowsWrap, CT_ALL},
+    {0x009A8E, 0x009AA4, "LayerX", LayerX, CT_ALL},
+    {0x009AAA, 0x009ABE, "LayerY", LayerY, CT_ALL},
+    {0x009AC4, 0x009AF2, "Parallax", Parallax, CT_ALL},
+    {0x009B6C, 0x009B96, "MoverPlace", MoverPlace, CT_ALL},
+    {0x009D16, 0x009D46, "ScrollX", ScrollX, CT_ALL},
+    {0x009E2E, 0x009E60, "ScrollY", ScrollY, CT_ALL},
     {0x01090C, 0x010910, "SpawnItem", SpawnItem},                 /* effects.c: every register as the original */
     {0x010910, 0x010A1E, "SpawnItemAt", SpawnItemAt},
     {0x010A1E, 0x011094, "RunItems", RunItems, CT_SP},

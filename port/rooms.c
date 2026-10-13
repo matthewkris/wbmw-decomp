@@ -13,6 +13,7 @@
  *   bytes, or with zero runs ($A1C4).
  * Batch T12, loading a room: its list of commands (layers, graphics, palettes, music, doors and
  * things), the layers' records, the ending's scenes and the room's music.
+ * Batch T13, setting the layers up: how each scrolls and is drawn, the camera's parallax.
  * Ported register for register, with every register and flag in the contract. */
 #include "world.h"
 
@@ -745,3 +746,354 @@ ENTRY(RoomCmd15, cmd_15)                  /* $95D0 */
 ENTRY(RoomCmd18, cmd_18)                  /* $95DA */
 ENTRY(RoomCmd19, cmd_19)                  /* $95EE */
 ENTRY(RoomCmd20, cmd_20)                  /* $95FE */
+
+/* ---- batch T13: setting a room's layers up ----
+ * Each layer's record has a kind for each axis and for its drawing ($30-$33): how it scrolls
+ * (with the camera, at a parallax, fixed, or moving by itself) and how its map is laid out (as
+ * screens, or one strip repeated). $981A sets a layer up by them after unpacking its map; the
+ * position goes to its scroll ($3C/$3E, and for plane A the HUD's offsets $8B34/$8B36). */
+
+#define CAMERA_X      0xFFFF972Cu   /* long: the camera, 16.16 */
+#define CAMERA_Y      0xFFFF9730u
+
+/* asr: like lsr, but the sign is kept */
+static uint32_t asr_n(uint16_t *ccr, uint32_t v, unsigned n, unsigned bits)
+{
+    uint64_t mask = (1ull << bits) - 1, x = v & mask;
+    int64_t sv = (int64_t)(x << (64 - bits)) >> (64 - bits);
+    uint32_t r = n >= bits ? (sv < 0 ? (uint32_t)mask : 0) : (uint32_t)((uint64_t)(sv >> n) & mask);
+    uint16_t cf = n == 0 ? 0 : n > bits ? (sv < 0) : (uint16_t)((uint64_t)(sv >> (n - 1)) & 1);
+    uint16_t xf = n == 0 ? (*ccr & CC_X) : (cf ? CC_X : 0);
+    *ccr = (uint16_t)(xf | (cf ? CC_C : 0) | (r >> (bits - 1) & 1 ? CC_N : 0) | (r ? 0 : CC_Z));
+    return r;
+}
+static uint32_t neg_b(uint32_t v) { return sub_b(&c->ccr, v, 0); }
+
+/* $9AC4: a camera position (d0, 16.16 above $1000) scaled by the parallax d1 (a shift: right if
+ * positive), kept between $1000 and the limit d2 */
+static void parallax(void)
+{
+    c->d[0] = sub_l(&c->ccr, 0x10000000, c->d[0]);
+    F_B(c->d[1]);
+    if (!(c->d[1] & 0x80)) c->d[0] = asr_n(&c->ccr, c->d[0], c->d[1] & 63, 32);
+    else {
+        c->d[1] = set_b(c->d[1], neg_b(c->d[1]));
+        c->d[0] = asl_n(&c->ccr, c->d[0], c->d[1] & 63, 32);
+        c->d[1] = set_b(c->d[1], neg_b(c->d[1]));
+    }
+    c->d[0] = add_l(&c->ccr, 0x10000000, c->d[0]);
+    c->d[0] = c->d[0] << 16 | c->d[0] >> 16; F_L(c->d[0]);
+    cmp_w(&c->ccr, 0x1000, c->d[0]);
+    if ((c->d[0] & 0xFFFF) < 0x1000) { c->d[0] = set_w(c->d[0], 0x1000); F_W(0x1000); }
+    cmp_w(&c->ccr, c->d[2], c->d[0]);
+    if ((c->d[0] & 0xFFFF) > (c->d[2] & 0xFFFF)) { c->d[0] = set_w(c->d[0], c->d[2]); F_W(c->d[2]); }
+}
+
+/* $9A8E, $9AAA: the layer's x ($4) or y ($6) from the camera at its parallax ($3A/$3B), within its
+ * limit ($24/$26) */
+static void layer_x(void)
+{
+    c->d[0] = rd32(CAMERA_X); F_L(c->d[0]);
+    move_b(1, rd8(c->a[3] + 0x3A));
+    c->d[2] = set_w(c->d[2], rd16(c->a[3] + 0x24)); F_W(c->d[2]);
+    parallax();
+    put16m(c->a[3] + 4, c->d[0]);
+}
+static void layer_y(void)
+{
+    c->d[0] = rd32(CAMERA_Y); F_L(c->d[0]);
+    move_b(1, rd8(c->a[3] + 0x3B));
+    c->d[2] = set_w(c->d[2], rd16(c->a[3] + 0x26)); F_W(c->d[2]);
+    parallax();
+    put16m(c->a[3] + 6, c->d[0]);
+}
+
+/* $9D16, $9E2E: the layer's scroll from its x or y; plane A's also kept for the moves since
+ * ($9740/$9742; the y's from $9744 as the original has it) and the HUD's offsets */
+static void scroll_x(void)
+{
+    c->d[0] = set_w(c->d[0], rd16(c->a[3] + 4)); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], neg_w(&c->ccr, c->d[0]));
+    and_w(0, 0x1FF);
+    put16m(c->a[3] + 0x3C, c->d[0]);
+    f_bit(rd8(c->a[3]) & 1);
+    if (rd8(c->a[3]) & 1) return;
+    c->d[0] = set_w(c->d[0], rd16(c->a[3] + 4)); F_W(c->d[0]);
+    c->d[1] = set_w(c->d[1], c->d[0]); F_W(c->d[0]);
+    c->d[1] = set_w(c->d[1], sub_w(&c->ccr, rd16(0xFFFF9744u), c->d[1]));
+    put16m(0xFFFF9740u, c->d[1]);
+    put16m(0xFFFF9744u, c->d[0]);
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 0x80, c->d[0]));
+    put16m(0xFFFF8B34u, c->d[0]);
+}
+static void scroll_y(void)
+{
+    c->d[0] = set_w(c->d[0], rd16(c->a[3] + 6)); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 0x40, c->d[0]));
+    and_w(0, 0xFF);
+    put16m(c->a[3] + 0x3E, c->d[0]);
+    f_bit(rd8(c->a[3]) & 1);
+    if (rd8(c->a[3]) & 1) return;
+    c->d[0] = set_w(c->d[0], rd16(c->a[3] + 6)); F_W(c->d[0]);
+    c->d[1] = set_w(c->d[1], c->d[0]); F_W(c->d[0]);
+    c->d[1] = set_w(c->d[1], sub_w(&c->ccr, rd16(0xFFFF9744u), c->d[1]));
+    put16m(0xFFFF9742u, c->d[1]);
+    put16m(0xFFFF9746u, c->d[0]);
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 0xC0, c->d[0]));
+    put16m(0xFFFF8B36u, c->d[0]);
+}
+
+/* $9B6C: a moving layer's thing (the slot at $74) placed by the layer's position */
+static void mover_place(void)
+{
+    c->a[1] = sx(rd16(c->a[3] + 0x74));
+    c->d[0] = set_w(c->d[0], rd16(c->a[3] + 4)); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(c->a[3] + 0x70), c->d[0]));
+    put16m(c->a[1] - 0x601E, c->d[0]);
+    wr16(c->a[1] - 0x5FCA, 0); c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z);
+    c->d[1] = set_w(c->d[1], rd16(c->a[3] + 6)); F_W(c->d[1]);
+    c->d[0] = set_w(c->d[0], rd16(c->a[3] + 0x58)); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[1], c->d[0]));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(c->a[3] + 0x72), c->d[0]));
+    put16m(c->a[1] - 0x601C, c->d[0]);
+}
+
+/* $98F4: a fixed layer's y: its $3B in 16ths, from $1000 */
+static void fixed_y(void)
+{
+    c->d[0] = 0;
+    move_b(0, rd8(c->a[3] + 0x3B));
+    c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 4, 16));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, 0x1000, c->d[0]));
+    put16m(c->a[3] + 6, c->d[0]);
+}
+
+static void axis_y(uint32_t at);
+
+/* the x kinds ($30: tbl $9868) */
+static void x_parallax(void)        /* $9884: at a parallax; the limit by the room's width */
+{
+    move_b(0, rd8(0xFFFF978Cu));
+    c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 1, c->d[0]));
+    c->d[1] = 8;
+    c->d[1] = set_b(c->d[1], sub_b(&c->ccr, rd8(c->a[3] + 0x3A), c->d[1]));
+    if (!(c->d[1] & 0x80)) c->d[0] = set_w(c->d[0], asl_n(&c->ccr, c->d[0], c->d[1] & 63, 16));
+    else {
+        c->d[1] = set_b(c->d[1], neg_b(c->d[1]));
+        c->d[0] = set_w(c->d[0], asr_n(&c->ccr, c->d[0], c->d[1] & 63, 16));
+    }
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, 0x1000, c->d[0]));
+    put16m(c->a[3] + 0x24, c->d[0]);
+    layer_x();
+    scroll_x();
+}
+static void x_fixed(void)           /* $98A6 */
+{
+    c->d[0] = 0;
+    move_b(0, rd8(c->a[3] + 0x3A));
+    c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 4, 16));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, 0x1000, c->d[0]));
+    put16m(c->a[3] + 4, c->d[0]);
+    scroll_x();
+}
+static void x_moving(void)          /* $98BA: from 0, moved each frame */
+{
+    c->d[0] = 0;
+    put16m(c->a[3] + 4, 0);
+    put16m(c->a[3] + 0x40, 0);
+    scroll_x();
+}
+
+/* the y kinds ($31: tbl $9872) */
+static void y_parallax(void)        /* $98C8 */
+{
+    c->d[0] = 0;
+    move_b(0, rd8(0xFFFF978Du));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+    c->d[0] = set_b(c->d[0], add_b(&c->ccr, rd8(0xFFFF978Du), c->d[0]));
+    c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 6, 16));
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 0xA0, c->d[0]));
+    move_b(1, rd8(c->a[3] + 0x3B));
+    if (c->d[1] & 0x80) {
+        c->d[1] = set_b(c->d[1], neg_b(c->d[1]));
+        c->d[0] = set_w(c->d[0], asl_n(&c->ccr, c->d[0], c->d[1] & 63, 16));
+    } else c->d[0] = set_w(c->d[0], asr_n(&c->ccr, c->d[0], c->d[1] & 63, 16));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, 0x1000, c->d[0]));
+    put16m(c->a[3] + 0x26, c->d[0]);
+    layer_y();
+    scroll_y();
+}
+static void y_fixed(void) { fixed_y(); scroll_y(); }   /* $9906 */
+static void y_moving(void)          /* $990C */
+{
+    c->d[0] = 0;
+    put16m(c->a[3] + 6, 0);
+    put16m(c->a[3] + 0x42, 0);
+    scroll_y();
+}
+static void y_mover(void)           /* $991A: carried by a thing, by a script ($9988 by $3B) */
+{
+    c->d[0] = 0;
+    wr32(c->a[3] + 0x58, 0); wr32(c->a[3] + 0x5C, 0); put16m(c->a[3] + 0x6C, 0);
+    move_b(0, rd8(c->a[3] + 0x3B));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+    c->a[2] = 0x9988u;
+    c->a[0] = c->a[2];
+    c->a[0] += sx(rd16(c->a[0] + sx(c->d[0])));
+    put8(c->a[3] + 0x3B, next8(0));
+    put8(c->a[3] + 0x77, next8(0));
+    call(0x11CE8);
+    put16m(c->a[3] + 0x74, c->a[1]);
+    put8(c->a[1] - 0x6072, 0x80);
+    c->a[0] += 1;
+    put8(c->a[1] - 0x6071, next8(0));
+    put32m(c->a[3] + 0x70, next32(0));
+    put32m(c->a[1] - 0x5F76, next32(0));
+    put32m(c->a[3] + 0x68, c->a[0]);
+    c->d[0] = 0;
+    wr16(c->a[1] - 0x5FCA, 0); wr16(c->a[1] - 0x5FC8, 0); wr16(c->a[3] + 0x7A, 0);
+    put16m(c->a[3] + 0x6C, 1);
+    move_b(0, rd8(c->a[3] + 0x77));
+    c->a[0] = 0x9872u + sx(rd16(0x9872u + sx(c->d[0])));
+    push32(0x9984);                                 /* jsr (a0) */
+    axis_y(c->a[0]);
+    c->a[7] += 4;
+    mover_place();
+}
+static void axis_y(uint32_t at)
+{
+    switch (at) {
+    case 0x98C8: y_parallax(); break;
+    case 0x9906: y_fixed(); break;
+    case 0x990C: y_moving(); break;
+    case 0x991A: y_mover(); break;
+    default: call(at); break;
+    }
+}
+
+/* the drawing kinds ($32: tbl $987A for columns, $33: $987E for rows) */
+static void columns_screens(void)   /* $99AC: the columns shown, from the x */
+{
+    c->d[0] = set_w(c->d[0], rd16(c->a[3] + 4)); F_W(c->d[0]);
+    c->d[1] = set_w(c->d[1], c->d[0]); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], asr_n(&c->ccr, c->d[0], 4, 16));
+    put16m(c->a[3] + 8, c->d[0]);
+    and_w(1, 0xF);
+    c->d[1] = set_b(c->d[1], (c->d[1] & 0xFFFF) ? 0 : 0xFF);   /* seq */
+    c->d[1] = set_b(c->d[1], add_b(&c->ccr, 0x11, c->d[1]));
+    put16m(c->a[3] + 0xA, c->d[1]);
+}
+static void columns_strip(void)     /* $99C8: one screen wide, repeated: the map's empty places filled */
+{
+    c->a[0] = sx(rd16(c->a[3] + 0x22));
+    c->d[0] = 7;
+    do {
+        uint8_t v = rd8(c->a[0] + 1); F_B(v);
+        if (v & 0x80) put8(c->a[0] + 1, rd8(c->a[0]));
+        c->a[0] += 8;
+    } while (dbra(0));
+    put16m(c->a[3] + 8, 0x100);
+    put8(c->a[3] + 0x38, 2);
+    c->d[0] = 32;
+    put16m(c->a[3] + 0x44, 32);
+    put16m(c->a[3] + 0xA, 32);
+}
+static void rows_screens(void)      /* $99F6: the rows shown, from the y */
+{
+    c->d[0] = set_w(c->d[0], rd16(c->a[3] + 6)); F_W(c->d[0]);
+    c->d[1] = set_w(c->d[1], c->d[0]); F_W(c->d[0]);
+    and_w(0, 0xFFF0);
+    c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 2, 16));
+    put16m(c->a[3] + 0xC, c->d[0]);
+    c->d[0] = set_w(c->d[0], 0x280); F_W(0x280);
+    and_w(1, 0xF);
+    if (c->d[1] & 0xFFFF) { c->d[0] = set_w(c->d[0], 0x2C0); F_W(0x2C0); }
+    put16m(c->a[3] + 0xE, c->d[0]);
+}
+static void rows_strip(void)        /* $9A1A */
+{
+    c->a[0] = sx(rd16(c->a[3] + 0x22));
+    c->d[0] = 7;
+    do {
+        uint8_t v = rd8(c->a[0] + 8); F_B(v);
+        if (v & 0x80) put8(c->a[0] + 8, rd8(c->a[0]));
+        c->a[0] += 1;
+    } while (dbra(0));
+    put16m(c->a[3] + 0xC, 0x4000);
+    put8(c->a[3] + 0x39, 2);
+    c->d[0] = set_w(c->d[0], 0x400);
+    put16m(c->a[3] + 0x46, 0x400);
+    put16m(c->a[3] + 0xE, 0x400);
+}
+static void rows_wrap(void)         /* $9A4A: as screens, wrapping vertically */
+{
+    uint8_t v = rd8(c->a[3]) | 2; wr8(c->a[3], v); F_B(v);
+    put16m(c->a[3] + 0x46, 0x7FC0);
+    rows_screens();
+}
+
+static void layer_kind(uint32_t at)
+{
+    switch (at) {
+    case 0x9884: x_parallax(); break;
+    case 0x98A6: x_fixed(); break;
+    case 0x98BA: x_moving(); break;
+    case 0x99AC: columns_screens(); break;
+    case 0x99C8: columns_strip(); break;
+    case 0x99F6: rows_screens(); break;
+    case 0x9A1A: rows_strip(); break;
+    case 0x9A4A: rows_wrap(); break;
+    default: axis_y(at); break;
+    }
+}
+
+/* $981A: layer a3: its map, then its kinds ($30-$33) */
+static void layer_setup(void)
+{
+    c->a[7] -= 8; wr32(c->a[7], c->a[1]); wr32(c->a[7] + 4, c->a[2]);
+    c->a[7] -= 4; wr32(c->a[7], 0x9822); unpack_layer_map(); c->a[7] += 4;
+    c->a[1] = rd32(c->a[7]); c->a[2] = rd32(c->a[7] + 4); c->a[7] += 8;
+    static const uint32_t table[4] = { 0x9868, 0x9872, 0x987A, 0x987E }, ret[4] = { 0x9836, 0x9846, 0x9856, 0x9866 };
+    for (int k = 0; k < 4; k++) {
+        c->d[0] = 0;
+        move_b(0, rd8(c->a[3] + 0x30 + (uint32_t)k));
+        c->a[0] = table[k] + sx(rd16(table[k] + sx(c->d[0])));
+        push32(ret[k]);                             /* jsr (a0) */
+        layer_kind(c->a[0]);
+        c->a[7] += 4;
+    }
+}
+
+/* $9808: both layers, plane A's and B's moves cleared first */
+static void layers_setup(void)
+{
+    wr32(0xFFFF973Cu, 0); c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z);
+    c->a[3] = LAYER_A;
+    push32(0x9812); layer_setup(); c->a[7] += 4;
+    wr32(0xFFFF9740u, 0); c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z);
+    c->a[3] = LAYER_B;
+    layer_setup();
+}
+
+ENTRY(LayersSetup, layers_setup)           /* $9808 */
+ENTRY(LayerSetup, layer_setup)             /* $981A */
+ENTRY(LayerXParallax, x_parallax)          /* $9884 */
+ENTRY(LayerXFixed, x_fixed)                /* $98A6 */
+ENTRY(LayerXMoving, x_moving)              /* $98BA */
+ENTRY(LayerYParallax, y_parallax)          /* $98C8 */
+ENTRY(LayerFixedY, fixed_y)                /* $98F4 */
+ENTRY(LayerYFixed, y_fixed)                /* $9906 */
+ENTRY(LayerYMoving, y_moving)              /* $990C */
+ENTRY(LayerYMover, y_mover)                /* $991A */
+ENTRY(LayerColumns, columns_screens)       /* $99AC */
+ENTRY(LayerColumnsStrip, columns_strip)    /* $99C8 */
+ENTRY(LayerRows, rows_screens)             /* $99F6 */
+ENTRY(LayerRowsStrip, rows_strip)          /* $9A1A */
+ENTRY(LayerRowsWrap, rows_wrap)            /* $9A4A */
+ENTRY(LayerX, layer_x)                     /* $9A8E */
+ENTRY(LayerY, layer_y)                     /* $9AAA */
+ENTRY(Parallax, parallax)                  /* $9AC4 */
+ENTRY(MoverPlace, mover_place)             /* $9B6C */
+ENTRY(ScrollX, scroll_x)                   /* $9D16 */
+ENTRY(ScrollY, scroll_y)                   /* $9E2E */

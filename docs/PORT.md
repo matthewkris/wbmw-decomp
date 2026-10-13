@@ -1773,6 +1773,36 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 instruction is covered (command 7 by play). Self-test caught 100 in 100 for each. Replace mode:
 thirteen runs, no problems.
 
+#### The rooms, batch T13: setting the layers up (2026-10-13)
+
+Each layer's record has four kinds: how it moves across (`$30`), how it moves down (`$31`), how
+its columns are drawn (`$32`) and how its rows are drawn (`$33`). After unpacking a layer's map,
+`$981A` sets the layer up by these, through the tables at `$9868`, `$9872`, `$987A` and `$987E`;
+`$9808` does both layers. In `port/rooms.c`, with every register and flag in the contract:
+
+* Across: at a parallax (`$9884`, its limit from the room's width), fixed (`$98A6`), or moving
+  by itself from 0 (`$98BA`).
+* Down: at a parallax (`$98C8`), fixed (`$98F4`, `$9906`), moving by itself (`$990C`), or carried
+  by a thing, a lift (`$991A`). The lift takes a free slot (`$11CE8`) and a script from `$9988`,
+  and is placed by `$9B6C`.
+* Columns and rows: as screens (`$99AC`, `$99F6`), or one screen repeated (`$99C8`, `$9A1A`: the
+  map's empty places filled from the first). `$9A4A` is rows that wrap vertically.
+* The camera's parallax (`$9AC4`): the camera's position above `$1000`, shifted by the layer's
+  parallax and kept between `$1000` and the layer's limit. `$9A8E` and `$9AAA` use it for x and y.
+* The scroll (`$9D16`, `$9E2E`): from the layer's position. Plane A's is also kept for the HUD
+  (`$8B34`, `$8B36`) and its moves since the last frame (`$9740`, `$9742`). The y's move is taken
+  from `$9744`, the x's, as the original does.
+
+The fuzz gives these one of the layer records with valid kinds, small parallaxes (and larger
+ones for the across limit's other branch), a random camera, random positions and a slot for the
+lift. The lift's script table has a single entry, so its `$3B` is 0 or 1: with others the
+original reads a jump from outside its table.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(37 runs, 558,595 checked calls). The layers are set up inside the game's task pass, so they are
+checked as part of it. 630,000 fuzz cases from six states, 0 mismatches, every instruction
+covered. Self-test caught 100 in 100 for each. Replace mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
