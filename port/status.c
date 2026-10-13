@@ -572,6 +572,630 @@ static void sprite_init(void)
 static void click_back(void) { sound(38); }     /* $8BAA */
 static void click(void)      { sound(37); }     /* $8BB0 */
 
+/* ---- batch T3: the icons, the list, the pages ---- */
+
+#define COPY_RAW_TILES 0x22A8u
+#define NAME_OF        0x1E6Au      /* the name of thing d0 in NAME_TOP/NAME_BOTTOM, FIXED_LEN long */
+#define NAME_TOP       0xFFFF8CE0u
+#define NAME_BOTTOM    0xFFFF8CF0u
+#define PAGE           0xFFFF95FAu  /* word: the page shown (0 the stats; 1-4 the item lists; 5, 6) */
+#define MENU_OF        0xFFFF95E6u  /* word: the menu's own line, while a sub-menu runs */
+#define LIST           0xFFFF9608u  /* the list's entries: a thing's number, bit 7 the one in use */
+#define NO_REDRAW_ARROWS 0xFFFF95DBu
+
+static void f_move(uint32_t v, uint32_t sign) { c->ccr = (uint16_t)((c->ccr & CC_X) | (v & sign ? CC_N : 0) | ((v & (sign * 2 - 1)) ? 0 : CC_Z)); }
+#define F_B(v) f_move((v), 0x80u)
+#define F_W(v) f_move((v), 0x8000u)
+#define F_L(v) f_move((v), 0x80000000u)
+static void f_clr(void) { c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z); }
+static void cmp_byte(uint32_t s, uint32_t d) { uint16_t x = c->ccr & CC_X; sub_b(&c->ccr, s, d); c->ccr = (uint16_t)((c->ccr & ~CC_X) | x); }
+static uint32_t sx(uint32_t w) { return (uint32_t)(int32_t)(int16_t)w; }   /* a word, as an index */
+
+/* $876C: d5 copies of the tile d4 (0 is 65536); $8762 blanks, $875C zeros */
+static void fill_d4(void)
+{
+    do {
+        wr16(VDP_DATA, (uint16_t)c->d[4]);
+        c->d[5] = set_w(c->d[5], sub_w(&c->ccr, 1, c->d[5]));
+    } while (c->d[5] & 0xFFFF);
+}
+static void fill_blank(void) { c->d[4] = set_w(c->d[4], 0x8020); F_W(0x8020); fill_d4(); }
+static void fill_zero(void)  { c->d[4] = set_w(c->d[4], 0); F_W(0); fill_d4(); }
+
+/* $85FC: at d7 the tiles d6 and d6 + 2 (a1 the VDP's data port) */
+static void tile_pair(void)
+{
+    text_at();
+    wr16(c->a[1], (uint16_t)c->d[6]);
+    c->d[6] = set_w(c->d[6], add_w(&c->ccr, 2, c->d[6]));
+    wr16(c->a[1], (uint16_t)c->d[6]);
+    F_W(c->d[6]);
+}
+/* $85F0: a 2 x 2 icon from tile d6 at d7 (the tiles go d6, d6+2 / d6+1, d6+3) */
+static void tile_square(void)
+{
+    c->a[1] = VDP_DATA;
+    tile_pair();
+    c->d[7] = set_w(c->d[7], add_w(&c->ccr, 1, c->d[7]));
+    c->d[6] = set_w(c->d[6], sub_w(&c->ccr, 1, c->d[6]));
+    tile_pair();
+}
+/* $8608: two rows of two tiles from a0 at d7 */
+static void tile_rows(void)
+{
+    text_at();
+    uint32_t v = rd32(c->a[0]); c->a[0] += 4;
+    wr32(VDP_DATA, v); F_L(v);
+    c->d[7] = set_w(c->d[7], add_w(&c->ccr, 1, c->d[7]));
+    text_at();
+    v = rd32(c->a[0]); c->a[0] += 4;
+    wr32(VDP_DATA, v); F_L(v);
+}
+/* $85CE: the mark d0 / 2 ($85EC its place, $85DC its tiles); $85CC the third */
+static void mark(void)
+{
+    c->d[7] = set_w(c->d[7], rd16(0x85ECu + sx(c->d[0])));
+    c->a[0] = 0x85DCu;
+    c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 2, 16));
+    c->a[0] += sx(c->d[0]);
+    tile_rows();
+}
+static void mark_2(void) { c->d[0] = 2; F_L(2); mark(); }
+
+/* $8656: the icon of thing d3 (a byte; $FF none) at d7 from tile d6; d0 nonzero: its graphics
+ * copied in first ($2000 + its tiles' index, 32 tiles, by CopyRawTiles) */
+static void icon_of(void);
+static void icon_tiles(uint32_t table)
+{
+    c->a[1] = table;
+    if (table != 0x8C80u) c->a[1] += sx(c->d[3]);
+    F_W(c->d[0]);
+    if (c->d[0] & 0xFFFF) {
+        c->d[1] = 0;
+        c->d[1] = set_w(c->d[1], 0x2000);
+        c->d[1] = set_b(c->d[1], add_b(&c->ccr, rd8(c->a[1]), c->d[1]));
+        c->d[2] = 32;
+        call_68k(c, COPY_RAW_TILES);
+    }
+    tile_square();
+}
+static void icon_rest(void)                         /* $8678: a shield or armour; 4 its picture */
+{
+    cmp_w(&c->ccr, 4, c->d[3]);
+    if ((c->d[3] & 0xFFFF) == 4) { c->a[0] = 0x7BAAu; tile_rows(); return; }
+    icon_tiles(0x8690u);
+}
+static void icon_of(void)
+{
+    cmp_byte(0xFF, c->d[3]);
+    if ((c->d[3] & 0xFF) == 0xFF) { icon_tiles(0x8C80u); return; }
+    cmp_w(&c->ccr, 8, c->d[3]);
+    if ((c->d[3] & 0xFFFF) < 8) { icon_tiles(0x869Cu); return; }
+    c->d[3] = set_w(c->d[3], sub_w(&c->ccr, 8, c->d[3]));
+    icon_rest();
+}
+/* $8620, $863C: the A + left and A + right slots' icons (graphics copied when the slot's thing
+ * changed since last drawn) */
+static void slot_icon_at(uint32_t pos, uint32_t tile, uint32_t slot, uint32_t shown, uint32_t copy)
+{
+    c->d[7] = set_w(c->d[7], pos);
+    c->d[6] = set_w(c->d[6], tile);
+    c->d[0] = 0; c->d[3] = 0;
+    c->d[3] = set_b(c->d[3], rd8(slot));
+    cmp_byte(rd8(shown), c->d[3]);
+    if ((c->d[3] & 0xFF) != rd8(shown)) { c->d[0] = set_w(c->d[0], copy); F_W(copy); }
+    icon_of();
+}
+static void left_slot(void)  { slot_icon_at(0x1601, 0x87E0, 0xFFFF9F10u, 0xFFFF95DCu, 0xFC00); }   /* $8620 */
+static void right_slot(void) { slot_icon_at(0x1C01, 0x87E4, 0xFFFF9F11u, 0xFFFF95DDu, 0xFC80); }  /* $863C */
+/* $8666: the items page's icon of the thing in $95EE (none if negative) */
+static void items_icon(void)
+{
+    c->d[7] = set_w(c->d[7], 0x1605);
+    c->d[0] = set_w(c->d[0], 0xFD00);
+    c->d[6] = set_w(c->d[6], 0x87E8);
+    c->d[3] = set_w(c->d[3], rd16(0xFFFF95EEu));
+    F_W(c->d[3]);
+    if (c->d[3] & 0x8000) { icon_tiles(0x8C80u); return; }
+    icon_rest();
+}
+
+/* $86BC: the view after the screen: the player's camera limits by where it is ($8720 by
+ * $95D1, $8750 in water, $874A in a shop) */
+static void view_limits(void)
+{
+    c->a[0] = 0x874Au;
+    if (!bit_test(0xFFFF9EF1u, 4)) {
+        c->a[0] = 0x8750u;
+        if (bit_test(0xFFFF966Bu, 0)) {
+            cmp_byte(3, rd8(0xFFFF95D1u));
+            if (rd8(0xFFFF95D1u) == 3) c->a[0] += 6;
+        } else {
+            c->d[0] = rd8(0xFFFF95D1u);
+            c->d[1] = set_w(c->d[1], c->d[0]);
+            c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+            c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[1], c->d[0]));
+            c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+            c->a[0] = 0x8720u + sx(c->d[0]);
+        }
+    }
+    c->d[0] = rd8(c->a[0]++);
+    c->d[0] = c->d[0] << 16 | (c->d[0] >> 16);
+    c->d[0] = set_b(c->d[0], rd8(c->a[0]++));
+    wr32(0xFFFF9EFAu, c->d[0]);
+    c->d[0] = set_b(c->d[0], rd8(c->a[0]++));
+    c->d[0] = ext_w(c->d[0]);
+    c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 4, 16));      /* asl.w #4: V aside, as lsl */
+    wr16(0xFFFF9EF2u, (uint16_t)c->d[0]);
+    c->d[0] = rd8(c->a[0]++);
+    wr16(0xFFFF9EF4u, (uint16_t)c->d[0]);
+    c->d[0] = rd8(c->a[0]++);
+    c->d[0] = c->d[0] << 16 | (c->d[0] >> 16);
+    c->d[0] = set_b(c->d[0], rd8(c->a[0]++));
+    c->d[0] = lsl_n(&c->ccr, c->d[0], 4, 32);
+    wr32(0xFFFF9EF6u, c->d[0]);
+    F_L(c->d[0]);
+}
+
+/* $8272: the page's title in its box ($82B6 the names, $82B2 the place) */
+static void title(void)
+{
+    c->d[0] = set_w(c->d[0], rd16(PAGE));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+    c->a[1] = 0x82B6u + sx(rd16(0x82B6u + sx(c->d[0])));
+    c->d[1] = 0;
+    cmp_w(&c->ccr, 10, c->d[0]);
+    if (!(c->ccr & CC_N)) c->d[1] = 2;
+    c->d[7] = set_w(c->d[7], rd16(0x82B2u + c->d[1]));
+    text_at();
+    c->a[0] = VDP_DATA;
+    wr32(VDP_DATA, 0x87AE87AFu);
+    wr16(VDP_DATA, 0x8020);
+    string_bright();
+    wr16(VDP_DATA, 0x8020);
+    wr32(VDP_DATA, 0x8FAF8FAEu);
+    F_L(0x8FAF8FAEu);
+}
+
+/* $8326: the list's scroll arrows by its top and length */
+static void arrows(void)
+{
+    F_W(rd16(LIST_TOP));
+    if (!rd16(LIST_TOP)) {
+        if (bit_test(0xFFFF9620u, 0)) { up_hide(); wr8(0xFFFF9620u, 0); f_clr(); }
+    } else if (!bit_set(0xFFFF9620u, 0)) {
+        more_below();
+        if (c->ccr & CC_Z) { down_hide(); wr8(0xFFFF9622u, 0); f_clr(); up_show(); return; }
+        bit_set(0xFFFF9622u, 0);
+        wr8(0xFFFF9623u, 0x14); F_B(0x14);
+        down_show();
+        up_show();
+        return;
+    }
+    more_below();
+    if (!(c->ccr & CC_C)) {
+        if (bit_test(0xFFFF9622u, 0)) { down_hide(); wr8(0xFFFF9622u, 0); f_clr(); }
+        return;
+    }
+    if (bit_set(0xFFFF9622u, 0)) return;
+    down_show();
+    F_W(rd16(LIST_TOP));
+    if (!rd16(LIST_TOP)) return;
+    bit_set(0xFFFF9620u, 0);
+    wr8(0xFFFF9621u, 0x14); F_B(0x14);
+    up_show();
+}
+
+/* $82F4: the list of the menu's things: the bits of its byte ($95E6's, at -$6A36) are the
+ * things owned, the one in use ($-6A32) marked; then the arrows */
+static void build_list(void)
+{
+    c->a[0] = sx(rd16(MENU_OF));
+    c->d[1] = set_b(c->d[1], rd8(c->a[0] - 0x6A36));
+    c->d[3] = set_b(c->d[3], rd8(c->a[0] - 0x6A32));
+    c->d[2] = 0; c->d[0] = 0;
+    c->a[0] = LIST;
+    do {
+        if (c->d[1] & 1) {
+            c->d[2] = set_w(c->d[2], c->d[2] + 1);
+            wr8(c->a[0], (uint8_t)c->d[0]);
+            if ((c->d[0] & 0xFF) == (c->d[3] & 0xFF)) wr8(c->a[0], rd8(c->a[0]) | 0x80);
+            c->a[0]++;
+        }
+        c->d[0] = set_b(c->d[0], c->d[0] + 1);
+        c->d[1] = set_b(c->d[1], lsr_n(&c->ccr, c->d[1], 1, 8));
+    } while (c->d[1] & 0xFF);
+    wr16(LIST_LEN, (uint16_t)c->d[2]);
+    F_W(c->d[2]);
+    arrows();
+}
+
+/* $8476: a list line at d7: the name row at a0, centred in 14 columns (pads in the frame) */
+static void list_row(uint16_t left, uint16_t right, uint16_t base)
+{
+    text_at();
+    if (left) {
+        c->d[0] = set_w(c->d[0], left); c->d[1] = set_w(c->d[1], 0x8020);
+        do { wr16(c->a[1], 0x8020); c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 1, c->d[0])); } while (c->d[0] & 0xFFFF);
+    } else F_W(0);
+    c->d[1] = set_w(c->d[1], base);
+    c->d[0] = set_w(c->d[0], rd16(FIXED_LEN));
+    do {
+        c->d[1] = set_b(c->d[1], rd8(c->a[0]++));
+        wr16(c->a[1], (uint16_t)c->d[1]);
+        c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 1, c->d[0]));
+    } while (c->d[0] & 0xFFFF);
+    c->d[0] = set_w(c->d[0], right);
+    F_W(right);
+    if (right) {
+        c->d[1] = set_w(c->d[1], 0x8020);
+        do { wr16(c->a[1], 0x8020); c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 1, c->d[0])); } while (c->d[0] & 0xFFFF);
+    }
+    c->d[7] = set_w(c->d[7], add_w(&c->ccr, 1, c->d[7]));
+}
+
+/* $83D0: the list's four lines from its top (names by $1E6A, the one in use bright), blank
+ * lines after its end; then the arrows, unless NO_REDRAW_ARROWS */
+static void draw_list(void)
+{
+    uint32_t sp = c->a[7] - 4;                      /* link a6,#-12 */
+    wr32(sp, c->a[6]); c->a[6] = sp; c->a[7] = sp - 12;
+    c->d[7] = set_w(c->d[7], 0xF06);
+    c->d[0] = set_w(c->d[0], rd16(LIST_LEN));
+    c->d[2] = set_w(c->d[2], rd16(LIST_TOP));
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, c->d[2], c->d[0]));
+    c->d[1] = 4;
+    cmp_w(&c->ccr, c->d[1], c->d[0]);
+    if (!(c->ccr & CC_C)) { c->d[0] = set_w(c->d[0], c->d[1]); F_W(c->d[1]); }
+    uint16_t lines = (uint16_t)c->d[0];
+    wr16(c->a[6] - 2, lines);
+    c->d[1] = set_w(c->d[1], sub_w(&c->ccr, c->d[0], c->d[1]));
+    uint16_t blanks = (uint16_t)c->d[1];
+    wr16(c->a[6] - 4, blanks);
+    c->a[0] = LIST + sx(c->d[2]);
+    wr16(c->a[6] - 6, (uint16_t)c->a[0]);
+    do {
+        c->a[0] = sx(rd16(c->a[6] - 6));
+        c->d[1] = set_w(c->d[1], 0x8000);
+        c->d[0] = set_b(c->d[0], rd8(c->a[0]++));
+        F_B(c->d[0]);
+        if (c->d[0] & 0x80) { c->d[1] = set_w(c->d[1], 0xA000); wr16(c->a[6] - 6, (uint16_t)c->a[0]); }
+        uint16_t base = (uint16_t)c->d[1];
+        wr16(c->a[6] - 8, base);
+        c->d[0] = set_w(c->d[0], c->d[0] & 7);
+        F_W(c->d[0]);
+        wr16(c->a[6] - 6, (uint16_t)c->a[0]);
+        c->d[1] = set_w(c->d[1], rd16(PAGE));
+        c->d[1] = set_w(c->d[1], sub_w(&c->ccr, 1, c->d[1]));
+        c->d[1] = set_w(c->d[1], lsl_n(&c->ccr, c->d[1], 3, 16));
+        c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[1], c->d[0]));
+        call_68k(c, NAME_OF);
+        c->d[0] = 0;
+        c->d[1] = 14;
+        c->d[1] = set_w(c->d[1], sub_w(&c->ccr, rd16(FIXED_LEN), c->d[1]));
+        c->d[1] = set_w(c->d[1], lsr_n(&c->ccr, c->d[1], 1, 16));
+        uint32_t x = c->ccr & CC_X ? 1 : 0;           /* addx.w d1,d0: the odd column right */
+        uint16_t r = (uint16_t)(c->d[1] + x);
+        c->d[0] = set_w(c->d[0], r);
+        c->ccr = (uint16_t)((c->ccr & ~(CC_X | CC_N | CC_V | CC_C)) | (r & 0x8000 ? CC_N : 0) | (r ? 0 : 0) );
+        if (r) c->ccr &= ~CC_Z;
+        uint16_t left = (uint16_t)c->d[1], right = r;
+        wr16(c->a[6] - 10, left); wr16(c->a[6] - 12, right);
+        c->a[1] = VDP_DATA;
+        c->a[0] = NAME_TOP; list_row(left, right, base);
+        c->a[0] = NAME_BOTTOM; list_row(left, right, base);
+        lines = (uint16_t)sub_w(&c->ccr, 1, rd16(c->a[6] - 2));
+        wr16(c->a[6] - 2, lines);
+    } while (lines);
+    F_W(blanks);
+    while (blanks) {
+        blank(); blank();
+        blanks = (uint16_t)sub_w(&c->ccr, 1, rd16(c->a[6] - 4));
+        wr16(c->a[6] - 4, blanks);
+    }
+    c->a[7] = c->a[6]; c->a[6] = rd32(c->a[7]); c->a[7] += 4;   /* unlk */
+    F_B(rd8(NO_REDRAW_ARROWS));
+    if (rd8(NO_REDRAW_ARROWS)) return;
+    arrows();
+}
+
+/* $76B4: a list page: the list, the title, the lines */
+static void list_page(void)
+{
+    build_list();
+    c->d[7] = set_w(c->d[7], 0xF04);
+    title();
+    draw_list();
+}
+
+/* $7808: the page's panel blanked (9 rows of 17 from (13, 6)) */
+static void clear_panel(void)
+{
+    c->d[7] = set_w(c->d[7], 0xD06);
+    for (c->d[3] = 8; ; ) {
+        text_at();
+        c->d[5] = 17;
+        fill_blank();
+        c->d[7] = set_w(c->d[7], add_w(&c->ccr, 1, c->d[7]));
+        c->d[3] = set_w(c->d[3], c->d[3] - 1);
+        if ((c->d[3] & 0xFFFF) == 0xFFFF) break;
+    }
+}
+/* $7E72: 13 blanks at d7 */
+static void blank_13(void) { text_at(); c->d[5] = 13; fill_blank(); }
+
+/* $757A: the line chosen, doubled (an index) */
+static void line_x2(void)
+{
+    c->d[0] = set_w(c->d[0], rd16(LIST_LINE));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+}
+
+/* $7820: into the sub-menu of line LIST_LINE: its page (1-4 a list, 5 the magic, 6 the items),
+ * the cursor at its first line */
+static void open_line(void)
+{
+    wr16(LIST_TOP, 0); f_clr();
+    c->d[0] = set_w(c->d[0], rd16(LIST_LINE));
+    wr16(LIST_LINE, 0); f_clr();
+    wr16(MENU_OF, (uint16_t)c->d[0]);
+    c->a[0] = sx(c->d[0]);
+    wr8(0xFFFF95D6u, rd8(c->a[0] - 0x6A32)); F_B(rd8(c->a[0] - 0x6A32));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, 1, c->d[0]));
+    wr16(PAGE, (uint16_t)c->d[0]); F_W(c->d[0]);
+    cmp_w(&c->ccr, 5, c->d[0]);
+    uint16_t p = (uint16_t)c->d[0];
+    if (p < 5) { list_page(); wr16(0xFFFF9624u, 0xE07); F_W(0xE07); }
+    else if (p == 5) { wr8(0xFFFF9614u, 0); f_clr(); cursor_show(); return; }
+    else { wr16(0xFFFF9624u, 0x206); F_W(0x206); }
+    wr8(0xFFFF9614u, 1); F_B(1);
+    cursor_show();
+}
+
+/* $77CA: the main menu: the panel cleared, the title, its six lines ($7D6E places, $82CB names),
+ * the cursor on the line chosen */
+static void main_menu(void)
+{
+    clear_panel();
+    title();
+    c->a[0] = 0x7D6Eu;
+    c->a[1] = 0x82CBu;
+    for (c->d[2] = 5; ; ) {
+        c->d[7] = set_w(c->d[7], rd16(c->a[0])); c->a[0] += 2; F_W(c->d[7]);
+        text_at();
+        string_plain();
+        c->d[2] = set_w(c->d[2], c->d[2] - 1);
+        if ((c->d[2] & 0xFFFF) == 0xFFFF) break;
+    }
+    line_x2();
+    c->a[0] = 0x7D6Eu + sx(c->d[0]);
+    c->d[0] = set_b(c->d[0], rd8(c->a[0]++));
+    c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 1, c->d[0]));
+    wr8(0xFFFF9624u, (uint8_t)c->d[0]); F_B(c->d[0]);
+    wr8(0xFFFF9625u, rd8(c->a[0]++)); F_B(rd8(c->a[0] - 1));
+    wr8(0xFFFF9614u, 1); F_B(1);
+    cursor_show();
+}
+
+/* $7D00: the cursor moved round the menu by the d-pad ($7D4A: the line each way from each) */
+static void menu_move(void)
+{
+    for (c->d[2] = 3; ; ) {
+        c->d[0] = set_b(c->d[0], rd8(0x7D46u + sx(c->d[2]))); F_B(c->d[0]);
+        if (bit_test(0xFFFF95D9u, (int)(c->d[0] & 7))) break;
+        c->d[2] = set_w(c->d[2], c->d[2] - 1);
+        if ((c->d[2] & 0xFFFF) == 0xFFFF) return;
+    }
+    click();
+    c->d[0] = set_w(c->d[0], rd16(LIST_LINE));
+    c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 2, 16));
+    c->d[2] = set_w(c->d[2], add_w(&c->ccr, c->d[0], c->d[2]));
+    c->d[0] = set_b(c->d[0], rd8(0x7D4Au + sx(c->d[2]))); F_B(c->d[0]);
+    wr16(LIST_LINE, (uint16_t)c->d[0]); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+    F_W(rd16(PAGE));
+    if (rd16(PAGE)) {
+        wr16(0xFFFF9624u, rd16(0x7D62u + sx(c->d[0]))); F_W(rd16(0x7D62u + sx(c->d[0])));
+    } else {
+        wr16(0xFFFF9624u, rd16(0x7D6Eu + sx(c->d[0]))); F_W(rd16(0x7D6Eu + sx(c->d[0])));
+        wr8(0xFFFF9624u, (uint8_t)sub_b(&c->ccr, 1, rd8(0xFFFF9624u)));
+    }
+    cursor_show();
+}
+
+/* $7CA4: take off the thing of the line chosen if it is in a slot (A + left, right): its slot
+ * emptied, its name plain, the slot's icon redrawn; d6 0 (eq) if so, else -1 */
+static void take_off(void)
+{
+    c->d[1] = set_w(c->d[1], rd16(LIST_LINE)); F_W(c->d[1]);
+    cmp_w(&c->ccr, 5, rd16(MENU_OF));
+    if (rd16(MENU_OF) != 5) {
+        c->d[1] = set_w(c->d[1], add_w(&c->ccr, c->d[1], c->d[1]));
+        c->a[0] = sx(c->d[1]);
+        c->d[1] = set_w(c->d[1], rd16(c->a[0] - 0x6A12)); F_W(c->d[1]);
+        c->d[1] = set_w(c->d[1], add_w(&c->ccr, 8, c->d[1]));
+    }
+    for (c->d[2] = 1; ; ) {
+        c->a[0] = sx(c->d[2]);
+        cmp_byte(rd8(c->a[0] - 0x60F0), c->d[1]);
+        if (rd8(c->a[0] - 0x60F0) == (c->d[1] & 0xFF)) {
+            wr8(c->a[0] - 0x6A24, rd8(c->a[0] - 0x60F0));
+            c->d[0] = 0xFFFFFFFFu;
+            wr8(c->a[0] - 0x60F0, 0xFF);
+            wr8(c->a[0] - 0x6A1E, 0xFF); F_B(0xFF);
+            cmp_byte(8, c->d[1]);
+            if ((c->d[1] & 0xFF) < 8) { line_x2(); menu_place(); string_plain(); }
+            F_W(c->d[2]);
+            if (c->d[2] & 0xFFFF) right_slot(); else left_slot();
+            c->d[6] = 0; F_L(0);
+            return;
+        }
+        c->d[2] = set_w(c->d[2], c->d[2] - 1);
+        if ((c->d[2] & 0xFFFF) == 0xFFFF) break;
+    }
+    c->d[6] = 0xFFFFFFFFu; F_L(c->d[6]);
+}
+
+/* $7BB2: the special actions' page: six names ($7C0A, the slotted ones bright), each with its
+ * meter of uses (left of the most); the title */
+static void magic_page(void)
+{
+    frame_items();
+    c->d[4] = 0;
+    c->a[1] = 0x7C0Au;
+    do {
+        c->d[7] = set_b(c->d[7], rd8(c->a[1]++));
+        c->d[7] = set_w(c->d[7], lsl_n(&c->ccr, c->d[7], 8, 16));
+        c->d[7] = set_b(c->d[7], rd8(c->a[1]++));
+        text_at();
+        cmp_byte(rd8(0xFFFF9F10u), c->d[4]);
+        int bright = (c->d[4] & 0xFF) == rd8(0xFFFF9F10u);
+        if (!bright) { cmp_byte(rd8(0xFFFF9F11u), c->d[4]); bright = (c->d[4] & 0xFF) == rd8(0xFFFF9F11u); }
+        if (bright) string_bright(); else string_plain();
+        c->a[0] = sx(c->d[4]);
+        wr8(BAR_FULL, rd8(c->a[0] - 0x6A48)); F_B(rd8(c->a[0] - 0x6A48));
+        c->d[0] = set_b(c->d[0], rd8(c->a[0] - 0x6A42));
+        c->d[0] = set_b(c->d[0], sub_b(&c->ccr, rd8(BAR_FULL), c->d[0]));
+        wr8(BAR_REST, (uint8_t)c->d[0]); F_B(c->d[0]);
+        meter();
+        c->d[4] = set_w(c->d[4], add_w(&c->ccr, 1, c->d[4]));
+        cmp_w(&c->ccr, 6, c->d[4]);
+    } while ((c->d[4] & 0xFFFF) < 6);
+    title();
+}
+
+/* $7B86: the next place (a3); a picture from a0 if the byte at a2 is set, else skipped */
+static void maybe_picture(void)
+{
+    c->d[7] = set_w(c->d[7], rd16(c->a[3])); c->a[3] += 2; F_W(c->d[7]);
+    F_B(rd8(c->a[2]));
+    if (rd8(c->a[2])) { tile_rows(); return; }
+    c->a[0] += 8;
+}
+
+/* $7AC0: the items page: the twelve things owned ($-6A74) by name ($1E6A, fixed width, at
+ * $7B0A); then the pictures and counts ($7B92 places, $7B9A pictures, $959C counts) and the icon
+ * of the thing in use */
+static void items_page(void)
+{
+    frame_items();
+    c->d[2] = 0;
+    do {
+        c->a[0] = sx(c->d[2]);
+        c->d[4] = set_b(c->d[4], rd8(c->a[0] - 0x6A74)); F_B(c->d[4]);
+        if (c->d[4] & 0xFF) {
+            c->a[7] -= 2; wr16(c->a[7], (uint16_t)c->d[2]);
+            c->d[0] = set_w(c->d[0], c->d[2] | 0x30); F_W(c->d[0]);
+            call_68k(c, NAME_OF);
+            c->d[2] = set_w(c->d[2], rd16(c->a[7])); c->a[7] += 2; F_W(c->d[2]);
+            F_W(rd16(FIXED_LEN));
+            if (rd16(FIXED_LEN)) {
+                c->d[0] = set_w(c->d[0], c->d[2]);
+                c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+                c->d[7] = set_w(c->d[7], rd16(0x7B0Au + sx(c->d[0]))); F_W(c->d[7]);
+                text_at();
+                c->a[1] = NAME_TOP; fixed_name();
+                c->d[7] = set_w(c->d[7], add_w(&c->ccr, 1, c->d[7]));
+                text_at();
+                c->a[1] = NAME_BOTTOM; fixed_name();
+            }
+        }
+        c->d[2] = set_w(c->d[2], add_w(&c->ccr, 1, c->d[2]));
+        cmp_w(&c->ccr, 12, c->d[2]);
+    } while ((c->d[2] & 0xFFFF) < 12);
+    c->a[0] = 0x7B9Au;
+    c->a[2] = 0xFFFF959Cu;
+    c->a[3] = 0x7B92u;
+    c->d[7] = set_w(c->d[7], rd16(c->a[3])); c->a[3] += 2;
+    wr8(TWO_DIGITS, rd8(c->a[2]++)); F_B(rd8(c->a[2] - 1));
+    tile_rows();
+    c->d[7] = set_w(c->d[7], rd16(c->a[3])); c->a[3] += 2; F_W(c->d[7]);
+    text_at();
+    c->d[7] = set_w(c->d[7], 0x506); F_W(0x506);
+    two_digits();
+    maybe_picture();
+    wr16(0xFFFF95F0u, 0xFFFF); F_W(0xFFFF);
+    c->a[2] -= 5;
+    F_B(rd8(c->a[2]));
+    if (rd8(c->a[2])) { wr16(0xFFFF95F0u, 4); F_W(4); }
+    maybe_picture();
+    title();
+    c->a[2] += 6;
+    c->d[3] = set_b(c->d[3], rd8(c->a[2]));
+    c->d[3] = ext_w(c->d[3]);
+    wr16(0xFFFF95EEu, (uint16_t)c->d[3]); F_W(c->d[3]);
+    if (!(c->d[3] & 0x8000)) items_icon();
+}
+
+/* $76E8: the stats: AP, DP, SP from the things in use ($77A2 their points, by slot and thing;
+ * the shield's DP only when the player can hold one) as bars of five ($8018 full) */
+static void stats(void)
+{
+    c->d[3] = 0;
+    wr16(0xFFFF95B4u, 0); wr8(0xFFFF95B6u, 0); wr8(0xFFFF95C4u, 0); f_clr();
+    c->a[0] = 0xFFFF95CEu;
+    if (!bit_test(0xFFFF9EF1u, 4)) {
+        cmp_byte(4, rd8(c->a[0]));
+        if (rd8(c->a[0]) >= 4) wr8(0xFFFF95C4u, 0xFF);
+    }
+    for (c->d[0] = 3; ; ) {
+        c->d[1] = 7;
+        int skip = 0;
+        if (!bit_test(0xFFFF9EF1u, 4)) {
+            c->d[1] = 0;
+            c->d[1] = set_b(c->d[1], rd8(c->a[0]++)); F_B(c->d[1]);
+            skip = (c->d[1] & 0x80) != 0;
+        }
+        if (!skip) {
+            c->a[1] = 0x77A2u + sx(rd16(0x77A2u + sx(c->d[3])));
+            c->a[1] += sx(c->d[1]);
+            c->a[2] = 0xFFFF95B5u;
+            cmp_w(&c->ccr, 3, c->d[0]);
+            if ((c->d[0] & 0xFFFF) == 3) c->a[2] -= 1;
+            c->d[1] = set_b(c->d[1], rd8(c->a[1]++));
+            c->d[2] = set_b(c->d[2], c->d[1]);
+            c->d[1] = set_b(c->d[1], lsr_n(&c->ccr, c->d[1], 4, 8));
+            wr8(c->a[2], (uint8_t)add_b(&c->ccr, c->d[1], rd8(c->a[2]))); c->a[2]++;
+            c->d[2] = set_b(c->d[2], c->d[2] & 0xF); F_B(c->d[2]);
+            cmp_w(&c->ccr, 1, c->d[0]);
+            int add2 = 1;
+            if ((c->d[0] & 0xFFFF) == 1) { F_B(rd8(0xFFFF95C4u)); if (rd8(0xFFFF95C4u) & 0x80) add2 = 0; }
+            if (add2) { wr8(c->a[2], (uint8_t)add_b(&c->ccr, c->d[2], rd8(c->a[2]))); c->a[2]++; }
+        }
+        c->d[3] = set_w(c->d[3], add_w(&c->ccr, 2, c->d[3]));
+        c->d[0] = set_w(c->d[0], c->d[0] - 1);
+        if ((c->d[0] & 0xFFFF) == 0xFFFF) break;
+    }
+    c->d[7] = set_w(c->d[7], 0x500);
+    c->a[0] = 0xFFFF95B4u;
+    c->d[2] = 0;
+    do {
+        c->d[7] = set_b(c->d[7], rd8(0x779Eu + sx(c->d[2])));
+        text_at();
+        c->d[1] = 5;
+        c->d[0] = set_b(c->d[0], rd8(c->a[0]++)); F_B(c->d[0]);
+        int blanks = 1;
+        if (c->d[0] & 0xFF) {
+            cmp_byte(5, c->d[0]);
+            if ((c->d[0] & 0xFF) >= 5) c->d[0] = 5;
+            c->d[1] = set_b(c->d[1], sub_b(&c->ccr, c->d[0], c->d[1]));
+            do {
+                wr16(VDP_DATA, 0x8018);
+                c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 1, c->d[0]));
+            } while (c->d[0] & 0xFF);
+            F_B(c->d[1]);
+            blanks = (c->d[1] & 0xFF) != 0;
+        }
+        if (blanks)
+            do {
+                wr16(VDP_DATA, 0x8020);
+                c->d[1] = set_b(c->d[1], sub_b(&c->ccr, 1, c->d[1]));
+            } while (c->d[1] & 0xFF);
+        c->d[2] = set_w(c->d[2], add_w(&c->ccr, 1, c->d[2]));
+        cmp_w(&c->ccr, 3, c->d[2]);
+    } while ((c->d[2] & 0xFFFF) != 3);
+}
+
 /* call_68k leaves its mark in ret: cleared, as none of these goes on elsewhere */
 #define ENTRY(name, fn) void name(Cpu *cpu) { c = cpu; fn(); c->ret = 0; }
 ENTRY(TextAt, text_at)                 /* $83B0 */
@@ -620,3 +1244,28 @@ ENTRY(StatsPage, stats_page)    /* $7E7C */
 ENTRY(SpriteInit, sprite_init)  /* $8E22 */
 ENTRY(ClickBack, click_back)    /* $8BAA */
 ENTRY(Click, click)             /* $8BB0 */
+ENTRY(FillZero, fill_zero)      /* $875C */
+ENTRY(FillBlank, fill_blank)    /* $8762 */
+ENTRY(TilePair, tile_pair)      /* $85FC */
+ENTRY(TileRows, tile_rows)      /* $8608 */
+ENTRY(Mark, mark)               /* $85CE */
+ENTRY(MarkTwo, mark_2)          /* $85CC */
+ENTRY(LeftSlot, left_slot)      /* $8620 */
+ENTRY(RightSlot, right_slot)    /* $863C */
+ENTRY(ItemsIcon, items_icon)    /* $8666 */
+ENTRY(ViewLimits, view_limits)  /* $86BC */
+ENTRY(Title, title)             /* $8272 */
+ENTRY(BuildList, build_list)    /* $82F4 */
+ENTRY(DrawList, draw_list)      /* $83D0 */
+ENTRY(ListPage, list_page)      /* $76B4 */
+ENTRY(ClearPanel, clear_panel)  /* $7808 */
+ENTRY(Blank13, blank_13)        /* $7E72 */
+ENTRY(LineX2, line_x2)          /* $757A */
+ENTRY(OpenLine, open_line)      /* $7820 */
+ENTRY(MainMenu, main_menu)      /* $77CA */
+ENTRY(MenuMove, menu_move)      /* $7D00 */
+ENTRY(TakeOff, take_off)        /* $7CA4 */
+ENTRY(MagicPage, magic_page)    /* $7BB2 */
+ENTRY(ItemsPage, items_page)    /* $7AC0 */
+ENTRY(MaybePicture, maybe_picture) /* $7B86 */
+ENTRY(Stats, stats)             /* $76E8 */

@@ -61,7 +61,8 @@ void TextAt(Cpu *), TextAtRC(Cpu *), String(Cpu *), StringPlain(Cpu *), StringBr
      LineMark(Cpu *), MenuPlace(Cpu *), MenuBright(Cpu *), MenuPlainBright(Cpu *), Cells(Cpu *), Meter(Cpu *),
      PressedB(Cpu *), PressedBS(Cpu *), PressedAC(Cpu *), MoreBelow(Cpu *), Blank(Cpu *), Div10(Cpu *), Digits(Cpu *),
      TwoDigits(Cpu *), Level(Cpu *),
-     UpBlink(Cpu *), UpHide(Cpu *), DownBlink(Cpu *), DownHide(Cpu *), DownShow(Cpu *), CursorBlink(Cpu *), CursorHide(Cpu *), CursorShow(Cpu *), ListMove(Cpu *), TileRowAt(Cpu *), TileRow(Cpu *), TilesAt(Cpu *), FrameFull(Cpu *), FrameLower(Cpu *), FrameStats(Cpu *), FrameFoot(Cpu *), FrameItems(Cpu *), FrameBox(Cpu *), FramePause(Cpu *), Palette8(Cpu *), BoxDim(Cpu *), StatsPage(Cpu *), SpriteInit(Cpu *), ClickBack(Cpu *), Click(Cpu *);
+     UpBlink(Cpu *), UpHide(Cpu *), DownBlink(Cpu *), DownHide(Cpu *), DownShow(Cpu *), CursorBlink(Cpu *), CursorHide(Cpu *), CursorShow(Cpu *), ListMove(Cpu *), TileRowAt(Cpu *), TileRow(Cpu *), TilesAt(Cpu *), FrameFull(Cpu *), FrameLower(Cpu *), FrameStats(Cpu *), FrameFoot(Cpu *), FrameItems(Cpu *), FrameBox(Cpu *), FramePause(Cpu *), Palette8(Cpu *), BoxDim(Cpu *), StatsPage(Cpu *), SpriteInit(Cpu *), ClickBack(Cpu *), Click(Cpu *),
+     FillZero(Cpu *), FillBlank(Cpu *), TilePair(Cpu *), TileRows(Cpu *), Mark(Cpu *), MarkTwo(Cpu *), LeftSlot(Cpu *), RightSlot(Cpu *), ItemsIcon(Cpu *), ViewLimits(Cpu *), Title(Cpu *), BuildList(Cpu *), DrawList(Cpu *), ListPage(Cpu *), ClearPanel(Cpu *), Blank13(Cpu *), LineX2(Cpu *), OpenLine(Cpu *), MainMenu(Cpu *), MenuMove(Cpu *), TakeOff(Cpu *), MagicPage(Cpu *), ItemsPage(Cpu *), MaybePicture(Cpu *), Stats(Cpu *);
 #define CT_ALL 0x3FFFF                /* every register and flag compared */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
      FindFreeEffect(Cpu *), CheckGrounded(Cpu *);
@@ -237,6 +238,31 @@ const PortRoutine port_routines[] = {
     {0x008E22, 0x008E3E, "SpriteInit", SpriteInit, CT_ALL},
     {0x008BAA, 0x008BB0, "ClickBack", ClickBack, CT_ALL},
     {0x008BB0, 0x008BB6, "Click", Click, CT_ALL},
+    {0x00875C, 0x008762, "FillZero", FillZero, CT_ALL},
+    {0x008762, 0x008778, "FillBlank", FillBlank, CT_ALL},   /* with the loop at $876C */
+    {0x0085FC, 0x008608, "TilePair", TilePair, CT_ALL},
+    {0x008608, 0x008620, "TileRows", TileRows, CT_ALL},
+    {0x0085CE, 0x0085FC, "Mark", Mark, CT_ALL},   /* with $85F0, a 2 x 2 icon */
+    {0x0085CC, 0x0085CE, "MarkTwo", MarkTwo, CT_ALL},
+    {0x008620, 0x00863C, "LeftSlot", LeftSlot, CT_ALL},
+    {0x00863C, 0x008666, "RightSlot", RightSlot, CT_ALL},   /* with $8656, an icon */
+    {0x008666, 0x0086BC, "ItemsIcon", ItemsIcon, CT_ALL},   /* with $8678-$86B8 */
+    {0x0086BC, 0x008720, "ViewLimits", ViewLimits, CT_ALL},
+    {0x008272, 0x0082B2, "Title", Title, CT_ALL},
+    {0x0082F4, 0x0083A4, "BuildList", BuildList, CT_ALL},   /* with the arrows at $8326 */
+    {0x0083D0, 0x0084AE, "DrawList", DrawList, CT_ALL},   /* with its lines, $8476 */
+    {0x0076B4, 0x0076C4, "ListPage", ListPage, CT_ALL},
+    {0x007808, 0x007820, "ClearPanel", ClearPanel, CT_ALL},
+    {0x007E72, 0x007E7C, "Blank13", Blank13, CT_ALL},
+    {0x00757A, 0x007582, "LineX2", LineX2, CT_ALL},
+    {0x007820, 0x00786A, "OpenLine", OpenLine, CT_ALL},
+    {0x0077CA, 0x007808, "MainMenu", MainMenu, CT_ALL},
+    {0x007D00, 0x007D7A, "MenuMove", MenuMove, CT_ALL},
+    {0x007CA4, 0x007D00, "TakeOff", TakeOff, CT_ALL},
+    {0x007BB2, 0x007C44, "MagicPage", MagicPage, CT_ALL},
+    {0x007AC0, 0x007B70, "ItemsPage", ItemsPage, CT_ALL},
+    {0x007B86, 0x007BB2, "MaybePicture", MaybePicture, CT_ALL},
+    {0x0076E8, 0x0077CA, "Stats", Stats, CT_ALL},
     {0x01090C, 0x010910, "SpawnItem", SpawnItem},                 /* effects.c: every register as the original */
     {0x010910, 0x010A1E, "SpawnItemAt", SpawnItemAt},
     {0x010A1E, 0x011094, "RunItems", RunItems, CT_SP},
