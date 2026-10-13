@@ -856,6 +856,48 @@ int hybrid_fuzz(const char *name, long count)
                 for (uint32_t k4 = 0; k4 < 4; k4++) ram[0x95CE + k4] = (uint8_t)(rnd() % 4 ? rnd() % 8 : 0xFF);           /* the things in use */
             if (!strcmp(name, "MaybePicture")) { m68k_set_reg(M68K_REG_A3, 0x7B92 + 2 * (rnd() % 4)); m68k_set_reg(M68K_REG_A2, 0xFF959C + rnd() % 6); }
         }
+        if (!strcmp(name, "BossBar") || !strcmp(name, "BarSmaller")) {   /* a hit: a boss's full life (to $1000) and its life now */
+            uint32_t full = rnd() % 2 ? 0x20 + rnd() % 0x3E0 : 0x400 + rnd() % 0xC01, life = rnd() % 4 ? rnd() % (full + 1) : rnd() & 0xFFFF;
+            uint32_t v = rnd() % 8 ? full << 16 | life : 0;
+            put_word(0x9628, v >> 16); put_word(0x962A, v & 0xFFFF);
+            uint32_t big = full >= 0x400, f = full >= 0x400 ? full : full >= 0x200 ? 0x200 : full;
+            uint32_t m = big ? 0x7F : 0xF, l = life & m ? life + m + 1 : life;
+            uint32_t shown = (f << 16 | (l & 0xFFFF)) & (big ? 0x1F801F80u : 0xFFE0FFF0u);
+            if ((shown & 0xFFFF) > shown >> 16) shown = (shown & 0xFFFF0000u) | shown >> 16;
+            if (rnd() % 4 == 0) { put_word(0x9602, shown >> 16); put_word(0x9604, shown & 0xFFFF); }
+            put_word(0x95F2, rnd() % 3 == 0 ? 0 : rnd() % 2 ? 1 : rnd() % 0xC1);
+            if (!strcmp(name, "BarSmaller")) m68k_set_reg(M68K_REG_D0, rnd() << 16 ^ rnd());
+        }
+        if (!strcmp(name, "BarBig") || !strcmp(name, "BarBigger") || !strcmp(name, "BarRows")) {   /* the life as the bar shows it */
+            int big = !strcmp(name, "BarBigger") || (!strcmp(name, "BarRows") && rnd() % 2);
+            uint32_t unit = big ? 0x100 : 0x20, cells = 1 + rnd() % 16, full = cells * unit, life = (rnd() % (2 * cells + 1)) * unit / 2;
+            put_word(0x9602, full); put_word(0x9604, life);
+            if (!strcmp(name, "BarRows")) {
+                uint32_t whole = life / unit, part = life % unit ? 1 : 0;
+                put_word(0x95FC, cells); put_word(0x9600, 16 - cells); put_word(0x95FE, whole);
+                m68k_set_reg(M68K_REG_D2, (rnd() << 16) | part);
+                m68k_set_reg(M68K_REG_A1, big ? 0x8994 : 0x898E); m68k_set_reg(M68K_REG_A2, big ? 0x89A0 : 0x899A);
+                m68k_set_reg(M68K_REG_A3, big ? 0x89AC : 0x89A6);
+            }
+        }
+        if (!strcmp(name, "SpecialGiven") || !strcmp(name, "SlotRefill") || !strcmp(name, "SpecialUseBack") || !strcmp(name, "GameStart")
+            || !strcmp(name, "UsesKeep") || !strcmp(name, "UsesSame")) {   /* the special actions' uses and most, the slots */
+            for (uint32_t k4 = 0; k4 < 6; k4++) {
+                uint8_t most = (uint8_t)(rnd() % 4 ? rnd() % 13 : 0);
+                ram[0x95BE + k4] = most; ram[0x95B8 + k4] = (uint8_t)(rnd() % 3 ? (most ? rnd() % (most + 1) : 0) : rnd() % 14);
+                if (!strcmp(name, "UsesSame") && rnd() % 2) ram[0x95B8 + k4] = most;
+            }
+            if (!strcmp(name, "UsesSame") && rnd() % 3 == 0) for (uint32_t k4 = 0; k4 < 6; k4++) ram[0x95B8 + k4] = ram[0x95BE + k4];
+            ram[0x9F10] = (uint8_t)(rnd() % 3 ? rnd() % 6 : rnd() % 2 ? 0xFF : rnd() % 14);
+            ram[0x9F11] = (uint8_t)(rnd() % 3 ? rnd() % 6 : rnd() % 2 ? 0xFF : rnd() % 14);
+            if (!strcmp(name, "SpecialGiven")) m68k_set_reg(M68K_REG_D0, (rnd() << 16) | (rnd() % 4 ? rnd() % 6 : rnd() % 8));
+            if (!strcmp(name, "SlotRefill")) m68k_set_reg(M68K_REG_D0, (rnd() << 16) | (rnd() % 2 ? 0 : (rnd() & 0xFF) << 8));
+            if (!strcmp(name, "SpecialUseBack")) {
+                uint32_t a = rnd() % 6;
+                m68k_set_reg(M68K_REG_A0, a);
+                m68k_set_reg(M68K_REG_D1, (rnd() << 8) | ram[0x95B8 + a]); m68k_set_reg(M68K_REG_D2, (rnd() << 8) | ram[0x95BE + a]);
+            }
+        }
         if (!strcmp(name, "TilesAt") || !strcmp(name, "FrameBox")) m68k_set_reg(M68K_REG_A0, 0x8C82 + 2 * (rnd() % 0x80));
         if (!strcmp(name, "TileRow") || !strcmp(name, "TileRowAt")) m68k_set_reg(M68K_REG_A0, 0x8C82 + rnd() % 0x1A0);
         if (!strcmp(name, "SetGfxSlots")) {         /* a random valid slot list in scratch RAM */
