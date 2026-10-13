@@ -350,8 +350,23 @@ static void trace_at(unsigned pc)
 }
 
 static long ft_case = -2, ft_k = -1;           /* WBMW_FUZZ_TRACE=N: every instruction of fuzz case N */
+/* WBMW_PC_COUNT=FILE: how often the 68000 ran each instruction (any mode), written to FILE at
+ * exit as "ADDRESS COUNT" lines: which original code a run reaches, translated or not */
+static uint32_t *pc_count; static const char *pc_count_path; static int pc_count_on = -1;
+static void pc_count_write(void)
+{
+    FILE *f = pc_count ? fopen(pc_count_path, "w") : NULL;
+    if (!f) return;
+    for (uint32_t a = 0; a < 0x80000; a += 2) if (pc_count[a >> 1]) fprintf(f, "%06X %u\n", a, pc_count[a >> 1]);
+    fclose(f);
+}
 int md_instr_hook(unsigned int pc)
 {
+    if (pc_count_on < 0) {
+        pc_count_path = getenv("WBMW_PC_COUNT"); pc_count_on = pc_count_path != NULL;
+        if (pc_count_on) { pc_count = calloc(0x40000, sizeof *pc_count); atexit(pc_count_write); }
+    }
+    if (pc_count_on && pc < 0x80000) pc_count[pc >> 1]++;
     if (ft_case == -2) { const char *f = getenv("WBMW_FUZZ_TRACE"); ft_case = f ? atol(f) : -1; }
     if (fuzzing && ft_k == ft_case) fprintf(stderr, "ft %06X d0 %08X d1 %08X a0 %08X a2 %08X a7 %08X\n", pc, m68k_get_reg(NULL, M68K_REG_D0), m68k_get_reg(NULL, M68K_REG_D1), m68k_get_reg(NULL, M68K_REG_A0), m68k_get_reg(NULL, M68K_REG_A2), m68k_get_reg(NULL, M68K_REG_SP));
     if (tr_n) trace_at(pc);
@@ -694,6 +709,19 @@ int hybrid_fuzz(const char *name, long count)
         if (strncmp(name, "Obj", 3) && strncmp(name, "Ppl", 3) && strncmp(name, "Hnd", 3) && strncmp(name, "Act", 3))   /* these keep the state's entities (below) */
             for (uint32_t a = 0xC000; a < 0xE000; a++) ram[a] = (uint8_t)rnd();
         for (uint32_t a = 0x8A52; a < 0x8A56; a++) ram[a] = (uint8_t)(rnd() & (k & 1 ? 0xFF : 0));  /* seed 0 half the time */
+        /* the status screen's primitives (port/status.c): its menus' indexes as the game gives
+         * them (a word table read at a random one is an odd address for the original) */
+        if (!strcmp(name, "LineMark")) m68k_set_reg(M68K_REG_D0, (m68k_get_reg(NULL, M68K_REG_D0) & ~0xFFFFu) | rnd() % 2);
+        if (!strcmp(name, "MenuPlace") || !strcmp(name, "MenuPlainBright"))
+            m68k_set_reg(M68K_REG_D0, (m68k_get_reg(NULL, M68K_REG_D0) & ~0xFFFFu) | 2 * (rnd() % 6));
+        if (!strcmp(name, "MenuBright") || !strcmp(name, "MenuPlainBright")) put_word(0x95E4, rnd() % 6);
+        if (!strcmp(name, "Meter") || !strcmp(name, "Cells")) { ram[0x95C8] = (uint8_t)(rnd() % 3 ? rnd() % 12 : 0); ram[0x95B7] = (uint8_t)(rnd() % 12); }
+        if (!strcmp(name, "FixedName")) put_word(0x8CDE, 1 + rnd() % 14);
+        if (!strcmp(name, "MoreBelow")) { put_word(0x9612, rnd() % 8); put_word(0x9610, rnd() % 12); }
+        if (!strncmp(name, "Pressed", 7)) ram[0x8A7C] = (uint8_t)(rnd() % 2 ? 0 : 1u << (rnd() % 8));
+        if (!strcmp(name, "TwoDigits") || !strcmp(name, "Level")) { ram[0x95E1] = (uint8_t)(rnd() % 100); ram[0x9F00] = (uint8_t)(rnd() % 100); }
+        if (!strcmp(name, "String") || !strncmp(name, "String", 6))               /* a string: in ROM, or a short one in RAM */
+            if (rnd() % 2) { m68k_set_reg(M68K_REG_A1, 0xFF4E00); for (int k3 = 0, n3 = (int)(rnd() % 12); k3 <= n3; k3++) ram[0x4E00 + k3] = (uint8_t)(k3 == n3 ? 0 : 0x20 + rnd() % 0x5F); }
         if (!strcmp(name, "SetGfxSlots")) {         /* a random valid slot list in scratch RAM */
             uint32_t p = 0x4E00;                    /* restored after every case, so any RAM will do */
             int slot = (int)(rnd() % 48);
