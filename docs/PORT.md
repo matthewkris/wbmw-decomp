@@ -1803,6 +1803,45 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 checked as part of it. 630,000 fuzz cases from six states, 0 mismatches, every instruction
 covered. Self-test caught 100 in 100 for each. Replace mode: thirteen runs, no problems.
 
+#### The rooms, batch T14: the layers each frame (2026-10-13)
+
+Each frame of the game, `$9CD2` moves the camera, moves both layers and sends the scroll to the
+VDP's tables. In `port/rooms.c`, with every register and flag in the contract:
+
+* The camera (`$9720`): from the player, with a lead of up to 64 pixels toward a second entity
+  (`$9748`), eased a pixel a frame (`$974A`). Bits of `$9858` take x or y from `$985A`/`$985E`
+  instead, or keep y within the room's height. The shakes (`$9734`, `$9738`, the y's eased back)
+  are added.
+* The layers' moves by their kinds (`$9C5E`, tables `$9C80`/`$9C8A`): following the camera at a
+  parallax (`$9AA4`, `$9ABE`), drifting by their own speed in 16ths of a pixel (`$9AF2`, `$9B46`;
+  `$9B18` also moves with plane A), or carried by a lift (`$9BA6`). The lift runs a script (`$68`:
+  counts of frames and speeds, 0 to jump back) and sets `$9854` bit 0 when the player stands on
+  its thing (`$9B96` gives the thing its speed).
+* The blocks that scroll into view (`$9CE6`, tables `$9D0C`/`$9D10`): new columns (`$9D46`, each
+  `$9DC8`, wrapping every `$300` of rows) and new rows (`$9E60`, each `$9EF0`, wrapping every 16
+  columns), up to 32 columns and `$400` of rows kept drawn (`$8`-`$E`). `$9DC8` and `$9EF0` keep
+  their counts in their caller's `link` frame, and the C does too.
+* The scroll out (`$9C92`): both layers' to `$FF2400`/`$FF2600` and `$8A8C`/`$8AB4`, with the
+  screen's shake.
+* A room's start (`$97F0`): both layers drawn whole (`$9A58`), the scroll out, and the HUD's
+  panel (`$7544`, not yet C).
+
+What they needed:
+* **A plain contract for `$97F0`.** It ends in `$7544`, which calls hand ports that promise only
+  the stack pointer.
+* **Fuzz inputs:**
+  * The column and row routines get a layer scrolled up to 20 columns or 14 rows from what is
+    drawn, so the "more than kept" paths run.
+  * The lift gets its real script at any of its steps.
+  * The camera gets random sources, leads, limits and shakes.
+  * `$9CD2` and `$9CE6` keep the state's own layers and camera. With random kinds the layers
+    redraw thousands of columns, valid but too slow to fuzz.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(37 runs, 558,595 checked calls; these run inside the game's task pass and are checked with it).
+540,000 fuzz cases from six states, 0 mismatches, every instruction covered. Self-test caught 100
+in 100 for each. Replace mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

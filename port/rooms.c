@@ -14,6 +14,7 @@
  * Batch T12, loading a room: its list of commands (layers, graphics, palettes, music, doors and
  * things), the layers' records, the ending's scenes and the room's music.
  * Batch T13, setting the layers up: how each scrolls and is drawn, the camera's parallax.
+ * Batch T14, the layers each frame: the camera, the layers' moves, the blocks scrolling in.
  * Ported register for register, with every register and flag in the contract. */
 #include "world.h"
 
@@ -1097,3 +1098,495 @@ ENTRY(Parallax, parallax)                  /* $9AC4 */
 ENTRY(MoverPlace, mover_place)             /* $9B6C */
 ENTRY(ScrollX, scroll_x)                   /* $9D16 */
 ENTRY(ScrollY, scroll_y)                   /* $9E2E */
+
+/* ---- batch T14: the layers each frame ----
+ * The camera follows the player ($9720, leading toward a second entity at $9748 if there is
+ * one, and limited by the room's height when $9858 bit 3 is set); each layer then moves by its
+ * kinds, draws the columns and rows of blocks that scroll into view ($9D46, $9E60), and the
+ * scroll goes to the VDP's tables ($9C92). */
+
+#define MAP_BLOCK_AT  0x2542u       /* d6, d7: the block there (a0, d1; d4 negative: none) */
+#define DRAW_BLOCK    0x2694u       /* d0: a block drawn at d6, d7 on layer a3 */
+#define QUEUE_SOUND   0x0366u
+
+static void link(int32_t disp) { push32(c->a[6]); c->a[6] = c->a[7]; c->a[7] += (uint32_t)disp; }
+static void unlk(void) { c->a[7] = c->a[6]; c->a[6] = pop32(); }
+static uint16_t mem_sub_w(uint32_t a, uint32_t v) { uint16_t r = (uint16_t)sub_w(&c->ccr, v, rd16(a)); wr16(a, r); return r; }
+static uint16_t mem_add_w(uint32_t a, uint32_t v) { uint16_t r = (uint16_t)add_w(&c->ccr, v, rd16(a)); wr16(a, r); return r; }
+static uint32_t swap_l(uint32_t v) { uint32_t r = v << 16 | v >> 16; F_L(r); return r; }
+
+/* $9720: the camera ($972C, $9730: 16.16, from the player at $FF9EEE, or $985A/$985E when
+ * $9858 says so) plus the shakes ($9734, $9738) */
+static void camera(void)
+{
+    f_bit(rd8(0xFFFF9659u) >> 5 & 1);
+    if (rd8(0xFFFF9659u) & 0x20) return;
+    c->a[0] = sx(rd16(0xFFFF9EEEu));
+    c->d[0] = rd32(0xFFFF985Au); F_L(c->d[0]);
+    f_bit(rd8(0xFFFF9858u) & 1);
+    if (!(rd8(0xFFFF9858u) & 1)) {
+        c->d[0] = rd32(c->a[0] - 0x3800); F_L(c->d[0]);
+        c->d[0] = sub_l(&c->ccr, 0x800000, c->d[0]);
+        c->d[2] = set_w(c->d[2], rd16(0xFFFF9748u)); F_W(c->d[2]);
+        int lead = 0;                               /* 0 none, 1 up, -1 down */
+        if (c->d[2] & 0x8000) {
+            F_W(rd16(0xFFFF974Au));
+            if (rd16(0xFFFF974Au)) lead = rd16(0xFFFF974Au) & 0x8000 ? 1 : -1;
+            else goto add;
+        } else {
+            c->a[1] = sx(c->d[2]);
+            c->d[2] = set_w(c->d[2], rd16(c->a[1] - 0x3800));
+            c->d[2] = set_w(c->d[2], sub_w(&c->ccr, rd16(c->a[0] - 0x3800), c->d[2]));
+            if (c->d[2] & 0x8000) {
+                cmp_w(&c->ccr, 0xFFC0, c->d[2]);
+                if ((int16_t)c->d[2] < -64) c->d[2] = 0xFFFFFFC0u;
+            } else {
+                cmp_w(&c->ccr, 0x40, c->d[2]);
+                if ((int16_t)c->d[2] > 64) c->d[2] = 64;
+            }
+            cmp_w(&c->ccr, rd16(0xFFFF974Au), c->d[2]);
+            if ((c->d[2] & 0xFFFF) != rd16(0xFFFF974Au)) lead = (int16_t)c->d[2] < (int16_t)rd16(0xFFFF974Au) ? -1 : 1;
+        }
+        if (lead > 0) mem_add_w(0xFFFF974Au, 1);
+        else if (lead < 0) mem_sub_w(0xFFFF974Au, 1);
+        c->d[0] = swap_l(c->d[0]);
+        c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(0xFFFF974Au), c->d[0]));
+        c->d[0] = swap_l(c->d[0]);
+    }
+add:
+    c->d[0] = add_l(&c->ccr, rd32(0xFFFF9734u), c->d[0]);
+    put32m(CAMERA_X, c->d[0]);
+    c->d[1] = rd32(0xFFFF985Eu); F_L(c->d[1]);
+    f_bit(rd8(0xFFFF9858u) >> 1 & 1);
+    if (!(rd8(0xFFFF9858u) & 2)) {
+        c->d[1] = rd32(c->a[0] - 0x3700); F_L(c->d[1]);
+        c->d[2] = 0;
+        move_b(2, rd8(c->a[0] - 0x34FD));
+        c->d[2] = set_w(c->d[2], sub_w(&c->ccr, 0x70, c->d[2]));
+        c->d[2] = swap_l(c->d[2]);
+        c->d[1] = add_l(&c->ccr, c->d[2], c->d[1]);
+    }
+    c->d[2] = rd32(0xFFFF9738u); F_L(c->d[2]);
+    f_bit(rd8(0xFFFF9858u) >> 3 & 1);
+    if (rd8(0xFFFF9858u) & 8) {
+        c->d[1] = swap_l(c->d[1]);
+        c->d[3] = 0x1008; F_L(0x1008);
+        cmp_w(&c->ccr, c->d[3], c->d[1]);
+        int clamp = (c->d[1] & 0xFFFF) < 0x1008;
+        if (!clamp) {
+            c->d[3] = set_w(c->d[3], rd16(0xFFFF977Au)); F_W(c->d[3]);
+            c->d[3] = set_w(c->d[3], sub_w(&c->ccr, 8, c->d[3]));
+            cmp_w(&c->ccr, c->d[3], c->d[1]);
+            clamp = (c->d[1] & 0xFFFF) >= (c->d[3] & 0xFFFF);
+        }
+        if (clamp) { c->d[1] = c->d[3]; F_L(c->d[3]); }
+        c->d[2] = swap_l(c->d[2]);
+        c->d[2] = set_w(c->d[2], neg_w(&c->ccr, c->d[2]));
+        if ((c->d[2] & 0xFFFF) && !(c->d[2] & 0x8000)) c->d[2] = set_w(c->d[2], sub_w(&c->ccr, 1, c->d[2]));
+        put16m(0xFFFF9738u, c->d[2]);
+        c->d[2] = swap_l(c->d[2]);
+        c->d[1] = swap_l(c->d[1]);
+    }
+    c->d[1] = add_l(&c->ccr, c->d[2], c->d[1]);
+    put32m(CAMERA_Y, c->d[1]);
+}
+
+/* $9A58: the whole of layer a3 drawn: rows from $C ($E of them, in $40s), columns from $8 ($A) */
+static void draw_layer(void)
+{
+    link(-4);
+    c->d[7] = set_w(c->d[7], rd16(c->a[3] + 0xC)); F_W(c->d[7]);
+    put16m(c->a[6] - 4, rd16(c->a[3] + 0xE));
+    do {
+        c->d[6] = set_w(c->d[6], rd16(c->a[3] + 8)); F_W(c->d[6]);
+        put16m(c->a[6] - 2, rd16(c->a[3] + 0xA));
+        do {
+            call(MAP_BLOCK_AT);
+            call(DRAW_BLOCK);
+            c->d[6] = set_w(c->d[6], add_w(&c->ccr, 1, c->d[6]));
+        } while (mem_sub_w(c->a[6] - 2, 1));
+        c->d[0] = 64; F_L(64);
+        c->d[7] = set_w(c->d[7], add_w(&c->ccr, c->d[0], c->d[7]));
+    } while (mem_sub_w(c->a[6] - 4, c->d[0]));
+    unlk();
+}
+
+/* $9AA4, $9ABE: a layer at a parallax: from the camera, its scroll */
+static void x_follow(void) { push32(0x9AA6); layer_x(); c->a[7] += 4; scroll_x(); }
+static void y_follow(void) { push32(0x9AC0); layer_y(); c->a[7] += 4; scroll_y(); }
+
+/* $9AF2, $9B18, $9B46: a layer moving by itself: its speed ($3A/$3B, in 16ths of a pixel) added
+ * to its position and fraction ($40/$42); $9B18 also moves with plane A ($9740) */
+static void move_axis(uint32_t speed_at, uint32_t pos_at, uint32_t frac_at, int with_a, void (*scroll)(void))
+{
+    move_b(1, rd8(c->a[3] + speed_at));
+    c->d[1] = set_w(c->d[1], (uint32_t)(int32_t)(int8_t)c->d[1]); F_W(c->d[1]);
+    c->d[1] = swap_l(c->d[1]);
+    c->d[1] &= 0xFFFF0000u; c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z);
+    c->d[1] = asr_n(&c->ccr, c->d[1], 4, 32);
+    if (with_a) {
+        c->d[1] = swap_l(c->d[1]);
+        c->d[1] = set_w(c->d[1], add_w(&c->ccr, rd16(0xFFFF9740u), c->d[1]));
+        c->d[1] = swap_l(c->d[1]);
+    }
+    c->d[2] = set_w(c->d[2], rd16(c->a[3] + pos_at)); F_W(c->d[2]);
+    c->d[2] = swap_l(c->d[2]);
+    c->d[2] = set_w(c->d[2], rd16(c->a[3] + frac_at)); F_W(c->d[2]);
+    c->d[2] = add_l(&c->ccr, c->d[1], c->d[2]);
+    put16m(c->a[3] + frac_at, c->d[2]);
+    c->d[2] = swap_l(c->d[2]);
+    put16m(c->a[3] + pos_at, c->d[2]);
+    scroll();
+}
+static void x_drift(void) { move_axis(0x3A, 4, 0x40, 0, scroll_x); }        /* $9AF2 */
+static void x_drift_a(void) { move_axis(0x3A, 4, 0x40, 1, scroll_x); }      /* $9B18 */
+static void y_drift(void) { move_axis(0x3B, 6, 0x42, 0, scroll_y); }        /* $9B46 */
+
+/* $9B96: the mover's thing's y speed ($5FC8) from its last y ($6E) */
+static void mover_delta(void)
+{
+    c->d[1] = set_w(c->d[1], rd16(c->a[3] + 0x6E)); F_W(c->d[1]);
+    put16m(c->a[3] + 0x6E, c->d[0]);
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, c->d[1], c->d[0]));
+    put16m(c->a[1] - 0x5FC8, c->d[0]);
+}
+
+/* $9BA6: a layer carried by a thing (a lift): its y by its kind ($77: $9C58), then the script
+ * ($68: counts of frames and speeds; a 0 count jumps; a rise first bumps, with sound 57 when it
+ * stops), the thing placed, and whether the player stands on it ($9854 bit 0) */
+static void mover_step(void)
+{
+    c->d[0] = 0;
+    move_b(0, rd8(c->a[3] + 0x77));
+    c->a[0] = 0x9C58u + sx(rd16(0x9C58u + sx(c->d[0])));
+    push32(0x9BB6);                                 /* jsr (a0) */
+    if (c->a[0] == 0x9AAAu) layer_y();
+    else if (c->a[0] == 0x98F4u) fixed_y();
+    else call(c->a[0]);
+    c->a[7] += 4;
+    c->d[1] = rd32(c->a[3] + 0x5C); F_L(c->d[1]);
+    c->d[0] = 0;
+    c->d[0] = set_w(c->d[0], rd16(c->a[3] + 0x7A)); F_W(c->d[0]);
+    if (c->d[0] & 0xFFFF) {
+        c->d[1] = add_l(&c->ccr, c->d[0], c->d[1]);
+        put32m(c->a[3] + 0x5C, c->d[1]);
+    }
+    c->d[0] = rd32(c->a[3] + 0x58); F_L(c->d[0]);
+    c->d[0] = add_l(&c->ccr, c->d[1], c->d[0]);
+    put32m(c->a[3] + 0x58, c->d[0]);
+    c->d[0] = swap_l(c->d[0]);
+    mem_sub_w(c->a[3] + 6, c->d[0]);
+    if (!mem_sub_w(c->a[3] + 0x6C, 1)) {
+        F_W(rd16(c->a[3] + 0x7A));
+        if (rd16(c->a[3] + 0x7A)) { c->d[0] = 57; F_L(57); call(QUEUE_SOUND); }
+        wr16(c->a[3] + 0x7A, 0); c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z);
+        c->a[0] = rd32(c->a[3] + 0x68);
+        for (;;) {
+            put16m(c->a[3] + 0x6C, next16(0));
+            if (rd16(c->a[3] + 0x6C)) break;
+            c->a[0] = rd32(c->a[0]);
+        }
+        c->d[0] = set_w(c->d[0], next16(0));
+        c->d[0] = (uint32_t)(int32_t)(int16_t)c->d[0]; F_L(c->d[0]);
+        c->d[0] = asl_n(&c->ccr, c->d[0], 8, 32);
+        put32m(c->a[3] + 0x5C, c->d[0]);
+        if (c->d[0] && !(c->d[0] & 0x80000000u)) {
+            mem_sub_w(c->a[3] + 0x5E, 0x100);
+            put16m(c->a[3] + 0x7A, 0x4000);
+        }
+        wr32(c->a[3] + 0x68, c->a[0]);
+    }
+    push32(0x9C1E); mover_place(); c->a[7] += 4;
+    push32(0x9C22); mover_delta(); c->a[7] += 4;
+    push32(0x9C26); scroll_y(); c->a[7] += 4;
+    uint8_t v = rd8(0xFFFF9854u) & 0xFE; wr8(0xFFFF9854u, v); F_B(v);
+    c->a[1] = sx(rd16(c->a[3] + 0x74));
+    c->a[4] = sx(rd16(0xFFFF9EEEu));
+    c->d[0] = 9;
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(c->a[1] - 0x601C), c->d[0]));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(c->a[1] - 0x5F74), c->d[0]));
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, rd16(c->a[4] - 0x3700), c->d[0]));
+    if (c->d[0] & 0x8000) c->d[0] = set_w(c->d[0], neg_w(&c->ccr, c->d[0]));
+    c->d[1] = 9;
+    c->d[1] = set_b(c->d[1], add_b(&c->ccr, rd8(c->a[4] - 0x34FD), c->d[1]));
+    cmp_w(&c->ccr, c->d[1], c->d[0]);
+    if ((c->d[0] & 0xFFFF) < (c->d[1] & 0xFFFF)) { v = rd8(0xFFFF9854u) | 1; wr8(0xFFFF9854u, v); F_B(v); }
+}
+
+/* $9C5E: layer a3 moved by its x and y kinds ($30: $9C80, $31: $9C8A) */
+static void layer_move_kind(uint32_t at)
+{
+    switch (at) {
+    case 0x9AA4: x_follow(); break;
+    case 0x9AF2: x_drift(); break;
+    case 0x9B18: x_drift_a(); break;
+    case 0x9ABE: y_follow(); break;
+    case 0x9B46: y_drift(); break;
+    case 0x9BA6: mover_step(); break;
+    case 0x9D0A: break;                             /* fixed: nothing */
+    default: call(at); break;
+    }
+}
+static void layer_move(void)
+{
+    static const uint32_t table[2] = { 0x9C80, 0x9C8A }, ret[2] = { 0x9C6E, 0x9C7E };
+    for (int k = 0; k < 2; k++) {
+        c->d[0] = 0;
+        move_b(0, rd8(c->a[3] + 0x30 + (uint32_t)k));
+        c->a[0] = table[k] + sx(rd16(table[k] + sx(c->d[0])));
+        push32(ret[k]);
+        layer_move_kind(c->a[0]);
+        c->a[7] += 4;
+    }
+}
+
+/* $9C92: both layers' scroll to the VDP's tables (horizontal at $FF2400/$FF2600, vertical
+ * $8A8C/$8AB4), with the screen's shake ($973C/$973E) */
+static void scroll_out(void)
+{
+    c->d[0] = set_w(c->d[0], rd16(0xFFFF9790u)); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(0xFFFF973Cu), c->d[0]));
+    put16m(0xFFFF2400u, c->d[0]);
+    c->d[0] = set_w(c->d[0], rd16(0xFFFF9792u)); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(0xFFFF973Eu), c->d[0]));
+    put16m(0xFFFF8A8Cu, c->d[0]);
+    c->d[0] = set_w(c->d[0], rd16(0xFFFF9810u)); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(0xFFFF973Cu), c->d[0]));
+    put16m(0xFFFF2600u, c->d[0]);
+    c->d[0] = set_w(c->d[0], rd16(0xFFFF9812u)); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(0xFFFF973Eu), c->d[0]));
+    put16m(0xFFFF8AB4u, c->d[0]);
+    uint8_t v = rd8(0xFFFF8006u) | 8; wr8(0xFFFF8006u, v); F_B(v);
+}
+
+/* $9DC8: a column of blocks (d6) drawn down from row $C, $E of it, wrapping each $300 of
+ * rows; its counts are in the caller's frame (a6 - 6: rows left, a6 - 2: to the wrap) */
+static void draw_column(void)
+{
+    put16m(c->a[6] - 6, rd16(c->a[3] + 0xE));
+    c->d[7] = set_w(c->d[7], rd16(c->a[3] + 0xC)); F_W(c->d[7]);
+    for (;;) {
+        c->d[0] = 0;
+        c->d[0] = set_w(c->d[0], c->d[7]); F_W(c->d[7]);
+        c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 0x4000, c->d[0]));
+        uint32_t q = c->d[0] / 0x300, r = c->d[0] % 0x300;   /* divu.w #$300 */
+        c->d[0] = r << 16 | q;
+        c->ccr = (uint16_t)((c->ccr & CC_X) | (q & 0x8000 ? CC_N : 0) | (q ? 0 : CC_Z));
+        c->d[0] = swap_l(c->d[0]);
+        c->d[0] = set_w(c->d[0], neg_w(&c->ccr, c->d[0]));
+        c->d[0] = set_w(c->d[0], add_w(&c->ccr, 0x300, c->d[0]));
+        put16m(c->a[6] - 2, c->d[0]);
+        call(MAP_BLOCK_AT);
+        F_B(c->d[4]);
+        if (!(c->d[4] & 0x80)) {
+            c->a[4] = c->a[0] + sx(c->d[1]) + 0x20;
+            for (;;) {
+                call(DRAW_BLOCK);
+                c->d[0] = 64; F_L(64);
+                c->d[7] = set_w(c->d[7], add_w(&c->ccr, c->d[0], c->d[7]));
+                if (!mem_sub_w(c->a[6] - 6, c->d[0])) return;
+                if (!mem_sub_w(c->a[6] - 2, c->d[0])) break;
+                c->d[0] = set_w(c->d[0], rd16(c->a[4])); F_W(c->d[0]);
+                c->a[4] += 0x20;
+            }
+        } else {
+            for (;;) {
+                c->d[0] = 0; F_L(0);
+                call(DRAW_BLOCK);
+                c->d[0] = 64; F_L(64);
+                c->d[7] = set_w(c->d[7], add_w(&c->ccr, c->d[0], c->d[7]));
+                if (!mem_sub_w(c->a[6] - 6, c->d[0])) return;
+                if (!mem_sub_w(c->a[6] - 2, c->d[0])) break;
+            }
+        }
+    }
+}
+
+/* $9EF0: a row of blocks (d7) drawn across from column $8, $A of it, wrapping each 16 */
+static void draw_row(void)
+{
+    put16m(c->a[6] - 4, rd16(c->a[3] + 0xA));
+    c->d[6] = set_w(c->d[6], rd16(c->a[3] + 8)); F_W(c->d[6]);
+    for (;;) {
+        c->d[0] = 0;
+        c->d[0] = set_b(c->d[0], sub_b(&c->ccr, c->d[6], c->d[0]));
+        and_w(0, 0xF);
+        if (!(c->d[0] & 0xFFFF)) c->d[0] = 16;
+        put16m(c->a[6] - 2, c->d[0]);
+        call(MAP_BLOCK_AT);
+        F_B(c->d[4]);
+        if (!(c->d[4] & 0x80)) {
+            c->a[4] = c->a[0] + sx(c->d[1]) + 2;
+            for (;;) {
+                call(DRAW_BLOCK);
+                c->d[6] = set_w(c->d[6], add_w(&c->ccr, 1, c->d[6]));
+                if (!mem_sub_w(c->a[6] - 4, 1)) return;
+                if (!mem_sub_w(c->a[6] - 2, 1)) break;
+                c->d[0] = set_w(c->d[0], next16(4)); F_W(c->d[0]);
+            }
+        } else {
+            for (;;) {
+                c->d[0] = 0; F_L(0);
+                call(DRAW_BLOCK);
+                c->d[6] = set_w(c->d[6], add_w(&c->ccr, 1, c->d[6]));
+                if (!mem_sub_w(c->a[6] - 4, 1)) return;
+                if (!mem_sub_w(c->a[6] - 2, 1)) break;
+            }
+        }
+    }
+}
+
+/* $9D46: the columns that scrolled into view drawn (to the right, or left), up to 32 kept ($8, $A) */
+static void columns_in(void)
+{
+    link(-6);
+    c->d[0] = set_w(c->d[0], rd16(c->a[3] + 4)); F_W(c->d[0]);
+    c->d[2] = set_w(c->d[2], c->d[0]); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], asr_n(&c->ccr, c->d[0], 4, 16));
+    c->d[6] = set_w(c->d[6], rd16(c->a[3] + 8)); F_W(c->d[6]);
+    cmp_w(&c->ccr, c->d[6], c->d[0]);
+    if ((c->d[0] & 0xFFFF) >= (c->d[6] & 0xFFFF)) {
+        and_w(2, 0xF);
+        c->d[2] = set_b(c->d[2], (c->d[2] & 0xFFFF) ? 0 : 0xFF);
+        c->d[1] = 17;
+        c->d[1] = set_b(c->d[1], add_b(&c->ccr, c->d[2], c->d[1]));
+        c->d[2] = set_w(c->d[2], c->d[0]); F_W(c->d[0]);
+        c->d[2] = set_w(c->d[2], add_w(&c->ccr, c->d[1], c->d[2]));
+        c->d[6] = set_w(c->d[6], add_w(&c->ccr, rd16(c->a[3] + 0xA), c->d[6]));
+        c->d[2] = set_w(c->d[2], sub_w(&c->ccr, c->d[6], c->d[2]));
+        if (!(c->ccr & (CC_C | CC_Z))) {
+            put16m(c->a[6] - 4, c->d[2]);
+            do {
+                push32(0x9D78); draw_column(); c->a[7] += 4;
+                c->d[6] = set_w(c->d[6], add_w(&c->ccr, 1, c->d[6]));
+                mem_add_w(c->a[3] + 0xA, 1);
+            } while (mem_sub_w(c->a[6] - 4, 1));
+            c->d[0] = set_w(c->d[0], rd16(c->a[3] + 0xA)); F_W(c->d[0]);
+            c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 0x20, c->d[0]));
+            if (!(c->ccr & (CC_C | CC_Z))) {
+                mem_add_w(c->a[3] + 8, c->d[0]);
+                put16m(c->a[3] + 0xA, 0x20);
+            }
+        }
+    } else {
+        c->d[3] = set_w(c->d[3], c->d[6]); F_W(c->d[6]);
+        c->d[3] = set_w(c->d[3], sub_w(&c->ccr, c->d[0], c->d[3]));
+        put16m(c->a[6] - 4, c->d[3]);
+        do {
+            c->d[6] = set_w(c->d[6], sub_w(&c->ccr, 1, c->d[6]));
+            mem_sub_w(c->a[3] + 8, 1);
+            push32(0x9DAA); draw_column(); c->a[7] += 4;
+            mem_add_w(c->a[3] + 0xA, 1);
+        } while (mem_sub_w(c->a[6] - 4, 1));
+        c->d[0] = set_w(c->d[0], rd16(c->a[3] + 0xA)); F_W(c->d[0]);
+        cmp_w(&c->ccr, 0x20, c->d[0]);
+        if ((c->d[0] & 0xFFFF) > 0x20) put16m(c->a[3] + 0xA, 0x20);
+    }
+    unlk();
+}
+
+/* $9E60: the rows that scrolled into view drawn (down, or up), up to $400 kept ($C, $E) */
+static void rows_in(void)
+{
+    link(-6);
+    c->d[0] = set_w(c->d[0], rd16(c->a[3] + 6)); F_W(c->d[0]);
+    c->d[2] = set_w(c->d[2], c->d[0]); F_W(c->d[0]);
+    and_w(0, 0xFFF0);
+    c->d[0] = set_w(c->d[0], asl_n(&c->ccr, c->d[0], 2, 16));
+    c->d[7] = set_w(c->d[7], rd16(c->a[3] + 0xC)); F_W(c->d[7]);
+    cmp_w(&c->ccr, c->d[7], c->d[0]);
+    if ((c->d[0] & 0xFFFF) >= (c->d[7] & 0xFFFF)) {
+        c->d[1] = set_w(c->d[1], 0x280); F_W(0x280);
+        and_w(2, 0xF);
+        if (c->d[2] & 0xFFFF) { c->d[1] = set_w(c->d[1], 0x2C0); F_W(0x2C0); }
+        c->d[2] = set_w(c->d[2], c->d[0]); F_W(c->d[0]);
+        c->d[2] = set_w(c->d[2], add_w(&c->ccr, c->d[1], c->d[2]));
+        c->d[7] = set_w(c->d[7], add_w(&c->ccr, rd16(c->a[3] + 0xE), c->d[7]));
+        c->d[2] = set_w(c->d[2], sub_w(&c->ccr, c->d[7], c->d[2]));
+        if (!(c->ccr & (CC_C | CC_Z))) {
+            put16m(c->a[6] - 6, c->d[2]);
+            do {
+                push32(0x9E9A); draw_row(); c->a[7] += 4;
+                c->d[0] = 64; F_L(64);
+                c->d[7] = set_w(c->d[7], add_w(&c->ccr, c->d[0], c->d[7]));
+                mem_add_w(c->a[3] + 0xE, c->d[0]);
+            } while (mem_sub_w(c->a[6] - 6, c->d[0]));
+            c->d[0] = set_w(c->d[0], rd16(c->a[3] + 0xE)); F_W(c->d[0]);
+            c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 0x400, c->d[0]));
+            if (!(c->ccr & (CC_C | CC_Z))) {
+                mem_add_w(c->a[3] + 0xC, c->d[0]);
+                put16m(c->a[3] + 0xE, 0x400);
+            }
+        }
+    } else {
+        c->d[3] = set_w(c->d[3], c->d[7]); F_W(c->d[7]);
+        c->d[3] = set_w(c->d[3], sub_w(&c->ccr, c->d[0], c->d[3]));
+        put16m(c->a[6] - 6, c->d[3]);
+        c->d[0] = 64; F_L(64);
+        do {
+            c->d[7] = set_w(c->d[7], sub_w(&c->ccr, c->d[0], c->d[7]));
+            mem_sub_w(c->a[3] + 0xC, c->d[0]);
+            mem_add_w(c->a[3] + 0xE, c->d[0]);
+            push32(0x9ED4); draw_row(); c->a[7] += 4;
+            c->d[0] = 64; F_L(64);
+        } while (mem_sub_w(c->a[6] - 6, c->d[0]));
+        c->d[0] = set_w(c->d[0], rd16(c->a[3] + 0xE)); F_W(c->d[0]);
+        cmp_w(&c->ccr, 0x400, c->d[0]);
+        if ((c->d[0] & 0xFFFF) > 0x400) put16m(c->a[3] + 0xE, 0x400);
+    }
+    unlk();
+}
+
+/* $9CE6: layer a3 each frame: moved, then its new columns ($32: $9D0C) and rows ($33: $9D10) */
+static void layer_frame(void)
+{
+    push32(0x9CEA); layer_move(); c->a[7] += 4;
+    static const uint32_t table[2] = { 0x9D0C, 0x9D10 }, ret[2] = { 0x9CFA, 0x9D0A };
+    for (int k = 0; k < 2; k++) {
+        c->d[0] = 0;
+        move_b(0, rd8(c->a[3] + 0x32 + (uint32_t)k));
+        c->a[0] = table[k] + sx(rd16(table[k] + sx(c->d[0])));
+        push32(ret[k]);
+        if (c->a[0] == 0x9D46u) columns_in();
+        else if (c->a[0] == 0x9E60u) rows_in();
+        else if (c->a[0] != 0x9D0Au) call(c->a[0]);
+        c->a[7] += 4;
+    }
+}
+
+/* $9CD2: each frame of the game: the camera, both layers, the scroll out */
+static void layers_frame(void)
+{
+    push32(0x9CD6); camera(); c->a[7] += 4;
+    c->a[3] = LAYER_A; push32(0x9CDC); layer_frame(); c->a[7] += 4;
+    c->a[3] = LAYER_B; push32(0x9CE2); layer_frame(); c->a[7] += 4;
+    push32(0x9CE4); scroll_out(); c->a[7] += 4;
+}
+
+/* $97F0: both layers drawn whole (a room's start), the scroll out, the HUD's panel ($7544) */
+static void layers_draw(void)
+{
+    c->a[3] = LAYER_A; push32(0x97F8); draw_layer(); c->a[7] += 4;
+    c->a[3] = LAYER_B; push32(0x9800); draw_layer(); c->a[7] += 4;
+    push32(0x9804); scroll_out(); c->a[7] += 4;
+    call(0x7544);
+}
+
+ENTRY(Camera, camera)                      /* $9720 */
+ENTRY(LayersDraw, layers_draw)             /* $97F0 */
+ENTRY(DrawLayer, draw_layer)               /* $9A58 */
+ENTRY(LayerXFollow, x_follow)              /* $9AA4 */
+ENTRY(LayerYFollow, y_follow)              /* $9ABE */
+ENTRY(LayerXDrift, x_drift)                /* $9AF2 */
+ENTRY(LayerXDriftA, x_drift_a)             /* $9B18 */
+ENTRY(LayerYDrift, y_drift)                /* $9B46 */
+ENTRY(MoverDelta, mover_delta)             /* $9B96 */
+ENTRY(MoverStep, mover_step)               /* $9BA6 */
+ENTRY(LayerMove, layer_move)               /* $9C5E */
+ENTRY(ScrollOut, scroll_out)               /* $9C92 */
+ENTRY(LayersFrame, layers_frame)           /* $9CD2 */
+ENTRY(LayerFrame, layer_frame)             /* $9CE6 */
+ENTRY(ColumnsIn, columns_in)               /* $9D46 */
+ENTRY(DrawColumn, draw_column)             /* $9DC8 */
+ENTRY(RowsIn, rows_in)                     /* $9E60 */
+ENTRY(DrawRow, draw_row)                   /* $9EF0 */
