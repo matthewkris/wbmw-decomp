@@ -1570,6 +1570,30 @@ Results: 0 mismatches over the standard runs, every owner state, the three sessi
 instructions covered (the 22 above). Self-test caught 100 in 100. Replace mode plays the new-game
 script, four states, the three sessions and `pause`.
 
+#### The messages, batch T8: the ocarina's tune (2026-10-13)
+
+`$2AAE` checks a tune: the player's notes (A, B, C, read by `$2B08` with their sounds `$18`-`$1A`),
+each within 60 frames, against tune d0 (`$2B38`, ending `$FF`), answering 0 (right), -1 (a wrong
+note) or 1 (no note in time). It is what the ocarina plays on a note block (`$C48C`) and the
+messages' command 26. It waits for frames: the original moves its return address to a RAM stack
+(`$9C14`), calls `Yield` each frame and at the end pops that stack and jumps back; command 26 first
+moves the interpreter's own return address off the 68000 stack (`$8CD6`) so the wait happens at the
+task's level. The C writes the same RAM, waits with `task_wait_frame` at the original's resume
+address (`$2AD2`), and leaves by the popped address (`port_continue_at`). Command 26 in C calls it
+directly when it runs on a task pass; when the interpreter is fuzzed (not on a task) it still hands
+the command to the original.
+
+How it is checked: `ocarina-tunes`, a scripted run from `ocarina.state` (the ocarina used with
+left + A on the note block, 200 frames for its first note; its tune 0, B A B A B C B, played right,
+then a wrong note, no note, another tune, and right again), every instruction of `$2AAE` covered,
+all three answers. `$2B08` is fuzzed. Command 26's own lines in `$13BC` need a conversation that
+asks for a tune; no run has one yet. Replace mode now includes `ocarina-tunes`.
+
+Results: 0 mismatches over the standard runs, every owner state, the three sessions, `pause` and
+`ocarina-tunes` (31 runs, 505,205 checked calls); 50,000 fuzz cases, 0 mismatches. Self-test caught
+100 in 100. Of the message interpreter, 22 instructions are not yet covered: saving and loading
+(commands 11, 21) and command 26's.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

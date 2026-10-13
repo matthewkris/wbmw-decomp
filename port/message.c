@@ -13,6 +13,7 @@
  * marks, numbers, names, the "Found" boxes, prices, and the things owned (testing, giving,
  * taking). */
 #include "world.h"
+#include "task.h"
 
 #define VDP_DATA      0x00C00000u
 #define VDP_CTRL      0x00C00004u
@@ -945,6 +946,8 @@ static void quiz_order(void)
     c->a[7] = c->a[6]; c->a[6] = rd32(c->a[7]); c->a[7] += 4;
 }
 
+static int command_tune(void);
+
 /* $15C8's commands: code $0B, then a number. They answer how the text goes on */
 static int command(void)
 {
@@ -1078,9 +1081,9 @@ static int command(void)
         c->d[0] = set_b(c->d[0], rd8(c->a[2]++));
         call_68k(c, 0x366);                         /* QueueSound */
         return CMD_ON;
-    case 26:                                        /* the ocarina's tune ($2AAE waits for frames): still the original's */
-        hand_over(c->a[0]);
-        return CMD_HANDED;
+    case 26:                                        /* the ocarina's tune ($2AAE waits for frames) */
+        if (!task_on_pass(c)) { hand_over(c->a[0]); return CMD_HANDED; }   /* not on a task pass (the fuzz): the original's */
+        return command_tune();
     case 27:
         wr8(0xFFFF8CC4u, rd8(c->a[2]++));
         wr8(0xFFFF8CC5u, rd8(c->a[2]++));
@@ -1234,6 +1237,86 @@ static int command(void)
         wr16(TEXT_LINES, (uint16_t)c->d[0]); F_W(c->d[0]);
         return CMD_ON;
     }
+}
+
+/* ---- batch T8: the ocarina's tune ----
+ * $2AAE plays a tune check: the player's notes (A, B, C: $2B08), each within 60 frames, against
+ * tune d0 ($2B38, ending $FF). It waits for frames: the original keeps its return address in a
+ * RAM stack ($9C14) and calls Yield, so the C writes the same and waits with task_wait_frame at
+ * the original's resume address ($2AD2). It answers d0: 0 played right, -1 a wrong note, 1 no
+ * note in time. Used with the ocarina on a note block ($C48C) and by the messages' command 26. */
+
+/* $2B08: a note pressed this frame (A 0, B 1, C 2: its sound $18-$1A) in d0, or -1 */
+static void note_in(void)
+{
+    c->d[2] = 0;
+    c->d[1] = set_b(c->d[1], rd8(PAD_NEW_MSG));
+    int n = -1;
+    if (c->d[1] & 0x40) n = 0;
+    else { c->d[2] = 1; if (c->d[1] & 0x10) n = 1; else { c->d[2] = 2; if (c->d[1] & 0x20) n = 2; } }
+    f_bit(n >= 0);
+    if (n < 0) { c->d[0] = 0xFFFFFFFFu; F_L(c->d[0]); return; }
+    c->d[0] = set_b(c->d[0], rd8(0x2B34u + n));
+    call_68k(c, 0x366);                             /* QueueSound */
+    c->d[0] = set_w(c->d[0], c->d[2]); F_W(c->d[0]);
+}
+
+/* $2AAE's body, its return address `ret` kept on the RAM stack meanwhile; answers where the
+ * original then jumps (the address popped) */
+static uint32_t ocarina_tune(uint32_t ret)
+{
+    c->a[0] = sx(rd16(0xFFFF9C14u));
+    wr32(c->a[0], ret); c->a[0] += 4;
+    wr16(0xFFFF9C14u, (uint16_t)c->a[0]);
+    c->d[0] = ext_w(c->d[0]);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+    c->a[2] = 0x2B38u + sx(rd16(0x2B38u + sx(c->d[0])));
+    for (;;) {
+        wr32(0xFFFF9ED6u, c->a[2]);
+        wr16(0xFFFF9ED4u, 0x3C);
+        for (;;) {
+            Cpu *me = c; task_wait_frame(me, 0x2AD2); c = me;
+            c->d[0] = set_b(c->d[0], rd8(PAD_NEW_MSG) & 0x70); F_B(c->d[0]);
+            if (c->d[0] & 0xFF) break;
+            if (mem_subq_w(0xFFFF9ED4u, 1)) continue;
+            c->d[0] = 1; F_L(1);
+            goto out;
+        }
+        note_in();
+        c->a[2] = rd32(0xFFFF9ED6u);
+        cmp_byte(rd8(c->a[2]), c->d[0]);
+        if ((c->d[0] & 0xFF) != rd8(c->a[2]++)) { c->d[0] = 0xFFFFFFFFu; F_L(c->d[0]); break; }
+        cmp_byte(0xFF, rd8(c->a[2]));
+        if (rd8(c->a[2]) != 0xFF) continue;
+        c->d[0] = 0; F_L(0);
+        break;
+    }
+out:
+    c->a[1] = sx(rd16(0xFFFF9C14u)) - 4;
+    c->a[0] = rd32(c->a[1]);
+    wr16(0xFFFF9C14u, (uint16_t)c->a[1]);
+    return c->a[0];
+}
+
+/* $19D2, command 26: the tune check (the thing's, or the byte's); then jump by the first word
+ * (wrong), the second (right), or on past both (no note) */
+static int command_tune(void)
+{
+    wr32(0xFFFF8CD6u, rd32(c->a[7])); c->a[7] += 4;  /* the interpreter's return, off the stack */
+    c->d[0] = set_b(c->d[0], rd8(c->a[2]++)); F_B(c->d[0]);
+    if (c->d[0] & 0x80) { c->d[0] = set_b(c->d[0], rd8(MSG_THING)); F_B(c->d[0]); }
+    c->a[0] = sx(rd16(MSG_DEPTH));
+    wr32(c->a[0] - 0x7386, c->a[2]);
+    ocarina_tune(0x19EA);
+    c->a[7] -= 4; wr32(c->a[7], rd32(0xFFFF8CD6u));
+    c->a[0] = sx(rd16(MSG_DEPTH));
+    c->a[2] = rd32(c->a[0] - 0x7386);
+    F_B(c->d[0]);
+    if (c->d[0] & 0x80) { jump_text(); return CMD_ON; }
+    c->a[2] += 2;
+    if (!(c->d[0] & 0xFF)) { jump_text(); return CMD_ON; }
+    c->a[2] += 2;
+    return CMD_ON;
 }
 
 /* $1CBC: the quiz's answer: A, B or C (or the time running out): "Correct.", "Incorrect." or
@@ -1517,3 +1600,10 @@ ENTRY(Owns, owns)                       /* $23E4 */
 ENTRY(Give, give)                       /* $245A */
 ENTRY(Take, take)                       /* $24DC */
 ENTRY(CharIn, char_in)                  /* $13AE */
+ENTRY(NoteIn, note_in)                  /* $2B08 */
+void OcarinaTune(Cpu *cpu)                      /* $2AAE: waits for frames; leaves by the address it kept */
+{
+    c = cpu;
+    uint32_t ret = rd32(c->a[7]); c->a[7] += 4;
+    port_continue_at(c, ocarina_tune(ret), 0);
+}
