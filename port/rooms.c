@@ -17,6 +17,8 @@
  * Batch T14, the layers each frame: the camera, the layers' moves, the blocks scrolling in.
  * Batch T15, the map's cells (finding, setting, drawing), the game's flags, rectangles of the map,
  * the start points and the palette's fade step.
+ * Batch T16, the room's triggers: exits, doors, houses, chests, entrances, and what pressing up
+ * at them does.
  * Ported register for register, with every register and flag in the contract. */
 #include "world.h"
 
@@ -1931,3 +1933,469 @@ ENTRY(StartAt, start_at)                   /* $A3A4 */
 ENTRY(ToPosition, to_position)             /* $A3B4 */
 ENTRY(WaterDouble, water_double)           /* $A3CA */
 ENTRY(FadeStep, fade_step)                 /* $92A4 */
+
+/* ---- batch T16: the room's triggers ----
+ * A room's triggers ($996C, from its command 5) are a list read each frame by $A3D8 with the
+ * player in a4: zones of $10 x $10 cells (the size set by $C0-$CF and $D0-$DF, the origin by
+ * some events) and what touching them does: exits to another room, doors, the shops' and
+ * houses' entrances, sounds. A trigger that fires usually stores a routine at $998A (or $998E)
+ * and sets $9980 (or $9981); the game calls it when the player presses up there. Commands $E0
+ * and up are events ($A490, not yet C), $FF the end. */
+
+#define TRIGGERS      0xFFFF996Cu   /* long: the list, or 0 */
+#define ZONE_W        0xFFFF9974u   /* word: a zone's width, height */
+#define ZONE_H        0xFFFF9976u
+#define ZONE_X        0xFFFF9978u   /* word: the zones' origin */
+#define ZONE_Y        0xFFFF997Au
+#define ROOM_CHANGE   0xFFFF9962u   /* word: what the game does next (0 nothing) */
+#define CHECK_FLAG2   0x2728u
+
+/* $A914: the zone's place from its byte at a2 (low nibble x, high y, in 16s) */
+static void zone_place(void)
+{
+    move_b(0, rd8(c->a[2]));
+    move_b(1, (uint8_t)c->d[0]);
+    and_w(0, 0xF);
+    c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 4, 16));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(ZONE_X), c->d[0]));
+    and_w(1, 0xF0);
+    c->d[1] = set_w(c->d[1], add_w(&c->ccr, rd16(ZONE_Y), c->d[1]));
+}
+
+/* $A92C: whether the player is in the zone (cs: yes; d2, d3 its place in it) */
+static void in_zone(void)
+{
+    move_b(1, rd8(c->a[2]));
+    c->d[0] = 15;
+    and_w(0, c->d[1]);
+    c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 4, 16));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(ZONE_X), c->d[0]));
+    c->d[2] = set_w(c->d[2], rd16(c->a[4] - 0x3800)); F_W(c->d[2]);
+    c->d[2] = set_w(c->d[2], sub_w(&c->ccr, c->d[0], c->d[2]));
+    if (c->ccr & CC_C) { c->ccr &= ~CC_C; return; }
+    cmp_w(&c->ccr, rd16(ZONE_W), c->d[2]);
+    if (!(c->ccr & CC_C)) return;
+    and_w(1, 0xF0);
+    c->d[1] = set_w(c->d[1], add_w(&c->ccr, rd16(ZONE_Y), c->d[1]));
+    c->d[3] = set_w(c->d[3], rd16(c->a[4] - 0x3700)); F_W(c->d[3]);
+    c->d[3] = set_w(c->d[3], sub_w(&c->ccr, c->d[1], c->d[3]));
+    if (c->ccr & CC_C) { c->ccr &= ~CC_C; return; }
+    cmp_w(&c->ccr, rd16(ZONE_H), c->d[3]);
+}
+
+/* $A962: an exit: to area and room (the bytes after the trigger's), the player at its start
+ * place there, offset by d0, d1 */
+static void exit_to(void)
+{
+    put16m(0xFFFF967Eu, c->d[0]);
+    put16m(0xFFFF9680u, c->d[1]);
+    c->a[2] += 1;
+    put8(AREA, next8(2));
+    put8(ROOM, next8(2));
+    push32(0xA978); start_at(); c->a[7] += 4;
+    push32(0xA97C); water_double(); c->a[7] += 4;
+    put8(0xFFFF9678u, 2);
+    put8(0xFFFF966Au, 1);
+    put16m(ROOM_CHANGE, 1);
+}
+
+/* $A88C: d1 the distance to the player's x, less 4 (cs: within 4) */
+static void near_x(void)
+{
+    c->d[1] = set_w(c->d[1], sub_w(&c->ccr, rd16(c->a[4] - 0x3800), c->d[1]));
+    if (c->d[1] & 0x8000) c->d[1] = set_w(c->d[1], neg_w(&c->ccr, c->d[1]));
+    c->d[1] = set_w(c->d[1], sub_w(&c->ccr, 4, c->d[1]));
+}
+
+/* the player's feet: y + height ($CB03) */
+static uint32_t feet(int r)
+{
+    c->d[r] = 0;
+    move_b(r, rd8(c->a[4] - 0x34FD));
+    c->d[r] = set_w(c->d[r], add_w(&c->ccr, rd16(c->a[4] - 0x3700), c->d[r]));
+    return c->d[r] & 0xFFFF;
+}
+static void armed(uint32_t routine, uint32_t cell, uint32_t on)   /* a routine for up */
+{
+    put32m(cell, routine);
+    wr8(on, 0xFF);
+}
+
+/* the commands under $C0 ($A4D0); each returns 1 to go on to the next trigger ($A46E), 0 to
+ * leave $A3D8 */
+static int trig_exit(int kind)       /* $A4EE, $A506, $A51E, $A52E: exits by zone */
+{
+    push32(kind == 0 ? 0xA4F2 : kind == 1 ? 0xA50A : kind == 2 ? 0xA522 : 0xA532); in_zone(); c->a[7] += 4;
+    if (!(c->ccr & CC_C)) return 1;
+    switch (kind) {
+    case 0: case 3:                                 /* kept across, from the zone's middle */
+        c->d[4] = set_w(c->d[4], rd16(ZONE_W)); F_W(c->d[4]);
+        c->d[4] = set_w(c->d[4], lsr_n(&c->ccr, c->d[4], 1, 16));
+        c->d[2] = set_w(c->d[2], sub_w(&c->ccr, c->d[4], c->d[2]));
+        c->d[0] = set_w(c->d[0], c->d[2]); F_W(c->d[2]);
+        c->d[1] = 0; F_L(0);
+        break;
+    case 1:                                         /* kept down */
+        c->d[1] = set_w(c->d[1], add_w(&c->ccr, rd16(ZONE_H), c->d[1]));
+        c->d[1] = set_w(c->d[1], sub_w(&c->ccr, rd16(c->a[4] - 0x3700), c->d[1]));
+        c->d[1] = set_w(c->d[1], neg_w(&c->ccr, c->d[1]));
+        c->d[0] = 0; F_L(0);
+        break;
+    default:
+        c->d[0] = 0; c->d[1] = 0; F_L(0);
+        break;
+    }
+    if (kind != 3) { exit_to(); return 0; }
+    push32(0xA546); exit_to(); c->a[7] += 4;
+    move_b(0, next8(2));                            /* and a word added to the player's $CA02 */
+    c->d[0] = set_w(c->d[0], asl_n(&c->ccr, c->d[0], 8, 16));
+    move_b(0, next8(2));
+    mem_add_w(c->a[4] - 0x35FE, c->d[0]);
+    return 0;
+}
+static int trig_warp(void)           /* $A552: to a start point at once */
+{
+    put8(0xFFFF9C16u, next8(2));
+    put8(0xFFFF9C17u, next8(2));
+    put16m(ROOM_CHANGE, 8);
+    return 0;
+}
+static int trig_door(void)           /* $A562: a door the player stands in: up goes to start point $1-$2 */
+{
+    push32(0xA566); zone_place(); c->a[7] += 4;
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, 4, c->d[0]));
+    c->d[2] = set_w(c->d[2], rd16(c->a[4] - 0x3800)); F_W(c->d[2]);
+    c->d[2] = set_w(c->d[2], sub_w(&c->ccr, c->d[0], c->d[2]));
+    if (c->ccr & CC_C) return 1;
+    c->d[0] = set_w(c->d[0], rd16(ZONE_W)); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 8, c->d[0]));
+    c->d[2] = set_w(c->d[2], sub_w(&c->ccr, c->d[0], c->d[2]));
+    if (!(c->ccr & CC_C)) return 1;
+    feet(0);
+    cmp_w(&c->ccr, c->d[1], c->d[0]);
+    if ((c->d[0] & 0xFFFF) != (c->d[1] & 0xFFFF)) return 1;
+    put8(0xFFFF9982u, rd8(c->a[2] + 1));
+    put8(0xFFFF9983u, rd8(c->a[2] + 2));
+    armed(0xA5AA, 0xFFFF998Au, 0xFFFF9980u);
+    return 1;
+}
+static int trig_house(void)          /* $A5BC: a house's door (within 4 across, 8 more for kind 8) */
+{
+    push32(0xA5C0); zone_place(); c->a[7] += 4;
+    cmp_byte(8, rd8(c->a[2] + 1));
+    if (rd8(c->a[2] + 1) == 8) c->d[0] = set_w(c->d[0], add_w(&c->ccr, 8, c->d[0]));
+    c->d[2] = set_w(c->d[2], c->d[0]); F_W(c->d[0]);
+    c->d[2] = set_w(c->d[2], sub_w(&c->ccr, rd16(c->a[4] - 0x3800), c->d[2]));
+    if (c->d[2] & 0x8000) c->d[2] = set_w(c->d[2], neg_w(&c->ccr, c->d[2]));
+    c->d[2] = set_w(c->d[2], sub_w(&c->ccr, 4, c->d[2]));
+    if (!(c->ccr & CC_C)) return 1;
+    feet(2);
+    cmp_w(&c->ccr, c->d[2], c->d[1]);
+    if ((c->d[1] & 0xFFFF) != (c->d[2] & 0xFFFF)) return 1;
+    put16m(0xFFFF9982u, c->d[0]);
+    put16m(0xFFFF9984u, c->d[1]);
+    put32m(0xFFFF9986u, c->a[2]);
+    put32m(0xFFFF998Au, 0xA60A);
+    c->a[0] = 0xA60Au;
+    wr8(0xFFFF9980u, 0xFF);
+    return 1;
+}
+static int trig_chest(void)          /* $A612: a chest, if its flag ($1) is not set */
+{
+    F_B(rd8(0xFFFF9A00u));
+    if (rd8(0xFFFF9A00u) & 0x80) return 1;
+    move_b(0, rd8(c->a[2] + 1));
+    call(CHECK_FLAG2);
+    if (!(c->ccr & CC_Z)) return 1;
+    push32(0xA62A); zone_place(); c->a[7] += 4;
+    c->d[2] = set_w(c->d[2], c->d[0]); F_W(c->d[0]);
+    c->d[2] = set_w(c->d[2], sub_w(&c->ccr, rd16(c->a[4] - 0x3800), c->d[2]));
+    if (c->d[2] & 0x8000) c->d[2] = set_w(c->d[2], neg_w(&c->ccr, c->d[2]));
+    c->d[2] = set_w(c->d[2], sub_w(&c->ccr, 8, c->d[2]));
+    if (!(c->ccr & CC_C)) return 1;
+    feet(2);
+    cmp_w(&c->ccr, c->d[2], c->d[1]);
+    if ((c->d[1] & 0xFFFF) != (c->d[2] & 0xFFFF)) return 1;
+    put16m(0xFFFF9982u, c->d[0]);
+    put16m(0xFFFF9984u, c->d[1]);
+    put32m(0xFFFF9986u, c->a[2]);
+    armed(0xA68E, 0xFFFF998Au, 0xFFFF9980u);
+    return 1;
+}
+static int trig_entrance(void)       /* $A79A: a start point's entrance (d6 the point, d7 a word) */
+{
+    c->d[6] = set_b(c->d[6], rd8(c->a[2]));
+    c->d[6] = set_w(c->d[6], lsl_n(&c->ccr, c->d[6], 8, 16));
+    c->d[6] = set_b(c->d[6], rd8(c->a[2] + 1));
+    c->d[7] = set_b(c->d[7], rd8(c->a[2] + 2));
+    c->d[7] = set_w(c->d[7], lsl_n(&c->ccr, c->d[7], 8, 16));
+    c->d[7] = set_b(c->d[7], rd8(c->a[2] + 3)); F_B(c->d[7]);
+    c->a[0] = rd32(DATA_DIR);
+    c->d[0] = set_w(c->d[0], c->d[6]); F_W(c->d[6]);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+    c->a[0] += sx(rd16(c->a[0] + sx(c->d[0])));
+    c->d[0] = 0;
+    move_b(0, rd8(c->a[0] + 5));
+    c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 3, 16));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, 0x1000, c->d[0]));
+    feet(1);
+    cmp_w(&c->ccr, c->d[1], c->d[0]);
+    if ((c->d[0] & 0xFFFF) != (c->d[1] & 0xFFFF)) return 1;
+    c->d[1] = 0;
+    move_b(1, rd8(c->a[0] + 4));
+    c->d[1] = set_w(c->d[1], lsl_n(&c->ccr, c->d[1], 3, 16));
+    c->d[1] = set_w(c->d[1], add_w(&c->ccr, 0x1000, c->d[1]));
+    c->d[0] = 0;
+    move_b(0, rd8(c->a[0] + 2));
+    switch (c->d[0] & 0xFFFF) {                     /* jmp tbl(pc,d0.w): the point's kind */
+    case 4: case 0xE: case 0x10: case 0x12: goto by_x;
+    case 8:                                         /* a shop's: not while in one */
+        f_bit(rd8(0xFFFF9EF1u) >> 4 & 1);
+        if (rd8(0xFFFF9EF1u) & 0x10) goto by_x;
+        return 1;
+    case 0xA:                                       /* to the left, facing it */
+        f_bit(rd8(0xFFFF9F0Bu) >> 2 & 1);
+        if (!(rd8(0xFFFF9F0Bu) & 4)) return 1;
+        f_bit(rd8(0xFFFF9F02u) >> 6 & 1);
+        if (!(rd8(0xFFFF9F02u) & 0x40)) return 1;
+        c->d[0] = 0;
+        move_b(0, rd8(c->a[4] - 0x34FE));
+        c->d[0] = set_w(c->d[0], neg_w(&c->ccr, c->d[0]));
+        c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(c->a[4] - 0x3800), c->d[0]));
+        c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 8, c->d[0]));
+        cmp_w(&c->ccr, c->d[1], c->d[0]);
+        if ((c->d[0] & 0xFFFF) != (c->d[1] & 0xFFFF)) return 1;
+        put16m(ROOM_CHANGE, 6);
+        goto keep;
+    case 0xC:                                       /* to the right */
+        f_bit(rd8(0xFFFF9F0Bu) >> 3 & 1);
+        if (!(rd8(0xFFFF9F0Bu) & 8)) return 1;
+        f_bit(rd8(0xFFFF9F02u) >> 6 & 1);
+        if (!(rd8(0xFFFF9F02u) & 0x40)) return 1;
+        c->d[0] = 0;
+        move_b(0, rd8(c->a[4] - 0x34FE));
+        c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(c->a[4] - 0x3800), c->d[0]));
+        c->d[0] = set_w(c->d[0], add_w(&c->ccr, 8, c->d[0]));
+        cmp_w(&c->ccr, c->d[1], c->d[0]);
+        if ((c->d[0] & 0xFFFF) != (c->d[1] & 0xFFFF)) return 1;
+        put16m(ROOM_CHANGE, 7);
+        goto keep;
+    case 0x14:                                      /* by x, its own routine */
+        push32(0xA804); near_x(); c->a[7] += 4;
+        if (!(c->ccr & CC_C)) return 1;
+        put32m(0xFFFF998Au, 0xA8A6);
+        goto arm;
+    case 0: case 2: case 6: return 1;
+    default: call(0xA7EC + (c->d[0] & 0xFFFF)); return 1;   /* past the table, as the original */
+    }
+by_x:
+    push32(0xA872); near_x(); c->a[7] += 4;
+    if (!(c->ccr & CC_C)) return 1;
+    put32m(0xFFFF998Au, 0xA898);
+arm:
+    wr8(0xFFFF9980u, 0xFF);
+keep:
+    put16m(0xFFFF9982u, c->d[6]);
+    put16m(0xFFFF9984u, c->d[7]);
+    return 1;
+}
+static int trig_event_a(void)        /* $A8B4: an event ($A990 with its word): up runs it */
+{
+    c->d[7] = set_b(c->d[7], rd8(c->a[2]));
+    c->d[7] = set_w(c->d[7], lsl_n(&c->ccr, c->d[7], 8, 16));
+    c->d[7] = set_b(c->d[7], rd8(c->a[2] + 1));
+    call(0xA990);
+    if (!(c->ccr & CC_Z)) return 1;
+    put16m(0xFFFF9982u, c->d[7]);
+    armed(0xA8D8, 0xFFFF998Au, 0xFFFF9980u);
+    return 1;
+}
+static int trig_event_b(void)        /* $A8E6: the event in hand ($9964), the second routine */
+{
+    c->d[7] = set_w(c->d[7], rd16(0xFFFF9964u)); F_W(c->d[7]);
+    call(0xA990);
+    if (!(c->ccr & CC_Z)) return 1;
+    armed(0xA902, 0xFFFF998Eu, 0xFFFF9981u);
+    return 1;
+}
+static int trig_sound(void)          /* $A90A */
+{
+    move_b(0, rd8(c->a[2]));
+    call(QUEUE_SOUND);
+    return 1;
+}
+
+static int trigger(uint32_t at)
+{
+    switch (at) {
+    case 0xA4EE: return trig_exit(0);
+    case 0xA506: return trig_exit(1);
+    case 0xA51E: return trig_exit(2);
+    case 0xA52E: return trig_exit(3);
+    case 0xA552: return trig_warp();
+    case 0xA562: return trig_door();
+    case 0xA5BC: return trig_house();
+    case 0xA612: return trig_chest();
+    case 0xA46E: return 1;
+    case 0xA79A: return trig_entrance();
+    case 0xA8B4: return trig_event_a();
+    case 0xA8E6: return trig_event_b();
+    case 0xA90A: return trig_sound();
+    default: call(at); return 0;                    /* past the table: as the original jumps */
+    }
+}
+
+/* $A3D8: the room's triggers, each frame (not while $9659 bit 6); the armed routines are
+ * dropped unless re-armed this frame ($9966) */
+static void triggers(void)
+{
+    f_bit(rd8(0xFFFF9659u) >> 6 & 1);
+    if (rd8(0xFFFF9659u) & 0x40) return;
+    uint8_t v = rd8(0xFFFF9966u); f_bit(v & 1); wr8(0xFFFF9966u, v & ~1);
+    if (!(v & 1)) { wr8(0xFFFF9980u, 0); c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z); }
+    v = rd8(0xFFFF9966u); f_bit(v >> 1 & 1); wr8(0xFFFF9966u, v & ~2);
+    if (!(v & 2)) { wr8(0xFFFF9981u, 0); c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z); }
+    c->d[0] = rd32(TRIGGERS); F_L(c->d[0]);
+    if (!c->d[0]) return;
+    c->a[2] = c->d[0];
+    put16m(ZONE_X, 0x1000);
+    put16m(ZONE_Y, 0x1000);
+    for (;;) {
+        c->d[0] = 16; F_L(16);                      /* $A40E */
+        put16m(ZONE_W, 16);
+        put16m(ZONE_H, 16);
+        for (;;) {                                  /* $A418 */
+            c->d[0] = 0;
+            move_b(0, next8(2));
+            cmp_byte(0xC0, c->d[0]);
+            if ((c->d[0] & 0xFF) < 0xC0) break;
+            cmp_byte(0xD0, c->d[0]);
+            if ((c->d[0] & 0xFF) < 0xD0) {
+                and_w(0, 0xF);
+                c->d[0] = set_w(c->d[0], add_w(&c->ccr, 1, c->d[0]));
+                c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 4, 16));
+                put16m(ZONE_W, c->d[0]);
+                continue;
+            }
+            cmp_byte(0xE0, c->d[0]);
+            if ((c->d[0] & 0xFF) < 0xE0) {
+                and_w(0, 0xF);
+                c->d[0] = set_w(c->d[0], add_w(&c->ccr, 1, c->d[0]));
+                c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 4, 16));
+                put16m(ZONE_H, c->d[0]);
+                continue;
+            }
+            and_w(0, 0x1F);                         /* an event */
+            c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+            c->a[0] = 0xA490u + sx(rd16(0xA490u + sx(c->d[0])));
+            push32(0xA45A);                         /* jsr (a0) */
+            if (c->a[0] == 0xABB8u) {               /* $1F, the end: its return popped, out of $A3D8 */
+                c->a[7] += 4;
+                c->d[0] = 0; F_L(0);
+                return;
+            }
+            if (c->a[0] != 0xA47Eu) call(c->a[0]);
+            c->a[7] += 4;
+            F_W(rd16(ROOM_CHANGE));
+            if (rd16(ROOM_CHANGE)) return;
+        }
+        c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));   /* $A462: a trigger */
+        c->a[0] = 0xA4D0u + sx(rd16(0xA4D0u + sx(c->d[0])));
+        if (!trigger(c->a[0])) return;
+        c->d[0] = 0;                                /* $A46E: past it, by its length ($A480) */
+        move_b(0, rd8(c->a[2] - 1));
+        move_b(0, rd8(0xA480u + sx(c->d[0])));
+        c->a[2] += sx(c->d[0]);
+    }
+}
+
+/* the routines the triggers arm, run by the game when the player presses up */
+static void up_warp(void)            /* $A5AA: a door to start point $9982 */
+{
+    put16m(ROOM_CHANGE, 8);
+    put16m(0xFFFF9C16u, rd16(0xFFFF9982u));
+    call(0xDF80);
+}
+static void up_house(void) { put16m(ROOM_CHANGE, 5); }   /* $A60A */
+/* $A666: a chest opening at (d6, d7): thing d0's picture ($A6CA), sound 44 */
+static void chest_open(void)
+{
+    put16m(0xFFFF9A00u, 0x8000);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+    c->a[0] = 0xA6CAu + sx(rd16(0xA6CAu + sx(c->d[0])));
+    put32m(0xFFFF9A02u, c->a[0]);
+    put16m(0xFFFF9A06u, c->d[6]);
+    c->d[7] = set_w(c->d[7], sub_w(&c->ccr, 0x10, c->d[7]));
+    put16m(0xFFFF9A08u, c->d[7]);
+    c->d[0] = 44; F_L(44);
+    call(QUEUE_SOUND);
+}
+static void up_chest(void)           /* $A68E: the chest's flag set, opened, its two cells changed */
+{
+    c->a[2] = rd32(0xFFFF9986u);
+    move_b(0, rd8(c->a[2] + 1));
+    push32(0xA69A); flag2_set(); c->a[7] += 4;
+    c->d[0] = 0;
+    move_b(0, rd8(c->a[2] + 2));
+    c->d[6] = set_w(c->d[6], rd16(0xFFFF9982u)); F_W(c->d[6]);
+    c->d[7] = set_w(c->d[7], rd16(0xFFFF9984u)); F_W(c->d[7]);
+    push32(0xA6AA); chest_open(); c->a[7] += 4;
+    c->d[6] = set_w(c->d[6], lsr_n(&c->ccr, c->d[6], 4, 16));
+    c->d[6] = set_w(c->d[6], sub_w(&c->ccr, 1, c->d[6]));
+    c->d[7] = set_w(c->d[7], sub_w(&c->ccr, 0x10, c->d[7]));
+    c->d[7] = set_w(c->d[7], lsl_n(&c->ccr, c->d[7], 2, 16));
+    c->a[3] = LAYER_A;
+    c->d[0] = set_w(c->d[0], 0x164); F_W(0x164);
+    push32(0xA6C0); cell_set_draw(); c->a[7] += 4;
+    c->d[0] = set_w(c->d[0], 0x165); F_W(0x165);
+    c->d[6] = set_w(c->d[6], add_w(&c->ccr, 1, c->d[6]));
+    cell_set_draw();
+}
+static void up_entrance(void)        /* $A898 */
+{
+    put16m(0xFFFF9676u, rd16(0xFFFF9984u));
+    put16m(ROOM_CHANGE, 2);
+}
+static void up_entrance2(void)       /* $A8A6 */
+{
+    put16m(0xFFFF9676u, rd16(0xFFFF9984u));
+    put16m(ROOM_CHANGE, 0xC);
+}
+static void up_event_a(void)         /* $A8D8 */
+{
+    put16m(0xFFFF9964u, rd16(0xFFFF9982u));
+    put16m(ROOM_CHANGE, 3);
+}
+static void up_event_b(void) { put16m(ROOM_CHANGE, 4); }   /* $A902 */
+static void zone_place_e(void) { zone_place(); }
+static void in_zone_e(void) { in_zone(); }
+static void near_x_e(void) { near_x(); }
+
+/* the triggers' handlers, entered by jmp (a0) from $A3D8: one that goes on carries on through
+ * the list at $A46E, as the original's bra does */
+#define TRIGGER(name, call_) void name(Cpu *cpu) { c = cpu; if (call_) port_continue_at(c, 0xA46E, 0); else c->ret = 0; }
+TRIGGER(TrigExitX, trig_exit(0))           /* $A4EE */
+TRIGGER(TrigExitY, trig_exit(1))           /* $A506 */
+TRIGGER(TrigExit, trig_exit(2))            /* $A51E */
+TRIGGER(TrigExitAdd, trig_exit(3))         /* $A52E */
+TRIGGER(TrigWarp, trig_warp())             /* $A552 */
+TRIGGER(TrigDoor, trig_door())             /* $A562 */
+TRIGGER(TrigHouse, trig_house())           /* $A5BC */
+TRIGGER(TrigChest, trig_chest())           /* $A612 */
+TRIGGER(TrigEntrance, trig_entrance())     /* $A79A */
+TRIGGER(TrigEventA, trig_event_a())        /* $A8B4 */
+TRIGGER(TrigEventB, trig_event_b())        /* $A8E6 */
+TRIGGER(TrigSound, trig_sound())           /* $A90A */
+ENTRY(Triggers, triggers)                  /* $A3D8 */
+ENTRY(ZonePlace, zone_place_e)             /* $A914 */
+ENTRY(InZone, in_zone_e)                   /* $A92C */
+ENTRY(ExitTo, exit_to)                     /* $A962 */
+ENTRY(NearX, near_x_e)                     /* $A88C */
+ENTRY(UpWarp, up_warp)                     /* $A5AA */
+ENTRY(UpHouse, up_house)                   /* $A60A */
+ENTRY(ChestOpen, chest_open)               /* $A666 */
+ENTRY(UpChest, up_chest)                   /* $A68E */
+ENTRY(UpEntrance, up_entrance)             /* $A898 */
+ENTRY(UpEntrance2, up_entrance2)           /* $A8A6 */
+ENTRY(UpEventA, up_event_a)                /* $A8D8 */
+ENTRY(UpEventB, up_event_b)                /* $A902 */

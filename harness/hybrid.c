@@ -1025,6 +1025,76 @@ int hybrid_fuzz(const char *name, long count)
         }
         if (!strcmp(name, "StartPoint")) put_word(0x9676, rnd() % 16);
         if (!strcmp(name, "WaterDouble")) { ram[0x966B] = (uint8_t)(rnd() % 2); m68k_set_reg(M68K_REG_A4, 4 * (rnd() % 64)); }
+        if (!strcmp(name, "Triggers") || !strcmp(name, "ZonePlace") || !strcmp(name, "InZone") || !strcmp(name, "NearX")
+            || !strcmp(name, "ExitTo") || !strncmp(name, "Up", 2) || !strcmp(name, "ChestOpen")) {
+            /* a list of one trigger in scratch RAM (a size or origin first, $FF after), the player in or near its zone */
+            uint32_t e = (uint32_t)ram[0x9EEE] << 8 | ram[0x9EEF], p = 0x4E00;
+            uint8_t zone = (uint8_t)rnd();
+            if (!strcmp(name, "Triggers")) {
+                switch (rnd() % 4) {
+                case 0: ram[p++] = (uint8_t)(0xC0 | rnd() % 16); break;
+                case 1: ram[p++] = (uint8_t)(0xD0 | rnd() % 16); break;
+                case 2: ram[p++] = 0xE2; ram[p++] = (uint8_t)(1 + rnd() % 8); if (rnd() % 4 == 0) ram[p++] = 0xE1; break;
+                default: break;
+                }
+                static const uint8_t kinds[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14 };
+                ram[p++] = kinds[rnd() % 15];
+            }
+            uint32_t args = p, kind = p > 0x4E00 ? ram[p - 1] : 0;
+            ram[p++] = zone;
+            for (int k4 = 0; k4 < 9; k4++) ram[p++] = (uint8_t)rnd();
+            if (rnd() % 3) { ram[args + 2] = (uint8_t)(rnd() % 4); }   /* small start points and words */
+            if (kind == 9) {                        /* an entrance: a real start point (their table's first offset / 2 of them) */
+                uint32_t t = bus_read16(0x1CC00) << 16 | bus_read16(0x1CC02), n = bus_read16(t) / 2;
+                uint32_t sp = rnd() % (n ? n : 1);
+                for (int tries = 0; tries < 64 && rnd() % 2; tries++) {   /* half the time one of the rarer kinds (not 4) */
+                    uint32_t q = rnd() % (n ? n : 1);
+                    if ((bus_read16(t + (uint32_t)(int16_t)bus_read16(t + 2 * q) + 2) >> 8) != 4) { sp = q; break; }
+                }
+                ram[args] = (uint8_t)(sp >> 8); ram[args + 1] = (uint8_t)sp;
+            }
+            if (kind == 6 && rnd() % 2) ram[args + 1] = 8;   /* a house's wider door */
+            if (kind == 10) { ram[args] = 0; ram[args + 1] = (uint8_t)(rnd() % 32); }   /* an event of the table at $1CC08 */
+            if (!strcmp(name, "Triggers")) {        /* the end ($FF) where the list goes on: past the trigger's length ($A480) */
+                uint32_t len = bus_read16(0xA480 + (kind & ~1u)) >> (kind & 1 ? 0 : 8) & 0xFF;
+                ram[args + len] = 0xFF;
+            }
+            ram[p++] = 0xFF;
+            put_long(0x996C, 0xFFFF4E00); ram[0x9659] &= 0xBF; put_word(0x9962, 0); ram[0x9966] = (uint8_t)(rnd() % 4);
+            ram[0x9A00] = (uint8_t)(rnd() % 2 ? 0 : 0x80); ram[0x9EF1] ^= (uint8_t)(rnd() % 2 ? 0x10 : 0);
+            ram[0x9F0B] = (uint8_t)rnd(); ram[0x9F02] = (uint8_t)rnd();
+            uint32_t zx = 0x1000 + 16 * (zone & 15), zy = 0x1000 + (zone & 0xF0), h = ram[(e - 0x34FD) & 0xFFFF];
+            uint32_t x = rnd() % 3 ? zx + rnd() % 24 - 4 : 0x1000 + rnd() % 0x100, y = rnd() % 2 ? zy - h : zy + rnd() % 24 - 4;
+            if (kind == 9) {                        /* at the start point's place */
+                uint32_t t = bus_read16(0x1CC00) << 16 | bus_read16(0x1CC02), sp = (uint32_t)ram[args] << 8 | ram[args + 1];
+                uint32_t rec = t + (uint32_t)(int16_t)bus_read16(t + 2 * sp);
+                uint32_t sx_ = 0x1000 + 8 * (bus_read16(rec + 4) >> 8), sy_ = 0x1000 + 8 * (bus_read16(rec + 4) & 0xFF);
+                x = sx_ + rnd() % 12 - 6; if (rnd() % 4) y = sy_ - h;
+                put_word(0x9F0A, (uint32_t)rnd()); ram[(e - 0x34FE) & 0xFFFF] = (uint8_t)(rnd() % 16);
+                uint32_t w = ram[(e - 0x34FE) & 0xFFFF];   /* facing it from the left or the right, by the player's width */
+                switch (rnd() % 3) { case 0: x = sx_ + 8 + w; break; case 1: x = sx_ - 8 - w; break; default: break; }
+            }
+            if (kind == 10 && rnd() % 4) {          /* at the event's place ($A990) */
+                uint32_t t = bus_read16(0x1CC08) << 16 | bus_read16(0x1CC0A), rec = t + 16 * ram[args + 1];
+                uint32_t d3 = (bus_read16(rec + 6) & 0xFF) ? 16 : 32, off = bus_read16(rec + 4);
+                x = bus_read16(rec) + d3 / 2 + (off >> 8) + rnd() % 8 - 4;
+                y = bus_read16(rec + 2) + (off & 0xFF) + rnd() % d3;
+            }
+            put_word(e - 0x3800, x); put_word(e - 0x3700, y);
+            if (!strcmp(name, "Triggers")) {
+                if (rnd() % 16 == 0) put_long(0x996C, 0);
+                if (rnd() % 8 == 0) put_word(0x9962, 1 + rnd() % 8);
+            }
+            m68k_set_reg(M68K_REG_A4, (uint32_t)(int32_t)(int16_t)e);
+            m68k_set_reg(M68K_REG_A2, 0xFFFF0000u | args);
+            if (!strcmp(name, "UpChest") || !strcmp(name, "ChestOpen")) {   /* a chest at a real cell */
+                put_long(0x9986, 0xFFFF0000u | (args - 1));
+                put_word(0x9982, (0x101 + rnd() % 0xF0) << 4); put_word(0x9984, 0x1010 + 0x10 * (rnd() % 0x40));
+                m68k_set_reg(M68K_REG_D6, (rnd() << 16) | (0x1010 + rnd() % 0xF00)); m68k_set_reg(M68K_REG_D7, (rnd() << 16) | (0x1010 + rnd() % 0x400));
+                m68k_set_reg(M68K_REG_D0, (rnd() << 16) | rnd() % 0x60);
+            }
+            if (!strcmp(name, "NearX")) m68k_set_reg(M68K_REG_D1, (rnd() << 16) | (x + rnd() % 16 - 8));
+        }
         if (!strcmp(name, "TilesAt") || !strcmp(name, "FrameBox")) m68k_set_reg(M68K_REG_A0, 0x8C82 + 2 * (rnd() % 0x80));
         if (!strcmp(name, "TileRow") || !strcmp(name, "TileRowAt")) m68k_set_reg(M68K_REG_A0, 0x8C82 + rnd() % 0x1A0);
         if (!strcmp(name, "SetGfxSlots")) {         /* a random valid slot list in scratch RAM */

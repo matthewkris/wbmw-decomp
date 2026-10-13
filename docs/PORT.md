@@ -1875,6 +1875,54 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 instruction covered. Self-test caught 100 in 100 for each. Replace mode: thirteen runs, no
 problems.
 
+#### The rooms, batch T16: the room's triggers (2026-10-13)
+
+A room's triggers are a list (`$996C`, from its command 5) that `$A3D8` reads each frame, with
+the player in a4. The list has three kinds of entry:
+* **Zones** of `$10` x `$10` cells. Their size is set by `$C0`-`$CF` and `$D0`-`$DF`, their origin
+  by some events.
+* **Triggers**, commands under `$C0`, each with what touching its zone does.
+* **Events**, commands `$E0` and up (`$A490`, not yet C), with `$FF` the end. The end's handler
+  (`$ABB8`) pops its own return address to leave `$A3D8`, so the C handles it itself.
+
+A trigger that fires usually stores a routine at `$998A` (or `$998E`) and sets `$9980` (or
+`$9981`); the game runs it when the player presses up there. Both flags are dropped each frame
+unless re-armed (`$9966`). In `port/rooms.c`, with every register and flag in the contract:
+
+| Command | Handler | What it does |
+|---|---|---|
+| 0-3 | `$A4EE`-`$A52E` | Exits to another room (`$A962`), keeping the player's place across or down, or adding a word |
+| 4 | `$A552` | A warp to a start point |
+| 5 | `$A562` | A door: up goes to a start point (`$A5AA`) |
+| 6 | `$A5BC` | A house's door (`$A60A`) |
+| 7 | `$A612` | A chest, if its flag is clear: up opens it (`$A68E`: the flag set, `$A666`, its two cells changed) |
+| 9 | `$A79A` | A start point's entrance, by its kind: by place (`$A898`, `$A8A6`), a shop's only when outside one, a side entrance when facing it |
+| 10, 11 | `$A8B4`, `$A8E6` | Events by place (`$A990`), up runs them (`$A8D8`, `$A902`) |
+| 14 | `$A90A` | A sound |
+
+With them: the zone's place (`$A914`), whether the player is in it (`$A92C`, carry set) and
+within 4 across (`$A88C`).
+
+What they needed:
+* **A jump straight into the loop.** The handlers are entered with `jmp (a0)` and go on with a
+  `bra` into `$A3D8`'s loop. Each is registered on its own (for coverage) and, when entered that
+  way, goes on in the original at `$A46E`, as its `bra` does.
+* **Synthetic lists for the fuzz.** `$A3D8` gets one-trigger lists in scratch RAM: perhaps a size
+  or origin first, then a trigger of any kind, `$FF` where the list goes on after it, and the
+  player in or near its zone.
+  * Entrances get a real start point, half the time one of the rarer kinds, with the player at
+    its place, facing either way.
+  * Events get one of the table's events, with the player at its place.
+  * The callbacks get their stored places, and chests real cells.
+* **Lines skipped in coverage.** The start points' kinds 2, 6 and 12 have entries in the
+  entrance's table, but none of the ROM's 138 start points has them. Those lines, and the
+  facing-right path that only kind 12 reaches, are in `analysis/coverage_skip.txt`.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(37 runs, 558,595 checked calls). 390,000 fuzz cases from six states, 0 mismatches. Every
+instruction is covered, the handlers included, except the skipped lines. Self-test caught 100 in
+100 for each. Replace mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
