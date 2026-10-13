@@ -957,13 +957,14 @@ int hybrid_fuzz(const char *name, long count)
             m68k_set_reg(M68K_REG_A1, 0x20000 + (rnd() & 0xFFFE));
             m68k_set_reg(M68K_REG_D0, (rnd() << 16) | 2 * (rnd() % 21));
         }
-        if (!strncmp(name, "Layer", 5) || !strcmp(name, "Parallax") || !strcmp(name, "MoverPlace") || !strncmp(name, "Scroll", 6)) {
+        if (!strncmp(name, "Layer", 5) || !strcmp(name, "Parallax") || !strncmp(name, "Mover", 5) || !strncmp(name, "Scroll", 6)
+            || !strncmp(name, "Draw", 4) || !strcmp(name, "ColumnsIn") || !strcmp(name, "RowsIn") || !strcmp(name, "Camera")) {
             /* a layer's record (A or B) with valid kinds ($30-$33), small parallaxes, a camera */
             uint32_t r = rnd() % 2 ? 0x9754 : 0x97D4;
             static const uint8_t kx[] = { 0, 2, 4, 6, 8 }, ky[] = { 0, 2, 4, 6 }, kr[] = { 0, 2, 4 };
             for (int two = 0; two < 2; two++) {
                 uint32_t q = two ? 0x97D4 : 0x9754;
-                if (rnd() % 3 == 0 || strcmp(name, "LayersSetup")) {
+                if ((rnd() % 3 == 0 || strcmp(name, "LayersSetup")) && strcmp(name, "LayersFrame") && strcmp(name, "LayerFrame")) {   /* those two: the state's own layers */
                     ram[q + 0x30] = kx[rnd() % 5]; ram[q + 0x31] = ky[rnd() % 4]; ram[q + 0x32] = (uint8_t)(2 * (rnd() % 2)); ram[q + 0x33] = kr[rnd() % 3];
                     ram[q + 0x3A] = (uint8_t)((int)(rnd() % 16) - 3); ram[q + 0x3B] = (uint8_t)((int)(rnd() % 7) - 3);
                     if (ram[q + 0x31] == 6 || !strcmp(name, "LayerYMover")) ram[q + 0x3B] = (uint8_t)(rnd() % 2);   /* the movers' scripts ($9988): one */
@@ -971,8 +972,30 @@ int hybrid_fuzz(const char *name, long count)
                     ram[q] = (uint8_t)((ram[q] & ~1) | (q == 0x97D4));
                 }
             }
-            for (uint32_t k4 = 0; k4 < 8; k4++) ram[0x972C + k4] = (uint8_t)rnd();
-            ram[0x972C] = (uint8_t)(0x10 + rnd() % 8); ram[0x9730] = (uint8_t)(0x10 + rnd() % 8);   /* the camera, from $1000 */
+            if (strcmp(name, "LayersFrame") && strcmp(name, "LayerFrame")) {
+                for (uint32_t k4 = 0; k4 < 8; k4++) ram[0x972C + k4] = (uint8_t)rnd();
+                ram[0x972C] = (uint8_t)(0x10 + rnd() % 8); ram[0x9730] = (uint8_t)(0x10 + rnd() % 8);   /* the camera, from $1000 */
+            }
+            if (!strcmp(name, "Camera")) {         /* the camera's sources: the player, a second entity, the room's height */
+                ram[0x9858] = (uint8_t)(rnd() % 16); ram[0x9659] &= (uint8_t)(rnd() % 4 ? 0xDF : 0xFF);
+                put_word(0x9748, rnd() % 2 ? 0xFFFF : 4 * (rnd() % 32)); put_word(0x974A, (uint32_t)((int)(rnd() % 129) - 64));
+                for (uint32_t k4 = 0; k4 < 8; k4++) ram[0x985A + k4] = (uint8_t)rnd();
+                put_word(0x977A, 0x1000 + rnd() % 0x800);
+                for (uint32_t k4 = 0; k4 < 8; k4++) ram[0x9734 + k4] = (uint8_t)(rnd() % 4 ? 0 : rnd());
+            }
+            if (!strcmp(name, "ColumnsIn") || !strcmp(name, "RowsIn") || !strncmp(name, "Draw", 4)) {   /* a layer scrolled a little from what is drawn */
+                uint16_t x = (uint16_t)(0x1000 + rnd() % 0x400), y = (uint16_t)(0x1000 + rnd() % 0x200);
+                ram[r + 4] = (uint8_t)(x >> 8); ram[r + 5] = (uint8_t)x; ram[r + 6] = (uint8_t)(y >> 8); ram[r + 7] = (uint8_t)y;
+                uint16_t col = (uint16_t)((x >> 4) + 4 - (int)(rnd() % 24)), row = (uint16_t)(((y & 0xFFF0) << 2) + 0x100 - 0x40 * (int)(rnd() % 14));
+                put_word(r + 8, col); put_word(r + 0xA, 1 + rnd() % 32); put_word(r + 0xC, row); put_word(r + 0xE, 0x40 * (1 + rnd() % 16));
+                m68k_set_reg(M68K_REG_D6, (rnd() << 16) | col); m68k_set_reg(M68K_REG_D7, (rnd() << 16) | row);
+                if (!strncmp(name, "Draw", 4) && strcmp(name, "DrawLayer")) m68k_set_reg(M68K_REG_A6, 0xFFFF0E00);   /* the caller's frame */
+            }
+            if (!strncmp(name, "Mover", 5)) {       /* the lift's script: the real one ($9996) */
+                put_word(r + 0x68, 0); put_word(r + 0x6A, 0x9996 + 4 * (rnd() % 5));   /* any of its steps, or its jump back */ put_word(r + 0x6C, 1 + rnd() % 3); put_word(r + 0x7A, rnd() % 2 ? 0 : 0x4000);
+                ram[r + 0x77] = (uint8_t)(2 * (rnd() % 2));
+                m68k_set_reg(M68K_REG_A1, 4 * (rnd() % 32));
+            }
             if (!strcmp(name, "MoverPlace") || !strcmp(name, "ScrollX") || !strcmp(name, "ScrollY") || !strcmp(name, "LayerX") || !strcmp(name, "LayerY")) {
                 for (uint32_t k4 = 4; k4 < 8; k4++) ram[r + k4] = (uint8_t)rnd();
                 ram[r + 0x74] = 0; ram[r + 0x75] = (uint8_t)(4 * (rnd() % 32));

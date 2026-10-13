@@ -70,7 +70,8 @@ void TextAt(Cpu *), TextAtRC(Cpu *), String(Cpu *), StringPlain(Cpu *), StringBr
      TitleCursor(Cpu *), TitleMenuSetup(Cpu *), TitlePad(Cpu *),
      UnpackBlocks(Cpu *), UnpackRoomBlocks(Cpu *), LoadSharedBlocks(Cpu *), ExpandZeroRuns(Cpu *), UnpackLayerMap(Cpu *),
      LoadRoom(Cpu *), InitLayers(Cpu *), InitLayer(Cpu *), SetupLayer(Cpu *), ReadRoomPointer(Cpu *), LoadScene(Cpu *), RoomMusic(Cpu *), RoomLayer(Cpu *), RoomLayerAt(Cpu *), RoomGfx(Cpu *), RoomPalettes(Cpu *), RoomPalette2(Cpu *), RoomCmd4(Cpu *), RoomCmd5(Cpu *), RoomCmd6(Cpu *), RoomCmd7(Cpu *), RoomCmd8(Cpu *), RoomCmd9(Cpu *), RoomCmd11(Cpu *), RoomCmd12(Cpu *), RoomCmd13(Cpu *), RoomCmd14(Cpu *), RoomCmd15(Cpu *), RoomCmd18(Cpu *), RoomCmd19(Cpu *), RoomCmd20(Cpu *),
-     LayersSetup(Cpu *), LayerSetup(Cpu *), LayerXParallax(Cpu *), LayerXFixed(Cpu *), LayerXMoving(Cpu *), LayerYParallax(Cpu *), LayerFixedY(Cpu *), LayerYFixed(Cpu *), LayerYMoving(Cpu *), LayerYMover(Cpu *), LayerColumns(Cpu *), LayerColumnsStrip(Cpu *), LayerRows(Cpu *), LayerRowsStrip(Cpu *), LayerRowsWrap(Cpu *), LayerX(Cpu *), LayerY(Cpu *), Parallax(Cpu *), MoverPlace(Cpu *), ScrollX(Cpu *), ScrollY(Cpu *);
+     LayersSetup(Cpu *), LayerSetup(Cpu *), LayerXParallax(Cpu *), LayerXFixed(Cpu *), LayerXMoving(Cpu *), LayerYParallax(Cpu *), LayerFixedY(Cpu *), LayerYFixed(Cpu *), LayerYMoving(Cpu *), LayerYMover(Cpu *), LayerColumns(Cpu *), LayerColumnsStrip(Cpu *), LayerRows(Cpu *), LayerRowsStrip(Cpu *), LayerRowsWrap(Cpu *), LayerX(Cpu *), LayerY(Cpu *), Parallax(Cpu *), MoverPlace(Cpu *), ScrollX(Cpu *), ScrollY(Cpu *),
+     Camera(Cpu *), LayersDraw(Cpu *), DrawLayer(Cpu *), LayerXFollow(Cpu *), LayerYFollow(Cpu *), LayerXDrift(Cpu *), LayerXDriftA(Cpu *), LayerYDrift(Cpu *), MoverDelta(Cpu *), MoverStep(Cpu *), LayerMove(Cpu *), ScrollOut(Cpu *), LayersFrame(Cpu *), LayerFrame(Cpu *), ColumnsIn(Cpu *), DrawColumn(Cpu *), RowsIn(Cpu *), DrawRow(Cpu *);
 void NumText(Cpu *), CharAt(Cpu *), ScrollWindow(Cpu *), WindowFrame(Cpu *), WindowRow(Cpu *), TileUnder(Cpu *), WindowRestore(Cpu *), NewLine(Cpu *), MoreBlink(Cpu *), MoreHide(Cpu *), MoreShow(Cpu *), ChoiceBlink(Cpu *), ChoiceHide(Cpu *), ChoiceShow(Cpu *), PriceOf(Cpu *), NameOf(Cpu *), NameText(Cpu *), FoundThing(Cpu *), FoundGold(Cpu *), BoxText(Cpu *), BoxRows(Cpu *), BoxRow(Cpu *), ShowFoundGold(Cpu *), ShowFound(Cpu *), WindowGeometry(Cpu *), Cheaper(Cpu *), Owns(Cpu *), Give(Cpu *), Take(Cpu *), ItemCell(Cpu *), FlagCell(Cpu *), MessageData(Cpu *), OpenWindow(Cpu *), WindowAt(Cpu *), MsgStep(Cpu *), CharIn(Cpu *), NoteIn(Cpu *), OcarinaTune(Cpu *);   /* message.c */
 #define CT_ALL 0x3FFFF                /* every register and flag compared */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
@@ -392,6 +393,24 @@ const PortRoutine port_routines[] = {
     {0x009B6C, 0x009B96, "MoverPlace", MoverPlace, CT_ALL},
     {0x009D16, 0x009D46, "ScrollX", ScrollX, CT_ALL},
     {0x009E2E, 0x009E60, "ScrollY", ScrollY, CT_ALL},
+    {0x009720, 0x0097F0, "Camera", Camera, CT_ALL},   /* rooms.c: the layers each frame */
+    {0x0097F0, 0x009808, "LayersDraw", LayersDraw, CT_SP},   /* ends in $7544, which calls hand ports that promise only SP */
+    {0x009A58, 0x009A8E, "DrawLayer", DrawLayer, CT_ALL},
+    {0x009AA4, 0x009AAA, "LayerXFollow", LayerXFollow, CT_ALL},
+    {0x009ABE, 0x009AC4, "LayerYFollow", LayerYFollow, CT_ALL},
+    {0x009AF2, 0x009B18, "LayerXDrift", LayerXDrift, CT_ALL},
+    {0x009B18, 0x009B46, "LayerXDriftA", LayerXDriftA, CT_ALL},
+    {0x009B46, 0x009B6C, "LayerYDrift", LayerYDrift, CT_ALL},
+    {0x009B96, 0x009BA6, "MoverDelta", MoverDelta, CT_ALL},
+    {0x009BA6, 0x009C58, "MoverStep", MoverStep, CT_ALL},
+    {0x009C5E, 0x009C80, "LayerMove", LayerMove, CT_ALL},
+    {0x009C92, 0x009CD2, "ScrollOut", ScrollOut, CT_ALL},
+    {0x009CD2, 0x009CE6, "LayersFrame", LayersFrame, CT_ALL},
+    {0x009CE6, 0x009D0C, "LayerFrame", LayerFrame, CT_ALL},
+    {0x009D46, 0x009DC8, "ColumnsIn", ColumnsIn, CT_ALL},
+    {0x009DC8, 0x009E2E, "DrawColumn", DrawColumn, CT_ALL},
+    {0x009E60, 0x009EF0, "RowsIn", RowsIn, CT_ALL},
+    {0x009EF0, 0x009F46, "DrawRow", DrawRow, CT_ALL},
     {0x01090C, 0x010910, "SpawnItem", SpawnItem},                 /* effects.c: every register as the original */
     {0x010910, 0x010A1E, "SpawnItemAt", SpawnItemAt},
     {0x010A1E, 0x011094, "RunItems", RunItems, CT_SP},
