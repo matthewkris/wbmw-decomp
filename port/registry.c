@@ -82,6 +82,8 @@ void TextAt(Cpu *), TextAtRC(Cpu *), String(Cpu *), StringPlain(Cpu *), StringBr
 void GatesSetup(Cpu *), GateSetup(Cpu *), GatesRun(Cpu *), GateRun(Cpu *), GateEnd(Cpu *), GateFlag(Cpu *), GateTimer(Cpu *),
      GateGrow(Cpu *), GateCell(Cpu *), GateShrink(Cpu *), GateSparkTime(Cpu *), GateSparks(Cpu *), CrumbleAdd(Cpu *);
 void RoomObjFall(Cpu *), FallCell(Cpu *), RoomObjLift(Cpu *), RoomObjDrift(Cpu *), BlockShatter(Cpu *);
+void DropThing(Cpu *), RoomScriptSetup(Cpu *), ScriptNone(Cpu *), ScriptFrameNone(Cpu *), Drops(Cpu *), Room0Setup(Cpu *), Room0Frame(Cpu *),
+     Room0Release(Cpu *), Room1Setup(Cpu *), Room1Frame(Cpu *), Room1Flip(Cpu *), Room1Flash(Cpu *), Room1Colour(Cpu *);
 void NumText(Cpu *), CharAt(Cpu *), ScrollWindow(Cpu *), WindowFrame(Cpu *), WindowRow(Cpu *), TileUnder(Cpu *), WindowRestore(Cpu *), NewLine(Cpu *), MoreBlink(Cpu *), MoreHide(Cpu *), MoreShow(Cpu *), ChoiceBlink(Cpu *), ChoiceHide(Cpu *), ChoiceShow(Cpu *), PriceOf(Cpu *), NameOf(Cpu *), NameText(Cpu *), FoundThing(Cpu *), FoundGold(Cpu *), BoxText(Cpu *), BoxRows(Cpu *), BoxRow(Cpu *), ShowFoundGold(Cpu *), ShowFound(Cpu *), WindowGeometry(Cpu *), Cheaper(Cpu *), Owns(Cpu *), Give(Cpu *), Take(Cpu *), ItemCell(Cpu *), FlagCell(Cpu *), MessageData(Cpu *), OpenWindow(Cpu *), WindowAt(Cpu *), MsgStep(Cpu *), CharIn(Cpu *), NoteIn(Cpu *), OcarinaTune(Cpu *);   /* message.c */
 #define CT_ALL 0x3FFFF                /* every register and flag compared */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
@@ -532,6 +534,16 @@ const PortRoutine port_routines[] = {
     {0x00B0DA, 0x00B236, "RoomObjLift", RoomObjLift, CT_ALL},
     {0x00B236, 0x00B2BA, "RoomObjDrift", RoomObjDrift, CT_ALL},
     {0x00B2BA, 0x00B32E, "BlockShatter", BlockShatter, CT_ALL},
+    {0x00B42A, 0x00B49C, "DropThing", DropThing, CT_ALL},        /* rooms.c: the rooms' scripts (0 and 1), a dropped thing, the drops */
+    {0x00C75C, 0x00C7E4, "RoomScriptSetup", RoomScriptSetup, CT_ALL},
+    {0x00C7E4, 0x00C7E6, "ScriptNone", ScriptNone, CT_ALL},
+    {0x00C898, 0x00C89A, "ScriptFrameNone", ScriptFrameNone, CT_ALL},
+    {0x00C89A, 0x00C8F4, "Drops", Drops, CT_ALL},
+    {0x00C8F4, 0x00C91E, "Room0Setup", Room0Setup, CT_ALL},
+    {0x00CA56, 0x00CA66, "Room1Setup", Room1Setup, CT_ALL},
+    {0x00CB1C, 0x00CB32, "Room1Flip", Room1Flip, CT_ALL},
+    {0x00CB32, 0x00CB46, "Room1Flash", Room1Flash, CT_ALL},
+    {0x00CB46, 0x00CB5C, "Room1Colour", Room1Colour, CT_ALL},   /* the scripts' parts that wait ($C91E, $C9B4, $CA66) wait for a session that runs them */
     {0x01090C, 0x010910, "SpawnItem", SpawnItem},                 /* effects.c: every register as the original */
     {0x010910, 0x010A1E, "SpawnItemAt", SpawnItemAt},
     {0x010A1E, 0x011094, "RunItems", RunItems, CT_SP},

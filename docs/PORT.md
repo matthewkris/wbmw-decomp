@@ -2138,6 +2138,52 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 mismatches, every instruction covered. Self-test caught 100 in 100 for each. Replace mode:
 thirteen runs, no problems.
 
+#### The room changes, batch T24: the rooms' scripts 0 and 1, a dropped thing, the drops (2026-10-13)
+
+Some rooms have a script of their own: room command 13 sets `$9682` (-1 for none). `$C75C` clears
+the script's variables (`$99DE`-`$99FD`) and runs its setup as the room loads (the table at
+`$C784`, 24 entries). `$C7E6` runs its part each frame on the continuations' stack (the table at
+`$C838`). In `port/rooms.c`:
+
+* `$C75C`, and the empty setup and frame parts (`$C7E4`, `$C898`).
+* Index 0 (area 15's room 1). Setup `$C8F4`: a block is gone until game flag 0 is set, and
+  `$9695` becomes 6 once flag 1 is set. Each frame (`$C91E`): `$9995` bit 4 sets flag 0 and puts
+  the block back. Bit 5 sets flag 1 and lets out 22 room objects, one every 8 frames, with the
+  others frozen until they are gone (`$C9B4`). Bit 0, once, spawns the effects at `$C982`.
+  `$C9B4` plays its sound for every object: it tests the count's high byte.
+* Index 1 (area 12's room 9, area 17's rooms 14 and 16). Setup `$CA56`: the player's frame
+  routine `$DB36`. Each frame (`$CA66`): once, the player changes form. The player's look flips
+  6, 12 and 24 times, 8, 4 and 2 frames apart, with the screen flashing (`$CB1C`, `$CB32`,
+  `$CB46`). Then `$9EF1` bit 4 flips and the player is set up again.
+* `$C89A`, each frame: the things a chest drops, one after another from the list at `$9A02` (an
+  item, then the frames to the next; 0 ends it; items from `$80` are `$1000` on).
+* `$B42A` (from `$1091C`, items of `$1000` and more): a thing dropped for the player to pick up,
+  which starts room change 9.
+
+`$C91E`, `$C9B4` and `$CA66` wait for frames, so they carry `CT_WAITS`. They are written but not
+registered: no session reaches those rooms yet.
+
+**SpawnItem's X flag.** `port/effects.c`'s `$1090C` left X as it came in. The original clears it
+when it places an item: its last `asl.w #4` shifts a byte, so the bit out is 0. When there is no
+room, it leaves X equal to the kind's bit 7, from the `lsr.w #8` at `$10938`. SpawnItem's entry
+checks only SP, so nothing compared it until `$C89A`, which checks every flag. It is now exact.
+
+The fuzz runs `$C89A` part-way through the real chests' lists (36 at `$A6CA`), with the item
+slots holding real kinds. It runs `$B42A` with its special items, a room change under way or
+not, and the inventory changed at random so that `$2A` is sometimes owned. `$C75C` gets no
+script or one of the setups that only set the room up; the others stream graphics for their
+own room.
+
+**The scripts' tables, read from C.** Once `$C75C` was C, the translator no longer saw its
+table, so the setups still in the original (`$CFE8`, `$DA90` and others) were no longer
+translated, and calling them failed in three sessions. Both tables' targets are now in
+`analysis/translate.json`'s `seen`. `tools/accept.sh` caught it as a failed call.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(39 runs, all complete; 637,567 checked calls). 360,000 fuzz cases from six states, 0
+mismatches, every instruction covered. Self-test caught 100 in 100 for each. Replace mode:
+thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
