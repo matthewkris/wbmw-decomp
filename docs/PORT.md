@@ -1420,6 +1420,43 @@ Results: 0 mismatches over the standard runs, every owner state and the three se
 covered. Self-test caught 100 in 100 for each. Replace mode plays the new-game script, four
 states and the three sessions. Of the status screen only the menu loops are left (T4).
 
+#### The status screen, batch T4: the menus, and the pause screen (2026-10-13)
+
+The rest of the screen: the loops that wait for frames. `$7582` (from the game's frame at
+`$90E0`, Start pressed) fades in, runs the main menu, opens a line's page (the three kinds at
+`$763E`, `$766E`, `$7684`, through the tables `$75F8`, whether it may be opened, and `$7604`),
+and fades out; `$7F0E` is the pause screen, which Start opens instead (`$90EA`) while `$9659` bit
+2 is set: during the player's update (`$DD0C` sets it, `$E3BA` clears it) unless the player is in
+the air or a spell is running. That is, Start in the middle of a jump pauses.
+
+The original's menu routines keep their return addresses in RAM (`$9630` the screen's, `$9634`
+the frame wait's, `$9638`-`$9654` the pages' and the choosing's), not on the stack, so that
+`Yield`, which returns to the scheduler, can be called from any depth of them. The C versions are
+ordinary functions: each writes the address the original would return to (after its call: the
+values are constants) and waits with `task_wait_frame` at the original's resume addresses
+(`$8062` in the frame wait `$805A`, `$7E2A` in the worn line's blink `$7E12`, `$76A8`, `$7F36`),
+with the stack at the pass's own level as `Yield` leaves it. The screen and the pause leave by
+`port_continue_at` to the saved address. Under them, also ported: the choosing of a slot `$799E`
+and putting a thing in one (`$79EE`, `$7A44`), the items and special actions' choosing (`$7882`,
+`$78DC`), a list page's buttons `$7D9C` (wearing the thing of the line), the fades `$7E8C`/`$7EBA`,
+the sprite cursor `$794E`/`$7952` with `$7924`/`$7938`, the setup `$8BB6` and reset `$8C34`.
+
+`port/task.c` now resumes a waiting chain with the scheduler's registers (and its own stack
+pointer), as the original does: after `Yield` a task carries on with the registers the scheduler
+had at its `jsr (a0)`, not its own.
+
+How it is checked: `$7582` and `$7F0E` cannot be fuzzed (they wait for frames, which needs a task
+pass), so they are registered (for coverage) with a plain contract and checked by the task passes
+that run them: the owner's status session (every instruction of `$7582` but one branch back) and
+`pause`, a scripted run from `castle.state` (`work/runs/inputs/pause.txt`: a jump, Start in the
+air, then B, five times; every instruction of `$7F0E`). The routines under them that do not wait
+are fuzzed as before.
+
+Results: 0 mismatches over the standard runs, every owner state, the three sessions and `pause`
+(30 runs, 485,890 checked calls); 175,000 fuzz cases from five states, 0 mismatches, every
+instruction covered. Self-test caught 100 in 100 for each fuzzed routine. Replace mode plays the
+new-game script, four states, the three sessions and `pause`. The whole status screen is C.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

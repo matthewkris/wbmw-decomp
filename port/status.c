@@ -10,6 +10,7 @@
  * Batch T1, the primitives: the text position, strings, the menu's text places, the meters,
  * the button tests, numbers. */
 #include "world.h"
+#include "task.h"
 
 #define VDP_DATA      0x00C00000u
 #define VDP_CTRL      0x00C00004u
@@ -1196,6 +1197,503 @@ static void stats(void)
     } while ((c->d[2] & 0xFFFF) != 3);
 }
 
+/* ---- batch T4: the menus ----
+ * The screen's menus wait for the next frame part-way through. The original's menu routines
+ * keep their return addresses in RAM ($9630-$9654), not on the stack, so that Yield (which
+ * returns to the scheduler) can be called from any depth of them; the C versions here are
+ * ordinary functions that write the same addresses (where the original would return: after its
+ * call) and wait with task_wait_frame at the original's resume addresses (port/task.h). */
+
+#define SLOT_ADDR      0xFFFF8A4Cu
+#define CURSOR_SPRITE  0x000Cu          /* the entity of the sprite cursor beside the slots */
+#define CLEAR_ENTITY   0xA36u
+#define SET_ANIM       0x7E8u
+#define WINDOW_REDRAW  0x89B6u
+#define GOLD_LABEL     0x8596u
+#define CHOOSING       0xFFFF95E0u      /* byte: a slot (A + left/right) being chosen */
+#define CHOSEN_SLOT    0xFFFF95E4u      /* word: 0 left, 1 right */
+
+static void yield_at(uint32_t resume) { Cpu *me = c; task_wait_frame(me, resume); c = me; }
+static void ret_to(uint32_t cell, uint32_t addr) { wr32(cell, addr); }
+
+/* $805A: the next frame, then the menus' buttons ($95D9: pressed, or held 16 frames then every
+ * 8), and the three blinks */
+static void wait_input(uint32_t ret)
+{
+    ret_to(0xFFFF9634u, ret);
+    yield_at(0x8062);
+    c->d[0] = set_b(c->d[0], rd8(PAD_NEW)); F_B(c->d[0]);
+    if (c->d[0] & 0xFF) {
+        wr8(0xFFFF95D8u, 0x10);
+        wr8(0xFFFF95D7u, rd8(0xFFFF8A7Au));
+    } else {
+        c->d[0] = set_b(c->d[0], rd8(0xFFFF8A7Au)); F_B(c->d[0]);
+        if (c->d[0] & 0xFF) {
+            cmp_byte(rd8(0xFFFF95D7u), c->d[0]);
+            if ((c->d[0] & 0xFF) == rd8(0xFFFF95D7u) && !count_down(0xFFFF95D8u)) {
+                wr8(0xFFFF95D8u, 8);
+            } else {
+                wr8(0xFFFF95D7u, (uint8_t)c->d[0]);
+                c->d[0] = 0;
+            }
+        }
+    }
+    wr8(PAD_HELD, (uint8_t)c->d[0]); F_B(c->d[0]);
+    cursor_blink();
+    up_blink();
+    down_blink();
+}
+
+/* $7952, $794E: the sprite cursor beside the slot chosen (x by the slot, $799A; y d6) */
+static void cursor_sprite(void)
+{
+    c->a[4] = CURSOR_SPRITE;
+    call_68k(c, CLEAR_ENTITY);
+    line_x2();
+    uint32_t e = c->a[4];
+    wr16(e - 0x3800, rd16(0x799Au + sx(c->d[0])));
+    wr16(e - 0x3700, (uint16_t)c->d[6]);
+    wr16(e - 0x3E00, 4);
+    wr8(e - 0x3FFD, rd8(e - 0x3FFD) | 0x40);
+    wr16(e - 0x3900, 0xFF01);
+    wr8(e - 0x3CFD, 0);
+    wr8(e - 0x3FFE, 0x80);
+    wr16(e - 0x3D00, 0x1602);
+    c->d[0] = 0;
+    call_68k(c, SET_ANIM);
+    wr8(c->a[4] - 0x4000, 0xC0); F_B(0xC0);
+}
+static void cursor_sprite_top(void)  { c->d[6] = 16; F_L(16); cursor_sprite(); }    /* $794E */
+static void cursor_sprite_low(void)  { c->d[6] = 48; F_L(48); cursor_sprite(); }    /* $7952 */
+/* $7924, $7938: left or right pressed: the other slot, the sprite cursor there */
+static void slot_flip(void (*draw)(void))
+{
+    c->d[0] = 12 & rd8(PAD_HELD); F_B(c->d[0]);
+    if (!c->d[0]) return;
+    click();
+    wr16(LIST_LINE, rd16(LIST_LINE) ^ 1); F_W(rd16(LIST_LINE));
+    draw();
+}
+static void slot_flip_top(void) { slot_flip(cursor_sprite_top); }   /* $7924 */
+static void slot_flip_low(void) { slot_flip(cursor_sprite_low); }   /* $7938 */
+
+/* $799E: choosing a slot with left/right (the sprite cursor; CHOOSING: from the top, the line
+ * kept in CHOSEN_SLOT); B or Start: d6 -1, A or C: d6 0 */
+static void choose_slot(uint32_t ret)
+{
+    ret_to(0xFFFF964Cu, ret);
+    F_B(rd8(CHOOSING));
+    if (rd8(CHOOSING)) {
+        wr16(CHOSEN_SLOT, rd16(LIST_LINE));
+        wr16(LIST_LINE, 0); f_clr();
+        cursor_sprite_top();
+    }
+    for (;;) {
+        wait_input(0x79B8);
+        pressed(0xFFFFFF90u);
+        if (c->d[6]) { wr8(0xFFFFC00Cu, 0); f_clr(); break; }
+        F_B(rd8(CHOOSING));
+        if (rd8(CHOOSING)) slot_flip_top(); else slot_flip_low();
+        if (!(c->ccr & CC_Z)) continue;
+        pressed(0x60);
+        if (!c->d[6]) continue;
+        c->d[6] = 0; F_L(0);
+        wr8(0xFFFFC00Cu, 0); f_clr();
+        break;
+    }
+    click_back();
+}
+
+/* $79EE: put the special action of the line chosen in a slot: the slot's old one taken out
+ * (its name plain), the new one's name bright, the slot's icon redrawn */
+static void put_in_slot(uint32_t ret)
+{
+    ret_to(0xFFFF9640u, ret);
+    wr8(CHOOSING, 1); F_B(1);
+    choose_slot(0x79FA);
+    F_W(c->d[6]);
+    if (!(c->d[6] & 0x8000)) {
+        c->a[0] = sx(rd16(LIST_LINE));
+        wr8(c->a[0] - 0x6A24, rd8(c->a[0] - 0x60F0));
+        wr8(c->a[0] - 0x60F0, rd8(0xFFFF95E5u));
+        c->d[0] = 0;
+        c->d[0] = set_b(c->d[0], rd8(c->a[0] - 0x6A1E)); F_B(c->d[0]);
+        if (c->d[0] & 0x80) menu_bright();
+        else { c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0])); menu_plain_bright(); }
+        wr8(c->a[0] - 0x6A1E, rd8(0xFFFF95E5u)); F_B(rd8(0xFFFF95E5u));
+        F_W(rd16(LIST_LINE));
+        if (rd16(LIST_LINE)) right_slot(); else left_slot();
+    }
+    wr16(LIST_LINE, rd16(CHOSEN_SLOT)); F_W(rd16(CHOSEN_SLOT));
+}
+
+/* $7A44: put the item of the items page in a slot */
+static void item_in_slot(uint32_t ret)
+{
+    ret_to(0xFFFF9654u, ret);
+    wr8(CHOOSING, 1); F_B(1);
+    choose_slot(0x7A52);
+    F_W(c->d[6]);
+    if (c->d[6] & 0xFFFF) {
+        c->d[6] = 0; F_L(0);
+    } else {
+        c->d[0] = set_w(c->d[0], rd16(0xFFFF95EEu)); F_W(c->d[0]);
+        F_W(rd16(CHOSEN_SLOT));
+        if (rd16(CHOSEN_SLOT)) { c->d[0] = set_w(c->d[0], rd16(0xFFFF95F0u)); F_W(c->d[0]); }
+        c->a[0] = sx(rd16(LIST_LINE));
+        wr8(c->a[0] - 0x6A24, rd8(c->a[0] - 0x60F0));
+        c->d[0] = set_b(c->d[0], add_b(&c->ccr, 8, c->d[0]));
+        wr8(c->a[0] - 0x60F0, (uint8_t)c->d[0]); F_B(c->d[0]);
+        c->a[0] = sx(rd16(CHOSEN_SLOT));
+        c->a[0] += sx(c->a[0]);
+        c->d[1] = set_w(c->d[1], rd16(c->a[0] - 0x6A12)); F_W(c->d[1]);
+        F_W(rd16(LIST_LINE));
+        if (!rd16(LIST_LINE)) left_slot(); else right_slot();
+        c->d[6] = 0xFFFFFFFFu; F_L(c->d[6]);
+    }
+    c->d[2] = set_w(c->d[2], 0x8020);
+    c->d[0] = set_w(c->d[0], rd16(CHOSEN_SLOT)); F_W(c->d[0]);
+    line_mark();
+    wr16(LIST_LINE, rd16(CHOSEN_SLOT)); F_W(rd16(CHOSEN_SLOT));
+}
+
+/* $7882: the items page's choosing: a line with the sprite cursor; one that can be used is
+ * marked and put in a slot ($7A44); d6 -1 when done */
+static void items_choose(uint32_t ret)
+{
+    ret_to(0xFFFF9650u, ret);
+    for (;;) {
+        wr8(CHOOSING, 0); f_clr();
+        cursor_sprite_low();
+        choose_slot(0x7892);
+        F_W(c->d[6]);
+        if (c->d[6] & 0x8000) break;
+        line_x2();
+        c->a[0] = sx(c->d[0]);
+        F_W(rd16(c->a[0] - 0x6A12));
+        if (rd16(c->a[0] - 0x6A12) & 0x8000) { sound(53); continue; }
+        take_off();
+        if (c->ccr & CC_Z) continue;
+        c->d[2] = set_w(c->d[2], 0x87B5);
+        c->d[0] = set_w(c->d[0], rd16(LIST_LINE)); F_W(c->d[0]);
+        if (c->d[0] & 0xFFFF) c->d[2] = set_w(c->d[2], 0x8FB5);
+        line_mark();
+        item_in_slot(0x78C8);
+        F_W(c->d[6]);
+        if (c->d[6] & 0xFFFF) break;
+    }
+    click_back();
+    wr16(LIST_LINE, rd16(MENU_OF)); F_W(rd16(MENU_OF));
+}
+
+/* $78DC: the special actions' page: A or C on one with uses puts it in a slot; B or Start
+ * leaves (d6 -1) */
+static void magic_choose(uint32_t ret)
+{
+    ret_to(0xFFFF9644u, ret);
+    pressed(0xFFFFFF90u);
+    if (!c->d[6]) {
+        pressed(0x60);
+        if (!c->d[6]) return;
+        c->a[0] = sx(rd16(LIST_LINE));
+        F_B(rd8(c->a[0] - 0x6A48));
+        if (!rd8(c->a[0] - 0x6A48)) { c->d[6] = 0; F_L(0); sound(53); return; }
+        take_off();
+        if (c->ccr & CC_Z) { click_back(); return; }
+        click_back();
+        put_in_slot(0x7906);
+    }
+    wr16(LIST_LINE, rd16(MENU_OF)); F_W(rd16(MENU_OF));
+    c->d[6] = 0xFFFFFFFFu; F_L(c->d[6]);
+    click_back();
+}
+
+/* $7D9C: a list page's buttons: up/down; A or C wears the thing of the line (its byte in the
+ * list menu's -$6A33, the list re-marked, the stats and lines redrawn); B or Start leaves (d6
+ * -1; arrows hidden). A thing of kind 7 (none) only buzzes */
+static void list_buttons(void)
+{
+    list_move();
+    pressed(0xFFFFFF90u);
+    if (!c->d[6]) {
+        pressed(0x60);
+        if (!c->d[6]) return;
+        c->a[0] = sx(rd16(LIST_LINE));
+        c->d[0] = set_b(c->d[0], rd8(c->a[0] - 0x69F8));
+        c->d[0] = set_b(c->d[0], c->d[0] & 7);
+        c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 7, c->d[0]));
+        if (!(c->d[0] & 0xFF)) { sound(53); return; }
+        c->d[0] = set_b(c->d[0], rd8(c->a[0] - 0x69F8)); F_B(c->d[0]);
+        if (c->d[0] & 0x80) goto leave;
+        c->a[0] = sx(rd16(PAGE));
+        wr8(0xFFFF95D6u, rd8(c->a[0] - 0x6A33));
+        wr8(c->a[0] - 0x6A33, (uint8_t)c->d[0]);
+        c->a[0] = LIST;
+        c->d[1] = set_w(c->d[1], rd16(LIST_LEN));
+        do {
+            c->d[2] = set_b(c->d[2], rd8(c->a[0]) & 0x7F);
+            cmp_byte(c->d[0], c->d[2]);
+            if ((c->d[2] & 0xFF) == (c->d[0] & 0xFF)) c->d[2] = set_b(c->d[2], c->d[2] | 0x80);
+            wr8(c->a[0]++, (uint8_t)c->d[2]);
+            c->d[1] = set_w(c->d[1], sub_w(&c->ccr, 1, c->d[1]));
+        } while (c->d[1] & 0xFFFF);
+    }
+    stats();
+    draw_list();
+leave:
+    up_hide(); wr8(0xFFFF9620u, 0); f_clr();
+    down_hide(); wr8(0xFFFF9622u, 0); f_clr();
+    click_back();
+    c->d[6] = 0xFFFFFFFFu; F_L(c->d[6]);
+}
+
+/* $7E12: the line just worn blinks (12 frames each way) for $50 frames or until a button */
+static void blink_worn(uint32_t ret)
+{
+    ret_to(0xFFFF9648u, ret);
+    wr8(NO_REDRAW_ARROWS, 0x50);
+    wr8(0xFFFF95DEu, 0x0C);
+    wr8(0xFFFF95DFu, 0); f_clr();
+    for (;;) {
+        yield_at(0x7E2A);
+        c->d[0] = set_b(0xFFFFFFF0u, 0xF0 & rd8(PAD_NEW)); F_B(c->d[0]);
+        if (c->d[0] & 0xFF) break;
+        if (!count_down(0xFFFF95DEu)) {
+            wr8(0xFFFF95DEu, 0x0C);
+            uint8_t v = rd8(0xFFFF95DFu);
+            wr8(0xFFFF95DFu, v ^ 1);
+            if (v & 1) draw_list();
+            else {
+                c->d[7] = set_w(c->d[7], 0xF06);
+                c->d[0] = set_w(c->d[0], rd16(LIST_LINE));
+                c->d[0] = set_w(c->d[0], sub_w(&c->ccr, rd16(LIST_TOP), c->d[0]));
+                c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+                c->d[7] = set_w(c->d[7], add_w(&c->ccr, c->d[0], c->d[7]));
+                blank_13();
+                c->d[7] = set_w(c->d[7], add_w(&c->ccr, 1, c->d[7]));
+                blank_13();
+            }
+        }
+        uint8_t n = (uint8_t)sub_b(&c->ccr, 1, rd8(NO_REDRAW_ARROWS));
+        wr8(NO_REDRAW_ARROWS, n);
+        if (c->ccr & CC_C) break;
+    }
+    wr8(NO_REDRAW_ARROWS, 0); f_clr();
+}
+
+/* $7E8C, $7EBA: the screen fading in (palette steps 9-$10) and out ($F-8; the frame's lower part
+ * and the gold label back) */
+static void fade_in(uint32_t ret)
+{
+    ret_to(0xFFFF963Cu, ret);
+    stats_page();
+    wr8(0xFFFF95DAu, 9);
+    do {
+        wait_input(0x7E9C);
+        wr8(PAL_STEP, rd8(0xFFFF95DAu));
+        set8(GAME_FLAGS2, 4);
+        wr8(0xFFFF95DAu, (uint8_t)add_b(&c->ccr, 1, rd8(0xFFFF95DAu)));
+        cmp_byte(0x11, rd8(0xFFFF95DAu));
+    } while (rd8(0xFFFF95DAu) != 0x11);
+}
+static void fade_out(uint32_t ret)
+{
+    ret_to(0xFFFF963Cu, ret);
+    wr8(0xFFFF95DAu, 0x0F);
+    do {
+        wait_input(0x7EC8);
+        wr8(PAL_STEP, rd8(0xFFFF95DAu));
+        set8(GAME_FLAGS2, 4);
+        wr8(0xFFFF95DAu, (uint8_t)sub_b(&c->ccr, 1, rd8(0xFFFF95DAu)));
+        cmp_byte(7, rd8(0xFFFF95DAu));
+    } while (rd8(0xFFFF95DAu) != 7);
+    frame_lower();
+    call_68k(c, GOLD_LABEL);
+}
+
+/* $8BB6: the screen's setup: which pages can be used, by the things in use ($8C1E) */
+static void screen_setup(void)
+{
+    wr8(0xFFFF9EF1u, rd8(0xFFFF9EF1u) & 0xDF);
+    wr16(0xFFFF95F4u, 0x60);
+    wr16(0xFFFF95F6u, 0x80); F_W(0x80);
+    if (bit_test(0xFFFF9EF1u, 4)) return;
+    c->a[0] = 0xFFFF95CEu;
+    c->d[5] = set_b(c->d[5], rd8(c->a[0]));
+    c->d[2] = 0;
+    wr16(0xFFFF95F6u, 0); f_clr();
+    do {
+        c->d[0] = rd8(c->a[0]++); F_B(c->d[0]);
+        if (!(c->d[0] & 0x80)) {
+            c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[2], c->d[0]));
+            c->d[3] = rd8(0x8C1Eu + sx(c->d[0]));
+            c->d[3] = set_w(c->d[3], lsl_n(&c->ccr, c->d[3], 4, 16));
+            F_W(c->d[2]);
+            if (!(c->d[2] & 0xFFFF)) { wr16(0xFFFF95F4u, (uint16_t)c->d[3]); F_W(c->d[3]); }
+            else {
+                cmp_byte(4, c->d[5]);
+                if ((c->d[5] & 0xFF) >= 4) {
+                    cmp_w(&c->ccr, 0xE, c->d[2]);
+                    if ((c->d[2] & 0xFFFF) == 0xE) goto done;
+                }
+                wr16(0xFFFF95F6u, (uint16_t)add_w(&c->ccr, c->d[3], rd16(0xFFFF95F6u)));
+            }
+        }
+        c->d[2] = set_w(c->d[2], add_w(&c->ccr, 7, c->d[2]));
+        cmp_w(&c->ccr, 0x15, c->d[2]);
+    } while ((c->d[2] & 0xFFFF) != 0x15);
+done:
+    cmp_byte(5, rd8(0xFFFF95CEu));
+    if (rd8(0xFFFF95CEu) == 5) { wr8(0xFFFF9EF1u, rd8(0xFFFF9EF1u) | 0x20); F_B(rd8(0xFFFF9EF1u)); }
+}
+
+/* $8C34: the menus' state reset: the things in use kept, the slots' things (if special actions) */
+static void menu_reset(void)
+{
+    wr32(0xFFFF95D2u, rd32(0xFFFF95CEu));
+    wr8(NO_REDRAW_ARROWS, 0); wr8(0xFFFF9614u, 0); wr8(0xFFFF9620u, 0); wr8(0xFFFF9622u, 0);
+    wr16(PAGE, 0); wr16(LIST_LINE, 0); wr16(LIST_TOP, 0); f_clr();
+    c->d[1] = 0xFFFFFFFFu;
+    wr8(0xFFFF95E2u, 0xFF); F_B(0xFF);
+    c->d[0] = 0;
+    c->d[0] = set_b(c->d[0], rd8(0xFFFF9F10u)); F_B(c->d[0]);
+    cmp_byte(8, c->d[0]);
+    if ((c->d[0] & 0xFF) < 8) { wr8(0xFFFF95E2u, (uint8_t)c->d[0]); F_B(c->d[0]); }
+    wr8(0xFFFF95E3u, 0xFF); F_B(0xFF);
+    c->d[0] = set_b(c->d[0], rd8(0xFFFF9F11u)); F_B(c->d[0]);
+    cmp_byte(8, c->d[0]);
+    if ((c->d[0] & 0xFF) < 8) { wr8(0xFFFF95E3u, (uint8_t)c->d[0]); F_B(c->d[0]); }
+}
+
+/* $75F8: whether a main menu line can be opened (ne: no, with a buzz): the swords' page not under
+ * water, the shields' not with a two-handed sword, nothing in a shop */
+static int line_refused(void)
+{
+    switch (rd16(LIST_LINE)) {
+    case 0:
+        if (bit_test(0xFFFF966Bu, 0)) goto no;
+        break;
+    case 2:
+        F_B(rd8(0xFFFF95CCu));
+        if (!rd8(0xFFFF95CCu)) goto no;
+        cmp_byte(4, rd8(0xFFFF95CEu));
+        if (rd8(0xFFFF95CEu) >= 4) goto no;
+        break;
+    case 4: case 5:
+        c->d[0] = 0; F_L(0);
+        return 0;
+    }
+    return bit_test(0xFFFF9EF1u, 4);                 /* in a shop */
+no:
+    sound(53);
+    c->d[0] = 0xFFFFFFFFu; F_L(c->d[0]);
+    return 1;
+}
+
+/* $763E, $766E, $7684: a line's page, until B or Start; then the stats page back */
+static void line_page(void)
+{
+    ret_to(0xFFFF9638u, 0x75D8);
+    open_line();
+    switch (rd16(MENU_OF)) {
+    case 4:
+        items_page();
+        do items_choose(0x767E); while (!(c->d[6] & 0x8000));
+        break;
+    case 5:
+        magic_page();
+        do {
+            wait_input(0x7694);
+            menu_move();
+            magic_choose(0x769C);
+        } while (!(c->d[6] & 0xFFFF));
+        break;
+    default:                                        /* 0-3: a list */
+        do {
+            wait_input(0x764A);
+            list_buttons();
+        } while (!(c->ccr & CC_N));
+        c->a[0] = sx(rd16(MENU_OF));
+        c->d[0] = set_b(c->d[0], rd8(0xFFFF95D6u));
+        cmp_byte(rd8(c->a[0] - 0x6A32), c->d[0]);
+        if ((c->d[0] & 0xFF) != rd8(c->a[0] - 0x6A32)) blink_worn(0x7662);
+        wr16(LIST_LINE, rd16(MENU_OF));
+        clear_panel();
+        goto back;
+    }
+    stats_page();
+    yield_at(0x76A8);
+back:
+    stats();
+    wr16(PAGE, 0); f_clr();
+    c->a[0] = rd32(0xFFFF9638u);
+}
+
+/* $7582: the status screen, from the game's frame when Start is pressed: fade in, the main menu
+ * and its pages until B or Start, fade out; then back where it was called from */
+static void status_screen(void)
+{
+    ret_to(0xFFFF9630u, rd32(c->a[7]));
+    c->a[7] += 4;
+    screen_setup();
+    menu_reset();
+    fade_in(0x7592);
+    stats();
+    for (;;) {
+        main_menu();
+        for (;;) {
+            wait_input(0x759E);
+            menu_move();
+            pressed(0xFFFFFF90u);
+            if (c->d[6]) goto close;
+            pressed(0x60);
+            if (!c->d[6]) continue;
+            line_x2();
+            c->a[0] = 0x75F8u + sx(rd16(0x75F8u + sx(c->d[0])));   /* jsr (a0): the check */
+            if (!line_refused()) break;
+            sound(53);
+        }
+        click_back();
+        clear_panel();
+        line_x2();
+        c->a[0] = 0x7604u + sx(rd16(0x7604u + sx(c->d[0])));   /* jsr (a0): the page */
+        line_page();
+    }
+close:
+    view_limits();
+    screen_setup();
+    fade_out(0x75EE);
+    call_68k(c, WINDOW_REDRAW);
+    c->a[0] = rd32(0xFFFF9630u);
+    port_continue_at(c, c->a[0], 0);
+}
+
+/* $7F0E: the pause screen (when $9659 bit 2 is set instead of the status screen): PAUSE until B */
+static void pause_screen(void)
+{
+    ret_to(0xFFFF963Cu, rd32(c->a[7]));
+    c->a[7] += 4;
+    frame_pause();
+    c->d[7] = set_w(c->d[7], 0xE08);
+    text_at();
+    c->a[1] = 0x7F4Eu;
+    string_plain();
+    wr8(PAL_STEP, 0x0A);
+    set8(GAME_FLAGS2, 4);
+    do {
+        yield_at(0x7F36);
+        pressed(0xFFFFFF80u);
+    } while (!c->d[6]);
+    wr8(PAL_STEP, 8);
+    set8(GAME_FLAGS2, 4);
+    c->a[0] = rd32(0xFFFF963Cu);
+    port_continue_at(c, c->a[0], 0);
+}
+
+/* the two that wait: they leave by port_continue_at, so ret is theirs to set */
+void StatusScreen(Cpu *cpu) { c = cpu; status_screen(); }   /* $7582 */
+void PauseScreen(Cpu *cpu)  { c = cpu; pause_screen(); }    /* $7F0E */
+
 /* call_68k leaves its mark in ret: cleared, as none of these goes on elsewhere */
 #define ENTRY(name, fn) void name(Cpu *cpu) { c = cpu; fn(); c->ret = 0; }
 ENTRY(TextAt, text_at)                 /* $83B0 */
@@ -1269,3 +1767,10 @@ ENTRY(MagicPage, magic_page)    /* $7BB2 */
 ENTRY(ItemsPage, items_page)    /* $7AC0 */
 ENTRY(MaybePicture, maybe_picture) /* $7B86 */
 ENTRY(Stats, stats)             /* $76E8 */
+ENTRY(CursorSpriteTop, cursor_sprite_top) /* $794E */
+ENTRY(CursorSpriteLow, cursor_sprite_low) /* $7952 */
+ENTRY(SlotFlipTop, slot_flip_top) /* $7924 */
+ENTRY(SlotFlipLow, slot_flip_low) /* $7938 */
+ENTRY(ListButtons, list_buttons) /* $7D9C */
+ENTRY(ScreenSetup, screen_setup) /* $8BB6 */
+ENTRY(MenuReset, menu_reset)    /* $8C34 */
