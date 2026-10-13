@@ -81,6 +81,7 @@ void TextAt(Cpu *), TextAtRC(Cpu *), String(Cpu *), StringPlain(Cpu *), StringBr
      BreakCheck(Cpu *), BreakLeft(Cpu *), BreakRight(Cpu *), BreakSpawn(Cpu *), DoorAdd(Cpu *), DoorsClear(Cpu *), CrumbleClear(Cpu *), CrumbleWalls(Cpu *);
 void GatesSetup(Cpu *), GateSetup(Cpu *), GatesRun(Cpu *), GateRun(Cpu *), GateEnd(Cpu *), GateFlag(Cpu *), GateTimer(Cpu *),
      GateGrow(Cpu *), GateCell(Cpu *), GateShrink(Cpu *), GateSparkTime(Cpu *), GateSparks(Cpu *), CrumbleAdd(Cpu *);
+void RoomObjFall(Cpu *), FallCell(Cpu *), RoomObjLift(Cpu *), RoomObjDrift(Cpu *), BlockShatter(Cpu *);
 void NumText(Cpu *), CharAt(Cpu *), ScrollWindow(Cpu *), WindowFrame(Cpu *), WindowRow(Cpu *), TileUnder(Cpu *), WindowRestore(Cpu *), NewLine(Cpu *), MoreBlink(Cpu *), MoreHide(Cpu *), MoreShow(Cpu *), ChoiceBlink(Cpu *), ChoiceHide(Cpu *), ChoiceShow(Cpu *), PriceOf(Cpu *), NameOf(Cpu *), NameText(Cpu *), FoundThing(Cpu *), FoundGold(Cpu *), BoxText(Cpu *), BoxRows(Cpu *), BoxRow(Cpu *), ShowFoundGold(Cpu *), ShowFound(Cpu *), WindowGeometry(Cpu *), Cheaper(Cpu *), Owns(Cpu *), Give(Cpu *), Take(Cpu *), ItemCell(Cpu *), FlagCell(Cpu *), MessageData(Cpu *), OpenWindow(Cpu *), WindowAt(Cpu *), MsgStep(Cpu *), CharIn(Cpu *), NoteIn(Cpu *), OcarinaTune(Cpu *);   /* message.c */
 #define CT_ALL 0x3FFFF                /* every register and flag compared */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
@@ -526,6 +527,11 @@ const PortRoutine port_routines[] = {
     {0x00B7A6, 0x00B7B8, "GateSparkTime", GateSparkTime, CT_ALL},
     {0x00B7B8, 0x00B82A, "GateSparks", GateSparks, CT_ALL},
     {0x00B82A, 0x00B852, "CrumbleAdd", CrumbleAdd, CT_ALL},
+    {0x00B00A, 0x00B0CC, "RoomObjFall", RoomObjFall, CT_ALL},    /* rooms.c: three room objects and a shattered block */
+    {0x00B0CC, 0x00B0DA, "FallCell", FallCell, CT_ALL},
+    {0x00B0DA, 0x00B236, "RoomObjLift", RoomObjLift, CT_ALL},
+    {0x00B236, 0x00B2BA, "RoomObjDrift", RoomObjDrift, CT_ALL},
+    {0x00B2BA, 0x00B32E, "BlockShatter", BlockShatter, CT_ALL},
     {0x01090C, 0x010910, "SpawnItem", SpawnItem},                 /* effects.c: every register as the original */
     {0x010910, 0x010A1E, "SpawnItemAt", SpawnItemAt},
     {0x010A1E, 0x011094, "RunItems", RunItems, CT_SP},
