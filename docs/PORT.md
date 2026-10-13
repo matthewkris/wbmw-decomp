@@ -1842,6 +1842,39 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 540,000 fuzz cases from six states, 0 mismatches, every instruction covered. Self-test caught 100
 in 100 for each. Replace mode: thirteen runs, no problems.
 
+#### The rooms, batch T15: the map's cells, the game's flags, rectangles (2026-10-13)
+
+A layer's cells live in its chunks at `$FF5000`, `$180` bytes a chunk: 192 cells, 16 columns by
+12 rows. A cell is named by a column in d6 (from `$100`) and a row in d7 (from `$4000`, `$40` a
+row). It is found through the layer's map of places (`$22`), each place 16 columns by 12 rows
+(`$300`). In `port/rooms.c`, with every register and flag in the contract:
+
+* Cells (`$260A`: its address; `$2666`: set). `$2692` sets and draws it. `$2670` and `$266C`
+  (plane A) set it and draw it if inside what is drawn (`$2672`: columns `$8`-`$A`, rows
+  `$C`-`$E`).
+* A block drawn (`$2694`): its four tiles, from the layer's tables at `$10`, on the layer's plane
+  (`$20`) at the column and row mod 32, with the tiles' priority set for bit 15. `$26F0` reads a
+  block's byte (its table plus `$800`).
+* The game's flags: `$2738` finds flag d0's byte (from `$99BE`) and bit, `$274C` tests it and
+  `$2752` sets it. `$270C`, `$2728` and `$2730` do the same with flags under `$20` from `$99BA`.
+  `$2758` is the room flags at `$9992`, whose bytes are swapped in pairs.
+* A rectangle of plane A's cells (`$974C`: column, row, width, height): `$A1FE` saves it to
+  `$FF3100`, `$A23C` puts it in front (bit 15), `$A276` restores it and `$A2B4` redraws it.
+  `$A2EE` draws blocks straight to VRAM through `MapBlockAtRaw`, for the ending's pictures.
+* The start points (`$A37E`: start point `$9676`'s area, room, kind and the player's place) and
+  their conversions (`$A3A4`, `$A3B4`: bytes as positions, 8 pixels each from `$1000`). `$A3CA`
+  doubles an entity's word under water.
+* The palette's fade step (`$92A4`): the room's 15 colours through `$594A`, by `$9666` / 4.
+
+The fuzz gives these a layer's record, cells all over its map (including places it does not
+use: their chunk number `$FF` points outside the chunks, as in the original), blocks of either
+priority, rectangles, raw places and VRAM addresses.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(37 runs, 558,595 checked calls). 750,000 fuzz cases from six states, 0 mismatches, every
+instruction covered. Self-test caught 100 in 100 for each. Replace mode: thirteen runs, no
+problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

@@ -71,7 +71,8 @@ void TextAt(Cpu *), TextAtRC(Cpu *), String(Cpu *), StringPlain(Cpu *), StringBr
      UnpackBlocks(Cpu *), UnpackRoomBlocks(Cpu *), LoadSharedBlocks(Cpu *), ExpandZeroRuns(Cpu *), UnpackLayerMap(Cpu *),
      LoadRoom(Cpu *), InitLayers(Cpu *), InitLayer(Cpu *), SetupLayer(Cpu *), ReadRoomPointer(Cpu *), LoadScene(Cpu *), RoomMusic(Cpu *), RoomLayer(Cpu *), RoomLayerAt(Cpu *), RoomGfx(Cpu *), RoomPalettes(Cpu *), RoomPalette2(Cpu *), RoomCmd4(Cpu *), RoomCmd5(Cpu *), RoomCmd6(Cpu *), RoomCmd7(Cpu *), RoomCmd8(Cpu *), RoomCmd9(Cpu *), RoomCmd11(Cpu *), RoomCmd12(Cpu *), RoomCmd13(Cpu *), RoomCmd14(Cpu *), RoomCmd15(Cpu *), RoomCmd18(Cpu *), RoomCmd19(Cpu *), RoomCmd20(Cpu *),
      LayersSetup(Cpu *), LayerSetup(Cpu *), LayerXParallax(Cpu *), LayerXFixed(Cpu *), LayerXMoving(Cpu *), LayerYParallax(Cpu *), LayerFixedY(Cpu *), LayerYFixed(Cpu *), LayerYMoving(Cpu *), LayerYMover(Cpu *), LayerColumns(Cpu *), LayerColumnsStrip(Cpu *), LayerRows(Cpu *), LayerRowsStrip(Cpu *), LayerRowsWrap(Cpu *), LayerX(Cpu *), LayerY(Cpu *), Parallax(Cpu *), MoverPlace(Cpu *), ScrollX(Cpu *), ScrollY(Cpu *),
-     Camera(Cpu *), LayersDraw(Cpu *), DrawLayer(Cpu *), LayerXFollow(Cpu *), LayerYFollow(Cpu *), LayerXDrift(Cpu *), LayerXDriftA(Cpu *), LayerYDrift(Cpu *), MoverDelta(Cpu *), MoverStep(Cpu *), LayerMove(Cpu *), ScrollOut(Cpu *), LayersFrame(Cpu *), LayerFrame(Cpu *), ColumnsIn(Cpu *), DrawColumn(Cpu *), RowsIn(Cpu *), DrawRow(Cpu *);
+     Camera(Cpu *), LayersDraw(Cpu *), DrawLayer(Cpu *), LayerXFollow(Cpu *), LayerYFollow(Cpu *), LayerXDrift(Cpu *), LayerXDriftA(Cpu *), LayerYDrift(Cpu *), MoverDelta(Cpu *), MoverStep(Cpu *), LayerMove(Cpu *), ScrollOut(Cpu *), LayersFrame(Cpu *), LayerFrame(Cpu *), ColumnsIn(Cpu *), DrawColumn(Cpu *), RowsIn(Cpu *), DrawRow(Cpu *),
+     CellAt(Cpu *), CellSet(Cpu *), CellSetA(Cpu *), CellSetShown(Cpu *), DrawIfShown(Cpu *), CellSetDraw(Cpu *), DrawBlock(Cpu *), BlockByte(Cpu *), Flag2At(Cpu *), Flag2Test(Cpu *), Flag2Set(Cpu *), GameFlagAddr(Cpu *), TestGameFlag(Cpu *), SetGameFlag(Cpu *), RoomFlagBit(Cpu *), RectSave(Cpu *), RectMark(Cpu *), RectRestore(Cpu *), RectRedraw(Cpu *), BlocksToVram(Cpu *), StartPoint(Cpu *), StartAt(Cpu *), ToPosition(Cpu *), WaterDouble(Cpu *), FadeStep(Cpu *);
 void NumText(Cpu *), CharAt(Cpu *), ScrollWindow(Cpu *), WindowFrame(Cpu *), WindowRow(Cpu *), TileUnder(Cpu *), WindowRestore(Cpu *), NewLine(Cpu *), MoreBlink(Cpu *), MoreHide(Cpu *), MoreShow(Cpu *), ChoiceBlink(Cpu *), ChoiceHide(Cpu *), ChoiceShow(Cpu *), PriceOf(Cpu *), NameOf(Cpu *), NameText(Cpu *), FoundThing(Cpu *), FoundGold(Cpu *), BoxText(Cpu *), BoxRows(Cpu *), BoxRow(Cpu *), ShowFoundGold(Cpu *), ShowFound(Cpu *), WindowGeometry(Cpu *), Cheaper(Cpu *), Owns(Cpu *), Give(Cpu *), Take(Cpu *), ItemCell(Cpu *), FlagCell(Cpu *), MessageData(Cpu *), OpenWindow(Cpu *), WindowAt(Cpu *), MsgStep(Cpu *), CharIn(Cpu *), NoteIn(Cpu *), OcarinaTune(Cpu *);   /* message.c */
 #define CT_ALL 0x3FFFF                /* every register and flag compared */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
@@ -411,6 +412,31 @@ const PortRoutine port_routines[] = {
     {0x009DC8, 0x009E2E, "DrawColumn", DrawColumn, CT_ALL},
     {0x009E60, 0x009EF0, "RowsIn", RowsIn, CT_ALL},
     {0x009EF0, 0x009F46, "DrawRow", DrawRow, CT_ALL},
+    {0x00260A, 0x002666, "CellAt", CellAt, CT_ALL},   /* rooms.c: the map's cells, the flags, rectangles */
+    {0x002666, 0x00266C, "CellSet", CellSet, CT_ALL},
+    {0x00266C, 0x002670, "CellSetA", CellSetA, CT_ALL},
+    {0x002670, 0x002672, "CellSetShown", CellSetShown, CT_ALL},
+    {0x002672, 0x002692, "DrawIfShown", DrawIfShown, CT_ALL},
+    {0x002692, 0x002694, "CellSetDraw", CellSetDraw, CT_ALL},
+    {0x002694, 0x0026F0, "DrawBlock", DrawBlock, CT_ALL},
+    {0x0026F0, 0x00270C, "BlockByte", BlockByte, CT_ALL},
+    {0x00270C, 0x002728, "Flag2At", Flag2At, CT_ALL},
+    {0x002728, 0x002730, "Flag2Test", Flag2Test, CT_ALL},
+    {0x002730, 0x002738, "Flag2Set", Flag2Set, CT_ALL},
+    {0x002738, 0x00274C, "GameFlagAddr", GameFlagAddr, CT_ALL},
+    {0x00274C, 0x002752, "TestGameFlag", TestGameFlag, CT_ALL},
+    {0x002752, 0x002758, "SetGameFlag", SetGameFlag, CT_ALL},
+    {0x002758, 0x00276C, "RoomFlagBit", RoomFlagBit, CT_ALL},
+    {0x00A1FE, 0x00A23C, "RectSave", RectSave, CT_ALL},
+    {0x00A23C, 0x00A276, "RectMark", RectMark, CT_ALL},
+    {0x00A276, 0x00A2B4, "RectRestore", RectRestore, CT_ALL},
+    {0x00A2B4, 0x00A2EE, "RectRedraw", RectRedraw, CT_ALL},
+    {0x00A2EE, 0x00A37E, "BlocksToVram", BlocksToVram, CT_ALL},
+    {0x00A37E, 0x00A3A4, "StartPoint", StartPoint, CT_ALL},
+    {0x00A3A4, 0x00A3B4, "StartAt", StartAt, CT_ALL},
+    {0x00A3B4, 0x00A3CA, "ToPosition", ToPosition, CT_ALL},
+    {0x00A3CA, 0x00A3D8, "WaterDouble", WaterDouble, CT_ALL},
+    {0x0092A4, 0x0092D4, "FadeStep", FadeStep, CT_ALL},
     {0x01090C, 0x010910, "SpawnItem", SpawnItem},                 /* effects.c: every register as the original */
     {0x010910, 0x010A1E, "SpawnItemAt", SpawnItemAt},
     {0x010A1E, 0x011094, "RunItems", RunItems, CT_SP},

@@ -15,6 +15,8 @@
  * things), the layers' records, the ending's scenes and the room's music.
  * Batch T13, setting the layers up: how each scrolls and is drawn, the camera's parallax.
  * Batch T14, the layers each frame: the camera, the layers' moves, the blocks scrolling in.
+ * Batch T15, the map's cells (finding, setting, drawing), the game's flags, rectangles of the map,
+ * the start points and the palette's fade step.
  * Ported register for register, with every register and flag in the contract. */
 #include "world.h"
 
@@ -1590,3 +1592,342 @@ ENTRY(ColumnsIn, columns_in)               /* $9D46 */
 ENTRY(DrawColumn, draw_column)             /* $9DC8 */
 ENTRY(RowsIn, rows_in)                     /* $9E60 */
 ENTRY(DrawRow, draw_row)                   /* $9EF0 */
+
+/* ---- batch T15: the map's cells, the game's flags, rectangles of the map ----
+ * A layer's cells live in its chunks at $FF5000 ($180 a chunk, 192 cells of 16 x 12): the cell
+ * at column d6 (from $100) and row d7 (from $4000, $40 a row) is found through the layer's map
+ * ($22) of places; a place is 16 columns by 12 rows ($300). Drawing a block puts its four tiles
+ * (from the layer's tables at $10) on the layer's plane ($20) at the column and row mod 32. */
+
+#define CHUNKS        0x00FF5000u
+#define RECT          0xFFFF974Cu   /* words: column, row, width, height of a rectangle of cells */
+
+/* $260A: a0 at the cell (d6, d7) of layer a3 */
+static void cell_at(void)
+{
+    c->d[2] = set_w(c->d[2], c->d[6]); F_W(c->d[6]);
+    c->d[2] = set_w(c->d[2], sub_w(&c->ccr, 0x100, c->d[2]));
+    c->d[3] = set_w(c->d[3], c->d[7]); F_W(c->d[7]);
+    c->d[3] = set_w(c->d[3], sub_w(&c->ccr, 0x4000, c->d[3]));
+    c->d[5] = 0;
+    c->d[4] = set_w(c->d[4], 0xC00); F_W(0xC00);
+    cmp_w(&c->ccr, c->d[4], c->d[3]);
+    if ((c->d[3] & 0xFFFF) >= 0xC00) { c->d[3] = set_w(c->d[3], sub_w(&c->ccr, c->d[4], c->d[3])); c->d[5] = 32; F_L(32); }
+    c->d[4] = set_w(c->d[4], lsr_n(&c->ccr, c->d[4], 1, 16));
+    cmp_w(&c->ccr, c->d[4], c->d[3]);
+    if ((c->d[3] & 0xFFFF) >= (c->d[4] & 0xFFFF)) {
+        c->d[3] = set_w(c->d[3], sub_w(&c->ccr, c->d[4], c->d[3]));
+        c->d[5] = set_w(c->d[5], add_w(&c->ccr, 0x10, c->d[5]));
+    }
+    c->d[4] = set_w(c->d[4], lsr_n(&c->ccr, c->d[4], 1, 16));
+    cmp_w(&c->ccr, c->d[4], c->d[3]);
+    if ((c->d[3] & 0xFFFF) >= (c->d[4] & 0xFFFF)) {
+        c->d[3] = set_w(c->d[3], sub_w(&c->ccr, c->d[4], c->d[3]));
+        c->d[5] = set_b(c->d[5], add_b(&c->ccr, 8, c->d[5]));
+    }
+    c->d[4] = set_w(c->d[4], c->d[2]); F_W(c->d[2]);
+    c->d[4] = set_w(c->d[4], lsr_n(&c->ccr, c->d[4], 4, 16));
+    or_w(4, c->d[5]);
+    c->a[0] = sx(rd16(c->a[3] + 0x22));
+    move_b(4, rd8(c->a[0] + sx(c->d[4])));
+    c->d[5] = set_w(c->d[5], c->d[4]); F_W(c->d[4]);
+    c->d[4] = set_w(c->d[4], add_w(&c->ccr, c->d[4], c->d[4]));
+    c->d[4] = set_w(c->d[4], add_w(&c->ccr, c->d[5], c->d[4]));
+    c->d[4] = set_w(c->d[4], lsl_n(&c->ccr, c->d[4], 7, 16));
+    c->d[3] = set_w(c->d[3], lsr_n(&c->ccr, c->d[3], 1, 16));
+    c->d[4] = set_w(c->d[4], add_w(&c->ccr, c->d[3], c->d[4]));
+    and_w(2, 0xF);
+    c->d[2] = set_w(c->d[2], add_w(&c->ccr, c->d[2], c->d[2]));
+    c->d[4] = set_w(c->d[4], add_w(&c->ccr, c->d[2], c->d[4]));
+    c->a[0] = CHUNKS + sx(c->d[4]);
+}
+
+/* $2694: block d0 (bit 15 in front: its tiles' priority set) drawn on layer a3's plane at
+ * (d6, d7) */
+static void draw_block(void)
+{
+    c->d[2] = set_w(c->d[2], c->d[0]); F_W(c->d[0]);
+    c->d[1] = 0;
+    c->d[1] = set_b(c->d[1], c->d[0]);
+    and_w(0, 0x300);
+    c->d[0] = set_w(c->d[0], lsr_n(&c->ccr, c->d[0], 6, 16));
+    c->a[0] = rd32(c->a[3] + 0x10 + sx(c->d[0]));
+    c->d[1] = set_w(c->d[1], lsl_n(&c->ccr, c->d[1], 3, 16));
+    c->a[0] += sx(c->d[1]);
+    c->a[1] = 0x00C00000u;
+    c->d[1] = 31;
+    and_w(1, c->d[6]);
+    c->d[3] = set_w(c->d[3], c->d[7]); F_W(c->d[7]);
+    and_w(3, 0x3C0);
+    c->d[1] = set_w(c->d[1], add_w(&c->ccr, c->d[3], c->d[1]));
+    c->d[1] = set_w(c->d[1], lsl_n(&c->ccr, c->d[1], 2, 16));
+    or_w(1, rd16(c->a[3] + 0x20));
+    c->d[1] = swap_l(c->d[1]);
+    c->d[1] = set_w(c->d[1], add_w(&c->ccr, 3, c->d[1]));
+    put32m(c->a[1] + 4, c->d[1]);
+    f_bit(c->d[1] >> 23 & 1); c->d[1] |= 1u << 23;
+    F_W(c->d[2]);
+    if (!(c->d[2] & 0x8000)) {
+        put32m(c->a[1], next32(0));
+        put32m(c->a[1] + 4, c->d[1]);
+        put32m(c->a[1], rd32(c->a[0]));
+        return;
+    }
+    c->d[3] = 0x80008000u; F_L(c->d[3]);
+    c->d[0] = next32(0); F_L(c->d[0]);
+    c->d[0] |= c->d[3]; F_L(c->d[0]);
+    put32m(c->a[1], c->d[0]);
+    put32m(c->a[1] + 4, c->d[1]);
+    c->d[3] |= rd32(c->a[0]); F_L(c->d[3]);
+    put32m(c->a[1], c->d[3]);
+}
+
+/* $2666: cell (d6, d7) set to d0; $2692 and drawn; $2672: drawn if inside what is shown
+ * ($8-$E); $2670 and set first; $266C on plane A */
+static void cell_set(void) { push32(0x2668); cell_at(); c->a[7] += 4; put16m(c->a[0], c->d[0]); }
+static void draw_if_shown(void)
+{
+    c->d[1] = set_w(c->d[1], c->d[6]); F_W(c->d[6]);
+    c->d[1] = set_w(c->d[1], sub_w(&c->ccr, rd16(c->a[3] + 8), c->d[1]));
+    if (c->ccr & CC_C) return;
+    cmp_w(&c->ccr, rd16(c->a[3] + 0xA), c->d[1]);
+    if (!(c->ccr & CC_C)) return;
+    c->d[1] = set_w(c->d[1], c->d[7]); F_W(c->d[7]);
+    c->d[1] = set_w(c->d[1], sub_w(&c->ccr, rd16(c->a[3] + 0xC), c->d[1]));
+    if (c->ccr & CC_C) return;
+    cmp_w(&c->ccr, rd16(c->a[3] + 0xE), c->d[1]);
+    if (c->ccr & CC_C) draw_block();
+}
+static void cell_set_draw_if_shown(void) { push32(0x2672); cell_set(); c->a[7] += 4; draw_if_shown(); }   /* $2670 */
+static void cell_set_a(void) { c->a[3] = LAYER_A; cell_set_draw_if_shown(); }                           /* $266C */
+static void cell_set_draw(void) { push32(0x2694); cell_set(); c->a[7] += 4; draw_block(); }             /* $2692 */
+
+/* $26F0: the byte of the block at (d6, d7) (d1: from its table + $800) */
+static void block_byte(void)
+{
+    call(MAP_BLOCK_AT);
+    c->d[1] = set_w(c->d[1], c->d[0]); F_W(c->d[0]);
+    and_w(1, 0x300);
+    c->d[1] = set_w(c->d[1], lsr_n(&c->ccr, c->d[1], 6, 16));
+    c->a[0] = rd32(c->a[3] + 0x10 + sx(c->d[1]));
+    c->d[1] = set_w(c->d[1], 0x800); F_W(0x800);
+    move_b(1, (uint8_t)c->d[0]);
+    move_b(1, rd8(c->a[0] + sx(c->d[1])));
+}
+
+/* $270C: flag d0's byte (d2) and bit (d1): under $20 from $99BA, else $99BE; $2728 tests it,
+ * $2730 sets it */
+static void flag2_at(void)
+{
+    c->d[2] = 0;
+    c->d[2] = set_b(c->d[2], c->d[0]);
+    c->d[2] = set_w(c->d[2], lsr_n(&c->ccr, c->d[2], 3, 16));
+    move_b(1, (uint8_t)c->d[0]);
+    and_w(1, 7);
+    c->a[0] = 0xFFFF99BAu;
+    cmp_byte(0x20, c->d[0]);
+    if ((c->d[0] & 0xFF) >= 0x20) c->a[0] = 0xFFFF99BEu;
+}
+static void flag2_test(void) { push32(0x272A); flag2_at(); c->a[7] += 4; f_bit(rd8(c->a[0] + sx(c->d[2])) >> (c->d[1] & 7) & 1); }
+static void flag2_set(void)
+{
+    push32(0x2732); flag2_at(); c->a[7] += 4;
+    uint32_t a = c->a[0] + sx(c->d[2]);
+    f_bit(rd8(a) >> (c->d[1] & 7) & 1); wr8(a, rd8(a) | 1 << (c->d[1] & 7));
+}
+
+/* $2738: game flag d0's byte (a0, from $99BE) and bit (d1); $274C tests it, $2752 sets it */
+static void flag_addr(void)
+{
+    c->d[1] = 0;
+    c->d[1] = set_b(c->d[1], c->d[0]);
+    c->d[1] = set_w(c->d[1], lsr_n(&c->ccr, c->d[1], 3, 16));
+    c->a[0] = 0xFFFF99BEu + sx(c->d[1]);
+    move_b(1, (uint8_t)c->d[0]);
+    and_w(1, 7);
+}
+static void flag_test(void) { push32(0x274E); flag_addr(); c->a[7] += 4; f_bit(rd8(c->a[0]) >> (c->d[1] & 7) & 1); }
+static void flag_set(void)
+{
+    push32(0x2754); flag_addr(); c->a[7] += 4;
+    f_bit(rd8(c->a[0]) >> (c->d[1] & 7) & 1); wr8(c->a[0], rd8(c->a[0]) | 1 << (c->d[1] & 7));
+}
+/* $2758: the room flags' byte ($9992, the bytes in pairs swapped) and bit of d0 */
+static void room_flag_bit(void)
+{
+    c->d[1] = 0;
+    c->d[1] = set_b(c->d[1], c->d[0]);
+    and_w(0, 7);
+    c->a[0] = 0xFFFF9992u;
+    c->d[1] = set_w(c->d[1], lsr_n(&c->ccr, c->d[1], 3, 16));
+    c->d[1] = set_w(c->d[1], c->d[1] ^ 1); F_W(c->d[1]);
+}
+
+/* the rectangle at RECT of plane A's cells, row by row: $A1FE saves it to $FF3100, $A23C marks
+ * it (bit 15: in front), $A276 restores it, $A2B4 redraws it */
+static void rect_each(int what)
+{
+    link(-4);
+    c->a[3] = LAYER_A;
+    if (what == 0 || what == 2) c->a[1] = 0x00FF3100u;
+    c->d[7] = set_w(c->d[7], rd16(RECT + 2)); F_W(c->d[7]);
+    put16m(c->a[6] - 4, rd16(RECT + 6));
+    do {
+        c->d[6] = set_w(c->d[6], rd16(RECT)); F_W(c->d[6]);
+        put16m(c->a[6] - 2, rd16(RECT + 4));
+        do {
+            if (what == 3) {
+                call(MAP_BLOCK_AT);
+                push32(0xA2D8); draw_if_shown(); c->a[7] += 4;
+            } else {
+                push32(what == 0 ? 0xA224 : what == 1 ? 0xA25C : 0xA29C); cell_at(); c->a[7] += 4;
+                if (what == 0) { put16m(c->a[1], rd16(c->a[0])); c->a[1] += 2; }
+                else if (what == 1) { uint16_t v = rd16(c->a[0]) | 0x8000; wr16(c->a[0], v); F_W(v); }
+                else { put16m(c->a[0], rd16(c->a[1])); c->a[1] += 2; }
+            }
+            c->d[6] = set_w(c->d[6], add_w(&c->ccr, 1, c->d[6]));
+        } while (mem_sub_w(c->a[6] - 2, 1));
+        c->d[7] = set_w(c->d[7], add_w(&c->ccr, 0x40, c->d[7]));
+    } while (mem_sub_w(c->a[6] - 4, 1));
+    unlk();
+}
+static void rect_save(void) { rect_each(0); }      /* $A1FE */
+static void rect_mark(void) { rect_each(1); }      /* $A23C */
+static void rect_restore(void) { rect_each(2); }   /* $A276 */
+static void rect_redraw(void) { rect_each(3); }    /* $A2B4 */
+
+/* $A2EE: d4 x d5 blocks from (d6, d7 in rows) straight to VRAM at d3 (a VDP address, $100 a
+ * row), through MapBlockAtRaw: for the ending's pictures */
+static void blocks_to_vram(void)
+{
+    link(-14);
+    c->d[3] = lsl_n(&c->ccr, c->d[3], 2, 32);
+    c->d[3] = set_w(c->d[3], lsr_n(&c->ccr, c->d[3], 2, 16));
+    or_w(3, 0x4000);
+    put16m(c->a[6] - 14, c->d[3]);
+    c->d[3] = swap_l(c->d[3]);
+    and_w(3, 3);
+    put16m(c->a[6] - 10, c->d[3]);
+    put16m(c->a[6] - 2, c->d[4]);
+    put16m(c->a[6] - 6, c->d[5]);
+    put16m(c->a[6] - 8, c->d[6]);
+    c->d[7] = set_w(c->d[7], lsl_n(&c->ccr, c->d[7], 6, 16));
+    c->a[2] = 0x00C00000u;
+    do {
+        put16m(c->a[6] - 4, rd16(c->a[6] - 2));
+        put16m(c->a[6] - 12, rd16(c->a[6] - 14));
+        c->d[6] = set_w(c->d[6], rd16(c->a[6] - 8)); F_W(c->d[6]);
+        do {
+            c->d[2] = set_w(c->d[2], c->d[6]); F_W(c->d[6]);
+            c->d[3] = set_w(c->d[3], c->d[7]); F_W(c->d[7]);
+            call(0x2570);
+            c->d[2] = set_w(c->d[2], c->d[0]); F_W(c->d[0]);
+            c->d[1] = 0;
+            c->d[1] = set_b(c->d[1], c->d[0]);
+            and_w(0, 0x300);
+            c->d[0] = set_w(c->d[0], lsr_n(&c->ccr, c->d[0], 6, 16));
+            c->a[0] = rd32(c->a[3] + 0x10 + sx(c->d[0]));
+            c->d[1] = set_w(c->d[1], lsl_n(&c->ccr, c->d[1], 3, 16));
+            c->a[0] += sx(c->d[1]);
+            c->d[0] = rd32(c->a[6] - 12); F_L(c->d[0]);
+            put32m(c->a[2] + 4, c->d[0]);
+            put32m(c->a[2], next32(0));
+            c->d[0] = add_l(&c->ccr, 0x800000, c->d[0]);
+            put32m(c->a[2] + 4, c->d[0]);
+            put32m(c->a[2], rd32(c->a[0]));
+            c->d[6] = set_w(c->d[6], add_w(&c->ccr, 1, c->d[6]));
+            mem_add_w(c->a[6] - 12, 4);
+        } while (mem_sub_w(c->a[6] - 4, 1));
+        mem_add_w(c->a[6] - 14, 0x100);
+        c->d[7] = set_w(c->d[7], add_w(&c->ccr, 0x40, c->d[7]));
+    } while (mem_sub_w(c->a[6] - 6, 1));
+    unlk();
+}
+
+/* $A3B4: d0 and d1 (bytes) as positions: 8 pixels each, from $1000 */
+static void to_position(void)
+{
+    and_w(0, 0xFF);
+    c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 3, 16));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, 0x1000, c->d[0]));
+    and_w(1, 0xFF);
+    c->d[1] = set_w(c->d[1], lsl_n(&c->ccr, c->d[1], 3, 16));
+    c->d[1] = set_w(c->d[1], add_w(&c->ccr, 0x1000, c->d[1]));
+}
+/* $A3A4: a place (two bytes at a2) as the player's start ($967A, $967C) */
+static void start_at(void)
+{
+    move_b(0, next8(2));
+    move_b(1, next8(2));
+    push32(0xA3AA); to_position(); c->a[7] += 4;
+    put16m(0xFFFF967Au, c->d[0]);
+    put16m(0xFFFF967Cu, c->d[1]);
+}
+/* $A37E: start point $9676 (from the directory's table 0): the area and room, a kind ($9678),
+ * the player's place, a word ($996A) */
+static void start_point(void)
+{
+    c->a[1] = rd32(DATA_DIR);
+    c->d[0] = set_w(c->d[0], rd16(0xFFFF9676u)); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+    c->a[0] = sx(c->d[0]);
+    c->d[0] = set_w(c->d[0], rd16(c->a[1] + sx(c->d[0]))); F_W(c->d[0]);
+    c->a[2] = c->a[1] + sx(c->d[0]);
+    put16m(0xFFFF9668u, next16(2));
+    put16m(0xFFFF9678u, next16(2));
+    push32(0xA39E); start_at(); c->a[7] += 4;
+    put16m(0xFFFF996Au, next16(2));
+}
+/* $A3CA: under water, entity a4's word at $CA02 doubled (asl) */
+static void water_double(void)
+{
+    f_bit(rd8(0xFFFF966Bu) & 1);
+    if (!(rd8(0xFFFF966Bu) & 1)) return;
+    uint32_t a = c->a[4] - 0x35FE;
+    wr16(a, (uint16_t)asl_n(&c->ccr, rd16(a), 1, 16));
+}
+
+/* $92A4: a step of the fade to the room's palette (by $9666 / 4): the 15 colours of $8BB8 to
+ * $8C38 through $594A, then the palette marked for the VBlank */
+static void fade_step(void)
+{
+    c->d[1] = 0;
+    c->d[1] = set_b(c->d[1], rd8(0xFFFF9666u));
+    c->d[1] = set_w(c->d[1], lsr_n(&c->ccr, c->d[1], 2, 16));
+    c->d[2] = set_w(c->d[2], c->d[1]); F_W(c->d[1]);
+    c->d[2] = set_w(c->d[2], asl_n(&c->ccr, c->d[2], 4, 16));
+    c->d[3] = set_w(c->d[3], c->d[2]); F_W(c->d[2]);
+    c->d[3] = set_w(c->d[3], asl_n(&c->ccr, c->d[3], 4, 16));
+    c->a[0] = 0xFFFF8BB8u;
+    c->a[1] = 0xFFFF8C38u;
+    c->d[0] = 14;
+    do call(0x594A); while (dbra(0));
+    uint8_t v = rd8(0xFFFF8C56u) & 0x3F; wr8(0xFFFF8C56u, v);
+    v |= 0x81; wr8(0xFFFF8C56u, v); F_B(v);
+}
+
+ENTRY(CellAt, cell_at)                     /* $260A */
+ENTRY(CellSet, cell_set)                   /* $2666 */
+ENTRY(CellSetA, cell_set_a)                /* $266C */
+ENTRY(CellSetShown, cell_set_draw_if_shown) /* $2670 */
+ENTRY(DrawIfShown, draw_if_shown)          /* $2672 */
+ENTRY(CellSetDraw, cell_set_draw)          /* $2692 */
+ENTRY(DrawBlock, draw_block)               /* $2694 */
+ENTRY(BlockByte, block_byte)               /* $26F0 */
+ENTRY(Flag2At, flag2_at)                   /* $270C */
+ENTRY(Flag2Test, flag2_test)               /* $2728 */
+ENTRY(Flag2Set, flag2_set)                 /* $2730 */
+ENTRY(GameFlagAddr, flag_addr)             /* $2738 */
+ENTRY(TestGameFlag, flag_test)             /* $274C */
+ENTRY(SetGameFlag, flag_set)               /* $2752 */
+ENTRY(RoomFlagBit, room_flag_bit)          /* $2758 */
+ENTRY(RectSave, rect_save)                 /* $A1FE */
+ENTRY(RectMark, rect_mark)                 /* $A23C */
+ENTRY(RectRestore, rect_restore)           /* $A276 */
+ENTRY(RectRedraw, rect_redraw)             /* $A2B4 */
+ENTRY(BlocksToVram, blocks_to_vram)        /* $A2EE */
+ENTRY(StartPoint, start_point)             /* $A37E */
+ENTRY(StartAt, start_at)                   /* $A3A4 */
+ENTRY(ToPosition, to_position)             /* $A3B4 */
+ENTRY(WaterDouble, water_double)           /* $A3CA */
+ENTRY(FadeStep, fade_step)                 /* $92A4 */
