@@ -1095,6 +1095,27 @@ int hybrid_fuzz(const char *name, long count)
             }
             if (!strcmp(name, "NearX")) m68k_set_reg(M68K_REG_D1, (rnd() << 16) | (x + rnd() % 16 - 8));
         }
+        if (!strncmp(name, "Door", 4) || !strncmp(name, "Picture", 7) || !strcmp(name, "CrackedAt")) {
+            /* a door's frame at a cell, 1 or 2 blocks each way; an event's picture from its record (the directory's table 2) */
+            static const uint8_t frames[] = { 0, 6, 8, 12 };
+            put_word(0x9BC6, 0x1000 + 16 * (rnd() % 0x80)); put_word(0x9BC8, 0x1000 + 16 * (rnd() % 0x40));
+            put_word(0x9BCA, 1 + rnd() % 2); put_word(0x9BCC, 1 + rnd() % 2);
+            for (uint32_t k4 = 0; k4 < 4; k4++) put_word(0x9BEA + 2 * k4, rnd() & 0x3FF);
+            m68k_set_reg(M68K_REG_D0, (rnd() << 16) | frames[rnd() % 4]);
+            uint32_t t = bus_read16(0x1CC08) << 16 | bus_read16(0x1CC0A), ev = rnd() % 32, rec = t + 16 * ev;
+            uint32_t pic = t + (uint32_t)(int16_t)bus_read16(rec + 0xE), wh = bus_read16(pic);
+            uint32_t w = wh >> 8 ? wh >> 8 : 1, h = wh & 0xFF ? wh & 0xFF : 1;
+            put_word(0x9964, ev);
+            put_long(0x997C, pic + 2); put_word(0x9BDE, w);
+            put_word(0x974C, bus_read16(rec) >> 4); put_word(0x974E, bus_read16(rec + 2) << 2); put_word(0x9750, w); put_word(0x9752, h);
+            put_word(0x9BDA, bus_read16(rec)); put_word(0x9BDC, bus_read16(rec + 2));
+            put_word(0x9BE2, (bus_read16(rec + 4) >> 8) >> 4); put_word(0x9BE4, (bus_read16(rec + 4) & 0xFF) >> 4);
+            ram[0x9BF2] = (uint8_t)(bus_read16(rec + 6) >> 8);
+            put_word(0x9BD2, 1 + rnd() % 2); put_word(0x9BD4, 1 + rnd() % 2);
+            m68k_set_reg(M68K_REG_D6, (rnd() << 16) | (!strcmp(name, "CrackedAt") ? 0xF0 + rnd() % 0x100 : rnd() % w));
+            m68k_set_reg(M68K_REG_D7, (rnd() << 16) | (!strcmp(name, "CrackedAt") ? (0x4000 + rnd() % 0x1500) & ~0x3Fu : rnd() % h));
+            m68k_set_reg(M68K_REG_A3, 0xFFFF9754);
+        }
         if (!strcmp(name, "TilesAt") || !strcmp(name, "FrameBox")) m68k_set_reg(M68K_REG_A0, 0x8C82 + 2 * (rnd() % 0x80));
         if (!strcmp(name, "TileRow") || !strcmp(name, "TileRowAt")) m68k_set_reg(M68K_REG_A0, 0x8C82 + rnd() % 0x1A0);
         if (!strcmp(name, "SetGfxSlots")) {         /* a random valid slot list in scratch RAM */

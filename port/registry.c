@@ -73,7 +73,8 @@ void TextAt(Cpu *), TextAtRC(Cpu *), String(Cpu *), StringPlain(Cpu *), StringBr
      LayersSetup(Cpu *), LayerSetup(Cpu *), LayerXParallax(Cpu *), LayerXFixed(Cpu *), LayerXMoving(Cpu *), LayerYParallax(Cpu *), LayerFixedY(Cpu *), LayerYFixed(Cpu *), LayerYMoving(Cpu *), LayerYMover(Cpu *), LayerColumns(Cpu *), LayerColumnsStrip(Cpu *), LayerRows(Cpu *), LayerRowsStrip(Cpu *), LayerRowsWrap(Cpu *), LayerX(Cpu *), LayerY(Cpu *), Parallax(Cpu *), MoverPlace(Cpu *), ScrollX(Cpu *), ScrollY(Cpu *),
      Camera(Cpu *), LayersDraw(Cpu *), DrawLayer(Cpu *), LayerXFollow(Cpu *), LayerYFollow(Cpu *), LayerXDrift(Cpu *), LayerXDriftA(Cpu *), LayerYDrift(Cpu *), MoverDelta(Cpu *), MoverStep(Cpu *), LayerMove(Cpu *), ScrollOut(Cpu *), LayersFrame(Cpu *), LayerFrame(Cpu *), ColumnsIn(Cpu *), DrawColumn(Cpu *), RowsIn(Cpu *), DrawRow(Cpu *),
      CellAt(Cpu *), CellSet(Cpu *), CellSetA(Cpu *), CellSetShown(Cpu *), DrawIfShown(Cpu *), CellSetDraw(Cpu *), DrawBlock(Cpu *), BlockByte(Cpu *), Flag2At(Cpu *), Flag2Test(Cpu *), Flag2Set(Cpu *), GameFlagAddr(Cpu *), TestGameFlag(Cpu *), SetGameFlag(Cpu *), RoomFlagBit(Cpu *), RectSave(Cpu *), RectMark(Cpu *), RectRestore(Cpu *), RectRedraw(Cpu *), BlocksToVram(Cpu *), StartPoint(Cpu *), StartAt(Cpu *), ToPosition(Cpu *), WaterDouble(Cpu *), FadeStep(Cpu *),
-     Triggers(Cpu *), TrigExitX(Cpu *), TrigExitY(Cpu *), TrigExit(Cpu *), TrigExitAdd(Cpu *), TrigWarp(Cpu *), TrigDoor(Cpu *), UpWarp(Cpu *), TrigHouse(Cpu *), UpHouse(Cpu *), TrigChest(Cpu *), ChestOpen(Cpu *), UpChest(Cpu *), TrigEntrance(Cpu *), NearX(Cpu *), UpEntrance(Cpu *), UpEntrance2(Cpu *), TrigEventA(Cpu *), UpEventA(Cpu *), TrigEventB(Cpu *), UpEventB(Cpu *), TrigSound(Cpu *), ZonePlace(Cpu *), InZone(Cpu *), ExitTo(Cpu *);
+     Triggers(Cpu *), TrigExitX(Cpu *), TrigExitY(Cpu *), TrigExit(Cpu *), TrigExitAdd(Cpu *), TrigWarp(Cpu *), TrigDoor(Cpu *), UpWarp(Cpu *), TrigHouse(Cpu *), UpHouse(Cpu *), TrigChest(Cpu *), ChestOpen(Cpu *), UpChest(Cpu *), TrigEntrance(Cpu *), NearX(Cpu *), UpEntrance(Cpu *), UpEntrance2(Cpu *), TrigEventA(Cpu *), UpEventA(Cpu *), TrigEventB(Cpu *), UpEventB(Cpu *), TrigSound(Cpu *), ZonePlace(Cpu *), InZone(Cpu *), ExitTo(Cpu *),
+     CrackedAt(Cpu *), ResetContinuations(Cpu *), DoorFrame(Cpu *), PictureFrame2(Cpu *), PictureFrame(Cpu *), PictureSetup(Cpu *), DoorBlank(Cpu *), DoorCell(Cpu *), DoorRestore(Cpu *), PictureCorner(Cpu *), PictureCell(Cpu *), PictureCellPut(Cpu *), PicturePut(Cpu *);
 void NumText(Cpu *), CharAt(Cpu *), ScrollWindow(Cpu *), WindowFrame(Cpu *), WindowRow(Cpu *), TileUnder(Cpu *), WindowRestore(Cpu *), NewLine(Cpu *), MoreBlink(Cpu *), MoreHide(Cpu *), MoreShow(Cpu *), ChoiceBlink(Cpu *), ChoiceHide(Cpu *), ChoiceShow(Cpu *), PriceOf(Cpu *), NameOf(Cpu *), NameText(Cpu *), FoundThing(Cpu *), FoundGold(Cpu *), BoxText(Cpu *), BoxRows(Cpu *), BoxRow(Cpu *), ShowFoundGold(Cpu *), ShowFound(Cpu *), WindowGeometry(Cpu *), Cheaper(Cpu *), Owns(Cpu *), Give(Cpu *), Take(Cpu *), ItemCell(Cpu *), FlagCell(Cpu *), MessageData(Cpu *), OpenWindow(Cpu *), WindowAt(Cpu *), MsgStep(Cpu *), CharIn(Cpu *), NoteIn(Cpu *), OcarinaTune(Cpu *);   /* message.c */
 #define CT_ALL 0x3FFFF                /* every register and flag compared */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
@@ -463,6 +464,19 @@ const PortRoutine port_routines[] = {
     {0x00A914, 0x00A92C, "ZonePlace", ZonePlace, CT_ALL},
     {0x00A92C, 0x00A962, "InZone", InZone, CT_ALL},
     {0x00A962, 0x00A990, "ExitTo", ExitTo, CT_ALL},
+    {0x00B8D4, 0x00B90A, "CrackedAt", CrackedAt, CT_ALL},   /* rooms.c: the room changes' helpers */
+    {0x00B90A, 0x00B912, "ResetContinuations", ResetContinuations, CT_ALL},
+    {0x00B912, 0x00B946, "DoorFrame", DoorFrame, CT_ALL},
+    {0x00B946, 0x00B94A, "PictureFrame2", PictureFrame2, CT_ALL},
+    {0x00B94A, 0x00B986, "PictureFrame", PictureFrame, CT_ALL},
+    {0x00B986, 0x00BA34, "PictureSetup", PictureSetup, CT_ALL},
+    {0x00BA34, 0x00BA92, "DoorBlank", DoorBlank, CT_ALL},
+    {0x00BA92, 0x00BAA8, "DoorCell", DoorCell, CT_ALL},
+    {0x00BAA8, 0x00BAEE, "DoorRestore", DoorRestore, CT_ALL},
+    {0x00BAEE, 0x00BB2C, "PictureCorner", PictureCorner, CT_ALL},
+    {0x00BB2C, 0x00BB8E, "PictureCell", PictureCell, CT_ALL},
+    {0x00BB8E, 0x00BBB4, "PictureCellPut", PictureCellPut, CT_ALL},
+    {0x00BBB4, 0x00BBEA, "PicturePut", PicturePut, CT_ALL},
     {0x01090C, 0x010910, "SpawnItem", SpawnItem},                 /* effects.c: every register as the original */
     {0x010910, 0x010A1E, "SpawnItemAt", SpawnItemAt},
     {0x010A1E, 0x011094, "RunItems", RunItems, CT_SP},
