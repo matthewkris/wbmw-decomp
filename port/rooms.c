@@ -4261,3 +4261,308 @@ ENTRY(FallCell, fall_cell)                 /* $B0CC */
 ENTRY(RoomObjLift, room_obj_lift)          /* $B0DA */
 ENTRY(RoomObjDrift, room_obj_drift)        /* $B236 */
 ENTRY(BlockShatter, block_shatter)         /* $B2BA */
+
+/* ---- batch T24: the rooms' scripts (indexes 0 and 1), a dropped thing, the drops ----
+ * Some rooms have a script of their own (room command 13: $9682, -1 for none). $C75C runs its
+ * setup as the room loads (the table at $C784); $C7E6 runs its part each frame (the table at
+ * $C838), on the continuations' stack. Index 0 is area 15's room 1, index 1 area 12's room 9 and
+ * area 17's rooms 14 and 16. */
+
+#define ROOM_SCRIPT   0xFFFF9682u
+#define SCRIPT_VARS   0xFFFF99DEu   /* $99DE-$99FD: the script's own, cleared as the room loads */
+#define DROPS         0xFFFF9A00u   /* bit 7: dropping; $9A01 the wait, $9A02 the list, $9A06 at */
+#define ROOM_OBJECTS  0xAEA2u
+#define FREEZE        0x0A66u
+#define UNFREEZE      0x0A8Eu
+
+static uint8_t mem_dec8(uint32_t a) { uint8_t v = (uint8_t)sub_b(&c->ccr, 1, rd8(a)); wr8(a, v); return v; }
+static void mem_or8(uint32_t a, uint8_t m) { uint8_t v = rd8(a) | m; wr8(a, v); F_B(v); }
+static void mem_and8(uint32_t a, uint8_t m) { uint8_t v = rd8(a) & m; wr8(a, v); F_B(v); }
+static int mem_bclr(uint32_t a, int bit) { uint8_t v = rd8(a); f_bit(v >> bit & 1); wr8(a, (uint8_t)(v & ~(1 << bit))); return v >> bit & 1; }
+
+/* $B42A (from $1091C: an item of $1000 or more): a thing dropped at (d1, d2) for the player to
+ * pick up, which starts room change 9 ($9962). Item $40 is $102A once $9F00 reaches $E00; $102A
+ * or $2A already owned is item $1A instead. d0 -1: a room change is under way */
+static void drop_thing(void)
+{
+    cmp_byte(0x40, c->d[0]);
+    if ((c->d[0] & 0xFF) == 0x40) {
+        cmp_w(&c->ccr, 0xE00, rd16(0xFFFF9F00u));
+        if (rd16(0xFFFF9F00u) < 0xE00) goto drop;
+        c->d[0] = set_w(c->d[0], 0x102A); F_W(0x102A);
+    } else {
+        cmp_byte(0x2A, c->d[0]);
+        if ((c->d[0] & 0xFF) != 0x2A) goto drop;
+    }
+    c->a[7] -= 8;                                       /* movem.w d0-d2/d6 */
+    wr16(c->a[7], c->d[0]); wr16(c->a[7] + 2, c->d[1]); wr16(c->a[7] + 4, c->d[2]); wr16(c->a[7] + 6, c->d[6]);
+    call(OWNS);
+    c->d[0] = sx(rd16(c->a[7])); c->d[1] = sx(rd16(c->a[7] + 2)); c->d[2] = sx(rd16(c->a[7] + 4)); c->d[6] = sx(rd16(c->a[7] + 6));
+    c->a[7] += 8;
+    if (!(c->ccr & CC_Z)) {
+        c->d[0] = 0x1A; F_L(0x1A);
+        call(0x10916);                                  /* $1090C's item from d0 at (d1, d2), d6 kept */
+        return;
+    }
+drop:
+    F_W(rd16(0xFFFF9962u));
+    if (rd16(0xFFFF9962u)) { c->d[0] = 0xFFFFFFFFu; F_L(c->d[0]); return; }
+    c->d[3] = set_w(c->d[3], c->d[0]); F_W(c->d[0]);
+    c->a[3] = c->a[4];
+    call(FIND_EFFECT);
+    if (c->ccr & CC_N) { c->a[4] = c->a[3]; return; }
+    put8(c->a[4] - 0x4000, 0x80);
+    put16m(c->a[4] - 0x3800, c->d[1]);
+    put16m(c->a[4] - 0x3700, c->d[2]);
+    and_w(3, 0xFF);
+    put16m(c->a[4] - 0x2300, c->d[3]);
+    put16m(0xFFFF9968u, c->a[4]);
+    put16m(c->a[4] - 0x2BFE, 4);                        /* a room object doing nothing */
+    put16m(0xFFFF9962u, 9);
+    c->d[0] = 0; F_L(0);
+    c->a[4] = c->a[3];
+}
+
+/* $C75C: as a room loads: the script's variables cleared and its setup run */
+static void room_script_setup(void)
+{
+    static const uint32_t setups[24] = {
+        0xC8F4, 0xCA56, 0xCB5C, 0xCB6C, 0xCB7C, 0xCCF2, 0xCDDE, 0xC7E4, 0xC7E4, 0xCF48, 0xCFE8, 0xD00C,
+        0xD194, 0xD388, 0xD71A, 0xD72A, 0x17FEC, 0x19612, 0x1898C, 0xC7E4, 0xD976, 0xDA00, 0xDA90, 0xDA9A,
+    };
+    c->d[0] = 0; F_L(0);
+    c->d[1] = 7; F_L(7);
+    c->a[0] = SCRIPT_VARS;
+    do { put32m(c->a[0], c->d[0]); c->a[0] += 4; } while (dbra(1));
+    c->d[0] = set_w(c->d[0], rd16(ROOM_SCRIPT)); F_W(c->d[0]);
+    if (!(c->d[0] & 0x8000)) {
+        uint32_t i = c->d[0] & 0xFFFF;
+        c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 2, 16));
+        c->a[0] = setups[i];
+        call(c->a[0]);
+    }
+    put16m(DROPS, 0);
+}
+
+/* $C89A, each frame: things dropped one after another from the list at $9A02 (an item, then
+ * the frames to the next; 0 ends it; items from $80 are $1000 on), at ($9A06, $9A08) */
+static void drops(uint32_t ret)
+{
+    push_cont(ret);
+    F_B(rd8(DROPS));
+    if (!(rd8(DROPS) & 0x80)) goto done;
+    F_B(rd8(DROPS + 1));
+    if (rd8(DROPS + 1) && mem_dec8(DROPS + 1)) goto done;
+    c->a[0] = rd32(DROPS + 2);
+    c->d[0] = 0;
+    move_b(0, rd8(c->a[0]));
+    if (c->d[0] & 0x80) c->d[0] = set_w(c->d[0], add_w(&c->ccr, 0xF80, c->d[0]));
+    c->d[1] = set_w(c->d[1], rd16(DROPS + 6)); F_W(c->d[1]);
+    c->d[2] = set_w(c->d[2], rd16(DROPS + 8)); F_W(c->d[2]);
+    call(SPAWN_ITEM);
+    if (c->ccr & CC_N) goto done;                       /* no free item: again next frame */
+    c->a[0] = rd32(DROPS + 2) + 1;
+    move_b(0, rd8(c->a[0])); c->a[0]++;
+    put32m(DROPS + 2, c->a[0]);
+    put8(DROPS + 1, c->d[0]);
+    if (!(c->d[0] & 0xFF)) put8(DROPS, c->d[0]);
+done:
+    pop_cont();
+}
+
+/* index 0: area 15's room 1. $C8F4 as it loads: the block at ($104, $4480) gone until game flag
+ * 0, and $9695 6 once flag 1 is set */
+static void room0_setup(void)
+{
+    c->d[0] = 0; F_L(0);
+    push32(0xC8FA); flag_test(); c->a[7] += 4;
+    if (c->ccr & CC_Z) {
+        c->a[3] = LAYER_A;
+        c->d[0] = 0; F_L(0);
+        c->d[6] = set_w(c->d[6], 0x104); F_W(0x104);
+        c->d[7] = set_w(c->d[7], 0x4480); F_W(0x4480);
+        push32(0xC90E); cell_set(); c->a[7] += 4;
+    }
+    c->d[0] = 1; F_L(1);
+    push32(0xC914); flag_test(); c->a[7] += 4;
+    if (c->ccr & CC_Z) return;
+    put8(0xFFFF9695u, 6);
+}
+/* $C9B4: 22 room objects (kind 0, each its own look from $CA40) let out every 8 frames, the
+ * others frozen, until they are all gone */
+static void room0_release(uint32_t ret)
+{
+    static const uint8_t looks[22] = { 0x24, 0x1B, 0x18, 0x06, 0x27, 0x12, 0x09, 0x1E, 0x15, 0x0C, 0x00,
+                                       0x21, 0x0F, 0x03, 0x30, 0x39, 0x2A, 0x3F, 0x33, 0x36, 0x2D, 0x3C };
+    push_cont(ret);
+    call(FREEZE);
+    put32m(0xFFFF99E0u, 0);                             /* $99E0 how many, $99E2 the wait */
+    for (;;) {
+        cmp_w(&c->ccr, 0x16, rd16(0xFFFF99E0u));
+        if (rd16(0xFFFF99E0u) >= 0x16) {                /* all out: until none is left */
+            c->a[4] = 0xE0;
+            c->d[0] = 7; F_L(7);
+            do {
+                F_B(rd8(c->a[4] - 0x4000));
+                if (rd8(c->a[4] - 0x4000) & 0x80) {
+                    F_W(rd16(c->a[4] - 0x2BFE));
+                    if (!rd16(c->a[4] - 0x2BFE)) goto next;
+                }
+                c->a[4] += 4;
+            } while (dbra(0));
+            break;
+        }
+        F_W(rd16(0xFFFF99E2u));
+        if (rd16(0xFFFF99E2u)) { mem_sub_w(0xFFFF99E2u, 1); goto next; }
+        call(FIND_EFFECT);
+        if (c->ccr & CC_N) goto next;
+        put16m(0xFFFF99E2u, 8);
+        put8(c->a[4] - 0x4000, 0x80);
+        put16m(c->a[4] - 0x2BFE, 0);
+        c->d[0] = set_w(c->d[0], rd16(0xFFFF99E0u)); F_W(c->d[0]);
+        put8(c->a[4] - 0x25FE, looks[c->d[0] & 0xFFFF]);
+        mem_add_w(0xFFFF99E0u, 1);
+        c->d[0] = 7; F_L(7);
+        c->d[0] = set_b(c->d[0], 7 & rd8(0xFFFF99E0u)); F_B(c->d[0]);   /* the count's high byte: a sound every time */
+        if (c->d[0] & 0xFF) goto next;
+        c->d[0] = 0x4C; F_L(0x4C);
+        call(QUEUE_SOUND);
+    next:
+        call(ROOM_OBJECTS);
+        wait_frame(0xCA2E);
+    }
+    call(UNFREEZE);
+    pop_cont();
+}
+/* $C91E, each frame: $9995 bit 4 sets game flag 0 and puts the block back ($B3); bit 5 sets
+ * flag 1 and lets the room objects out; bit 0, once, the effects at $C982 */
+static void room0_frame(uint32_t ret)
+{
+    push_cont(ret);
+    if (mem_bclr(0xFFFF9995u, 4)) {
+        c->d[0] = 0; F_L(0);
+        push32(0xC936); flag_set(); c->a[7] += 4;
+        c->d[0] = set_w(c->d[0], 0xB3); F_W(0xB3);
+        c->d[6] = set_w(c->d[6], 0x104); F_W(0x104);
+        c->d[7] = set_w(c->d[7], 0x4480); F_W(0x4480);
+        push32(0xC946); cell_set_a(); c->a[7] += 4;
+    }
+    if (mem_bclr(0xFFFF9995u, 5)) {
+        c->d[0] = 1; F_L(1);
+        push32(0xC954); flag_set(); c->a[7] += 4;
+        room0_release(0xC958);
+    }
+    f_bit(rd8(SCRIPT_VARS) & 1);
+    if (!(rd8(SCRIPT_VARS) & 1)) {
+        f_bit(rd8(0xFFFF9995u) & 1);
+        if (rd8(0xFFFF9995u) & 1) {
+            mem_or8(SCRIPT_VARS, 1);
+            c->a[0] = 0xC982;
+            call(0x27FA);
+        }
+    }
+    pop_cont();
+}
+
+/* index 1: area 12's room 9, area 17's rooms 14 and 16. $CA56 as it loads: $9F05 6 and the
+ * player's frame routine $DB36 */
+static void room1_setup(void)
+{
+    put8(0xFFFF9F05u, 6);
+    put32m(0xFFFF9F22u, 0xDB36);
+}
+/* $CB1C: the player's animation 0 or 2 by $99DF bit 4, which flips */
+static void room1_flip(void)
+{
+    c->d[1] = 0x10; F_L(0x10);
+    move_b(0, rd8(0xFFFF99DFu));
+    { uint8_t v = rd8(0xFFFF99DFu) ^ 0x10; wr8(0xFFFF99DFu, v); F_B(v); }
+    and_b(0, 0x10);
+    c->d[0] = set_w(c->d[0], lsr_n(&c->ccr, c->d[0], 3, 16));
+    c->a[4] = sx(rd16(PLAYER_ENT));
+    call(SET_ANIM);
+}
+/* $CB46: the palette's colour $8C18 put in */
+static void room1_colour(void)
+{
+    mem_and8(0xFFFF8C56u, 0x3F);
+    mem_or8(0xFFFF8C56u, 0x81);
+}
+/* $CB32: the next of four flashing colours */
+static void room1_flash(void)
+{
+    static const uint16_t colours[4] = { 0x0EEE, 0x00EE, 0x0EEE, 0x0E0E };   /* $CB54 */
+    c->d[0] = set_w(c->d[0], rd16(0xFFFF99E4u)); F_W(c->d[0]);
+    put16m(0xFFFF8C18u, colours[(c->d[0] & 0xFFFF) / 2]);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, 2, c->d[0]));
+    and_w(0, 6);
+    put16m(0xFFFF99E4u, c->d[0]);
+    room1_colour();
+}
+/* $CA66, each frame: once (unless $A0DE is negative), the player changes: sound 68, its look
+ * flipping 6, 12 and 24 times, each 8, 4 and 2 frames, with the screen flashing; then its form
+ * ($9EF1 bit 4) changed and set up again */
+static void room1_frame(uint32_t ret)
+{
+    static const uint8_t flips[3] = { 6, 12, 24 }, frames[3] = { 8, 4, 2 };   /* $CB16, $CB19 */
+    push_cont(ret);
+    F_B(rd8(SCRIPT_VARS));
+    if (rd8(SCRIPT_VARS) & 0x80) goto done;
+    F_W(rd16(0xFFFFA0DEu));
+    if (rd16(0xFFFFA0DEu) & 0x8000) goto done;
+    c->d[0] = 0x44; F_L(0x44);
+    call(QUEUE_SOUND);
+    wr8(SCRIPT_VARS, 0xFF);
+    put8(SCRIPT_VARS + 1, rd8(0xFFFF9EF1u));
+    c->a[4] = sx(rd16(PLAYER_ENT));
+    put16m(c->a[4] - 0x3D00, 0x161C);
+    put16m(c->a[4] - 0x3DFE, 0x6E0);
+    c->d[0] = 0; F_L(0);
+    for (;;) {
+        put16m(0xFFFF99E0u, c->d[0]);
+        put8(0xFFFF99E2u, flips[c->d[0] & 0xFFFF]);
+        do {
+            c->d[0] = set_w(c->d[0], rd16(0xFFFF99E0u)); F_W(c->d[0]);
+            put8(0xFFFF99E3u, frames[c->d[0] & 0xFFFF]);
+            push32(0xCABA); room1_flip(); c->a[7] += 4;
+            do {
+                push32(0xCABC); room1_flash(); c->a[7] += 4;
+                wait_frame(0xCAC0);
+            } while (mem_dec8(0xFFFF99E3u));
+        } while (mem_dec8(0xFFFF99E2u));
+        c->d[0] = set_w(c->d[0], rd16(0xFFFF99E0u)); F_W(c->d[0]);
+        c->d[0] = set_w(c->d[0], add_w(&c->ccr, 1, c->d[0]));
+        cmp_w(&c->ccr, 3, c->d[0]);
+        if ((c->d[0] & 0xFFFF) >= 3) break;
+    }
+    put16m(0xFFFF8C18u, 0);
+    push32(0xCADE); room1_colour(); c->a[7] += 4;
+    wait_frame(0xCAE2);
+    { uint8_t v = rd8(0xFFFF9EF1u) ^ 0x10; wr8(0xFFFF9EF1u, v); F_B(v); }
+    call(0xF5FC);
+    mem_or8(0xFFFF9F02u, 0x10);
+    c->a[4] = sx(rd16(PLAYER_ENT));
+    put16m(c->a[4] - 0x3DFE, 0);
+    call(0x86BC);
+    call(0x8BB6);
+    call(0xDD08);
+    put8(0xFFFF9F05u, 0);
+done:
+    pop_cont();
+}
+
+ENTRY(DropThing, drop_thing)               /* $B42A */
+ENTRY(RoomScriptSetup, room_script_setup)  /* $C75C */
+ENTRY(Room0Setup, room0_setup)             /* $C8F4 */
+ENTRY(Room1Setup, room1_setup)             /* $CA56 */
+ENTRY(Room1Flip, room1_flip)               /* $CB1C */
+ENTRY(Room1Flash, room1_flash)             /* $CB32 */
+ENTRY(Room1Colour, room1_colour)           /* $CB46 */
+static void nothing(void) {}
+ENTRY(ScriptNone, nothing)                 /* $C7E4: no setup */
+ENTRY(ScriptFrameNone, nothing)            /* $C898: nothing each frame */
+/* on the continuations' stack: they leave by port_continue_at */
+void Drops(Cpu *cpu)        { c = cpu; cont_68k(drops); }                                  /* $C89A */
+void Room0Frame(Cpu *cpu)   { c = cpu; NEEDS_PASS(0xC91E); cont_68k(room0_frame); }        /* $C91E */
+void Room0Release(Cpu *cpu) { c = cpu; NEEDS_PASS(0xC9B4); cont_68k(room0_release); }      /* $C9B4 */
+void Room1Frame(Cpu *cpu)   { c = cpu; NEEDS_PASS(0xCA66); cont_68k(room1_frame); }        /* $CA66 */

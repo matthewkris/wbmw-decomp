@@ -129,9 +129,9 @@ static void place(Cpu *c)
     uint16_t kind = (uint16_t)c->d[0];
     uint8_t flags = (uint8_t)c->d[6];
     int32_t s = slot_for(c, kind);
-    if (s < 0) {
+    if (s < 0) {                                    /* X: the last bit out of lsr.w #8 at $10938 */
         c->a[0] = 0xC0; c->d[3] = 0xFFFFFFFFu;
-        c->ccr = (uint16_t)((c->ccr & CC_X) | CC_N);
+        c->ccr = (uint16_t)((kind & 0x80 ? CC_X : 0) | CC_N);
         return;
     }
     Ent e = (Ent)s;
@@ -164,7 +164,7 @@ static void place(Cpu *c)
     c->a[2] = group_of(kind);
     c->d[0] = (c->d[0] & 0xFFFF0000u) | (kind & 0xFF);
     c->d[3] = 0;
-    c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z);
+    c->ccr = CC_Z;                                  /* X clear: asl.w #4 of a byte at $109D4 */
 }
 
 void SpawnItem(Cpu *c)   { spawn(c, 0); }

@@ -1212,6 +1212,36 @@ int hybrid_fuzz(const char *name, long count)
             m68k_set_reg(M68K_REG_D6, (rnd() << 16) | (0x100 + rnd() % 0x40)); m68k_set_reg(M68K_REG_D7, (rnd() << 16) | ((0x100 + rnd() % 0x20) << 6));
             for (uint32_t k4 = 0; k4 < 16; k4++) if (rnd() % 2) ram[0xC080 + 4 * k4] = 0;   /* some items free */
         }
+        if (!strcmp(name, "DropThing")) {           /* a special item ($1000 on) dropped, a room change under way or not */
+            static const uint16_t items[] = { 0x1040, 0x102A, 0x1000, 0x1001, 0x1010, 0x1020 };
+            m68k_set_reg(M68K_REG_D0, (rnd() << 16) | items[rnd() % 6]);
+            put_word(0x9962, rnd() % 3 ? 0 : 1 + rnd() % 12); put_word(0x9F00, 0xD00 + rnd() % 0x200);
+            m68k_set_reg(M68K_REG_D1, 0x1000 + rnd() % 0x300); m68k_set_reg(M68K_REG_D2, 0x1000 + rnd() % 0x300);
+            for (uint32_t sl = 0x80; sl < 0xC0; sl += 4) {  /* item slots with real kinds, for $1A instead */
+                ram[0xC000 + sl] = (uint8_t)(rnd() % 2 ? 0x80 | (rnd() & 0x40) : 0);
+                put_word(0xD402 + sl, rnd() % 2 ? 2 * (rnd() % 15) : 0x200 + 2 * (rnd() % 12));
+            }
+            for (uint32_t sl = 0xE0; sl < 0x100; sl += 4) ram[0xC000 + sl] = (uint8_t)(rnd() % 3 ? 0x80 : 0);
+            if (rnd() % 2) for (uint32_t k4 = 0; k4 < 0x60; k4++) if (rnd() % 3 == 0) ram[0x9580 + k4] = (uint8_t)rnd();   /* the inventory: $2A owned or not ($23E4) */
+        }
+        if (!strcmp(name, "RoomScriptSetup")) {     /* none, or a setup that only sets the room up (others stream graphics for their own room) */
+            static const uint16_t scripts[] = { 0xFFFF, 0, 1, 7, 8, 19 };
+            put_word(0x9682, scripts[rnd() % 6]);
+        }
+        if (!strcmp(name, "Drops")) {               /* part-way through one of the chests' lists ($A6CA) */
+            uint32_t d = rnd() % 36, l = 0xA6CA + (uint32_t)(int16_t)bus_read16(0xA6CA + 2 * d);
+            for (uint32_t n = rnd() % 4; n-- && bus_read8(l + 1); ) l += 2;
+            ram[0x9A00] = (uint8_t)(rnd() % 4 ? 0x80 : 0); ram[0x9A01] = (uint8_t)(rnd() % 3);
+            put_long(0x9A02, l); put_word(0x9A06, 0x1010 + rnd() % 0x300); put_word(0x9A08, 0x1010 + rnd() % 0x300);
+            for (uint32_t sl = 0x80; sl < 0xC0; sl += 4) {  /* the item slots as SpawnItem's fuzz has them: real kinds, often all busy */
+                ram[0xC000 + sl] = (uint8_t)(rnd() % 2 ? 0x80 | (rnd() & 0x40) : 0);
+                put_word(0xD402 + sl, rnd() % 2 ? 2 * (rnd() % 15) : 0x200 + 2 * (rnd() % 12));
+            }
+        }
+        if (!strncmp(name, "Room0", 5) || !strncmp(name, "Room1", 5)) {
+            for (uint32_t k4 = 0; k4 < 2; k4++) if (rnd() % 2) ram[0x99BE] ^= (uint8_t)(1 << k4);
+            ram[0x99DF] = (uint8_t)rnd(); put_word(0x99E4, 2 * (rnd() % 4));
+        }
         if (!strcmp(name, "CrumbleAdd")) {          /* some walls' records taken */
             for (uint32_t k4 = 0; k4 < 4; k4++) ram[0x9B96 + 8 * k4] = (uint8_t)(rnd() % 3 ? 0x80 | rnd() % 4 : 0);
             m68k_set_reg(M68K_REG_D6, (rnd() << 16) | (0xF0 + rnd() % 0x100)); m68k_set_reg(M68K_REG_D7, (rnd() << 16) | ((0x4000 + rnd() % 0x1500) & ~0x3Fu));
