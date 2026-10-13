@@ -83,10 +83,10 @@ if CONFIG.get('hand_ports', True) is False: HAND = {}
 
 # what the rewritten C calls in code not rewritten yet (call_68k and its wrappers, or hands over
 # to with port_continue_at) must be an entry, even when no generated code calls it any more
-C_CALL = re.compile(r'\b(?:call_68k|with_player|call_with_d0|with_entity|call_at|call_d0|call_keep_a2|call|port_continue_at)\s*\([^;]*?\b0x([0-9A-Fa-f]{3,6})\b')
+C_CALL = re.compile(r'\b(?:call_68k|with_player|call_with_d0|with_entity|call_at|call_d0|call_keep_a2|call|port_continue_at|leave_to)\s*\([^;]*?\b0x([0-9A-Fa-f]{3,6})\b')
 # the same through a name the file defines (#define SET_ANIM 0x7E8u)
 C_DEFINE = re.compile(r'^\s*#define\s+(\w+)\s+0x([0-9A-Fa-f]{3,6})u?\b')
-C_CALL_ARGS = re.compile(r'\b(?:call_68k|with_player|call_with_d0|with_entity|call_at|call_d0|call_keep_a2|call|port_continue_at)\s*\(([^;]*)')
+C_CALL_ARGS = re.compile(r'\b(?:call_68k|with_player|call_with_d0|with_entity|call_at|call_d0|call_keep_a2|call|port_continue_at|leave_to)\s*\(([^;]*)')
 for name in sorted(os.listdir(os.path.join(os.path.dirname(__file__), '..', 'port'))):
     if name.endswith('.c'):
         lines = open(os.path.join(os.path.dirname(__file__), '..', 'port', name), encoding='utf-8').read().splitlines()

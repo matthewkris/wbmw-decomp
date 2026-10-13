@@ -110,7 +110,8 @@ void task_wait_frame(Cpu *c, uint32_t resume)
 {
     Slot *s = current;
     if (!s || c != &s->cpu || s->base - c->a[7] > STACK_KEEP) {
-        fprintf(stderr, "task_wait_frame: not on a task pass's own registers, or too deep a stack\n");
+        fprintf(stderr, "task_wait_frame: not on a task pass's own registers, or too deep a stack (resume $%06X, %s, depth %ld, returning to $%06X)\n",
+                (unsigned)resume, !s ? "no pass" : c != &s->cpu ? "other registers" : "own registers", s ? (long)(s->base - c->a[7]) : -1L, (unsigned)rd32(c->a[7]));
         exit(3);
     }
     wr32((uint32_t)(int32_t)(int16_t)rd16(0xFFFF8A4Cu) + 0xC, resume);   /* the slot's resume address */
@@ -138,5 +139,7 @@ void task_end_pass(Cpu *c, uint32_t resume)
 }
 
 int task_on_pass(const Cpu *c) { return current && c == &current->cpu; }
+
+int task_in_pass(void) { return current != 0; }
 
 void task_reset(void) { generation++; }

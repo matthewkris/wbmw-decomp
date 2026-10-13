@@ -71,7 +71,7 @@ wait
 grep -h "all:" "$OUT"/run_*.log | awk '{c += $2; m += $5} END {print "runs", NR, "calls", c, "mismatches", m}'
 
 echo "== problems (logs naming a mismatch, contract, hang or failed call)"
-grep -l -E "MISMATCH|CONTRACT|did not|call_68k|STUCK|\.c: " "$OUT"/*.log || echo "none"
+grep -l -E "MISMATCH|CONTRACT|did not|call_68k|STUCK|task_wait|\.c: " "$OUT"/*.log || echo "none"
 # a name #defined twice in one file: the later value silently wins for the code after it
 for f in port/*.c; do
     d=$(sed -n 's/^#define \([A-Za-z_0-9]*\).*/\1/p' "$f" | sort | uniq -d | tr '\n' ' ')
@@ -100,4 +100,4 @@ for s in $REPLACE_STATES; do
     $T "$H" "$ROM" --load-state "work/$s.state" --frames "$(last "$f" "$in")" --input "$in" --port replace --quiet > "$OUT/rep_$s.log" 2>&1 &
 done
 wait
-for l in "$OUT"/rep_*.log; do echo "$(basename "$l"): $(grep -c -i -E 'error|stuck|did not|call_68k|\.c: ' "$l") problems"; done
+for l in "$OUT"/rep_*.log; do echo "$(basename "$l"): $(grep -c -i -E 'error|stuck|did not|call_68k|task_wait|\.c: ' "$l") problems"; done

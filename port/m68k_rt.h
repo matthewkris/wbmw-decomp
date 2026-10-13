@@ -201,6 +201,7 @@ static inline void rt_after_hand(Cpu *c)
 {
     if (!c->ret) { rt_rts(c); return; }
     uint32_t t = c->ret;
+    if (t & 0x80000000u) { rt_leave(c, 0, t & 0xFFFFFF); return; }   /* port_leave_to_68k (world.h) */
     if (!rt_dispatch(c, t)) rt_leave(c, 0, t);
 }
 /* native build: generated code calls this at a poll point (a loop waiting for an interrupt,

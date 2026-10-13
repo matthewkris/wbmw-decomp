@@ -17,6 +17,8 @@ void task_end_pass(Cpu *c, uint32_t resume);
 
 /* 1 if c is the registers of the task pass running now (so it may wait for frames) */
 int task_on_pass(const Cpu *c);
+/* whether a task pass is running on its coroutine now (a routine that waits can run here) */
+int task_in_pass(void);
 
 /* the machine was reset or a state loaded: forget every waiting pass */
 void task_reset(void);

@@ -1604,6 +1604,7 @@ ENTRY(NoteIn, note_in)                  /* $2B08 */
 void OcarinaTune(Cpu *cpu)                      /* $2AAE: waits for frames; leaves by the address it kept */
 {
     c = cpu;
+    if (!task_in_pass()) { port_leave_to_68k(c, 0x2AAE); return; }   /* outside a task pass: the original (CT_WAITS) */
     uint32_t ret = rd32(c->a[7]); c->a[7] += 4;
     port_continue_at(c, ocarina_tune(ret), 0);
 }

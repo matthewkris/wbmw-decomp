@@ -2015,6 +2015,50 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 30,000 fuzz cases, 0 mismatches. Self-test caught 100 in 100. Replace mode: thirteen runs, no
 problems.
 
+#### The room changes, batch T20: arriving in a room (2026-10-13)
+
+After loading a room, the game's task jumps by how the player arrived (`$9678`, its table at
+`$8F6C`). In `port/rooms.c`:
+
+* `$C5F8` (2, 4): through a door. The door's frame is placed round the player (`$C572`), the
+  screen fades in (`$C5D2`), and the frame closes behind.
+* `$C698` (5): walking out of a building to its door's right.
+* `$C71C` (8): a fade in, then the exits' arrival (`$F7EA`).
+* `$C728` (9): inside, then a conversation after 30 frames (`$C1E8`).
+* `$C634`: arriving inside, with the event's picture swapped in and its things spawned.
+* `$C184` (room change 6): walking into a building. `$C1E0` and `$C6EE` are the walk's
+  buttons for the frame's routine.
+
+`$C572`, `$C5D2` and `$C634` keep their callers' return addresses on the continuations'
+stack, as the original's do. `$C614` (10), `$C67E` (3) and `$C6F6` (6, 7) are written but not yet
+registered: no session runs them.
+
+What they needed, three fixes outside the port:
+* **The translator's call helpers.** The C's jumps back into the original (`$8FFC`, `$9100`,
+  `$F7EA`, `$C1E8`) go through a helper, `leave_to`, that `tools/m68k2c.py` did not know. Once
+  their last original callers were C, those addresses were no longer translated. It now knows
+  the helper.
+* **A routine that waits, outside a task pass.** The conversation's restart (`$C1E8`, still the
+  original's) has a loop that polls the VBlank flag, which the translated code cannot run. So
+  the harness finishes that pass on the 68000, outside the task's coroutine, and from there the
+  game restarts its task and arrives in a room (`$C728`), outside any pass. A routine that waits
+  cannot run there.
+  * Such routines now carry `CT_WAITS` in their contract. The harness lets the original run
+    them when no task pass is running (`task_in_pass`).
+  * When the translated code calls them there, they hand themselves back to the 68000 with
+    `port_leave_to_68k`. That is a "continue at" address the dispatcher passes to `rt_leave`
+    instead of calling the same C again.
+  * The status and pause screens, the ocarina's tune, the title's tasks and every waiting room
+    routine have the flag.
+* **Hidden failures.** Such a failure ends a run with a message no check looked for.
+  `tools/accept.sh` now reports `task_wait` messages, among the problems and in replace mode.
+  The earlier batches' runs are clean: each ended with its summary.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(38 runs, all complete; 579,778 checked calls). The sessions run every instruction of the
+registered arrivals but one branch of `$C572` (a kind 8 arrival). 60,000 fuzz cases, 0
+mismatches. Self-test caught 100 in 100. Replace mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
