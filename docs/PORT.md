@@ -1324,6 +1324,46 @@ Results: 0 mismatches over the standard runs and every owner state (422,373 chec
 at `$13DB6` has a port in `port/actions.c`, checked against the original by shadow runs, fuzzing
 from five states with full instruction coverage, and the self-test.
 
+#### The status screen, batch T1: its primitives (2026-10-13)
+
+The rest of the text system starts with the status screen: `$7582` and about 45 routines under
+it ($7294-$8C34), `port/status.c`. The screen is a set of nested menu loops that save their
+return address, wait a frame at a time (`$805A`, `$7E12` yield) and jump back when done; they
+come later, as coroutines. Under them are ordinary routines, ported first. Their callers carry on
+with what they leave (a1 past the string drawn, d7 on the next row, the flags of a test), so they
+are ported register for register and registered with every register and flag in the contract
+(`CT_ALL`): any difference is a mismatch, not a watch.
+
+Batch T1, 21 routines: the text position `$83B0`/`$83B8` (window plane at `$5800`); strings as
+tiles `$786A`/`$7870`/`$7874` (`$A000` bright, `$8000` plain) and the fixed-width names `$7B70`
+(`$8CDE` long); the menus' text places `$7AAA`, `$7C44`, `$7C4A`, `$7C56` (word tables indexed by
+a signed d0.w); the two-row meters `$7C68`/`$7C9A`; the button tests `$7D7A`/`$7D7E`/`$7D8A` (d6
+and the flags); `$83A4` (more of the list below); a blank `$84AE`; numbers: `$8522` (d0 / 10 by
+32 shifts), `$84EC` (up to 999,999 as digits at `$FF959F`), `$8552` (two digits) and the level
+`$853C`.
+
+What they needed: the X flag (`add.w d0,d0` in the text position, the adds in `$83A4` and
+`$8552` set it); signed table indexes; `c->ret` cleared after `call_68k` (the level's call left
+it set, and the harness carried on at its mark; the whole screen pass caught it). The status
+screen runs inside a system task, which is translated code, so these run nested inside the
+task's check (`TaskCallSystem`) and every pass of the screen is compared as a whole; per routine,
+the fuzz checks them, with the menus' indexes, a meter's cells, a list's length and strings in RAM
+as the game gives them.
+
+**Recorded sessions.** No earlier run used these screens (the status screen opened twice in 25
+runs, no shop, no talk), so `play --record NAME` records a session: the starting state as
+`work/NAME.state`, every change of the buttons in `work/runs/inputs/NAME.txt` (the harness's
+`--input` format, ending `# end FRAME`; F4 or F5 begins NAME-2, NAME-3). `tools/accept.sh`
+replays every state with its input to its end, in shadow mode and (for `status`, `shop` and
+`talk`) in replace mode. The owner's three sessions replay exactly: the harness's coverage
+equals `play`'s. `WBMW_PC_COUNT=FILE` writes how often each instruction ran (any mode), which is
+how the screens' code was found: the routines a session runs that ordinary play does not.
+
+Results: 0 mismatches over the standard runs, every owner state and the three sessions (29 runs,
+481,775 checked calls); 525,000 fuzz cases from five states, 0 mismatches, every instruction
+covered. Self-test caught 100 in 100 for each. Replace mode plays the new-game script, four
+states and the three sessions.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

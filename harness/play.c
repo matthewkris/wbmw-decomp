@@ -2,11 +2,17 @@
  * at 60 frames a second, with keyboard and game controller input, and sound (harness/sound.c).
  *
  *   play ROM [--scale N] [--fullscreen] [--save FILE] [--state FILE] [--load] [--port replace|shadow] [--coverage FILE]
+ *        [--record NAME]
  *
  * --load starts from the state file (as if F4 were pressed at once). The state carries the save
  * EEPROM too, so it replaces what --save loaded; --save still names where it is written at exit.
  *
  * --mute plays without sound.
+ *
+ * --record NAME records the session for tools/accept.sh to replay: the state at the start is
+ * written to work/NAME.state and every change of the buttons to work/runs/inputs/NAME.txt (the
+ * harness's --input format, ending with "# end FRAME"). F4 (load) or F5 (reset) jumps away from
+ * what was recorded, so the recording stops there and a new one begins: NAME-2, NAME-3, ...
  *
  * --fullscreen starts in full screen (borderless, at the desktop's size); F11 or Alt+Enter
  * switches. The picture keeps its proportions, with black bars at the sides.
@@ -57,6 +63,39 @@ static uint8_t pad_down(SDL_GameController *gc)
     return m;
 }
 
+/* --record: the session as a save state and the buttons from it on */
+static const char *rec_name; static FILE *rec; static int rec_part, rec_last = -1;
+static void button_names(uint8_t m, char *out)
+{
+    for (int i = 0; i < 8; i++) if (m >> i & 1) *out++ = "UDLRBCAS"[i];   /* B_UP..B_START, as the harness reads them */
+    if (!m) *out++ = '-';
+    *out = 0;
+}
+static void rec_stop(int frame)
+{
+    if (!rec) return;
+    fprintf(rec, "# end %d\n", frame);
+    fclose(rec); rec = NULL;
+}
+static void rec_start(int frame)
+{
+    char st[512], in[512], part[16] = "";
+    if (++rec_part > 1) snprintf(part, sizeof part, "-%d", rec_part);
+    snprintf(st, sizeof st, "work/%s%s.state", rec_name, part);
+    snprintf(in, sizeof in, "work/runs/inputs/%s%s.txt", rec_name, part);
+    if (md_save_state(st, frame) != 0 || !(rec = fopen(in, "w"))) { fprintf(stderr, "could not record to %s\n", in); rec = NULL; return; }
+    fprintf(rec, "# recorded by play --record from %s, frame %d\n", st, frame);
+    rec_last = -1;
+    fprintf(stderr, "recording to %s and %s\n", st, in);
+}
+static void rec_frame(int frame, uint8_t m)   /* the buttons held for frame FRAME */
+{
+    if (!rec || m == rec_last) return;
+    char b[16]; button_names(m, b);
+    fprintf(rec, "%d %s\n", frame, b);
+    rec_last = m;
+}
+
 static void set_fullscreen(SDL_Window *win, int on)
 {
     SDL_SetWindowFullscreen(win, on ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);    /* borderless, at the desktop's size */
@@ -75,12 +114,13 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--load")) load = 1;
         else if (!strcmp(argv[i], "--mute")) mute = 1;
         else if (!strcmp(argv[i], "--fullscreen")) fullscreen = 1;
+        else if (!strcmp(argv[i], "--record") && i + 1 < argc) rec_name = argv[++i];
         else if (!strcmp(argv[i], "--port") && i + 1 < argc) {
             i++; port = !strcmp(argv[i], "replace") ? PORT_REPLACE : !strcmp(argv[i], "shadow") ? PORT_SHADOW : PORT_OFF;
         }
         else rom_path = argv[i];
     }
-    if (!rom_path) { fprintf(stderr, "usage: play ROM [--scale N] [--fullscreen] [--save FILE] [--state FILE] [--load] [--port replace|shadow] [--coverage FILE]\n"); return 2; }
+    if (!rom_path) { fprintf(stderr, "usage: play ROM [--scale N] [--fullscreen] [--save FILE] [--state FILE] [--load] [--port replace|shadow] [--coverage FILE] [--record NAME]\n"); return 2; }
     if (md_load_rom(rom_path)) return 1;
     md_power_on();
     if (cov) hybrid_coverage(cov);                  /* written at exit, with the report */
@@ -113,6 +153,7 @@ int main(int argc, char **argv)
         if (md_load_state(state, &frame) != 0) { fprintf(stderr, "could not load state from %s\n", state); return 1; }
         fprintf(stderr, "loaded state from %s (frame %d)\n", state, frame);
     }
+    if (rec_name) rec_start(frame);
     while (running) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
@@ -126,12 +167,14 @@ int main(int argc, char **argv)
                 case SDLK_ESCAPE: running = 0; break;
                 case SDLK_F11: set_fullscreen(win, fullscreen = !fullscreen); break;
                 case SDLK_p: paused = !paused; break;
-                case SDLK_F5: md_power_on(); eeprom_load(save); frame = 0; break;
+                case SDLK_F5: rec_stop(frame); md_power_on(); eeprom_load(save); frame = 0; if (rec_name) rec_start(frame); break;
                 case SDLK_F2:
                     if (md_save_state(state, frame) == 0) fprintf(stderr, "saved state at frame %d to %s\n", frame, state);
                     break;
                 case SDLK_F4:
+                    rec_stop(frame);
                     if (md_load_state(state, &frame) == 0) fprintf(stderr, "loaded state from %s (frame %d)\n", state, frame);
+                    if (rec_name) rec_start(frame);
                     break;
                 case SDLK_F12: {
                     char path[64];
@@ -147,6 +190,7 @@ int main(int argc, char **argv)
         int fast = k[SDL_SCANCODE_TAB];
         if (!paused) {
             pad_buttons = keys_down(k) | pad_down(gc);
+            rec_frame(frame + 1, pad_buttons);
             md_run_frame(); frame++;
             audio_frame(mute || fast);                  /* no sound while fast-forwarding */
         }
@@ -164,6 +208,7 @@ int main(int argc, char **argv)
         else if (now < next) SDL_Delay((Uint32)((next - now) * 1000 / freq));
         else if (now - next > freq / 4) next = now;            /* fell far behind: do not race */
     }
+    rec_stop(frame);
     if (eeprom_save(save) == 0) fprintf(stderr, "saved save data to %s\n", save);
     hybrid_report();
     SDL_Quit();

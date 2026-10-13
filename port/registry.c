@@ -57,6 +57,11 @@ void Act140F2(Cpu *), Act140FC(Cpu *), Act1410E(Cpu *), Act14120(Cpu *), Act1416
      Act1A026(Cpu *), Act1A218(Cpu *), Act1A266(Cpu *), Act1A2E2(Cpu *), Act1A3E4(Cpu *);
 void RunEnemies(Cpu *), EnemyDispatch(Cpu *), EnemySetState(Cpu *), EnemyNextState(Cpu *);   /* enemies.c */
 void MagicUsed(Cpu *), SlotEmptied(Cpu *), MagicMeter(Cpu *), HudRedraw(Cpu *), GoldDisplay(Cpu *);   /* hud.c */
+void TextAt(Cpu *), TextAtRC(Cpu *), String(Cpu *), StringPlain(Cpu *), StringBright(Cpu *), FixedName(Cpu *),   /* status.c */
+     LineMark(Cpu *), MenuPlace(Cpu *), MenuBright(Cpu *), MenuPlainBright(Cpu *), Cells(Cpu *), Meter(Cpu *),
+     PressedB(Cpu *), PressedBS(Cpu *), PressedAC(Cpu *), MoreBelow(Cpu *), Blank(Cpu *), Div10(Cpu *), Digits(Cpu *),
+     TwoDigits(Cpu *), Level(Cpu *);
+#define CT_ALL 0x3FFFF                /* every register and flag compared */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
      FindFreeEffect(Cpu *), CheckGrounded(Cpu *);
 void Hearts(Cpu *), SpawnItem(Cpu *), SpawnItemAt(Cpu *), PlayerSwordTip(Cpu *);   /* hud.c, effects.c, player.c */
@@ -185,6 +190,27 @@ const PortRoutine port_routines[] = {
     {0x00882C, 0x00885A, "SlotEmptied", SlotEmptied, CT_SP},      /* also from using up an item ($24E8) */
     {0x0076C4, 0x0076E8, "HudRedraw", HudRedraw, CT_SP},
     {0x0085A8, 0x0085CC, "GoldDisplay", GoldDisplay, CT_SP},   /* hud.c: leaves a4 the player */
+    {0x0083B0, 0x0083B8, "TextAt", TextAt, CT_ALL},   /* status.c: the status screen, every register and flag as the original */
+    {0x0083B8, 0x0083D0, "TextAtRC", TextAtRC, CT_ALL},
+    {0x00786A, 0x007870, "StringBright", StringBright, CT_ALL},
+    {0x007870, 0x007874, "StringPlain", StringPlain, CT_ALL},
+    {0x007874, 0x007882, "String", String, CT_ALL},
+    {0x007B70, 0x007B86, "FixedName", FixedName, CT_ALL},
+    {0x007AAA, 0x007AC0, "LineMark", LineMark, CT_ALL},
+    {0x007C44, 0x007C4A, "MenuPlainBright", MenuPlainBright, CT_ALL},
+    {0x007C4A, 0x007C56, "MenuBright", MenuBright, CT_ALL},
+    {0x007C56, 0x007C68, "MenuPlace", MenuPlace, CT_ALL},
+    {0x007C68, 0x007C9A, "Meter", Meter, CT_ALL},   /* with the loop at $7C94 */
+    {0x007C9A, 0x007CA0, "Cells", Cells, CT_ALL},
+    {0x007D7A, 0x007D7E, "PressedB", PressedB, CT_ALL},
+    {0x007D7E, 0x007D8A, "PressedBS", PressedBS, CT_ALL},
+    {0x007D8A, 0x007D9C, "PressedAC", PressedAC, CT_ALL},
+    {0x0083A4, 0x0083B0, "MoreBelow", MoreBelow, CT_ALL},
+    {0x0084AE, 0x0084C4, "Blank", Blank, CT_ALL},
+    {0x0084EC, 0x00850C, "Digits", Digits, CT_ALL},
+    {0x008522, 0x00853C, "Div10", Div10, CT_ALL},
+    {0x00853C, 0x008552, "Level", Level, CT_ALL},
+    {0x008552, 0x008596, "TwoDigits", TwoDigits, CT_ALL},
     {0x01090C, 0x010910, "SpawnItem", SpawnItem},                 /* effects.c: every register as the original */
     {0x010910, 0x010A1E, "SpawnItemAt", SpawnItemAt},
     {0x010A1E, 0x011094, "RunItems", RunItems, CT_SP},

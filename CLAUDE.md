@@ -98,7 +98,10 @@ platforms), `inn2.state` (at an innkeeper's question; answering yes found the `$
 `owner2.state` (Sega logo after a game over), `castle.state` (inside a castle, frame 29,683), `ocarina.state` (on a note block, frame 35,051; the tunes are in `docs/NOTES.md`), `beforedeath.state` (past the ocarina doors, 2 of 4 hearts, frame 48,363), `fullhp2.state` (the same, health refilled with `--call Hearts`), `after-boss.state` (a cave past the boss, frame 83,367), `after-boss2.state` (a forest with hanging spiders, frame 166,373), `boss2.state` (the Gragg & Glagg boss intro, 4 hearts, frame 287,023), `after-boss3.state` (a forest town with an inn after beating them, 4 hearts, frame 298,964; `after-boss3-14hp.state` is the same with the 14 hearts it was played at), `door-crash.state`
 (before the castle door that found the `lea` gap, frame 305,313), `thunder.state` (a new area
 with the thunder spell, frame 384,572: right + A casts thunder, left + A the other slot). Edit hearts with `harness --load-state S --poke FF9F00=0E00 --poke FFDA00=0E00 --call Hearts --frames F+1 --save-state-at F+1 OUT` (maximum, then health; whole hearts in the high byte). Copy `play.state`/F2 states to their own names:
-F2 overwrites the same file each time.
+F2 overwrites the same file each time. `status.state`, `shop.state` and `talk.state` (2026-10-13) are recorded sessions
+(`play --record NAME`: the state, and every button in `work/runs/inputs/NAME.txt` up to its `# end`):
+the status screen used throughout, a shop, conversations. Ask the owner for recordings like these
+(give the `play ... --port shadow --coverage FILE --record NAME` command) when new code needs play.
 
 1. Coverage, from play (53% so far): the owner plays with `play.exe --state S --load --port shadow --coverage FILE` (any
    mismatch is printed to the console and in the report at exit; save states with F2 for
@@ -141,8 +144,8 @@ F2 overwrites the same file each time.
    monsters' action routines (135 entries at $140F2-$1A3E4, about 7,000 instructions), small
    to large, in batches of related routines: batches 7-27 (`port/actions.c`, appearing,
    defeated, hurt, walking, choosing, patrolling, jumping, attacking, swimming, flying,
-   Gragg & Glagg, the water creatures, the chain, bouncers, a dodger, a boss and its brood, the two-part boss, two riders and their followers, a hoverer, a runner, a node walker and the last boss, $140F2-$1A437: all 135) are done. `tools/accept.sh OUTDIR NAMES...` runs the whole acceptance. Then the rest of the text system (status screen, shops,
-   dialogue, $7600-$8900). The angle maths ($EE2-$1278, `port/maths.c`, exact) and the HUD
+   Gragg & Glagg, the water creatures, the chain, bouncers, a dodger, a boss and its brood, the two-part boss, two riders and their followers, a hoverer, a runner, a node walker and the last boss, $140F2-$1A437: all 135) are done. `tools/accept.sh OUTDIR NAMES...` runs the whole acceptance. Now the rest of the text system (status screen, shops,
+   dialogue, $7600-$8900). In progress: the status screen ($7582 and $7294-$8C34, `port/status.c`; batch T1, its 21 primitives, done; next the cursors and tile loaders, then the list and pages, then its menu loops as coroutines); then the shops and dialogue ($1609E, $164B8 and what they call). The angle maths ($EE2-$1278, `port/maths.c`, exact) and the HUD
    bar (magic name and uses, meter, slot icons, gold: `port/hud.c`) are C too. The items and effects each frame ($10A1E, `port/items.c`), the big items
    ($B42A) and exact kernel helpers (ClearEntity, Freeze/UnfreezeEntities, FindFreeEffect,
    CheckGrounded, in `port/entity.c`) are C too. Readable C
