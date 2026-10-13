@@ -1364,6 +1364,31 @@ Results: 0 mismatches over the standard runs, every owner state and the three se
 covered. Self-test caught 100 in 100 for each. Replace mode plays the new-game script, four
 states and the three sessions.
 
+#### The status screen, batch T2: the cursors and the tile loaders (2026-10-13)
+
+25 routines. The screen has three blinking marks, each a state byte (bit 0 on, bit 1 shown) and
+a count of 20 frames to its next change, drawn by the shared `$8200` (tile d6 at column d4, row
+d5): the menu cursor (`$81A8` its blink, `$81C0` hides it, `$81D6` shows it at the place in
+`$9624` and remembers it in `$9626`), and the list's scroll arrows above (`$80A8`, `$80C4`, and
+`$80D4` reached only by branches) and below (`$80FA`, `$8116`, `$8126`). `$8212` moves the list's
+line up or down within its length, scrolling to keep it among the four shown (`$83D0` redraws,
+still the original's), with the cursor on it and a click. The frame and boxes are tile rows: `$802A`
+draws 32 tiles from 32 bytes (low nibble the tile, high nibble its palette and flip from `$804A`),
+`$8024` at a row, `$8010` 64 tiles from long words; `$7F54`-`$8000` are the screen's frames built
+from them. Also the stats page's frame, level and labels (`$7E7C`, which draws the frame's foot
+twice, as the original does), the palette steps (`$7F00`, `$7EEE`), the sprite records at `$FF3300`
+(`$8E22`) and the two clicks (`$8BAA`, `$8BB0`).
+
+One slip: `$8212` loads the line with `move.w`, whose flags its early returns keep. The fuzz gives
+the marks their states and counts, the list a length, top and line, and the list's page and
+entries real values: `$1E6A`, which builds an entry's name, hangs on purpose (`bcs` to itself) on
+a bad name.
+
+Results: 0 mismatches over the standard runs, every owner state and the three sessions (29 runs,
+481,775 checked calls); 625,000 fuzz cases from five states, 0 mismatches, every instruction
+covered. Self-test caught 100 in 100 for each. Replace mode plays the new-game script, four
+states and the three sessions.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

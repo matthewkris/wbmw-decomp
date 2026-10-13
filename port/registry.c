@@ -60,7 +60,8 @@ void MagicUsed(Cpu *), SlotEmptied(Cpu *), MagicMeter(Cpu *), HudRedraw(Cpu *), 
 void TextAt(Cpu *), TextAtRC(Cpu *), String(Cpu *), StringPlain(Cpu *), StringBright(Cpu *), FixedName(Cpu *),   /* status.c */
      LineMark(Cpu *), MenuPlace(Cpu *), MenuBright(Cpu *), MenuPlainBright(Cpu *), Cells(Cpu *), Meter(Cpu *),
      PressedB(Cpu *), PressedBS(Cpu *), PressedAC(Cpu *), MoreBelow(Cpu *), Blank(Cpu *), Div10(Cpu *), Digits(Cpu *),
-     TwoDigits(Cpu *), Level(Cpu *);
+     TwoDigits(Cpu *), Level(Cpu *),
+     UpBlink(Cpu *), UpHide(Cpu *), DownBlink(Cpu *), DownHide(Cpu *), DownShow(Cpu *), CursorBlink(Cpu *), CursorHide(Cpu *), CursorShow(Cpu *), ListMove(Cpu *), TileRowAt(Cpu *), TileRow(Cpu *), TilesAt(Cpu *), FrameFull(Cpu *), FrameLower(Cpu *), FrameStats(Cpu *), FrameFoot(Cpu *), FrameItems(Cpu *), FrameBox(Cpu *), FramePause(Cpu *), Palette8(Cpu *), BoxDim(Cpu *), StatsPage(Cpu *), SpriteInit(Cpu *), ClickBack(Cpu *), Click(Cpu *);
 #define CT_ALL 0x3FFFF                /* every register and flag compared */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
      FindFreeEffect(Cpu *), CheckGrounded(Cpu *);
@@ -211,6 +212,31 @@ const PortRoutine port_routines[] = {
     {0x008522, 0x00853C, "Div10", Div10, CT_ALL},
     {0x00853C, 0x008552, "Level", Level, CT_ALL},
     {0x008552, 0x008596, "TwoDigits", TwoDigits, CT_ALL},
+    {0x0080A8, 0x0080C4, "UpBlink", UpBlink, CT_ALL},
+    {0x0080C4, 0x0080FA, "UpHide", UpHide, CT_ALL},   /* with $80D4 (shown), $80E8 */
+    {0x0080FA, 0x008116, "DownBlink", DownBlink, CT_ALL},
+    {0x008116, 0x008126, "DownHide", DownHide, CT_ALL},
+    {0x008126, 0x008148, "DownShow", DownShow, CT_ALL},
+    {0x0081A8, 0x0081C0, "CursorBlink", CursorBlink, CT_ALL},
+    {0x0081C0, 0x0081D6, "CursorHide", CursorHide, CT_ALL},
+    {0x0081D6, 0x008212, "CursorShow", CursorShow, CT_ALL},   /* with $8200, the mark the cursors share */
+    {0x008212, 0x008272, "ListMove", ListMove, CT_ALL},
+    {0x008024, 0x00802A, "TileRowAt", TileRowAt, CT_ALL},
+    {0x00802A, 0x00805A, "TileRow", TileRow, CT_ALL},
+    {0x008010, 0x008024, "TilesAt", TilesAt, CT_ALL},
+    {0x007F54, 0x007F76, "FrameFull", FrameFull, CT_ALL},
+    {0x007F76, 0x007F98, "FrameLower", FrameLower, CT_ALL},
+    {0x007F98, 0x007FBA, "FrameStats", FrameStats, CT_ALL},
+    {0x007FBA, 0x007FCE, "FrameFoot", FrameFoot, CT_ALL},
+    {0x007FCE, 0x007FF6, "FrameItems", FrameItems, CT_ALL},
+    {0x007FF6, 0x008000, "FrameBox", FrameBox, CT_ALL},
+    {0x008000, 0x008010, "FramePause", FramePause, CT_ALL},
+    {0x007F00, 0x007F0E, "Palette8", Palette8, CT_ALL},
+    {0x007EEE, 0x007F00, "BoxDim", BoxDim, CT_ALL},
+    {0x007E7C, 0x007E8C, "StatsPage", StatsPage, CT_ALL},   /* with the labels at $84C4 */
+    {0x008E22, 0x008E3E, "SpriteInit", SpriteInit, CT_ALL},
+    {0x008BAA, 0x008BB0, "ClickBack", ClickBack, CT_ALL},
+    {0x008BB0, 0x008BB6, "Click", Click, CT_ALL},
     {0x01090C, 0x010910, "SpawnItem", SpawnItem},                 /* effects.c: every register as the original */
     {0x010910, 0x010A1E, "SpawnItemAt", SpawnItemAt},
     {0x010A1E, 0x011094, "RunItems", RunItems, CT_SP},
