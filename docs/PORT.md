@@ -2111,6 +2111,33 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 runs only the empty loops. 390,000 fuzz cases from six states, 0 mismatches, every instruction
 covered. Self-test caught 100 in 100 for each. Replace mode: thirteen runs, no problems.
 
+#### The room changes, batch T23: three room objects and a shattered block (2026-10-13)
+
+The room's objects run each frame from `$AEA2`: eight slots, a4 `$E0`-`$FC`, by their kind at
+`$D402` (the table at `$AECC`). Bit 6 of their flags means begun; `$D401` is the step. In
+`port/rooms.c`, with every register and flag in the contract:
+
+* Kind 2 (`$B00A`, its cell from `$B0CC`): a broken floor's block, from `$B400`. It takes the
+  block's place for a frame, empties the cell, falls (`$B44`, `$AD6`) until the tile under it is
+  solid (`$3F54`, `$9EDF` bit 3), then crumbles and is gone when its animation ends.
+* Kind 8 (`$B0DA`): a lift at one of four places (`$D300`), on the floor at `$10B0`. The first
+  checks every 64 frames for the player within 16 pixels across; the others wait out a time at
+  `$D800`. Then it rises. The player on it is thrown up (`$EC08`, speed `$FA00`, sound 51), and
+  the entity at `$D302` is told. The lift falls back to the floor and waits again.
+* Kind 14 (`$B236`): a thing set off from the player (8 across, 2 down) that drifts right. Its
+  frame moves on every 4 frames to the fourth, and it is gone at `$1050` across.
+* `$B2BA` (from the player's code at `$EEA8`): a block shattered. Its cell is emptied, and four
+  pieces (items `$206`-`$20C`) are thrown from its quarters while there are free items.
+
+The fuzz runs the objects with the state's own entities. It puts a room object of the routine's
+kind in one of the eight slots, begun or not, at each of its steps, with its look, place and
+timers as the game sets them, and the player near.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(39 runs, all complete; 637,567 checked calls). 150,000 fuzz cases from six states, 0
+mismatches, every instruction covered. Self-test caught 100 in 100 for each. Replace mode:
+thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

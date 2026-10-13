@@ -3993,3 +3993,271 @@ ENTRY(GateShrink, gate_shrink)             /* $B79C */
 ENTRY(GateSparkTime, gate_spark_time)      /* $B7A6 */
 ENTRY(GateSparks, gate_sparks)             /* $B7B8 */
 ENTRY(CrumbleAdd, crumble_add)             /* $B82A */
+
+/* ---- batch T23: three room objects and a shattered block ----
+ * The room's objects run each frame from $AEA2 (eight slots, a4 $E0-$FC), by kind ($D402, the
+ * table at $AECC): kind 2 a broken floor's block falling, kind 8 a lift that throws the player
+ * up, kind 14 a thing drifting off to the right from the player. Bit 6 of the flags: begun;
+ * $D401 the step. */
+
+#define APPLY_VEL_X   0x0AB8u
+#define APPLY_VEL_Y   0x0AD6u
+#define ACCEL_Y       0x0B44u
+#define FLOOR_UNDER   0x3F54u       /* $9EDE: the tile under the entity's feet (bit 11: solid) */
+#define THROW_UP      0xEC08u       /* the entity a4 thrown up at speed d0 */
+
+static uint32_t e(uint32_t field) { return c->a[4] + field; }   /* an entity's field: $FFxxxx + a4 */
+static void e_or(uint32_t field, uint8_t m) { uint8_t v = rd8(e(field)) | m; wr8(e(field), v); F_B(v); }
+static uint8_t e_inc(uint32_t field, uint32_t n) { uint8_t v = (uint8_t)add_b(&c->ccr, n, rd8(e(field))); wr8(e(field), v); return v; }
+static uint8_t e_dec(uint32_t field) { uint8_t v = (uint8_t)sub_b(&c->ccr, 1, rd8(e(field))); wr8(e(field), v); return v; }
+static uint32_t abs_diff_w(uint32_t a, uint32_t b)   /* sub.w b,a; bcc; neg.w */
+{
+    uint32_t d = sub_w(&c->ccr, b, a);
+    if (c->ccr & CC_C) d = neg_w(&c->ccr, d);
+    return d;
+}
+
+/* $B0CC: the falling block's cell, on plane A */
+static void fall_cell(void)
+{
+    c->d[6] = set_w(c->d[6], rd16(e(0xFFFFDB00u))); F_W(c->d[6]);
+    c->d[7] = set_w(c->d[7], rd16(e(0xFFFFDB02u))); F_W(c->d[7]);
+    c->a[3] = LAYER_A;
+}
+/* $B00A, kind 2: a broken floor's block ($B400: its cell at $DB00, its look at $DA00). It takes
+ * the block's place, then on the next frame empties the cell and falls until it lands, when it
+ * crumbles away */
+static void room_obj_fall(void)
+{
+    static const uint8_t looks[6] = { 0x06, 0x02, 0x06, 0x06, 0x04, 0x00 };   /* $B070: the animation set and its animation */
+    f_bit(rd8(e(0xFFFFC000u)) >> 6 & 1);
+    if (!(rd8(e(0xFFFFC000u)) & 0x40)) {
+        c->d[1] = set_w(c->d[1], rd16(e(0xFFFFDA00u))); F_W(c->d[1]);
+        uint32_t k = c->d[1] & 0xFFFF;
+        put8(e(0xFFFFC300u), looks[k]);
+        put8(e(0xFFFFC301u), looks[k + 1]);
+        move_b(0, looks[k + 2]);
+        call(SET_ANIM);
+        put8(e(0xFFFFC303u), 0x14);
+        c->d[0] = set_w(c->d[0], rd16(e(0xFFFFDB00u))); F_W(c->d[0]);   /* the cell's middle */
+        c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 4, 16));
+        c->d[0] = set_w(c->d[0], add_w(&c->ccr, 8, c->d[0]));
+        put16m(e(0xFFFFC800u), c->d[0]);
+        c->d[0] = set_w(c->d[0], rd16(e(0xFFFFDB02u))); F_W(c->d[0]);
+        c->d[0] = set_w(c->d[0], lsr_n(&c->ccr, c->d[0], 2, 16));
+        c->d[0] = set_w(c->d[0], add_w(&c->ccr, 8, c->d[0]));
+        put16m(e(0xFFFFC900u), c->d[0]);
+        put16m(e(0xFFFFCC02u), 0x41);                   /* gravity, falling speed */
+        put16m(e(0xFFFFCD02u), 0x480);
+        e_or(0xFFFFD100u, 2);
+        e_or(0xFFFFC000u, 0x40);
+        put8(e(0xFFFFCE02u), 1);
+        push32(0xB068); fall_cell(); c->a[7] += 4;
+        c->d[0] = set_w(c->d[0], 0x268); F_W(0x268);    /* the cell kept solid this frame */
+        cell_set();
+        return;
+    }
+    move_b(0, rd8(e(0xFFFFD401u)));
+    if (!(c->d[0] & 0xFF)) {                            /* step 0: the cell emptied when the wait ends */
+        if (e_dec(0xFFFFCE02u)) goto falls;
+        e_inc(0xFFFFD401u, 1);
+        push32(0xB088); fall_cell(); c->a[7] += 4;
+        c->d[0] = 0; F_L(0);
+        push32(0xB08E); cell_set_draw_if_shown(); c->a[7] += 4;
+    } else {
+        c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 1, c->d[0]));
+        if (c->d[0] & 0xFF) {                           /* step 2: gone when its animation ends */
+            F_B(rd8(e(0xFFFFC600u)));
+            if (rd8(e(0xFFFFC600u))) return;
+            put8(e(0xFFFFC000u), 0);
+            return;
+        }
+    }
+    f_bit(rd8(e(0xFFFFC000u)) & 1);                     /* step 1: falling while shown */
+    if (!(rd8(e(0xFFFFC000u)) & 1)) { put8(e(0xFFFFC000u), 0); return; }
+falls:
+    call(ACCEL_Y);
+    call(APPLY_VEL_Y);
+    call(FLOOR_UNDER);
+    f_bit(rd8(0xFFFF9EDFu) >> 3 & 1);
+    if (!(rd8(0xFFFF9EDFu) & 8)) return;
+    e_inc(0xFFFFD401u, 1);                              /* landed: crumbles */
+    put16m(e(0xFFFFC300u), 0x1208);
+    c->d[0] = 0; F_L(0);
+    call(SET_ANIM);
+}
+
+/* $B0DA, kind 8: a lift at one of four places ($D300), on the floor at $10B0. Every 64 frames
+ * it checks for the player within 16 pixels across (or, for the others, waits its time at $D800),
+ * then rises. The player on it as it rises is thrown up (and its rider at $D302 told), with sound
+ * 51; it falls back to the floor */
+static void room_obj_lift(void)
+{
+    static const uint16_t xs[4] = { 0x1500, 0x1530, 0x1560, 0x1590 };      /* $B128 */
+    static const uint16_t rises[4] = { 0xFB00, 0xFA80, 0xFA00, 0xF980 };   /* $B180 */
+    f_bit(rd8(e(0xFFFFC000u)) >> 6 & 1);
+    if (!(rd8(e(0xFFFFC000u)) & 0x40)) {
+        call(CLEAR_ENTITY);
+        c->d[0] = set_w(c->d[0], rd16(e(0xFFFFD300u))); F_W(c->d[0]);
+        put16m(e(0xFFFFC800u), xs[(c->d[0] & 0xFFFF) / 2]);
+        put16m(e(0xFFFFC900u), 0x10B0);
+        put16m(e(0xFFFFCC02u), 0x40);
+        put8(e(0xFFFFD100u), 0);
+        put8(e(0xFFFFD800u), 0);
+        put16m(e(0xFFFFC202u), 0x420);
+        put16m(e(0xFFFFC300u), 0xA14);
+        put8(e(0xFFFFC303u), 0x16);
+        c->d[0] = 0; F_L(0);
+        call(SET_ANIM);
+        put8(e(0xFFFFD401u), 0);
+        e_or(0xFFFFC000u, 0x40);
+        return;
+    }
+    move_b(0, rd8(e(0xFFFFD401u)));
+    if (!(c->d[0] & 0xFF)) {                            /* step 0: waiting */
+        F_W(rd16(e(0xFFFFD300u)));
+        if (rd16(e(0xFFFFD300u))) {
+            F_B(rd8(e(0xFFFFD800u)));
+            if (!rd8(e(0xFFFFD800u))) return;
+            if (e_dec(0xFFFFD800u)) return;
+        } else {
+            c->d[0] = set_w(c->d[0], rd16(0xFFFF965Au)); F_W(c->d[0]);
+            and_w(0, 0x3F);
+            if (c->d[0] & 0xFFFF) return;
+            c->a[2] = sx(rd16(PLAYER_ENT));
+            c->d[0] = set_w(c->d[0], rd16(e(0xFFFFC800u))); F_W(c->d[0]);
+            c->d[0] = set_w(c->d[0], abs_diff_w(c->d[0], rd16(c->a[2] - 0x3800)));
+            cmp_w(&c->ccr, 0x10, c->d[0]);
+            if ((c->d[0] & 0xFFFF) < 0x10) return;
+        }
+        e_inc(0xFFFFD401u, 1);                          /* rising */
+        c->d[0] = set_w(c->d[0], rd16(e(0xFFFFD300u))); F_W(c->d[0]);
+        put16m(e(0xFFFFCA02u), rises[(c->d[0] & 0xFFFF) / 2]);
+        c->d[0] = 2; F_L(2);
+        call(SET_ANIM);
+        return;
+    }
+    c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 1, c->d[0]));
+    if (!(c->d[0] & 0xFF)) {                            /* step 1: rising, the player on it thrown */
+        call(ACCEL_Y);
+        call(APPLY_VEL_Y);
+        c->a[2] = sx(rd16(PLAYER_ENT));
+        cmp_w(&c->ccr, 0x10A0, rd16(e(0xFFFFC900u)));
+        if (rd16(e(0xFFFFC900u)) >= 0x10A0) goto falling;
+        c->d[0] = set_w(c->d[0], rd16(c->a[2] - 0x3800)); F_W(c->d[0]);
+        c->d[0] = set_w(c->d[0], abs_diff_w(c->d[0], rd16(e(0xFFFFC800u))));
+        cmp_w(&c->ccr, 0x12, c->d[0]);
+        if ((c->d[0] & 0xFFFF) >= 0x12) goto falling;
+        c->d[2] = 0x16; F_L(0x16);
+        c->d[0] = set_w(c->d[0], rd16(c->a[2] - 0x3700)); F_W(c->d[0]);
+        c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[2], c->d[0]));
+        cmp_w(&c->ccr, rd16(e(0xFFFFC900u)), c->d[0]);
+        if ((c->d[0] & 0xFFFF) < rd16(e(0xFFFFC900u))) goto falling;
+        c->d[1] = set_w(c->d[1], rd16(c->a[2] - 0x2DFE)); F_W(c->d[1]);
+        c->d[1] = set_w(c->d[1], add_w(&c->ccr, c->d[2], c->d[1]));
+        cmp_w(&c->ccr, rd16(e(0xFFFFD202u)), c->d[1]);
+        if ((c->d[1] & 0xFFFF) >= rd16(e(0xFFFFD202u))) goto falling;
+        put16m(e(0xFFFFC900u), c->d[0]);
+        e_inc(0xFFFFD401u, 1);
+        c->d[0] = set_w(c->d[0], rd16(e(0xFFFFD302u))); F_W(c->d[0]);
+        if (c->d[0] & 0xFFFF) { c->a[0] = sx(c->d[0]); put8(c->a[0] - 0x2800, 0x18); }
+        c->d[0] = set_w(c->d[0], 0xFA00); F_W(0xFA00);
+        uint32_t t = c->a[2]; c->a[2] = c->a[4]; c->a[4] = t;
+        call(THROW_UP);
+        t = c->a[2]; c->a[2] = c->a[4]; c->a[4] = t;
+        c->d[0] = 0x33; F_L(0x33);
+        call(QUEUE_SOUND);
+        put16m(e(0xFFFFCA02u), 0);
+        c->d[0] = 4; F_L(4);
+        call(SET_ANIM);
+        return;
+    falling:
+        F_W(rd16(e(0xFFFFCA02u)));
+        if (rd16(e(0xFFFFCA02u)) & 0x8000) return;
+    } else {                                            /* step 2: falling back */
+        call(ACCEL_Y);
+        call(APPLY_VEL_Y);
+    }
+    c->d[0] = set_w(c->d[0], 0x10B0); F_W(0x10B0);      /* down at the floor: waiting again */
+    cmp_w(&c->ccr, rd16(e(0xFFFFC900u)), c->d[0]);
+    if (rd16(e(0xFFFFC900u)) <= 0x10B0) return;
+    put16m(e(0xFFFFC900u), c->d[0]);
+    put16m(e(0xFFFFD202u), c->d[0]);
+    c->d[0] = 0; F_L(0);
+    put8(e(0xFFFFD401u), 0);
+    put8(e(0xFFFFD800u), 0);
+    call(SET_ANIM);
+    put8(e(0xFFFFD401u), 0);
+}
+
+/* $B236, kind 14: a thing set off from the player (8 across, 2 down) drifting right, its frame
+ * on every 4 frames to the fourth, gone at $1050 across */
+static void room_obj_drift(void)
+{
+    f_bit(rd8(e(0xFFFFC000u)) >> 6 & 1);
+    if (!(rd8(e(0xFFFFC000u)) & 0x40)) {
+        call(CLEAR_ENTITY);
+        put16m(e(0xFFFFC300u), 0x1622);
+        c->d[0] = 0; F_L(0);
+        call(SET_ANIM);
+        put8(e(0xFFFFC303u), 0xE);
+        e_or(0xFFFFC002u, 0x80);
+        c->a[0] = sx(rd16(PLAYER_ENT));
+        c->d[0] = set_w(c->d[0], rd16(c->a[0] - 0x3800)); F_W(c->d[0]);
+        c->d[0] = set_w(c->d[0], add_w(&c->ccr, 8, c->d[0]));
+        put16m(e(0xFFFFC800u), c->d[0]);
+        c->d[0] = set_w(c->d[0], rd16(c->a[0] - 0x3700)); F_W(c->d[0]);
+        c->d[0] = set_w(c->d[0], add_w(&c->ccr, 2, c->d[0]));
+        put16m(e(0xFFFFC900u), c->d[0]);
+        put16m(e(0xFFFFD800u), 4);
+        put16m(e(0xFFFFCA00u), 0x200);
+        e_or(0xFFFFC000u, 0x40);
+        return;
+    }
+    call(APPLY_VEL_X);
+    cmp_w(&c->ccr, 0x1050, rd16(e(0xFFFFC800u)));
+    if (rd16(e(0xFFFFC800u)) >= 0x1050) { put8(e(0xFFFFC000u), 0); return; }
+    if (e_dec(0xFFFFD801u)) return;
+    put8(e(0xFFFFD801u), 4);
+    e_inc(0xFFFFD800u, 2);
+    move_b(0, rd8(e(0xFFFFD800u)));
+    cmp_byte(8, c->d[0]);
+    if ((c->d[0] & 0xFF) >= 8) return;
+    mem_add_w(e(0xFFFFCA00u), 1);
+    call(SET_ANIM);
+}
+
+/* $B2BA: the block at cell (d6, d7) of plane A shattered: emptied, and four pieces ($206-$20C)
+ * thrown from its quarters while there are free items */
+static void block_shatter(void)
+{
+    link(-4);
+    c->a[7] -= 2; wr16(c->a[7], c->a[4]);
+    put16m(c->a[6] - 2, c->d[6]);
+    put16m(c->a[6] - 4, c->d[7]);
+    c->d[0] = 0; F_L(0);
+    push32(0xB2CE); cell_set_a(); c->a[7] += 4;
+    c->d[6] = set_w(c->d[6], lsl_n(&c->ccr, c->d[6], 4, 16));
+    c->d[6] = set_w(c->d[6], add_w(&c->ccr, 4, c->d[6]));
+    put16m(c->a[6] - 2, c->d[6]);
+    c->d[7] = set_w(c->d[7], lsr_n(&c->ccr, c->d[7], 2, 16));
+    c->d[7] = set_w(c->d[7], add_w(&c->ccr, 4, c->d[7]));
+    put16m(c->a[6] - 4, c->d[7]);
+    for (uint32_t k = 0; k < 4; k++) {
+        c->d[1] = set_w(c->d[1], rd16(c->a[6] - 2)); F_W(c->d[1]);
+        if (k & 1) c->d[1] = set_w(c->d[1], add_w(&c->ccr, 8, c->d[1]));
+        c->d[2] = set_w(c->d[2], rd16(c->a[6] - 4)); F_W(c->d[2]);
+        if (k & 2) c->d[2] = set_w(c->d[2], add_w(&c->ccr, 8, c->d[2]));
+        c->d[0] = set_w(c->d[0], 0x206 + 2 * k); F_W(c->d[0]);
+        call(SPAWN_ITEM);
+        if (!(c->ccr & CC_Z)) break;
+    }
+    c->a[4] = sx(rd16(c->a[7])); c->a[7] += 2;
+    unlk();
+}
+
+ENTRY(RoomObjFall, room_obj_fall)          /* $B00A */
+ENTRY(FallCell, fall_cell)                 /* $B0CC */
+ENTRY(RoomObjLift, room_obj_lift)          /* $B0DA */
+ENTRY(RoomObjDrift, room_obj_drift)        /* $B236 */
+ENTRY(BlockShatter, block_shatter)         /* $B2BA */

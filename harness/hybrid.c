@@ -710,7 +710,7 @@ int hybrid_fuzz(const char *name, long count)
         for (int i = 0; i < 8; i++) m68k_set_reg(M68K_REG_D0 + i, rnd() << 16 ^ rnd());
         m68k_set_reg(M68K_REG_A4, (rnd() & 63) * 4);
         m68k_set_reg(M68K_REG_SR, (m68k_get_reg(NULL, M68K_REG_SR) & ~0x1Fu) | (rnd() & 0x1F));
-        if (strncmp(name, "Obj", 3) && strncmp(name, "Ppl", 3) && strncmp(name, "Hnd", 3) && strncmp(name, "Act", 3))   /* these keep the state's entities (below) */
+        if (strncmp(name, "Obj", 3) && strncmp(name, "Ppl", 3) && strncmp(name, "Hnd", 3) && strncmp(name, "Act", 3) && strncmp(name, "RoomObj", 7))   /* these keep the state's entities (below) */
             for (uint32_t a = 0xC000; a < 0xE000; a++) ram[a] = (uint8_t)rnd();
         for (uint32_t a = 0x8A52; a < 0x8A56; a++) ram[a] = (uint8_t)(rnd() & (k & 1 ? 0xFF : 0));  /* seed 0 half the time */
         /* the status screen's primitives (port/status.c): its menus' indexes as the game gives
@@ -1177,6 +1177,40 @@ int hybrid_fuzz(const char *name, long count)
             for (uint32_t k4 = 0; k4 < 32; k4++) { if (rnd() % 2) ram[0x99BE + k4] = (uint8_t)rnd(); if (rnd() % 2) ram[0x9992 + k4] = (uint8_t)rnd(); }
             m68k_set_reg(M68K_REG_A4, 4 * (rnd() % 16));
             if (!strcmp(name, "GateCell")) m68k_set_reg(M68K_REG_D0, (rnd() << 16) | (rnd() & 0x3FF));
+        }
+        if (!strncmp(name, "RoomObj", 7)) {         /* a room object (slots $E0-$FC) of the routine's kind, begun or not, at its step, the player near */
+            uint32_t e = 0xE0 + 4 * (rnd() % 8), p = (uint32_t)ram[0x9EEE] << 8 | ram[0x9EEF], begun = rnd() % 4 ? 0x40 : 0;
+            m68k_set_reg(M68K_REG_A4, e);
+            ram[0xC000 + e] = (uint8_t)(0x80 | begun | (rnd() & 1));
+            ram[0xD401 + e] = (uint8_t)(rnd() % 3);
+            ram[0xC600 + e] = (uint8_t)(rnd() % 2 ? 0 : rnd());
+            put_word(0xCA00 + e, (uint32_t)small(0x300)); put_word(0xCA02 + e, (uint32_t)small(0x700));
+            if (!strcmp(name, "RoomObjFall")) {
+                uint32_t cx = 0x100 + rnd() % 0x40, cy = (0x100 + rnd() % 0x20) << 6, step = ram[0xD401 + e];
+                put_word(0xDA00 + e, rnd() % 2 ? 0 : 3); put_word(0xDB00 + e, cx); put_word(0xDB02 + e, cy);
+                ram[0xCE02 + e] = (uint8_t)(1 + rnd() % 2);
+                put_word(0xC300 + e, step == 2 ? 0x1208 : rnd() % 2 ? 0x0602 : 0x0604);
+                put_word(0xC800 + e, (cx << 4 & 0xFFFF) + 8); put_word(0xC900 + e, (cy >> 2) + 8 + rnd() % 0x40);
+            }
+            if (!strcmp(name, "RoomObjLift")) {
+                static const uint16_t xs[4] = { 0x1500, 0x1530, 0x1560, 0x1590 };
+                uint32_t i = rnd() % 4, y = 0x1040 + rnd() % 0x80;
+                put_word(0xD300 + e, 2 * i); put_word(0xC300 + e, 0xA14);
+                put_word(0xC800 + e, xs[i]); put_word(0xC900 + e, y); put_word(0xD202 + e, y + small(8));
+                ram[0xD800 + e] = (uint8_t)(rnd() % 3);
+                put_word(0xD302 + e, rnd() % 2 ? 0 : 0xC0 + 4 * (rnd() % 8));
+                if (rnd() % 2) put_word(0x965A, rnd() % 2 ? 0 : rnd());
+                put_word(0xC800 + p, xs[i] + small(0x18)); put_word(0xC900 + p, y - 0x16 + small(4)); put_word(0xD202 + p, y - 0x16 + small(0x20));
+            }
+            if (!strcmp(name, "RoomObjDrift")) {
+                put_word(0xC300 + e, 0x1622); put_word(0xC800 + e, 0x1000 + rnd() % 0x60);
+                ram[0xD800 + e] = (uint8_t)(2 * (rnd() % 4)); ram[0xD801 + e] = (uint8_t)(1 + rnd() % 2);
+                put_word(0xCA00 + e, 0x200 + rnd() % 4);
+            }
+        }
+        if (!strcmp(name, "BlockShatter")) {
+            m68k_set_reg(M68K_REG_D6, (rnd() << 16) | (0x100 + rnd() % 0x40)); m68k_set_reg(M68K_REG_D7, (rnd() << 16) | ((0x100 + rnd() % 0x20) << 6));
+            for (uint32_t k4 = 0; k4 < 16; k4++) if (rnd() % 2) ram[0xC080 + 4 * k4] = 0;   /* some items free */
         }
         if (!strcmp(name, "CrumbleAdd")) {          /* some walls' records taken */
             for (uint32_t k4 = 0; k4 < 4; k4++) ram[0x9B96 + 8 * k4] = (uint8_t)(rnd() % 3 ? 0x80 | rnd() % 4 : 0);
