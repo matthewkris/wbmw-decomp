@@ -473,3 +473,356 @@ static void range_turn(void) { past_range(); if (!(c->ccr & CC_C)) turn(); }    
 ENTRY(RangeTurn, range_turn)
 ENTRY(PastRange80, past_range_80)          /* $45F0 */
 ENTRY(PastRange, past_range)               /* $45F4 */
+
+/* ---- batch T46: ranges and edges, touching the player, defeat and despawning, damage ---- */
+
+#define PLAYER_ENT    0xFFFF9EEEu   /* word: the player's slot */
+#define FALL_FLAGS    0xFFFF9F03u   /* bit 6: the shield is up; bit 5: the hit counts double */
+#define DAMAGE_SHOWN  0xFFFF9628u   /* words: the enemy's maximum and health, for the HUD */
+
+/* $4616: cs if the target ($A11C) is within d2 of its home (-$2100) across (d1: the distance) */
+static void target_from_home(void)
+{
+    target();
+    c->d[1] = set_w(c->d[1], sub_w(&c->ccr, rd16(e(-0x2100)), rd16(o(-0x3800))));
+    if (c->ccr & CC_C) neg_d(1);
+    cmp_w(&c->ccr, c->d[2], c->d[1]);
+}
+/* $4646: on a moving platform (-$2D00), 0 at its end the way it moves, 1 otherwise; -1 (mi) when
+ * not on one */
+static void edge_ahead(void)
+{
+    c->d[0] = set_b(c->d[0], rd8(e(-0x3100)) & 0x8A);
+    cmp_b(&c->ccr, 0x82, c->d[0]);
+    if ((c->d[0] & 0xFF) != 0x82) { c->d[0] = 0xFFFFFFFFu; F_L(c->d[0]); return; }
+    c->a[0] = sx(rd16(e(-0x2D00)));
+    c->d[0] = set_w(c->d[0], rd16(c->a[0] - 0x601E));
+    int16_t v = (int16_t)rd16(e(-0x3600));
+    int one;
+    if (!v) one = 1;
+    else if (v > 0) {
+        c->d[0] = set_w(c->d[0], c->d[0] + rd16(c->a[0] - 0x5F76));
+        one = (uint16_t)c->d[0] >= rd16(e(-0x3800));
+    } else {
+        c->d[0] = set_w(c->d[0], c->d[0] - rd16(c->a[0] - 0x5F76));
+        one = (uint16_t)c->d[0] < rd16(e(-0x3800));
+    }
+    c->d[0] = one ? 1 : 0; F_L(c->d[0]);
+}
+/* $4686: 0 (z) if there is no floor ahead the way it moves ($30DA's d2 bit 3 clear); 1 standing */
+static void ground_ahead(void)
+{
+    c->d[6] = rd8(e(-0x34FE));
+    int16_t v = (int16_t)rd16(e(-0x3600));
+    if (!v) { c->d[0] = 1; F_L(1); return; }
+    if (v < 0) neg_d(6);
+    c->d[6] = set_w(c->d[6], add_w(&c->ccr, rd16(e(-0x3800)), c->d[6]));
+    c->d[7] = rd8(e(-0x34FD));
+    c->d[7] = set_w(c->d[7], add_w(&c->ccr, rd16(e(-0x3700)), c->d[7]));
+    c->d[6] = set_w(c->d[6], (uint16_t)c->d[6] >> 4);
+    c->d[7] = set_w(c->d[7], (c->d[7] & 0xFFF0) << 2);
+    c->a[3] = 0xFFFF9754u;
+    call(0x30DA);
+    f_bit(c->d[2] >> 3 & 1);
+}
+/* the edge test of $462A: z when it would walk off (its platform's end, or no floor) */
+static int at_edge(void)
+{
+    edge_ahead();
+    if (c->ccr & CC_N) ground_ahead();
+    return (c->ccr & CC_Z) != 0;
+}
+static int edge_turn_return(void) { if (!at_edge()) return 0; turn(); return 1; }   /* $462A */
+static void edge_turn(void) { if (at_edge()) turn(); }                             /* $463A (unreferenced) */
+/* $46C6: ACCEL_X d0 by its facing; $46BE: a quarter of its speed */
+static void accel_facing(void)
+{
+    if (facing_left()) neg_d(0);
+    put16(e(-0x3400), c->d[0]);
+}
+static void fly_facing(void) { c->d[0] = (uint32_t)rd16(e(-0x3300)) >> 2; accel_facing(); }
+/* $46DA: moved and kept out of the walls ($3FAC, $3F58), splashing in water when on the screen
+ * ($DD7C), its sprite ($2FD0); $46D6: falling first ($B44) */
+static void enemy_move(void)
+{
+    call(0x3FAC);
+    call(0x3F58);
+    f_bit(rd8(e(-0x4000)) & 1);
+    if (rd8(e(-0x4000)) & 1) call(0xDD7C);
+    call(0x2FD0);
+}
+static void fall_and_move(void) { call(0xB44); enemy_move(); }
+/* $492E: kind d0's maximum health (the table at $1BA6C, 3 bytes a kind) times 32; $4928 its own */
+static void health_of(void)
+{
+    c->a[0] = 0x1BA6C;
+    c->a[0] += sx(rd16(c->a[0]));
+    c->d[1] = set_w(c->d[1], c->d[0]);
+    c->d[1] = set_w(c->d[1], c->d[1] * 2);
+    c->d[0] = set_w(c->d[0], c->d[0] + c->d[1]);
+    c->d[0] = set_b(c->d[0], rd8(c->a[0] + sx(c->d[0])));
+    c->d[0] = set_w(c->d[0], (c->d[0] & 0xFF) << 5);
+    c->ccr = (uint16_t)(c->d[0] & 0xFFFF ? 0 : CC_Z);
+}
+static void max_health(void) { c->d[0] = rd8(e(-0x2BFD)); health_of(); }
+/* $4948: when hurt by the player (its kind 0, $D503 bit 2), its health shown on the HUD */
+static void damage_shown(void)
+{
+    F_B(rd8(e(-0x2BFE)));
+    if (rd8(e(-0x2BFE))) return;
+    f_bit(rd8(e(-0x2AFD)) >> 2 & 1);
+    if (!(rd8(e(-0x2AFD)) & 4)) return;
+    max_health();
+    wr16(DAMAGE_SHOWN, (uint16_t)c->d[0]);
+    put16(DAMAGE_SHOWN + 2, rd16(e(-0x2600)));
+}
+/* $472A: z when the player (a2) is on the side it faces */
+static int player_ahead(void)
+{
+    c->d[0] = 0;
+    c->d[1] = set_w(c->d[1], sub_w(&c->ccr, rd16(e(-0x3800)), rd16(o(-0x3800))));
+    if (c->ccr & CC_C) c->d[0] = 8;
+    c->d[1] = 8 & rd8(e(-0x3FFE));
+    c->d[0] = set_b(c->d[0], c->d[0] ^ c->d[1]); F_B(c->d[0]);
+    return !(c->d[0] & 0xFF);
+}
+/* $4742: with the shield up: the shield's touch ($D2C, $C36); a hit marks the shield's side in
+ * $9F13 (by the angle, $1042) and itself as hit by it, no damage */
+static void shield_hit(void)
+{
+    call(0xD2C);
+    call(0xC36);
+    F_B(rd8(e(-0x2AFD)));
+    if (!rd8(e(-0x2AFD))) return;
+    c->d[0] = set_w(c->d[0], rd16(e(-0x3800)) - rd16(o(-0x3800)));
+    c->d[1] = set_w(c->d[1], rd16(e(-0x3700)) - rd16(o(-0x3700)));
+    call(0x1042);
+    uint16_t w = (uint16_t)c->d[3];
+    c->d[3] = set_w(c->d[3], (uint16_t)(w << 3 | w >> 13));
+    wr8(0xFFFF9F13u, (uint8_t)(rd8(0xFFFF9F13u) | 1 << (c->d[3] & 7)));
+    or8(e(-0x2AFD), 0x80);
+    put16(e(-0x23FE), 0);
+}
+static int shield_up(void) { c->a[2] = sx(rd16(PLAYER_ENT)); int on = rd8(FALL_FLAGS) >> 6 & 1; f_bit(on); return on; }
+/* $46F4: touching the player, or the shield: the hits each way where each faces the other */
+static void shield_contact(void)
+{
+    if (shield_up()) shield_hit();
+    else {
+        if (player_ahead()) { call(0xC36); if (!(c->ccr & CC_Z)) goto second; }
+        call(0xE64);
+        call(0xD6E);
+    }
+second:
+    if (player_ahead()) { call(0xC3E); if (!(c->ccr & CC_Z)) return; }
+    call(0xD76);
+    damage_shown();
+}
+/* $4778: the player (or the shield) against it */
+static void player_touch(void)
+{
+    if (shield_up()) shield_hit(); else call(0xE64);
+    damage_shown();
+}
+/* $4792: touching, and the sword */
+static void player_contact_all(void)
+{
+    if (shield_up()) shield_hit(); else call(0xE64);
+    call(0xD76);
+    damage_shown();
+}
+/* $47AE: the shield, or touching unless the sword's touch ($D2C) hit */
+static void player_contact_shield(void)
+{
+    if (shield_up()) shield_hit();
+    else { call(0xD2C); if (c->ccr & CC_Z) call(0xE64); }
+    damage_shown();
+}
+/* $47D2: the enemies frozen ($A14A): kinds 0-2 in use: 2 and undrawn ones gone, drawn ones in
+ * state 1 */
+static void freeze_enemies(void)
+{
+    wr8(0xFFFFA14Au, 0xFF);
+    c->a[2] = sx(rd16(0xFFFFA11Au));
+    c->d[2] = 0xF;
+    for (int k = 0; k < 16; k++) {
+        if (rd8(o(-0x4000)) & 0x80) {
+            uint8_t kind = rd8(o(-0x2BFE));
+            if (kind <= 2) {
+                if (kind == 2 || !(rd8(o(-0x4000)) & 0x40)) wr16(o(-0x4000), 0);
+                else {
+                    c->d[0] = 0x7F & rd8(o(-0x2BFF));
+                    if ((c->d[0] & 0xFF) != 1) wr8(o(-0x2BFF), 1);
+                }
+            }
+        }
+        c->a[2] += 4;
+    }
+    c->d[2] = 0xFFFF;
+}
+/* $4814: gone; its spawn point (-$2B00) can make another (its count, unless done) */
+static void despawn(void)
+{
+    put16(e(-0x4000), 0);
+    c->d[0] = set_w(c->d[0], rd16(e(-0x2B00))); F_W(c->d[0]);
+    if (c->d[0] & 0x8000) return;
+    c->a[0] = sx(c->d[0]);
+    F_B(rd8(c->a[0] - 0x5DB4));
+    if (rd8(c->a[0] - 0x5DB4) & 0x80) return;
+    wr8(c->a[0] - 0x5DB1, (uint8_t)(rd8(c->a[0] - 0x5DB1) + 1));
+}
+/* $482C: defeated: counted ($A148); its spawn point's count, and when all are beaten its flag
+ * (room or game, $A33E) and its prize ($A33C: $FE none); else, unless frozen, a random drop from
+ * its kind's three ($1C170: $FF none); a drop of $80 up is a big item ($F80 more) */
+static void enemy_defeated(void)
+{
+    wr16(0xFFFFA148u, (uint16_t)(rd16(0xFFFFA148u) + 1));
+    c->d[0] = set_w(c->d[0], rd16(e(-0x2B00)));
+    if (c->d[0] & 0x8000) goto gone;
+    c->a[3] = sx(c->d[0]);
+    c->d[0] = set_b(c->d[0], rd8(c->a[3] - 0x5DB2) + 1);
+    wr8(c->a[3] - 0x5DB2, (uint8_t)c->d[0]);
+    if ((c->d[0] & 0xFF) == rd8(c->a[3] - 0x5DB4)) {
+        c->d[0] = set_b(c->d[0], rd8(c->a[3] - 0x5CC1));
+        uint8_t how = rd8(c->a[3] - 0x5CC2);
+        if (!(how & 0x80)) {
+            if (how) call(0x2752);
+            else {
+                call(0x2758);
+                uint32_t a = c->a[0] + sx(c->d[1]);
+                wr8(a, (uint8_t)(rd8(a) | 1 << (c->d[0] & 7)));
+            }
+        }
+        c->d[0] = rd16(c->a[3] - 0x5CC4);
+        if (!(c->d[0] & 0x8000)) {
+            if ((c->d[0] & 0xFFFF) == 0xFE) goto gone;
+            goto drop;
+        }
+    }
+    if (rd8(0xFFFFA14Au) & 0x80) goto gone;
+    c->a[0] = 0x1C170 + 2 * rd8(e(-0x2BFD));
+    call(RANDOM);
+    for (c->d[1] = 2;; ) {
+        int out = c->d[0] & 1; c->d[0] = set_w(c->d[0], (c->d[0] & 0xFFFF) >> 1);
+        if (out) break;
+        out = c->d[0] & 1; c->d[0] = set_w(c->d[0], (c->d[0] & 0xFFFF) >> 1);
+        if (out) break;
+        c->a[0] += 1;
+        c->d[1] = set_w(c->d[1], c->d[1] - 1);
+        if ((c->d[1] & 0xFFFF) == 0xFFFF) break;
+    }
+    c->d[0] = rd8(c->a[0]);
+    if (c->d[0] == 0xFF) goto gone;
+drop:
+    if (c->d[0] & 0x80) c->d[0] = set_w(c->d[0], c->d[0] + 0xF80);
+    put8(e(-0x27FF), 0);
+    c->d[1] = set_w(c->d[1], rd16(e(-0x3800)));
+    c->d[2] = set_w(c->d[2], rd16(e(-0x3700)));
+    call(0x10910);
+    return;
+gone:
+    put16(e(-0x4000), 0);
+}
+/* $48C4: off the screen and not held there, out of the water's reach: despawned, and the caller
+ * returns (1). Floating or swimming ones need the screen's margin ($40 across, $30 down) */
+static int offscreen_despawn(void)
+{
+    if (rd8(e(-0x4000)) & 1) return 0;
+    if (rd8(e(-0x3200)) & 1) return 0;
+    if (rd8(0xFFFF966Bu) & 0x20) return 0;
+    c->d[0] = 6 & rd8(e(-0x3200));
+    if ((c->d[0] & 0xFF) && (c->d[0] & 0xFF) != 6) {
+        call(0xBEE);
+        if (c->ccr & CC_Z) return 0;
+    } else {
+        c->d[2] = 0x40;
+        c->d[0] = set_w(c->d[0], rd16(e(-0x3800)));
+        call(0xBD0);
+        if (!(c->ccr & CC_N)) {
+            c->d[2] = 0x30;
+            c->d[0] = set_w(c->d[0], rd16(e(-0x3700)));
+            call(0xBFE);
+            if (!(c->ccr & CC_N)) return 0;
+        }
+    }
+    despawn();
+    return 1;
+}
+/* $4910: a0 the entry after kind d1 in the room's list of kinds ($A122, $A142 of them); a kind
+ * not in it stops the game (the original loops for ever: left to it) */
+static int room_kind(void)
+{
+    c->a[0] = 0xFFFFA122u;
+    c->d[0] = set_w(c->d[0], rd16(0xFFFFA142u));
+    for (;;) {
+        uint16_t k = rd16(c->a[0]); c->a[0] += 2;
+        cmp_w(&c->ccr, k, c->d[1]);
+        if (k == (uint16_t)c->d[1]) return 0;
+        c->a[0] += 2;
+        c->d[0] = set_b(c->d[0], c->d[0] - 1);
+        if (!(c->d[0] & 0xFF)) { port_continue_at(c, 0x4922, 0); return 1; }
+    }
+}
+/* $4964: d0 scaled by its level's divisor (-$26FE into $4972) over 64 */
+static void scale_damage(void)
+{
+    c->d[1] = set_w(c->d[1], rd16(e(-0x26FE)));
+    c->d[1] = set_b(c->d[1], rd8(0x4972 + sx(c->d[1])));
+    c->d[0] = (uint32_t)(uint16_t)c->d[0] * (uint16_t)c->d[1];
+    c->d[0] >>= 6;
+}
+/* $4986: hurt by the player: sound $1F, its maximum for the HUD; the sword's damage (scaled), on
+ * a doubled hit less the double's time ($9F16); any magic's damage; its health less that, at 0
+ * beaten (z) */
+static void damage_enemy(void)
+{
+    c->d[0] = 0x1F; call(0x366);
+    max_health();
+    wr16(DAMAGE_SHOWN, (uint16_t)c->d[0]);
+    c->d[0] = 0;
+    c->d[2] = set_w(c->d[2], rd16(e(-0x2600)));
+    if ((rd8(e(-0x2AFD)) & 0x80) && rd16(e(-0x23FE))) {
+        c->d[0] = set_w(c->d[0], rd16(e(-0x23FE)));
+        scale_damage();
+        if ((rd8(FALL_FLAGS) & 0x20) && (rd8(e(-0x2AFD)) & 8) && rd16(0xFFFF9F16u)) {
+            c->d[1] = set_w(c->d[1], rd16(0xFFFF9F16u));
+            c->d[0] = set_w(c->d[0], c->d[0] * 2);
+            c->d[3] = set_w(c->d[3], (rd16(e(-0x2300)) & 0xC0) >> 5);
+            int16_t t = (int16_t)((uint16_t)c->d[1] - rd16(0x49F0 + (c->d[3] & 0xFFFF)));
+            c->d[1] = t < 0 ? 0 : set_w(c->d[1], (uint16_t)t);
+            wr16(0xFFFF9F16u, (uint16_t)c->d[1]);
+        }
+    }
+    if (rd8(e(-0x21FF)) & 0x80) c->d[0] = set_w(c->d[0], c->d[0] + rd16(e(-0x21FE)));
+    if ((uint16_t)c->d[2] > (uint16_t)c->d[0]) c->d[2] = set_w(c->d[2], c->d[2] - c->d[0]);
+    else c->d[2] = 0;
+    wr16(e(-0x2600), (uint16_t)c->d[2]);
+    put16(DAMAGE_SHOWN + 2, c->d[2]);
+}
+
+ENTRY(TargetFromHome, target_from_home)    /* $4616 */
+ENTRY_POP(EdgeTurnReturn, edge_turn_return)   /* $462A */
+ENTRY(EdgeTurn, edge_turn)                 /* $463A */
+ENTRY(EdgeAhead, edge_ahead)               /* $4646 */
+ENTRY(GroundAhead, ground_ahead)           /* $4686 */
+ENTRY(FlyFacing, fly_facing)               /* $46BE */
+ENTRY(AccelFacing, accel_facing)           /* $46C6 */
+ENTRY(FallAndMove, fall_and_move)          /* $46D6 */
+ENTRY(EnemyMove, enemy_move)               /* $46DA */
+ENTRY(ShieldContact, shield_contact)       /* $46F4 */
+static void player_ahead_entry(void) { player_ahead(); }
+ENTRY(PlayerAhead, player_ahead_entry)     /* $472A */
+ENTRY(ShieldHit, shield_hit)               /* $4742 */
+ENTRY(PlayerTouch, player_touch)           /* $4778 */
+ENTRY(PlayerContactAll, player_contact_all)   /* $4792 */
+ENTRY(PlayerContactShield, player_contact_shield)   /* $47AE */
+ENTRY(FreezeEnemies, freeze_enemies)       /* $47D2 */
+ENTRY(Despawn, despawn)                    /* $4814 */
+ENTRY(EnemyDefeated, enemy_defeated)       /* $482C */
+ENTRY_POP(OffscreenDespawn, offscreen_despawn)   /* $48C4 */
+void RoomKind(Cpu *cpu) { c = cpu; if (!room_kind()) c->ret = 0; }   /* $4910 */
+ENTRY(MaxHealth, max_health)               /* $4928 */
+ENTRY(HealthOf, health_of)                 /* $492E */
+ENTRY(DamageShown, damage_shown)           /* $4948 */
+ENTRY(ScaleDamage, scale_damage)           /* $4964 */
+ENTRY(DamageEnemy, damage_enemy)           /* $4986 */

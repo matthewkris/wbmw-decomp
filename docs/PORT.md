@@ -2757,6 +2757,29 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 entries that pop their caller's frame caught every case they ran, then ran away: a sabotaged
 return pops a wrong address. Replace mode: thirteen runs, no problems.
 
+#### The enemy library, batch T46: ranges and edges, the player's touch, defeat, damage (2026-10-14)
+
+* In `port/enemylib.c`, twenty-five entries from `$4616` to `$49F8`:
+  * The target within range of home (`$4616`, cs).
+  * A moving platform's end and the floor ahead (`$4646`, `$4686`), and turning at an edge
+    (`$462A`, which returns from its caller, and `$463A`).
+  * Acceleration by its facing (`$46BE`, `$46C6`); moving and falling (`$46D6`, `$46DA`).
+  * The player's touch, the sword and the shield (`$46F4`-`$47AE`, with `$472A` and `$4742`).
+  * Freezing the enemies (`$47D2`).
+  * Despawning (`$4814`). Defeat (`$482C`): the spawn point's count, its flag and prize, or a
+    random drop.
+  * Despawning off the screen (`$48C4`, which returns from its caller).
+  * The room's kind list (`$4910`, a0). A kind not in the list makes the original loop for ever
+    at `$4922`: left to it, and in `analysis/coverage_skip.txt`.
+  * Maximum health (`$4928`, `$492E`); the HUD's display of it (`$4948`).
+  * The damage taken (`$4964`, `$4986`: z when beaten).
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(46 runs, all complete; 1,243,365 checked calls). 750,000 fuzz cases from six states,
+0 mismatches, every instruction covered. Self-test caught 100 in 100 for twenty-three. The two
+entries that pop their caller's frame caught every case they ran, then ran away. Replace mode:
+thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
