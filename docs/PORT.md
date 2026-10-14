@@ -2343,6 +2343,45 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 mismatches, every instruction covered. Self-test caught 100 in 100 for each. Replace mode:
 thirteen runs, no problems.
 
+#### The room changes, batch T31: the rooms' scripts 15 and 19-23, the scripts' helpers (2026-10-14)
+
+This finishes the scripts' table. In `port/rooms.c`:
+
+* Index 15 (area 14's room 6), each frame (`$D766`). After 30 frames the player walks right
+  (`$D87E`). At `$1020` it stops and message `$60` runs (`$DB0A`). Then sound 55 and an effect
+  of kind `$E` every 6 frames, 32 times. Then a figure, with the effects at `$D886`, until its
+  animation ends, followed by message `$61`. Item `$3A` is taken (`$24DC`) and game flag `$43`
+  set.
+* Index 19 (area 9's room 8), each frame (`$D894`). Past `$1140` the player is walked on
+  (`$D942`: right while slow, jumping below `$1068`). Past `$1270`, unless game flag `$3E` is
+  set, the picture at `$D92A` is put at (`$12C`, `$4140`). Once it has streamed, message `$58`
+  runs and the player gets control back.
+* Index 20 (area 6's rooms 6 and 8). The music's tempo (`$D9A2`) goes from 0 to 5 by the
+  player's place, 6 more outside area 6's room 6. It is written to the Z80's RAM at `$1C2B`
+  under a bus request, as the original does. The setup (`$D976`) starts the room's music if it
+  is not playing, then sound -5, unless game flag `$38` is set.
+* Indexes 21 and 22 (area 4's room 3, area 2's room 1): a spot and a message (`$DA00`,
+  `$DA90`). Pressing up there on the ground, for 8 frames, runs the message (`$DA18`). Its
+  contract is SP only, as `$DE6A`'s (PlayerInput), which it calls.
+* Index 23 (area 12's room 2): its graphics streamed once game flag `$4D` or `$4E` is set
+  (`$DA9A`, `$DAC8`, `$DADA`); before that, the palette `$5200`.
+* `$DB36`: no buttons, for the player's frame routine.
+
+The scripts' steps are a chain of `subq.b #1` tests. Past the last step the original subtracts
+once per test, and the first subtraction from `$80` overflows, so the C does the same, one at a
+time; the fuzz found this in `$D894`.
+
+`$D766` and `$DB0A` wait for frames. They are written but not registered: no session reaches the
+room. The `$C7E6` driver is still the original's. The six scripts that wait (`$C91E`, `$CA66`,
+`$D068`, `$D1FE`, `$D44C`, `$D766`) are all written now, but none is registered yet, and C cannot
+call original code that waits.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(39 runs, all complete; 637,567 checked calls). The sessions run all of `$DA18` and `$DA90`.
+420,000 fuzz cases from six states, 0 mismatches, every instruction covered. Self-test caught
+100 in 100 for each. Replace mode: thirteen runs, no problems. (Fuzzing `$DB0A`, which waits,
+leaves the original unfinished; that is not a mismatch, and it is not registered.)
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
