@@ -2677,6 +2677,32 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 690,000 fuzz cases from six states, 0 mismatches, every instruction covered. Self-test caught
 100 in 100 for all twenty-three. Replace mode: thirteen runs, no problems.
 
+#### The kernel, batch T43: the colour task (2026-10-14)
+
+* In `port/vblank.c`, the colour task (`$5608`, "Kcol"). Each frame (`$560C`), unless it is
+  held, it does four things:
+  * runs the colour script (`$56BE`): waits, then (offset, colour) words into the built palette,
+    with jump commands;
+  * runs a fade in or out (`$5892`, `$58D6`, applied by `$5916`);
+  * copies the built palette for upload when anything changed;
+  * runs the colour cycle (`$579A`), whose level swings between 0 and -14.
+* Also in `port/vblank.c`:
+  * `$594A` adds a level to each component of a colour, clamped.
+  * `$581A` and `$5842` start a fade in and out (`$5868`, unreferenced, a slow fade out).
+  * `$5658` starts a colour script; `$569C` ends them; `$5766` starts a cycle; `$5986` makes the
+    palette white.
+* The fade out's end blanks the display through `$62A`, which waits for the frame in place
+  (`$3B8`), and C cannot do that.
+  * `$58D6` does the end's writes and goes on at `$62A` with `$5902` pushed, as the original's
+    `jsr` does; the check ends there.
+  * `$560C` hands that one frame to the original.
+* `analysis/coverage_skip.txt`: the script commands 0, 1 and 3 (no script in the table at `$643C`
+  uses them), and `$5902`, which runs after the wait.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(46 runs, all complete). 450,000 fuzz cases from six states, 0 mismatches, every instruction
+covered. Self-test caught 100 in 100 for all fifteen. Replace mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

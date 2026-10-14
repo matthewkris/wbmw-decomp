@@ -46,3 +46,14 @@
 00AE0A  # $ADEC, event 12 with a game flag (its first byte's bit 0): the nine event 12s in the rooms' lists all start with $00
 00AE0E
 005330  # $5314, the scroll pairs: the second wrap tests d0 (already below d3), so d1 is never cleared
+005734  # $56BE, colour script commands 0, 1 and 3 (loop start, loop end, cycle): no script in the table at $643C uses them
+005736
+00573A
+00573C
+00573E
+005742
+005744
+00574E
+005752
+005754
+005902  # $58D6, the fade out's end: its rts runs after $62A's wait for the frame, after the check has ended
