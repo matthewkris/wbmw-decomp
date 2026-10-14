@@ -7955,3 +7955,108 @@ ENTRY(CompanionChanceEnemy, companion_chance_enemy)   /* $FF56 */
 ENTRY(CompanionChanceArea, companion_chance_area)  /* $FF96 */
 ENTRY(CompanionNear, companion_near)               /* $FFC6 */
 void CompanionGone(Cpu *cpu) { c = cpu; if (companion_gone()) c->a[7] += 4; c->ret = 0; }   /* $108A2: returning from its caller */
+
+/* ---- batch T40: the door poses, leaving by an exit and coming out of one ----
+ * An exit ($F76C, from the game's loop and the room changes' sequences) shows the exit's
+ * graphics, sinks the player into it and goes to the next room; coming out ($F7EA, from the
+ * arrivals) raises the player out of it and goes back to the game's loop. Both wait for frames. */
+
+/* $DF80: the player kept still at a door (its frame flag 3), animation $C */
+static void pose_keep(void)
+{
+    c->a[4] = sx(rd16(0xFFFF9EEEu));
+    mem_or8(0xFFFF9F06u, 8);
+    c->d[0] = 0xC; F_L(0xC);
+    call(SET_ANIM);
+}
+/* $DF90: the same, animation $16 */
+static void pose_free(void)
+{
+    c->a[4] = sx(rd16(0xFFFF9EEEu));
+    mem_or8(0xFFFF9F06u, 8);
+    c->d[0] = 0x16; F_L(0x16);
+    call(SET_ANIM);
+}
+/* $F76C: the exit's graphics ($50), sound $3C, animation $16 for 3 frames; then the pose for
+ * its palette ($F7E6) until it ends; then rising (-$2000) for 8 frames; the next room */
+static void exit_room(void)
+{
+    put16m(0xFFFF8E76u, 0x50);
+    call(STREAM_GFX);
+    c->d[0] = 0x3C; F_L(0x3C);
+    call(QUEUE_SOUND);
+    c->a[4] = sx(rd16(0xFFFF9EEEu));
+    put8(p4(-0x2800), 3);
+    c->d[0] = 0x16; F_L(0x16);
+    call(SET_ANIM);
+    do {
+        wait_frame(0xF790);
+        c->a[4] = sx(rd16(0xFFFF9EEEu));
+    } while (mem_dec8(p4(-0x2800)));
+    mem_and8(p4(-0x3FFD), 0xF7);
+    put16m(p4(-0x3DFE), 0x6E0);
+    c->d[0] = 0; F_L(0);
+    move_b(0, rd8(p4(-0x3CFF)));
+    c->d[0] = set_w(c->d[0], lsr_n(&c->ccr, c->d[0], 1, 16));
+    move_b(0, rd8(0xF7E6 + sx(c->d[0])));
+    call(SET_ANIM);
+    do {
+        wait_frame(0xF7BA);
+        c->a[4] = sx(rd16(0xFFFF9EEEu));
+        F_B(rd8(p4(-0x3A00)));
+    } while (rd8(p4(-0x3A00)));
+    put16m(p4(-0x35FE), 0xE000);
+    put8(p4(-0x2800), 8);
+    do {
+        wait_frame(0xF7D4);
+        c->a[4] = sx(rd16(0xFFFF9EEEu));
+        call(0xAD6);
+    } while (mem_dec8(p4(-0x2800)));
+    leave_to(NEXT_ROOM);
+}
+/* $F7EA: the exit's graphics, the player $100 lower, the pose for its palette ($F87C), rising
+ * ($2000) for 8 frames, still for 3, animation $16 for 3; the game's loop */
+static void exit_arrive(void)
+{
+    put16m(0xFFFF8E76u, 0x50);
+    call(STREAM_GFX);
+    c->a[4] = sx(rd16(0xFFFF9EEEu));
+    mem_and8(p4(-0x3FFD), 0xEF);
+    wr16(p4(-0x3700), (uint16_t)sub_w(&c->ccr, 0x100, rd16(p4(-0x3700))));
+    mem_and8(p4(-0x3FFD), 0xF7);
+    put16m(p4(-0x3DFE), 0x6E0);
+    c->d[0] = 0; F_L(0);
+    move_b(0, rd8(p4(-0x3CFF)));
+    c->d[0] = set_w(c->d[0], lsr_n(&c->ccr, c->d[0], 1, 16));
+    move_b(0, rd8(0xF87C + sx(c->d[0])));
+    call(SET_ANIM);
+    put16m(p4(-0x35FE), 0x2000);
+    put8(p4(-0x2800), 8);
+    do {
+        wait_frame(0xF830);
+        c->a[4] = sx(rd16(0xFFFF9EEEu));
+        call(0xAD6);
+    } while (mem_dec8(p4(-0x2800)));
+    put16m(p4(-0x35FE), 0);
+    call(0x7F4);
+    put8(p4(-0x2800), 3);
+    do {
+        wait_frame(0xF850);
+        c->a[4] = sx(rd16(0xFFFF9EEEu));
+    } while (mem_dec8(p4(-0x2800)));
+    put16m(p4(-0x3DFE), 0);
+    c->d[0] = 0x16; F_L(0x16);
+    call(SET_ANIM);
+    put8(p4(-0x2800), 3);
+    do {
+        wait_frame(0xF86E);
+        c->a[4] = sx(rd16(0xFFFF9EEEu));
+    } while (mem_dec8(p4(-0x2800)));
+    leave_to(GAME_LOOP);
+}
+
+ENTRY(PoseKeep, pose_keep)                 /* $DF80 */
+ENTRY(PoseFree, pose_free)                 /* $DF90 */
+/* these are jumped to and leave by port_continue_at */
+void ExitRoom(Cpu *cpu)   { c = cpu; NEEDS_PASS(0xF76C); exit_room(); }     /* $F76C */
+void ExitArrive(Cpu *cpu) { c = cpu; NEEDS_PASS(0xF7EA); exit_arrive(); }   /* $F7EA */

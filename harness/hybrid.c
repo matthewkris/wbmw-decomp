@@ -1952,6 +1952,10 @@ int hybrid_fuzz(const char *name, long count)
             put_word(0x965A, rnd());
             put_word(0x95F4, rnd() % 0x200);
         }
+        if (!strcmp(name, "PlayerPickups")) {       /* a pickup of the table's kinds (gold 0-22, a heart, an item; not the refill, which waits), touched or not */
+            static const uint8_t kinds[] = { 0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 28 };
+            ram[0x9F78] = (uint8_t)((rnd() % 4 ? 0x80 : 0) | kinds[rnd() % 14]);
+        }
         if (!strcmp(name, "Currents")) {            /* in water with a current, near the speed limit */
             ram[0x966B] = (uint8_t)(rnd() | (rnd() % 4 ? 1 : 0));
             put_word(0x9EE2, rnd() % 4 ? 0xB000 | (rnd() & 0xFFF) : rnd());

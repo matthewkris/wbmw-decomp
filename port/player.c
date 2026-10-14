@@ -1386,3 +1386,4 @@ void PlayerUpdate(Cpu *c)     { cpu = c; on_pass = 1; update(c); on_pass = 0; }
 void PlayerGold(Cpu *c)       { cpu = c; pick_gold(c); }
 void PlayerItem(Cpu *c)       { cpu = c; pick_item(c); }
 void PlayerHeart(Cpu *c)      { cpu = c; pick_heart(c); }
+void PlayerPickups(Cpu *c)    { cpu = c; pickups(c); }        /* only from fuzzing: the update ($DD3A) runs it itself */
