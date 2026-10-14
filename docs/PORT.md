@@ -2598,6 +2598,27 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 caught its first case, then ran away: a sabotaged return from the caller pops a wrong address.
 Replace mode: thirteen runs, no problems.
 
+#### The player, batch T40: the door poses, the exits and the pickups' entry (2026-10-14)
+
+* In `port/rooms.c`:
+  * `$DF80` and `$DF90`: the player kept still at a door (frame flag 3), with animation `$C` or
+    `$16`. The room changes' sequences call them.
+  * `$F76C`: leaving by an exit, from the game's loop and the sequences. It shows the exit's
+    graphics (`$50`) and plays sound `$3C`. Then 3 frames of animation `$16`, then the pose for
+    the palette (`$F7E6`) until it ends, then 8 frames of rising, then the next room.
+  * `$F7EA`: coming out of an exit, from the arrivals. The player starts `$100` lower, takes the
+    pose for its palette (`$F87C`) and rises for 8 frames. It is still for 3 frames, has
+    animation `$16` for 3, then goes back to the game's loop.
+  * Both wait for frames, so the task passes check them, not the fuzz.
+* In `port/player.c`: `$F1B0` (the pickups' table), written with the player, gets an entry. The
+  update runs it itself; the entry is for the fuzz, which gives it the table's kinds except the
+  refill (that one waits).
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(46 runs, all complete). Play runs every instruction of all five. 150,000 fuzz cases from six
+states, 0 mismatches. Self-test caught 100 in 100 for the three that are fuzzed. Replace mode:
+thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

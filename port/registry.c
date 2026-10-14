@@ -101,6 +101,7 @@ void StartEntry(Cpu *), GameRestart(Cpu *), RoomEnter(Cpu *), ArrivePlain(Cpu *)
 void RoomPlayer(Cpu *), PlayerPlace(Cpu *), PlayerMoved(Cpu *), PlayerPlaceRestart(Cpu *), PlayerPlaceStill(Cpu *), PlayerReset(Cpu *);
 void CompanionRoom(Cpu *), CompanionGfx0(Cpu *), CompanionGfx6(Cpu *), CompanionGfx4(Cpu *), CompanionGfx(Cpu *), CompanionRoom2(Cpu *), CompanionAt(Cpu *), CompanionJoin(Cpu *), CompanionHide(Cpu *), CompanionPalette(Cpu *), CompanionAgain(Cpu *), CompanionMake(Cpu *), CompanionNewA(Cpu *), CompanionNewB(Cpu *);
 void CompanionFrame(Cpu *), CompanionKind4(Cpu *), CompanionShoot(Cpu *), CompanionAppear4(Cpu *), CompanionAppeared4(Cpu *), CompanionKind0(Cpu *), CompanionAppear0(Cpu *), CompanionRest(Cpu *), CompanionOverPlayer(Cpu *), CompanionShown(Cpu *), CompanionFollow(Cpu *), CompanionReturn(Cpu *), CompanionDrop(Cpu *), CompanionGrab(Cpu *), CompanionChase(Cpu *), CompanionRide(Cpu *), CompanionChanceAway(Cpu *), CompanionChanceEnemy(Cpu *), CompanionChanceArea(Cpu *), CompanionNear(Cpu *), CompanionGone(Cpu *);
+void PoseKeep(Cpu *), PoseFree(Cpu *), ExitRoom(Cpu *), ExitArrive(Cpu *), PlayerPickups(Cpu *);
 void Looks(Cpu *), LooksExtra(Cpu *), LooksBlock(Cpu *), LooksBody(Cpu *), LooksSword(Cpu *), LooksShield(Cpu *), EquipChange(Cpu *);
 void HudPanel(Cpu *), GoldLabel(Cpu *), ThreeLabels(Cpu *), DigitsOut(Cpu *), ItemsChoose(Cpu *), MagicChoose(Cpu *), SlotChoose(Cpu *), ActionToSlot(Cpu *),
      ItemToSlot(Cpu *), WornBlink(Cpu *), StatusFadeIn(Cpu *), StatusFadeOut(Cpu *), StatusWait(Cpu *);
@@ -703,6 +704,11 @@ const PortRoutine port_routines[] = {
     {0x00FF96, 0x00FFC6, "CompanionChanceArea", CompanionChanceArea, CT_SP},
     {0x00FFC6, 0x00FFE6, "CompanionNear", CompanionNear, CT_SP},
     {0x0108A2, 0x0108B8, "CompanionGone", CompanionGone, CT_SP},   /* returns from its caller when it resets the state */
+    {0x00DF80, 0x00DF90, "PoseKeep", PoseKeep, CT_SP},          /* rooms.c: the door poses (as SetAnim), the exits (they wait) */
+    {0x00DF90, 0x00DFA0, "PoseFree", PoseFree, CT_SP},
+    {0x00F76C, 0x00F7EA, "ExitRoom", ExitRoom, CT_SP | CT_WAITS},
+    {0x00F7EA, 0x00F880, "ExitArrive", ExitArrive, CT_SP | CT_WAITS},
+    {0x00F1B0, 0x00F1EC, "PlayerPickups", PlayerPickups, CT_SP},   /* player.c: the pickups' table, as the update runs it */
     {0x00F5FC, 0x00F668, "Looks", Looks, CT_SP},                /* as the graphics routines they end with */
     {0x00F668, 0x00F670, "LooksExtra", LooksExtra, CT_SP},
     {0x00F670, 0x00F698, "LooksBlock", LooksBlock, CT_SP},
