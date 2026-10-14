@@ -2541,6 +2541,33 @@ the change pose and its frame, but not the looks loaded right after. 210,000 fuz
 states, 0 mismatches, every instruction of the looks covered. Self-test caught 100 in 100 for the
 six looks. Replace mode: thirteen runs, no problems.
 
+#### The player, batch T38: the player placed in a room, and the companion set up (2026-10-14)
+
+* In `port/rooms.c`:
+  * `$DBBE`: a room entered (from `$8EE6`). The companion is made again, the player reset and
+    placed by the arrival (`$9678`, the table at `$DBDA`).
+  * `$DCCC`: the player reset. The screen set up (`$8BB6`), `$95F4` and `$95F6` kept, the view's
+    limits (`$86BC`).
+  * `$DBF0`: placed at the start point, standing on its feet.
+  * `$DC8A`: moved from the start point by (`$967E`, `$9680`). Under water its fall speed is
+    halved.
+  * `$DCC0`: placed and kept still. `$DCB6` does the same only after a restart's room change.
+* The companion: `$9F30` is its slot, `$9F32` its kind (0-6, negative for none).
+  * `$F9C8` makes it unless the room is the boss's, the area forbids it, the player is under
+    water, or the area's bit is set in its mask (`$FA08`).
+  * `$FA20` and `$FA42` set the two families of kinds up.
+  * `$F880` (a room's command, `$95E8`) and `$F906` (a message's command, `$1A24`) change it.
+    Kind 2 needs game flag `$38`.
+  * `$F8E0` places it; `$F99C` hides it; `$F9B2` sets its palette.
+  * The ones that end in the graphics routines or `SetAnim` promise SP only.
+* `$F8A2`, `$F8A6` and `$F8A8` (the companion's graphics, entered by `$F880`'s table) have entries
+  of their own so the fuzz reaches them.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(46 runs, all complete). Play runs every instruction of the player's placing and of most of the
+companion's routines. 600,000 fuzz cases from six states, 0 mismatches, every instruction
+covered. Self-test caught 100 in 100 for all twenty. Replace mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

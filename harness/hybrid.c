@@ -1332,6 +1332,21 @@ int hybrid_fuzz(const char *name, long count)
             ram[0x9EF1] = (uint8_t)(rnd() & 0x30); ram[0x966B] = (uint8_t)(rnd() & 5);
             m68k_set_reg(M68K_REG_D0, (rnd() << 16) | 2 * (rnd() % 4));
         }
+        if (!strncmp(name, "Companion", 9)) {       /* a companion as the game has one: kinds 0-6 or none, its slot, an area 0-21, the area's flags */
+            uint32_t slot = (uint32_t)ram[0x9F30] << 8 | ram[0x9F31];
+            if (!slot || slot > 0xFC) { slot = 4 * (1 + rnd() % 60); put_word(0x9F30, slot); }
+            put_word(0x9F32, rnd() % 4 ? 2 * (rnd() % 4) : 0xFF00 | (rnd() & 0xFF));
+            ram[0x9668] = (uint8_t)(rnd() % 22); ram[0x966B] = (uint8_t)(rnd() % 3 ? 0 : rnd() & 0xA1);
+            m68k_set_reg(M68K_REG_D0, (rnd() << 16) | 2 * (rnd() % 4));
+            m68k_set_reg(M68K_REG_A2, slot); m68k_set_reg(M68K_REG_A4, slot);
+            ram[0x99C5] = (uint8_t)((ram[0x99C5] & ~1) | (rnd() & 1));   /* game flag $38 */
+        }
+        if (!strcmp(name, "RoomPlayer") || !strncmp(name, "PlayerPlace", 11) || !strcmp(name, "PlayerMoved") || !strcmp(name, "PlayerReset")) {
+            /* the arrivals the table has (0-20, even), the player's slot, a companion or none */
+            ram[0x9678] = (uint8_t)(2 * (rnd() % 11));
+            put_word(0x9F32, rnd() % 2 ? 2 * (rnd() % 4) : 0xFFFF);
+            m68k_set_reg(M68K_REG_A4, (uint32_t)ram[0x9EEE] << 8 | ram[0x9EEF]);
+        }
         if ((!strncmp(name, "Room13", 6) && strncmp(name, "Room13Drop", 10)) || !strncmp(name, "FindKind", 8)) {   /* the platforms' and figures' data, slots busy or not, some of kind $454 */
             m68k_set_reg(M68K_REG_A1, 4 * (rnd() % 6));
             m68k_set_reg(M68K_REG_A0, !strcmp(name, "Room13Figure") ? 0xD43A + 6 * (rnd() % 3) : 0xD422 + 8 * (rnd() % 3));
