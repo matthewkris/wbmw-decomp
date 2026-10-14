@@ -2239,6 +2239,39 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 360,000 fuzz cases from six states, 0 mismatches, every instruction covered. Self-test caught
 100 in 100 for each. Replace mode: thirteen runs, no problems.
 
+#### The room changes, batch T27: a conversation, a thing received, a statue (2026-10-13)
+
+Three more sequences the game's task enters, like T19's. They wait for frames on the task's
+coroutine and leave as the original does. In `port/rooms.c`:
+
+* `$C1E8`: a conversation (also from `$C728`). The others are frozen and the message `$9C16`
+  runs, with `$9C18`'s routine called each frame while it runs. When it ends, the game goes on
+  (`$8FFC`). If a fade ends it (`$9BF3` bit 0), the screen fades out. Then either the game
+  restarts (`$4CA8`, bit 1) or, after sound 84, it leaves to the original at `$C262`. That is
+  the inn's 300 frames' sleep, which waits on the VBlank flag and is an exit of the translation.
+* `$C27E`, room change 9: a thing received (`$B42A`). It rises with sparkles (`$C376`; the
+  sparkles are room objects of kind 6) until it is gone, then takes effect. Below `$20` it runs
+  its own routine (`$C2DE`). From `$20` it goes by the table at `$C46A`: its own routine,
+  nothing, a heart (`$C2E8`: the most hearts one more, up to 14), or the back palette stepped
+  through a list (`$C31A`). Things `$27` and `$2F` hang, as in the original (a `bmi` to itself,
+  left to the original).
+* `$C48C`: a statue (`$A0DE`), with its window and message. With the ocarina, the statue's tune
+  is played (`$2AAE`). The right one sets its room flag, and the message says how it went.
+
+`$C1E8` calls `$9C18`'s routine. The only one the game stores there, `$168E8`, was never
+translated, so it is now in `analysis/translate.json`'s `seen`. `$C2E8` ends with `$8AA2`
+(Hearts), which promises only SP and a4, so its contract is the same.
+
+`$C27E` and `$C31A` are written but not registered: no session receives such a thing yet. The
+inn's sleep loop is in `analysis/coverage_skip.txt`.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(39 runs, all complete; 637,567 checked calls). The sessions run 30 of `$C1E8`'s 34
+instructions; the rest are the restart after a fade and `$9C18`'s routine. They run 47 of
+`$C48C`'s 56; the rest are the branch with no statue. 180,000 fuzz cases from six states for
+the helpers, 0 mismatches, every instruction covered. Self-test caught 100 in 100 for each
+helper. Replace mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

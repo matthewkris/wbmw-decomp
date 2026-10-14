@@ -38,3 +38,8 @@
 00A868
 00A86E
 00CC88  # $CC1C: the lower floor with the upper switch on the right ($99DF bit 0): the three lifts' data ($CB64, $CB74, $CB84) have $99DF 2, 2 and 0
+00C262  # $C1E8 leaves to the original at $C262: the inn's 300 frames' sleep waits on the VBlank flag (an exit of the translation, translate.json)
+00C268
+00C26A
+00C26E
+00C272
