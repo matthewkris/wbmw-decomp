@@ -1253,6 +1253,20 @@ int hybrid_fuzz(const char *name, long count)
             m68k_set_reg(M68K_REG_D0, (rnd() << 16) | rnd() % 8);
             m68k_set_reg(M68K_REG_A0, dd);
         }
+        if (!strncmp(name, "Room5", 5) || !strncmp(name, "Room6", 5) || !strncmp(name, "Room7", 5) || !strncmp(name, "Room8", 5)
+            || !strncmp(name, "Room9", 5) || !strncmp(name, "Room10", 6) || !strncmp(name, "Rubble", 6)) {
+            /* the scripts' state part-way: switches hit, flags and $9995's bits, the strike's timer near its end */
+            ram[0x99DE] = (uint8_t)(rnd() % 2 ? rnd() % 4 : rnd() % 4 | 0); ram[0x99DF] = (uint8_t)(rnd() % 3);
+            if (!strncmp(name, "Room9", 5)) {
+                for (uint32_t k4 = 0; k4 < 60; k4++) ram[0x9A0A + k4] = bus_read8(0xCF0C + k4);
+                put_word(0x99DE, 1 + rnd() % 3);
+            }
+            ram[0x9995] = (uint8_t)rnd(); ram[0x9993] = (uint8_t)(rnd() % 2 ? ram[0x9993] ^ 1 : ram[0x9993]);
+            put_word(0x9994, rnd() % 2 ? 1u << (rnd() % 5) : rnd() & 0x1F);
+            if (rnd() % 4 == 0) ram[0x9992] |= 0x80;   /* room flag 15 (the bytes in pairs swapped) */
+            m68k_set_reg(M68K_REG_D5, rnd() % 4); m68k_set_reg(M68K_REG_D6, (rnd() << 16) | (0x110 + rnd() % 0x10)); m68k_set_reg(M68K_REG_D7, (rnd() << 16) | 0x4200);
+            for (uint32_t sl = 0xE0; sl < 0x100; sl += 4) ram[0xC000 + sl] = (uint8_t)(rnd() % 3 ? 0x80 : 0);
+        }
         if (!strcmp(name, "CrumbleAdd")) {          /* some walls' records taken */
             for (uint32_t k4 = 0; k4 < 4; k4++) ram[0x9B96 + 8 * k4] = (uint8_t)(rnd() % 3 ? 0x80 | rnd() % 4 : 0);
             m68k_set_reg(M68K_REG_D6, (rnd() << 16) | (0xF0 + rnd() % 0x100)); m68k_set_reg(M68K_REG_D7, (rnd() << 16) | ((0x4000 + rnd() % 0x1500) & ~0x3Fu));
