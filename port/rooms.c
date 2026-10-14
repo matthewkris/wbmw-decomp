@@ -5474,7 +5474,7 @@ static void room12_frame(uint32_t ret)
         put8(0xFFFF9F05u, 0);
         break;
     default:
-        c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 8, c->d[0]));
+        for (int k = 0; k < 7; k++) c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 1, c->d[0]));   /* one at a time, as the chain of subq.b does */
         break;
     }
     pop_cont();
@@ -5757,3 +5757,324 @@ ENTRY(Room15Setup, room15_setup)           /* $D72A */
 void Room13Frame(Cpu *cpu) { c = cpu; NEEDS_PASS(0xD44C); cont_68k(room13_frame); }     /* $D44C */
 void Room13Ride(Cpu *cpu)  { c = cpu; NEEDS_PASS(0xD48C); cont_68k(room13_ride); }      /* $D48C */
 void ScriptWait(Cpu *cpu)  { c = cpu; NEEDS_PASS(0xDAE6); cont_68k(script_wait); }      /* $DAE6 */
+
+/* ---- batch T31: the rooms' scripts 15 and 19-23, the scripts' helpers ----
+ * Index 15 (area 14's room 6): the player walks in and gives up item $3A; 19 (area 9's room 8):
+ * walked on past a ledge, a picture and message $58; 20 (area 6's rooms 6 and 8): the music's
+ * tempo by the player's place; 21 and 22 (area 4's room 3, area 2's room 1): a spot to stand on
+ * for a message; 23 (area 12's room 2): its graphics by game flags $4D and $4E. */
+
+/* $DB0A: message d0 run to its end */
+static void script_message(uint32_t ret)
+{
+    push_cont(ret);
+    call(0x279C);
+    do { wait_frame(0xDB1C); call(MESSAGES); F_B(rd8(MESSAGE_ON)); } while (rd8(MESSAGE_ON) & 0x80);
+    call(0x225C);
+    pop_cont();
+}
+/* $DB36, $D87E: the player's buttons for its frame routine: none, right */
+static void walk_stop(void) { put8(0xFFFF9F0Bu, 0); }
+static void room15_walk(void) { put8(0xFFFF9F0Bu, 8); }
+
+/* index 15. $D766, each frame by step: after 30 frames the player walks right; at $1020 it
+ * stops, message $60; then sound 55 and an effect (kind $E) every 6 frames, 32 times (32 frames
+ * apart at the last); then a figure at ($1058, $1070) with the effects at $D886 until its
+ * animation ends, message $61, item $3A taken and game flag $43 set */
+static void room15_frame(uint32_t ret)
+{
+    push_cont(ret);
+    move_b(0, rd8(SCRIPT_VARS));
+    switch (rd8(SCRIPT_VARS)) {
+    case 0:
+        wr8(SCRIPT_VARS, (uint8_t)add_b(&c->ccr, 1, rd8(SCRIPT_VARS)));
+        c->d[0] = 0x1E; F_L(0x1E);
+        script_wait(0xD780);
+        put8(0xFFFF9F05u, 6);
+        put32m(0xFFFF9F22u, 0xD87E);
+        break;
+    case 1:
+        c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 1, c->d[0]));
+        c->a[4] = sx(rd16(PLAYER_ENT));
+        cmp_w(&c->ccr, 0x1020, rd16(c->a[4] - 0x3800));
+        if (rd16(c->a[4] - 0x3800) < 0x1020) break;
+        wr8(SCRIPT_VARS, (uint8_t)add_b(&c->ccr, 1, rd8(SCRIPT_VARS)));
+        put8(0xFFFF9F05u, 4);
+        break;
+    case 2:
+        c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 2, c->d[0]));
+        c->d[0] = 0x1E; F_L(0x1E);
+        script_wait(0xD7BC);
+        c->d[0] = 0x60; F_L(0x60);
+        script_message(0xD7C2);
+        put16m(0xFFFF99E0u, 0x2010);
+        wr8(SCRIPT_VARS, (uint8_t)add_b(&c->ccr, 1, rd8(SCRIPT_VARS)));
+        break;
+    case 3:
+        c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 3, c->d[0]));
+        if (mem_dec8(0xFFFF99E0u)) break;
+        F_B(rd8(0xFFFF99E1u));
+        if (rd8(0xFFFF99E1u)) {
+            c->d[0] = 0x37; F_L(0x37);
+            call(QUEUE_SOUND);
+            call(FIND_EFFECT);
+            put8(c->a[4] - 0x4000, 0x80);
+            put16m(c->a[4] - 0x2BFE, 0xE);
+            c->d[0] = 6; F_L(6);
+            if (!mem_dec8(0xFFFF99E1u)) { c->d[0] = 0x20; F_L(0x20); }
+            put8(0xFFFF99E0u, c->d[0]);
+            break;
+        }
+        call(FIND_EFFECT);
+        put16m(0xFFFF99E0u, c->a[4]);
+        call(CLEAR_ENTITY);
+        put16m(c->a[4] - 0x3800, 0x1058);
+        put16m(c->a[4] - 0x3700, 0x1070);
+        put16m(c->a[4] - 0x3D00, 0x1614);
+        put8(c->a[4] - 0x3CFD, 0x1E);
+        c->d[0] = 0; F_L(0);
+        call(SET_ANIM);
+        put8(c->a[4] - 0x4000, 0xC0);
+        wait_frame(0xD83E);
+        c->a[0] = 0xD886;
+        call(0x2852);
+        do { wait_frame(0xD84A); c->a[4] = sx(rd16(0xFFFF99E0u)); F_B(rd8(c->a[4] - 0x3A00)); } while (rd8(c->a[4] - 0x3A00));
+        put8(c->a[4] - 0x4000, 0);
+        c->d[0] = 0x61; F_L(0x61);
+        script_message(0xD85E);
+        put8(0xFFFF9F05u, 0);
+        c->d[0] = 0x3A; F_L(0x3A);
+        call(0x24DC);
+        c->d[0] = 0x43; F_L(0x43);
+        push32(0xD86E); flag_set(); c->a[7] += 4;
+        wr8(SCRIPT_VARS, (uint8_t)add_b(&c->ccr, 1, rd8(SCRIPT_VARS)));
+        break;
+    default:
+        for (int k = 0; k < 3; k++) c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 1, c->d[0]));   /* one at a time, as the chain of subq.b does */
+        break;
+    }
+    pop_cont();
+}
+
+/* index 19. $D942: the player's buttons on its walk: right while slow (under $180), and a jump
+ * ($20, 8 frames apart) when it is below $1068 */
+static void room19_walk(void)
+{
+    c->d[0] = 8; F_L(8);
+    c->a[0] = sx(rd16(PLAYER_ENT));
+    cmp_w(&c->ccr, 0x180, rd16(c->a[0] - 0x3600));
+    if (!((int16_t)rd16(c->a[0] - 0x3600) < 0x180)) { c->d[0] = 0; F_L(0); }
+    F_B(rd8(0xFFFF99DFu));
+    if (rd8(0xFFFF99DFu)) mem_dec8(0xFFFF99DFu);
+    else {
+        cmp_w(&c->ccr, 0x1068, rd16(c->a[0] - 0x3700));
+        if (rd16(c->a[0] - 0x3700) >= 0x1068) {
+            put8(0xFFFF99DFu, 8);
+            or_b(0, 0x20);
+        }
+    }
+    put8(0xFFFF9F0Bu, c->d[0]);
+}
+/* $D894, each frame by step: past $1140 the player is walked on ($D942); past $1270, unless game
+ * flag $3E, the picture at $D92A put at ($12C, $4140); once it has streamed, message $58 (room
+ * change 8); then the player's own control back */
+static void room19_frame(void)
+{
+    c->a[4] = sx(rd16(PLAYER_ENT));
+    move_b(0, rd8(SCRIPT_VARS));
+    switch (rd8(SCRIPT_VARS)) {
+    case 0:
+        cmp_w(&c->ccr, 0x1140, rd16(c->a[4] - 0x3800));
+        if (rd16(c->a[4] - 0x3800) < 0x1140) return;
+        put16m(SCRIPT_VARS, 0x100);
+        put8(0xFFFF9F05u, 6);
+        put32m(0xFFFF9F22u, 0xD942);
+        return;
+    case 1:
+        c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 1, c->d[0]));
+        cmp_w(&c->ccr, 0x1270, rd16(c->a[4] - 0x3800));
+        if (rd16(c->a[4] - 0x3800) < 0x1270) return;
+        c->d[0] = 0x3E; F_L(0x3E);
+        push32(0xD8D0); flag_test(); c->a[7] += 4;
+        if (!(c->ccr & CC_Z)) { wr8(SCRIPT_VARS, (uint8_t)add_b(&c->ccr, 2, rd8(SCRIPT_VARS))); return; }
+        wr8(SCRIPT_VARS, (uint8_t)add_b(&c->ccr, 1, rd8(SCRIPT_VARS)));
+        c->a[0] = 0xD92A;
+        c->d[6] = set_w(c->d[6], 0x12C); F_W(0x12C);
+        c->d[7] = set_w(c->d[7], 0x4140); F_W(0x4140);
+        call(0x2974);
+        put16m(0xFFFF99E0u, c->a[1]);
+        return;
+    case 2:
+        c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 2, c->d[0]));
+        c->a[1] = sx(rd16(0xFFFF99E0u));
+        F_B(rd8(c->a[1] - 0x63CC));
+        if (rd8(c->a[1] - 0x63CC) & 0x80) return;
+        wr8(SCRIPT_VARS, (uint8_t)add_b(&c->ccr, 1, rd8(SCRIPT_VARS)));
+        return;
+    case 3:
+        c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 3, c->d[0]));
+        wr8(SCRIPT_VARS, (uint8_t)add_b(&c->ccr, 1, rd8(SCRIPT_VARS)));
+        put16m(0xFFFF9C16u, 0x58);
+        put16m(0xFFFF9962u, 8);
+        return;
+    case 4:
+        c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 4, c->d[0]));
+        wr8(SCRIPT_VARS, (uint8_t)add_b(&c->ccr, 1, rd8(SCRIPT_VARS)));
+        put8(0xFFFF9F05u, 0);
+        return;
+    default:
+        for (int k = 0; k < 4; k++) c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 1, c->d[0]));   /* one at a time, as the chain of subq.b does */
+        return;
+    }
+}
+
+/* index 20. $D9A2, each frame (unless $99DE): the music's tempo, 0-5 by the player's place
+ * across ($1000 on, in 128s; 6 more outside area 6's room 6), written to the Z80's RAM ($1C2B,
+ * with $1C2A from the ROM's byte 1) when it changes */
+static void room20_frame(void)
+{
+    F_B(rd8(SCRIPT_VARS));
+    if (rd8(SCRIPT_VARS)) return;
+    c->a[2] = sx(rd16(PLAYER_ENT));
+    c->d[0] = set_w(c->d[0], rd16(c->a[2] - 0x3800)); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 0x1000, c->d[0]));
+    if (c->ccr & CC_C) { c->d[0] = 0; F_L(0); }
+    else {
+        c->d[0] = set_w(c->d[0], lsr_n(&c->ccr, c->d[0], 7, 16));
+        cmp_w(&c->ccr, 6, c->d[0]);
+        if ((c->d[0] & 0xFFFF) >= 6) { c->d[0] = 5; F_L(5); }
+    }
+    cmp_w(&c->ccr, 0x606, rd16(AREA));
+    if (rd16(AREA) != 0x606) c->d[0] = set_w(c->d[0], add_w(&c->ccr, 6, c->d[0]));
+    cmp_w(&c->ccr, rd16(0xFFFF99E0u), c->d[0]);
+    if ((c->d[0] & 0xFFFF) == rd16(0xFFFF99E0u)) return;
+    put16m(0xFFFF99E0u, c->d[0]);
+    c->a[0] = 0x00A00000u;
+    c->a[1] = 0x00A11100u;
+    put16m(c->a[1], 0x100);                             /* the Z80's bus requested */
+    do f_bit(rd8(c->a[1]) & 1); while (rd8(c->a[1]) & 1);
+    put8(c->a[0] + 0x1C2A, rd8(0x000001));
+    put8(c->a[0] + 0x1C2B, c->d[0]);
+    put16m(c->a[1], 0);
+}
+/* $D976 as it loads: unless game flag $38 ($99DE then set), the tempo set and the room's music
+ * started if it is not playing, then sound -5 */
+static void room20_setup(void)
+{
+    c->d[0] = 0x38; F_L(0x38);
+    push32(0xD97C); flag_test(); c->a[7] += 4;
+    if (!(c->ccr & CC_Z)) { wr8(SCRIPT_VARS, 0xFF); return; }
+    wr8(0xFFFF99E0u, 0xFF);
+    push32(0xD98A); room20_frame(); c->a[7] += 4;
+    move_b(0, rd8(0xFFFF9660u));
+    cmp_byte(rd8(0xFFFF9661u), c->d[0]);
+    if ((c->d[0] & 0xFF) != rd8(0xFFFF9661u)) {
+        put8(0xFFFF9661u, c->d[0]);
+        call(QUEUE_SOUND);
+    }
+    c->d[0] = 0xFFFFFFFBu; F_L(c->d[0]);
+    call(QUEUE_SOUND);
+}
+
+/* indexes 21 and 22. $DA00, $DA90 as they load: the spot ($99E2, its x) and message ($99E4):
+ * $1190 and $5E unless game flag $4E ($99DE then set), $11A0 and $39 */
+static void room21_setup(void)
+{
+    c->d[0] = 0x4E; F_L(0x4E);
+    push32(0xDA06); flag_test(); c->a[7] += 4;
+    if (!(c->ccr & CC_Z)) { wr8(SCRIPT_VARS, 0xFF); return; }
+    put32m(0xFFFF99E2u, 0x1190005E);
+}
+static void room22_setup(void) { put32m(0xFFFF99E2u, 0x11A00039); }
+/* $DA18, each frame: the player's front at the spot, pressing up ($9F02 bit 6) and on the
+ * ground: held 8 frames, then the message (room change 8), the player set up again ($DE6A);
+ * then until it walks 16 past */
+static void room21_frame(void)
+{
+    c->a[4] = sx(rd16(PLAYER_ENT));
+    c->d[1] = 0; F_L(0);
+    move_b(1, rd8(c->a[4] - 0x34FE));
+    c->d[1] = set_w(c->d[1], add_w(&c->ccr, rd16(c->a[4] - 0x3800), c->d[1]));
+    move_b(0, rd8(SCRIPT_VARS));
+    if (c->d[0] & 0x80) return;
+    if (!(c->d[0] & 0xFF)) {
+        f_bit(rd8(0xFFFF9F02u) >> 6 & 1);
+        if (!(rd8(0xFFFF9F02u) & 0x40)) return;
+        cmp_w(&c->ccr, rd16(0xFFFF99E2u), c->d[1]);
+        if ((c->d[1] & 0xFFFF) != rd16(0xFFFF99E2u)) return;
+        f_bit(rd8(c->a[4] - 0x3FFE) >> 3 & 1);
+        if (rd8(c->a[4] - 0x3FFE) & 8) return;
+        put16m(SCRIPT_VARS, 0x108);
+        put8(0xFFFF9F05u, 8);
+        return;
+    }
+    c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 1, c->d[0]));
+    if (!(c->d[0] & 0xFF)) {
+        if (mem_dec8(0xFFFF99DFu)) return;
+        wr8(SCRIPT_VARS, (uint8_t)add_b(&c->ccr, 1, rd8(SCRIPT_VARS)));
+        put16m(0xFFFF9C16u, rd16(0xFFFF99E4u));
+        put16m(0xFFFF9962u, 8);
+        return;
+    }
+    c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 1, c->d[0]));
+    if (!(c->d[0] & 0xFF)) {
+        put8(0xFFFF9F05u, 0);
+        call(0xDE6A);
+        wr8(SCRIPT_VARS, (uint8_t)add_b(&c->ccr, 1, rd8(SCRIPT_VARS)));
+        return;
+    }
+    c->d[1] = set_w(c->d[1], add_w(&c->ccr, 0x10, c->d[1]));
+    cmp_w(&c->ccr, rd16(0xFFFF99E2u), c->d[1]);
+    if ((c->d[1] & 0xFFFF) >= rd16(0xFFFF99E2u)) return;
+    put8(SCRIPT_VARS, 0);
+}
+
+/* index 23. $DAC8: game flag $4E, or else $4D (ne: either set) */
+static void room23_flags(void)
+{
+    c->d[0] = 0x4E; F_L(0x4E);
+    push32(0xDACE); flag_test(); c->a[7] += 4;
+    if (!(c->ccr & CC_Z)) { c->d[0] = 0; F_L(0); return; }
+    c->d[0] = 0x4D; F_L(0x4D);
+    flag_test();
+}
+/* $DAAC: the graphics at $DAB8 streamed in, once ($99DE) */
+static void room23_stream(void)
+{
+    wr8(SCRIPT_VARS, 0xFF);
+    c->a[0] = 0xDAB8;
+    call(0x23A6);
+}
+/* $DA9A as it loads: either flag set, the graphics; neither, the palette $5200 */
+static void room23_setup(void)
+{
+    push32(0xDA9C); room23_flags(); c->a[7] += 4;
+    if (!(c->ccr & CC_Z)) { room23_stream(); return; }
+    c->d[0] = set_w(c->d[0], 0x5200); F_W(0x5200);
+    c->d[1] = set_w(c->d[1], 0xC12); F_W(0xC12);
+    c->d[2] = 0x20; F_L(0x20);
+    call(0x22A8);
+}
+/* $DADA, each frame: the graphics once either flag is set */
+static void room23_frame(void)
+{
+    F_B(rd8(SCRIPT_VARS));
+    if (rd8(SCRIPT_VARS)) return;
+    push32(0xDAE2); room23_flags(); c->a[7] += 4;
+    if (!(c->ccr & CC_Z)) room23_stream();
+}
+
+ENTRY(WalkStop, walk_stop)                 /* $DB36 */
+ENTRY(Room15Walk, room15_walk)             /* $D87E */
+ENTRY(Room19Frame, room19_frame)           /* $D894 */
+ENTRY(Room19Walk, room19_walk)             /* $D942 */
+ENTRY(Room20Setup, room20_setup)           /* $D976 */
+ENTRY(Room20Frame, room20_frame)           /* $D9A2 */
+ENTRY(Room21Setup, room21_setup)           /* $DA00 */
+ENTRY(Room21Frame, room21_frame)           /* $DA18 */
+ENTRY(Room22Setup, room22_setup)           /* $DA90 */
+ENTRY(Room23Setup, room23_setup)           /* $DA9A */
+ENTRY(Room23Flags, room23_flags)           /* $DAC8 */
+ENTRY(Room23Frame, room23_frame)           /* $DADA */
+void Room15Frame(Cpu *cpu)   { c = cpu; NEEDS_PASS(0xD766); cont_68k(room15_frame); }   /* $D766 */
+void ScriptMessage(Cpu *cpu) { c = cpu; NEEDS_PASS(0xDB0A); cont_68k(script_message); } /* $DB0A */

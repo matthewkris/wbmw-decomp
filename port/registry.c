@@ -92,6 +92,8 @@ void SeqTalk(Cpu *), SeqReceive(Cpu *), SeqStatue(Cpu *), ReceivePalettes(Cpu *)
 void Room11Setup(Cpu *), Room11Frame(Cpu *), Room11Looks(Cpu *), Room12Setup(Cpu *), Room12Blocks(Cpu *);
 void Room12Frame(Cpu *), Room12Walk(Cpu *), FindKind(Cpu *), FindKindD1(Cpu *), Room13Setup(Cpu *), Room13Platform(Cpu *), Room13Figure(Cpu *);
 void Room13Frame(Cpu *), Room13Ride(Cpu *), ScriptWait(Cpu *), Room13Fade(Cpu *), Room13Drop(Cpu *), Room13Drops(Cpu *), Room14Setup(Cpu *), Room15Setup(Cpu *);
+void Room15Frame(Cpu *), ScriptMessage(Cpu *), WalkStop(Cpu *), Room15Walk(Cpu *), Room19Frame(Cpu *), Room19Walk(Cpu *), Room20Setup(Cpu *),
+     Room20Frame(Cpu *), Room21Setup(Cpu *), Room21Frame(Cpu *), Room22Setup(Cpu *), Room23Setup(Cpu *), Room23Flags(Cpu *), Room23Frame(Cpu *);
 void NumText(Cpu *), CharAt(Cpu *), ScrollWindow(Cpu *), WindowFrame(Cpu *), WindowRow(Cpu *), TileUnder(Cpu *), WindowRestore(Cpu *), NewLine(Cpu *), MoreBlink(Cpu *), MoreHide(Cpu *), MoreShow(Cpu *), ChoiceBlink(Cpu *), ChoiceHide(Cpu *), ChoiceShow(Cpu *), PriceOf(Cpu *), NameOf(Cpu *), NameText(Cpu *), FoundThing(Cpu *), FoundGold(Cpu *), BoxText(Cpu *), BoxRows(Cpu *), BoxRow(Cpu *), ShowFoundGold(Cpu *), ShowFound(Cpu *), WindowGeometry(Cpu *), Cheaper(Cpu *), Owns(Cpu *), Give(Cpu *), Take(Cpu *), ItemCell(Cpu *), FlagCell(Cpu *), MessageData(Cpu *), OpenWindow(Cpu *), WindowAt(Cpu *), MsgStep(Cpu *), CharIn(Cpu *), NoteIn(Cpu *), OcarinaTune(Cpu *);   /* message.c */
 #define CT_ALL 0x3FFFF                /* every register and flag compared */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
@@ -585,6 +587,18 @@ const PortRoutine port_routines[] = {
     {0x00D6C4, 0x00D71A, "Room13Drops", Room13Drops, CT_ALL},
     {0x00D71A, 0x00D72A, "Room14Setup", Room14Setup, CT_ALL},
     {0x00D72A, 0x00D766, "Room15Setup", Room15Setup, CT_ALL},
+    {0x00D87E, 0x00D894, "Room15Walk", Room15Walk, CT_ALL},       /* rooms.c: the rooms' scripts 15 and 19-23 ($D766, $DB0A wait for a session) */
+    {0x00D894, 0x00D942, "Room19Frame", Room19Frame, CT_ALL},
+    {0x00D942, 0x00D976, "Room19Walk", Room19Walk, CT_ALL},
+    {0x00D976, 0x00D9A2, "Room20Setup", Room20Setup, CT_ALL},
+    {0x00D9A2, 0x00DA00, "Room20Frame", Room20Frame, CT_ALL},
+    {0x00DA00, 0x00DA18, "Room21Setup", Room21Setup, CT_ALL},
+    {0x00DA18, 0x00DA90, "Room21Frame", Room21Frame, CT_SP},      /* as $DE6A (PlayerInput), which it calls */
+    {0x00DA90, 0x00DA9A, "Room22Setup", Room22Setup, CT_ALL},
+    {0x00DA9A, 0x00DAC8, "Room23Setup", Room23Setup, CT_ALL},
+    {0x00DAC8, 0x00DADA, "Room23Flags", Room23Flags, CT_ALL},
+    {0x00DADA, 0x00DAE6, "Room23Frame", Room23Frame, CT_ALL},
+    {0x00DB36, 0x00DB3C, "WalkStop", WalkStop, CT_ALL},
     {0x00C1E8, 0x00C27E, "SeqTalk", SeqTalk, CT_SP | CT_WAITS},  /* rooms.c: the sequences of a conversation, a thing received and a statue */
     {0x00C2DE, 0x00C2E6, "ReceiveOwn", ReceiveOwn, CT_ALL},
     {0x00C2E6, 0x00C2E8, "ReceiveNone", ReceiveNone, CT_ALL},

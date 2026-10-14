@@ -1286,6 +1286,18 @@ int hybrid_fuzz(const char *name, long count)
             if (rnd() % 2) ram[0x99BE + (0x39 >> 3)] ^= (uint8_t)(1 << (0x39 & 7));
             for (uint32_t sl = 0xE0; sl < 0x100; sl += 4) ram[0xC000 + sl] = (uint8_t)(rnd() % 3 ? 0 : 0x80);
         }
+        if (!strncmp(name, "Room19", 6) || (!strncmp(name, "Room2", 5) && name[5] >= '0' && name[5] <= '9') || !strcmp(name, "WalkStop")) {
+            /* the scripts' steps part-way, the player near their places (across $1000-$1300, at the spots), flags $38, $3E, $4D, $4E at random */
+            uint32_t p = (uint32_t)ram[0x9EEE] << 8 | ram[0x9EEF];
+            ram[0x99DE] = (uint8_t)(rnd() % 4 ? rnd() % 6 : rnd()); ram[0x99DF] = (uint8_t)(rnd() % 3);
+            put_word(0x99E0, rnd() % 3 ? rnd() % 12 : 0xFF00 | rnd()); put_word(0x99E2, rnd() % 2 ? 0x1190 : 0x11A0); put_word(0x99E4, 0x5E);
+            put_word(0xC800 + p, rnd() % 3 ? 0xF80 + rnd() % 0x480 : (uint32_t)(get_sword(0x99E2) - ram[(p - 0x34FE) & 0xFFFF] + small(1)));
+            put_word(0xC900 + p, 0x1040 + rnd() % 0x60); put_word(0xCA00 + p, rnd() % 0x300); ram[0x9F02] = (uint8_t)rnd();
+            static const uint8_t flags[4] = { 0x38, 0x3E, 0x4D, 0x4E };
+            for (int k4 = 0; k4 < 4; k4++) if (rnd() % 2) ram[0x99BE + (flags[k4] >> 3)] ^= (uint8_t)(1 << (flags[k4] & 7));
+            if (rnd() % 2) put_word(0x9668, 0x606);
+            if (rnd() % 2) ram[0x9661] = (uint8_t)rnd();
+        }
         if (!strncmp(name, "Room14", 6) || !strncmp(name, "Room15", 6)) {   /* game flag $43 and item $3A's inventory byte at random */
             if (rnd() % 2) ram[0x99BE + (0x43 >> 3)] ^= (uint8_t)(1 << (0x43 & 7));
             if (rnd() % 2) for (uint32_t k4 = 0; k4 < 0x60; k4++) if (rnd() % 3 == 0) ram[0x9580 + k4] = (uint8_t)rnd();
