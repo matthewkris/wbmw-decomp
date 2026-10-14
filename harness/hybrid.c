@@ -1325,6 +1325,13 @@ int hybrid_fuzz(const char *name, long count)
             int full = rnd() % 4 == 0;
             for (uint32_t k4 = 0; k4 < 40; k4++) { uint32_t sl = 0x40 + 4 * k4; ram[0xC000 + sl] = (uint8_t)(full || rnd() % 3 ? 0x80 : 0); put_word(0xC900 + sl, 0xFF0 + rnd() % 0xD0); put_word(0xCA02 + sl, 0x800 + rnd() % 0x800); }
         }
+        if (!strncmp(name, "Looks", 5)) {           /* the equipment as the game has it: swords 0-6, shields 0-6 or none, the extra block -1 or 0-3 */
+            ram[0x95CE] = (uint8_t)(rnd() % 7);
+            ram[0x95D0] = (uint8_t)(rnd() % 4 ? rnd() % 7 : 0xFF);
+            put_word(0x9F32, rnd() % 3 ? 0xFFFF : 2 * (rnd() % 4));
+            ram[0x9EF1] = (uint8_t)(rnd() & 0x30); ram[0x966B] = (uint8_t)(rnd() & 5);
+            m68k_set_reg(M68K_REG_D0, (rnd() << 16) | 2 * (rnd() % 4));
+        }
         if ((!strncmp(name, "Room13", 6) && strncmp(name, "Room13Drop", 10)) || !strncmp(name, "FindKind", 8)) {   /* the platforms' and figures' data, slots busy or not, some of kind $454 */
             m68k_set_reg(M68K_REG_A1, 4 * (rnd() % 6));
             m68k_set_reg(M68K_REG_A0, !strcmp(name, "Room13Figure") ? 0xD43A + 6 * (rnd() % 3) : 0xD422 + 8 * (rnd() % 3));

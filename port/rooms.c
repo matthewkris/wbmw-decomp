@@ -7002,3 +7002,151 @@ ENTRY(HudPanel, hud_panel)                 /* $7544 */
 ENTRY(GoldLabel, gold_label)               /* $8596 */
 ENTRY(ThreeLabels, three_labels)           /* $84C4 */
 ENTRY(DigitsOut, digits_out)               /* $850C */
+
+/* ---- batch T37: the player's looks and the change of equipment ----
+ * The player's graphics follow the equipment: $F5FC loads the body's (by the armour, the form,
+ * under water), the sword's and the shield's, and $9F32's extra block. When the status screen
+ * closes, $DB3C sees whether the equipment changed: if so the rest of the frame is dropped, the
+ * player strikes the change pose, and once its animation flags it the looks are loaded again. */
+
+static void cmp_long(uint32_t s, uint32_t d) { uint16_t x = c->ccr & CC_X; sub_l(&c->ccr, s, d); c->ccr = (uint16_t)((c->ccr & ~CC_X) | x); }
+
+/* $F670: the block at $F680 by the offset in d0 */
+static void looks_block(void)
+{
+    c->a[0] = 0xF680;
+    c->a[0] += sx(rd16(c->a[0] + sx(c->d[0])));
+    call(SET_GFX_SLOTS);
+    call(STREAM_GFX);
+}
+/* $F668: $9F32's block, unless it is negative */
+static void looks_extra(void)
+{
+    c->d[0] = set_w(c->d[0], rd16(0xFFFF9F32u)); F_W(c->d[0]);
+    if (c->d[0] & 0x8000) return;
+    looks_block();
+}
+/* $F698: the body: transformed ($9EF1 bit 4) $F6F0; else $F6E0, or $F6E8 under water ($966B
+ * bit 0) with the gear for it ($9EF1 bit 5); then $F6D8 or $F6DC by $966B bit 2 */
+static void looks_body(void)
+{
+    c->a[0] = 0xF6F0;
+    f_bit(rd8(0xFFFF9EF1u) >> 4 & 1);
+    if (!(rd8(0xFFFF9EF1u) & 0x10)) {
+        c->a[0] = 0xF6E0;
+        f_bit(rd8(0xFFFF966Bu) & 1);
+        if (rd8(0xFFFF966Bu) & 1) {
+            f_bit(rd8(0xFFFF9EF1u) >> 5 & 1);
+            if (rd8(0xFFFF9EF1u) & 0x20) c->a[0] = 0xF6E8;
+        }
+    }
+    call(SET_GFX_SLOTS);
+    c->a[0] = 0xF6D8;
+    f_bit(rd8(0xFFFF966Bu) >> 2 & 1);
+    if (!(rd8(0xFFFF966Bu) & 4)) c->a[0] = 0xF6DC;
+    call(SET_GFX_SLOTS);
+    call(STREAM_GFX);
+}
+/* $F6F8: the sword's block ($95CE) from the table at $F710 */
+static void looks_sword(void)
+{
+    c->d[0] = 0; F_L(0);
+    move_b(0, rd8(0xFFFF95CEu));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+    c->a[0] = 0xF710;
+    c->a[0] += sx(rd16(c->a[0] + sx(c->d[0])));
+    call(SET_GFX_SLOTS);
+    call(STREAM_GFX);
+}
+/* $F742: the shield's tiles ($95D0, none if negative) copied to $B80 */
+static void looks_shield(void)
+{
+    c->d[1] = 0; F_L(0);
+    c->d[0] = 0; F_L(0);
+    move_b(0, rd8(0xFFFF95D0u));
+    if (!(c->d[0] & 0x80)) {
+        c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+        c->d[1] = set_w(c->d[1], rd16(0xF75E + sx(c->d[0]))); F_W(c->d[1]);
+    }
+    c->d[0] = set_w(c->d[0], 0xB80); F_W(0xB80);
+    c->d[2] = set_w(c->d[2], 0x20); F_W(0x20);
+    call(0x22A8);
+}
+/* $F5FC: the player's looks: transformed, only the body (palette 4, $9F12 4); else the body, the
+ * sword, the shield, palette by the sword ($F660); then $9F32's block */
+static void looks(void)
+{
+    c->a[4] = sx(rd16(0xFFFF9EEEu));
+    c->d[0] = 0; F_L(0);
+    put8(0xFFFF9F04u, 0);
+    put16m(c->a[4] - 0x3D00, 0);
+    put8(0xFFFF9F12u, 0xA);
+    f_bit(rd8(0xFFFF9EF1u) >> 4 & 1);
+    if (rd8(0xFFFF9EF1u) & 0x10) {
+        put8(0xFFFF9F12u, 4);
+        put8(0xFFFF9F04u, 2);
+        put8(c->a[4] - 0x3CFF, 4);
+        looks_body();
+    } else {
+        f_bit(rd8(0xFFFF966Bu) & 1);
+        if (rd8(0xFFFF966Bu) & 1) {
+            f_bit(rd8(0xFFFF9EF1u) >> 5 & 1);
+            if (rd8(0xFFFF9EF1u) & 0x20) put8(0xFFFF9F04u, 1);
+        }
+        move_b(0, rd8(0xFFFF95CEu));
+        put8(c->a[4] - 0x3CFF, rd8(0xF660 + sx(c->d[0])));
+        looks_body();
+        looks_sword();
+        looks_shield();
+    }
+    looks_extra();
+}
+/* $DB3C (after the status screen): the player's $95F4 and $95F6/16 kept; if not transformed and
+ * the equipment ($95CE) differs from the last ($95D2): the caller's frame is dropped (its return
+ * kept in $9F1E, the stack back to the game loop's), the change pose ($1A, or $1C with palette 2),
+ * a frame; once the animation flags it (bit 0 of $C002) the looks, a frame, and unless the
+ * player's animation is still on, back to the caller with $9F02 bit 4. Returns 1 if it left
+ * elsewhere. */
+static int equip_change(void)
+{
+    c->a[4] = sx(rd16(0xFFFF9EEEu));
+    put16m(c->a[4] - 0x2700, rd16(0xFFFF95F4u));
+    c->d[0] = set_w(c->d[0], rd16(0xFFFF95F6u)); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], lsr_n(&c->ccr, c->d[0], 4, 16));
+    put16m(c->a[4] - 0x26FE, c->d[0]);
+    f_bit(rd8(0xFFFF9EF1u) >> 4 & 1);
+    if (rd8(0xFFFF9EF1u) & 0x10) return 0;
+    c->d[0] = rd32(0xFFFF95CEu); F_L(c->d[0]);
+    cmp_long(rd32(0xFFFF95D2u), c->d[0]);
+    if (c->d[0] == rd32(0xFFFF95D2u)) return 0;
+    uint32_t ret = rd32(c->a[7]); c->a[7] += 4;
+    put32m(0xFFFF9F1Eu, ret);
+    c->a[7] = rd32(0xFFFF9662u);
+    c->d[0] = 0x1A; F_L(0x1A);
+    cmp_byte(2, rd8(c->a[4] - 0x3CFF));
+    if (rd8(c->a[4] - 0x3CFF) == 2) { c->d[0] = 0x1C; F_L(0x1C); }
+    mem_and8(c->a[4] - 0x4000, 0xDF);
+    mem_and8(c->a[4] - 0x3FFE, 0xFC);
+    call(SET_ANIM);
+    wait_frame(0xDB8C);
+    c->a[4] = sx(rd16(0xFFFF9EEEu));
+    if (!mem_bclr(c->a[4] - 0x3FFE, 0)) return 0;   /* rts, at the game loop's level */
+    looks();
+    wait_frame(0xDBA2);
+    c->a[4] = sx(rd16(0xFFFF9EEEu));
+    F_B(rd8(c->a[4] - 0x3A00));
+    if (rd8(c->a[4] - 0x3A00)) return 0;
+    put16m(0xFFFF9980u, 0);
+    mem_or8(0xFFFF9F02u, 0x10);
+    c->a[0] = rd32(0xFFFF9F1Eu);
+    leave_to(c->a[0]);
+    return 1;
+}
+
+ENTRY(Looks, looks)                        /* $F5FC */
+ENTRY(LooksExtra, looks_extra)             /* $F668 */
+ENTRY(LooksBlock, looks_block)             /* $F670 */
+ENTRY(LooksBody, looks_body)               /* $F698 */
+ENTRY(LooksSword, looks_sword)             /* $F6F8 */
+ENTRY(LooksShield, looks_shield)           /* $F742 */
+void EquipChange(Cpu *cpu) { c = cpu; NEEDS_PASS(0xDB3C); if (!equip_change()) c->ret = 0; }   /* $DB3C */

@@ -2517,6 +2517,30 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 of each of the screen's parts. 390,000 fuzz cases from six states, 0 mismatches. Self-test
 caught 100 in 100 for the four. Replace mode: thirteen runs, no problems.
 
+#### The player, batch T37: the change of equipment and the player's looks (2026-10-14)
+
+* In `port/rooms.c`:
+  * `$F5FC`: the player's looks. Transformed, only the body is loaded (palette 4). Otherwise it
+    loads the body, the sword (`$F6F8`, by `$95CE`) and the shield (`$F742`, by `$95D0`, none if
+    negative), with the palette by the sword (`$F660`). Then `$9F32`'s extra block (`$F668`,
+    `$F670`).
+  * `$F698`: the body's blocks, by the form and by being under water with the gear for it.
+  * The looks promise SP only, as the graphics routines they end with do.
+  * `$DB3C`: after the status screen (`$90E4`) it keeps `$95F4` and `$95F6`. If the equipment
+    (`$95CE`) differs from the last (`$95D2`), the caller's frame is dropped: its return goes to
+    `$9F1E` and the stack back to the game loop's. The player strikes the change pose (`$1A`, or
+    `$1C` with palette 2) and a frame passes. Once the animation flags it, the looks are loaded
+    again, a frame passes, and it goes back to the caller with `$9F02` bit 4. It waits, so it is
+    checked by the task passes, not fuzzed.
+* `SeqExit` (`$BDB0`) and `SeqReceive` (`$C27E`) are registered: the owner's session7 recordings
+  run them all.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(46 runs, all complete; 1,133,609 checked calls). Play runs 27 of `$DB3C`'s 35 instructions:
+the change pose and its frame, but not the looks loaded right after. 210,000 fuzz cases from six
+states, 0 mismatches, every instruction of the looks covered. Self-test caught 100 in 100 for the
+six looks. Replace mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

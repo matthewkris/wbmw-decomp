@@ -98,6 +98,7 @@ void EventNear(Cpu *), ListOrigin(Cpu *), ListWidth(Cpu *), ListHeight(Cpu *), L
 void RoomEvents(Cpu *), EventDoor(Cpu *), EventSwitch(Cpu *), EventPicture(Cpu *), EventGate(Cpu *);
 void RoomObjects(Cpu *), RoomObjNone(Cpu *), RoomObjSparkle(Cpu *), RoomObjMover(Cpu *), RoomObjBlock(Cpu *), BlockPlace(Cpu *), RoomObjChest(Cpu *), ChestOpened(Cpu *);
 void StartEntry(Cpu *), GameRestart(Cpu *), RoomEnter(Cpu *), ArrivePlain(Cpu *), NextRoom(Cpu *), GameOver(Cpu *), RoomMessage(Cpu *);
+void Looks(Cpu *), LooksExtra(Cpu *), LooksBlock(Cpu *), LooksBody(Cpu *), LooksSword(Cpu *), LooksShield(Cpu *), EquipChange(Cpu *);
 void HudPanel(Cpu *), GoldLabel(Cpu *), ThreeLabels(Cpu *), DigitsOut(Cpu *), ItemsChoose(Cpu *), MagicChoose(Cpu *), SlotChoose(Cpu *), ActionToSlot(Cpu *),
      ItemToSlot(Cpu *), WornBlink(Cpu *), StatusFadeIn(Cpu *), StatusFadeOut(Cpu *), StatusWait(Cpu *);
 void NumText(Cpu *), CharAt(Cpu *), ScrollWindow(Cpu *), WindowFrame(Cpu *), WindowRow(Cpu *), TileUnder(Cpu *), WindowRestore(Cpu *), NewLine(Cpu *), MoreBlink(Cpu *), MoreHide(Cpu *), MoreShow(Cpu *), ChoiceBlink(Cpu *), ChoiceHide(Cpu *), ChoiceShow(Cpu *), PriceOf(Cpu *), NameOf(Cpu *), NameText(Cpu *), FoundThing(Cpu *), FoundGold(Cpu *), BoxText(Cpu *), BoxRows(Cpu *), BoxRow(Cpu *), ShowFoundGold(Cpu *), ShowFound(Cpu *), WindowGeometry(Cpu *), Cheaper(Cpu *), Owns(Cpu *), Give(Cpu *), Take(Cpu *), ItemCell(Cpu *), FlagCell(Cpu *), MessageData(Cpu *), OpenWindow(Cpu *), WindowAt(Cpu *), MsgStep(Cpu *), CharIn(Cpu *), NoteIn(Cpu *), OcarinaTune(Cpu *);   /* message.c */
@@ -657,6 +658,13 @@ const PortRoutine port_routines[] = {
     {0x00DAC8, 0x00DADA, "Room23Flags", Room23Flags, CT_ALL},
     {0x00DADA, 0x00DAE6, "Room23Frame", Room23Frame, CT_ALL},
     {0x00DB36, 0x00DB3C, "WalkStop", WalkStop, CT_ALL},
+    {0x00DB3C, 0x00DBBE, "EquipChange", EquipChange, CT_SP | CT_WAITS},   /* rooms.c: the change of equipment and the player's looks */
+    {0x00F5FC, 0x00F668, "Looks", Looks, CT_SP},                /* as the graphics routines they end with */
+    {0x00F668, 0x00F670, "LooksExtra", LooksExtra, CT_SP},
+    {0x00F670, 0x00F698, "LooksBlock", LooksBlock, CT_SP},
+    {0x00F698, 0x00F6F8, "LooksBody", LooksBody, CT_SP},
+    {0x00F6F8, 0x00F742, "LooksSword", LooksSword, CT_SP},
+    {0x00F742, 0x00F76C, "LooksShield", LooksShield, CT_SP},
     {0x00C1E8, 0x00C27E, "SeqTalk", SeqTalk, CT_SP | CT_WAITS},  /* rooms.c: the sequences of a conversation, a thing received and a statue */
     {0x00C27E, 0x00C2DE, "SeqReceive", SeqReceive, CT_SP | CT_WAITS},   /* verified by the session7 recordings */
     {0x00C2DE, 0x00C2E6, "ReceiveOwn", ReceiveOwn, CT_ALL},
