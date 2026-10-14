@@ -98,6 +98,8 @@ void EventNear(Cpu *), ListOrigin(Cpu *), ListWidth(Cpu *), ListHeight(Cpu *), L
 void RoomEvents(Cpu *), EventDoor(Cpu *), EventSwitch(Cpu *), EventPicture(Cpu *), EventGate(Cpu *);
 void RoomObjects(Cpu *), RoomObjNone(Cpu *), RoomObjSparkle(Cpu *), RoomObjMover(Cpu *), RoomObjBlock(Cpu *), BlockPlace(Cpu *), RoomObjChest(Cpu *), ChestOpened(Cpu *);
 void StartEntry(Cpu *), GameRestart(Cpu *), RoomEnter(Cpu *), ArrivePlain(Cpu *), NextRoom(Cpu *), GameOver(Cpu *), RoomMessage(Cpu *);
+void RoomPlayer(Cpu *), PlayerPlace(Cpu *), PlayerMoved(Cpu *), PlayerPlaceRestart(Cpu *), PlayerPlaceStill(Cpu *), PlayerReset(Cpu *);
+void CompanionRoom(Cpu *), CompanionGfx0(Cpu *), CompanionGfx6(Cpu *), CompanionGfx4(Cpu *), CompanionGfx(Cpu *), CompanionRoom2(Cpu *), CompanionAt(Cpu *), CompanionJoin(Cpu *), CompanionHide(Cpu *), CompanionPalette(Cpu *), CompanionAgain(Cpu *), CompanionMake(Cpu *), CompanionNewA(Cpu *), CompanionNewB(Cpu *);
 void Looks(Cpu *), LooksExtra(Cpu *), LooksBlock(Cpu *), LooksBody(Cpu *), LooksSword(Cpu *), LooksShield(Cpu *), EquipChange(Cpu *);
 void HudPanel(Cpu *), GoldLabel(Cpu *), ThreeLabels(Cpu *), DigitsOut(Cpu *), ItemsChoose(Cpu *), MagicChoose(Cpu *), SlotChoose(Cpu *), ActionToSlot(Cpu *),
      ItemToSlot(Cpu *), WornBlink(Cpu *), StatusFadeIn(Cpu *), StatusFadeOut(Cpu *), StatusWait(Cpu *);
@@ -659,6 +661,26 @@ const PortRoutine port_routines[] = {
     {0x00DADA, 0x00DAE6, "Room23Frame", Room23Frame, CT_ALL},
     {0x00DB36, 0x00DB3C, "WalkStop", WalkStop, CT_ALL},
     {0x00DB3C, 0x00DBBE, "EquipChange", EquipChange, CT_SP | CT_WAITS},   /* rooms.c: the change of equipment and the player's looks */
+    {0x00DBBE, 0x00DBF0, "RoomPlayer", RoomPlayer, CT_ALL},   /* rooms.c: the player placed in a room, and the companion set up */
+    {0x00DBF0, 0x00DC8A, "PlayerPlace", PlayerPlace, CT_ALL},
+    {0x00DC8A, 0x00DCB6, "PlayerMoved", PlayerMoved, CT_ALL},
+    {0x00DCB6, 0x00DCC0, "PlayerPlaceRestart", PlayerPlaceRestart, CT_ALL},
+    {0x00DCC0, 0x00DCCC, "PlayerPlaceStill", PlayerPlaceStill, CT_ALL},
+    {0x00DCCC, 0x00DD08, "PlayerReset", PlayerReset, CT_ALL},
+    {0x00F880, 0x00F89E, "CompanionRoom", CompanionRoom, CT_SP},   /* as the graphics routines it ends with */
+    {0x00F89E, 0x00F8A2, "CompanionGfx0", CompanionGfx0, CT_SP},
+    {0x00F8A2, 0x00F8A6, "CompanionGfx6", CompanionGfx6, CT_SP},
+    {0x00F8A6, 0x00F8A8, "CompanionGfx4", CompanionGfx4, CT_SP},
+    {0x00F8A8, 0x00F8B2, "CompanionGfx", CompanionGfx, CT_SP},
+    {0x00F8B2, 0x00F8E0, "CompanionRoom2", CompanionRoom2, CT_SP},
+    {0x00F8E0, 0x00F906, "CompanionAt", CompanionAt, CT_ALL},
+    {0x00F906, 0x00F99C, "CompanionJoin", CompanionJoin, CT_SP},   /* as SetAnim ($7E8) and the graphics */
+    {0x00F99C, 0x00F9B2, "CompanionHide", CompanionHide, CT_ALL},
+    {0x00F9B2, 0x00F9C0, "CompanionPalette", CompanionPalette, CT_ALL},
+    {0x00F9C0, 0x00F9C8, "CompanionAgain", CompanionAgain, CT_ALL},
+    {0x00F9C8, 0x00FA20, "CompanionMake", CompanionMake, CT_ALL},
+    {0x00FA20, 0x00FA42, "CompanionNewA", CompanionNewA, CT_ALL},
+    {0x00FA42, 0x00FA6C, "CompanionNewB", CompanionNewB, CT_ALL},
     {0x00F5FC, 0x00F668, "Looks", Looks, CT_SP},                /* as the graphics routines they end with */
     {0x00F668, 0x00F670, "LooksExtra", LooksExtra, CT_SP},
     {0x00F670, 0x00F698, "LooksBlock", LooksBlock, CT_SP},

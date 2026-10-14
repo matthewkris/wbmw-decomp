@@ -7009,8 +7009,6 @@ ENTRY(DigitsOut, digits_out)               /* $850C */
  * closes, $DB3C sees whether the equipment changed: if so the rest of the frame is dropped, the
  * player strikes the change pose, and once its animation flags it the looks are loaded again. */
 
-static void cmp_long(uint32_t s, uint32_t d) { uint16_t x = c->ccr & CC_X; sub_l(&c->ccr, s, d); c->ccr = (uint16_t)((c->ccr & ~CC_X) | x); }
-
 /* $F670: the block at $F680 by the offset in d0 */
 static void looks_block(void)
 {
@@ -7117,7 +7115,7 @@ static int equip_change(void)
     f_bit(rd8(0xFFFF9EF1u) >> 4 & 1);
     if (rd8(0xFFFF9EF1u) & 0x10) return 0;
     c->d[0] = rd32(0xFFFF95CEu); F_L(c->d[0]);
-    cmp_long(rd32(0xFFFF95D2u), c->d[0]);
+    cmp_l(&c->ccr, rd32(0xFFFF95D2u), c->d[0]);
     if (c->d[0] == rd32(0xFFFF95D2u)) return 0;
     uint32_t ret = rd32(c->a[7]); c->a[7] += 4;
     put32m(0xFFFF9F1Eu, ret);
@@ -7150,3 +7148,304 @@ ENTRY(LooksBody, looks_body)               /* $F698 */
 ENTRY(LooksSword, looks_sword)             /* $F6F8 */
 ENTRY(LooksShield, looks_shield)           /* $F742 */
 void EquipChange(Cpu *cpu) { c = cpu; NEEDS_PASS(0xDB3C); if (!equip_change()) c->ret = 0; }   /* $DB3C */
+
+/* ---- batch T38: the player placed in a room, and the companion set up ----
+ * As a room is entered ($8EE6), $DBBE sets the companion up, resets the player and places it by
+ * the arrival ($9678). The companion ($9F30 its slot, $9F32 its kind 0-6 or negative for none)
+ * follows only in the areas its mask allows ($FA08); a room's command ($95E8) or a message's
+ * ($1A24) changes it. */
+
+#define COMPANION     0xFFFF9F30u   /* word: its slot */
+#define COMPANION_K   0xFFFF9F32u   /* word: its kind (0, 2, 4, 6), negative if none */
+
+static uint32_t p4(int32_t off) { return c->a[4] + (uint32_t)off; }   /* -$xxxx(a4) */
+static uint32_t p2(int32_t off) { return c->a[2] + (uint32_t)off; }   /* -$xxxx(a2) */
+static uint32_t p0(int32_t off) { return c->a[0] + (uint32_t)off; }   /* -$xxxx(a0) */
+
+/* $FA20 (kinds 0 and 4): in use, cleared ($A36), its kind byte, $A148 kept, palette 8, drawn */
+static void companion_new_a(void)
+{
+    put8(p4(-0x4000), 0x80);
+    call(0xA36);
+    put8(p4(-0x2BFF), c->d[0]);
+    put16m(p4(-0x2600), rd16(0xFFFFA148u));
+    put8(p4(-0x3CFD), 8);
+    put8(p4(-0x3FFE), 0x80);
+}
+/* $FA42 (kinds 2 and 6): its area kept, cleared, its kind and state bytes, speed $40, palette
+ * 8, in use, $9F76 set */
+static void companion_new_b(void)
+{
+    put16m(p4(-0x2600), rd16(0xFFFF9668u));
+    call(0xA36);
+    put8(p4(-0x2BFF), c->d[0]);
+    put8(p4(-0x3100), c->d[0]);
+    put16m(p4(-0x33FE), 0x40);
+    put8(p4(-0x3CFD), 8);
+    put8(p4(-0x4000), 0x80);
+    wr8(0xFFFF9F76u, 0xFF);
+}
+/* $F9C8: the companion d0 made, unless it is the boss's room ($966B bit 7), the area forbids it
+ * ($966B bit 5), under water (bit 0), or its mask ($FA08) has the area's bit: then none */
+static void companion_make(void)
+{
+    move_b(1, rd8(0xFFFF966Bu));
+    if (c->d[1] & 0x80) return;
+    f_bit(c->d[1] >> 5 & 1);
+    if (c->d[1] & 0x20) return;
+    f_bit(c->d[1] & 1);
+    if (!(c->d[1] & 1)) {
+        c->d[1] = set_w(c->d[1], c->d[0]); F_W(c->d[1]);
+        c->d[1] = set_w(c->d[1], add_w(&c->ccr, c->d[1], c->d[1]));
+        c->d[1] = rd32(0xFA08 + sx(c->d[1])); F_L(c->d[1]);
+        move_b(2, rd8(0xFFFF9668u));
+        f_bit(c->d[1] >> (c->d[2] & 31) & 1);
+        if (!(c->d[1] >> (c->d[2] & 31) & 1)) {
+            c->a[7] -= 2; wr16(c->a[7], (uint16_t)c->a[4]);
+            c->a[4] = sx(rd16(COMPANION));
+            put16m(p4(-0x2BFE), c->d[0]);
+            c->a[0] = 0xFA18 + sx(rd16(0xFA18 + sx(c->d[0])));
+            if (c->a[0] == 0xFA20) companion_new_a();
+            else if (c->a[0] == 0xFA42) companion_new_b();
+            else call(c->a[0]);                     /* past the table: as the original jumps */
+            c->a[4] = sx(rd16(c->a[7])); c->a[7] += 2;
+            return;
+        }
+    }
+    wr8(COMPANION_K, 0xFF);                         /* st.b: none */
+}
+/* $F9C0: the companion made again, if there is one */
+static void companion_again(void)
+{
+    c->d[0] = set_w(c->d[0], rd16(COMPANION_K)); F_W(c->d[0]);
+    if (c->d[0] & 0x8000) return;
+    companion_make();
+}
+/* $F9B2: palette slot $200 on from the companion's kind */
+static void companion_palette(void)
+{
+    c->d[0] = set_w(c->d[0], rd16(p4(-0x2BFE))); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, 0x200, c->d[0]));
+    put16m(p4(-0x3D00), c->d[0]);
+}
+/* $F99C: the companion hidden (not drawn, its state cleared), if there is one */
+static void companion_hide(void)
+{
+    F_W(rd16(COMPANION_K));
+    if (rd16(COMPANION_K) & 0x8000) return;
+    c->a[0] = sx(rd16(COMPANION));
+    mem_and8(p0(-0x4000), 0xBF);
+    put8(p0(-0x2BFF), 0);
+}
+/* $F8E0: the companion's speeds, and x d0 and y d1 for it and its two followers' fields */
+static void companion_at(void)
+{
+    put16m(p2(-0x33FE), 0x40);
+    put16m(p2(-0x32FE), 0x400);
+    put16m(p2(-0x3800), c->d[0]);
+    put16m(p2(-0x2E00), c->d[0]);
+    put16m(p2(-0x2100), c->d[0]);
+    put16m(p2(-0x3700), c->d[1]);
+    put16m(p2(-0x2DFE), c->d[1]);
+    put16m(p2(-0x20FE), c->d[1]);
+}
+/* $F8A8: the companion's graphics block d0 ($F670), a2 kept */
+static void companion_gfx(void)
+{
+    c->a[7] -= 4; wr32(c->a[7], c->a[2]);
+    looks_block();
+    c->a[2] = rd32(c->a[7]); c->a[7] += 4;
+}
+/* $F8B2 (the room's companion 2): if game flag $38 is set, its graphics, made, state $10, at
+ * ($12D4, $1090) */
+static void companion_room_2(void)
+{
+    c->d[0] = 0x38; F_L(0x38);
+    call(0x274C);
+    if (c->ccr & CC_Z) return;
+    c->a[7] -= 4; wr32(c->a[7], c->a[2]);
+    c->d[0] = 2; F_L(2);
+    looks_block();
+    c->d[0] = 2; F_L(2);
+    companion_make();
+    c->a[2] = sx(rd16(COMPANION));
+    put8(p2(-0x2BFF), 0x10);
+    c->d[0] = set_w(c->d[0], 0x12D4); F_W(0x12D4);
+    c->d[1] = set_w(c->d[1], 0x1090); F_W(0x1090);
+    companion_at();
+    c->a[2] = rd32(c->a[7]); c->a[7] += 4;
+}
+/* $F880 (a room's command, $95E8, with a companion d0 other than the one there is): none, its
+ * slot freed, then the room's: graphics 0, 4 or 6, or companion 2's ($F8B2) */
+static void companion_room(void)
+{
+    wr8(COMPANION_K, 0xFF);
+    c->a[0] = sx(rd16(COMPANION));
+    put16m(p0(-0x4000), 0);
+    switch (c->d[0] & 0xFFFF) {                     /* jmp $F896(pc, d0.w) */
+    case 0: c->d[0] = 0; F_L(0); companion_gfx(); break;
+    case 2: companion_room_2(); break;
+    case 4: c->d[0] = 4; F_L(4); companion_gfx(); break;
+    case 6: c->d[0] = 6; F_L(6); companion_gfx(); break;
+    default: c->a[0] = 0xF896; c->a[0] += sx(rd16(c->a[0] + sx(c->d[0]))); call(c->a[0]); break;   /* past the table: as the original jumps */
+    }
+}
+/* $F906 (a message's command, $1A24): companion d0 joins */
+static void companion_join(void)
+{
+    switch (c->d[0] & 0xFFFF) {                     /* jmp $F910(pc, d0.w) */
+    case 0:                                         /* $F942: made, state $A, the pose $402 found ($D36E), animation 2 */
+        c->d[0] = 0; F_L(0);
+        put16m(COMPANION_K, 0);
+        companion_again();
+        c->a[0] = sx(rd16(COMPANION));
+        put8(p0(-0x2BFF), 0xA);
+        c->d[1] = set_w(c->d[1], 0x402); F_W(0x402);
+        call(0xD36E);
+        c->d[0] = 2; F_L(2);
+        call(SET_ANIM);
+        break;
+    case 2:                                         /* $F966: with game flag $38, speed $40, state $C */
+        c->d[0] = 0x38; F_L(0x38);
+        call(0x274C);
+        if (c->ccr & CC_Z) break;
+        c->a[0] = sx(rd16(COMPANION));
+        put16m(p0(-0x33FE), 0x40);
+        put8(p0(-0x2BFF), 0xC);
+        put16m(COMPANION_K, 2);
+        break;
+    case 4:                                         /* $F986: made, state $A */
+        c->d[0] = 4; F_L(4);
+        put16m(COMPANION_K, 4);
+        companion_again();
+        c->a[0] = sx(rd16(COMPANION));
+        put8(p0(-0x2BFF), 0xA);
+        break;
+    case 6:                                         /* $F918: made, speed $40, state $C, at ($1210, $1090) */
+        c->d[0] = 6; F_L(6);
+        put16m(COMPANION_K, 6);
+        companion_again();
+        c->a[7] -= 4; wr32(c->a[7], c->a[2]);
+        c->a[2] = sx(rd16(COMPANION));
+        put16m(p2(-0x33FE), 0x40);
+        put8(p2(-0x2BFF), 0xC);
+        c->d[0] = set_w(c->d[0], 0x1210); F_W(0x1210);
+        c->d[1] = set_w(c->d[1], 0x1090); F_W(0x1090);
+        companion_at();
+        c->a[2] = rd32(c->a[7]); c->a[7] += 4;
+        break;
+    default: c->a[0] = 0xF910; c->a[0] += sx(rd16(c->a[0] + sx(c->d[0]))); call(c->a[0]); break;   /* past the table: as the original jumps */
+    }
+}
+
+/* $DCCC: the player reset: in use only, the pickups and $9F16 cleared, $9F03 and its sprite bits
+ * 5-6 off, the screen set up ($8BB6), $95F4 and $95F6/16 kept, the view's limits ($86BC) */
+static void player_reset(void)
+{
+    put8(p4(-0x4000), 0x80);
+    put16m(0xFFFF9F7Au, 0);
+    put8(0xFFFF9F78u, 0);
+    put16m(0xFFFF9F16u, 0);
+    mem_and8(0xFFFF9F03u, 0x9F);
+    mem_and8(p4(-0x3FFE), 0x9F);
+    call(0x8BB6);
+    put16m(p4(-0x2700), rd16(0xFFFF95F4u));
+    c->d[0] = set_w(c->d[0], rd16(0xFFFF95F6u)); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], lsr_n(&c->ccr, c->d[0], 4, 16));
+    put16m(p4(-0x26FE), c->d[0]);
+    call(0x86BC);
+}
+/* $DBF0: the player placed at the start point ($967A, $967C) standing on its feet: its motion,
+ * state and the frame's flags cleared, animation 0 at once */
+static void player_place(void)
+{
+    c->d[0] = 0; F_L(0);
+    put16m(p4(-0x30FE), 0); put8(p4(-0x3100), 0); put16m(p4(-0x3200), 0); put8(p4(-0x3D00), 0);
+    put16m(p4(-0x37FE), 0); put16m(p4(-0x36FE), 0); put32m(p4(-0x3600), 0); put32m(p4(-0x3400), 0);
+    put8(p4(-0x2AFD), 0); put32m(p4(-0x2D00), 0); put8(0xFFFF9F05u, 0); put16m(p4(-0x3FFE), 0);
+    put32m(p4(-0x3E00), 0); put32m(p4(-0x2800), 0); put16m(0xFFFF9F02u, 0);
+    put8(0xFFFF9F06u, 0); put8(0xFFFF9F07u, 0); put8(0xFFFF9F09u, 0); put8(0xFFFF9F0Au, 0); put8(0xFFFF9F08u, 0);
+    put8(p4(-0x2F00), 3);
+    mem_and8(p4(-0x3FFD), 0xBF);
+    mem_or8(p4(-0x3FFE), 4);
+    put8(p4(-0x3CFD), 0x10);
+    put16m(p4(-0x39FE), 0x100);
+    put16m(p4(-0x3800), rd16(0xFFFF967Au));
+    put16m(p4(-0x3700), rd16(0xFFFF967Cu));
+    c->d[0] = 1; F_L(1);
+    put8(p4(-0x31FF), 1);
+    c->d[0] = 0; F_L(0);
+    call(0x7FC);
+    c->d[0] = 0; F_L(0);
+    move_b(0, rd8(p4(-0x34FD)));
+    wr16(p4(-0x3700), (uint16_t)sub_w(&c->ccr, c->d[0] & 0xFFFF, rd16(p4(-0x3700))));
+    mem_or8(p4(-0x4000), 0x40);
+}
+/* $DC8A (arrival 2): the player moved from the start point by ($967E, $9680), drawn; under
+ * water its fall speed halved */
+static void player_moved(void)
+{
+    c->d[0] = set_w(c->d[0], rd16(0xFFFF967Au)); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(0xFFFF967Eu), c->d[0]));
+    put16m(p4(-0x3800), c->d[0]);
+    c->d[0] = set_w(c->d[0], rd16(0xFFFF967Cu)); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(0xFFFF9680u), c->d[0]));
+    put16m(p4(-0x3700), c->d[0]);
+    mem_or8(p4(-0x4000), 0x40);
+    f_bit(rd8(0xFFFF966Bu) & 1);
+    if (!(rd8(0xFFFF966Bu) & 1)) return;
+    wr16(p4(-0x35FE), (uint16_t)asr_w1(&c->ccr, rd16(p4(-0x35FE))));
+}
+/* $DCC0 (arrival 16): placed, and kept still ($C003 bit 4) */
+static void player_place_still(void)
+{
+    player_place();
+    mem_or8(p4(-0x3FFD), 0x10);
+}
+/* $DCB6 (arrival 18): placed, kept still after a restart's room change ($965F bit 0) */
+static void player_place_restart(void)
+{
+    f_bit(rd8(0xFFFF965Fu) & 1);
+    if (rd8(0xFFFF965Fu) & 1) player_place_still(); else player_place();
+}
+/* $DBBE: a room entered: the companion made again, the player reset and placed by the arrival */
+static void room_player(void)
+{
+    companion_again();
+    c->a[4] = sx(rd16(0xFFFF9EEEu));
+    player_reset();
+    c->d[2] = 0; F_L(0);
+    move_b(2, rd8(0xFFFF9678u));
+    c->a[0] = 0xDBDA + sx(rd16(0xDBDA + sx(c->d[2])));
+    switch (c->a[0]) {                              /* jmp (a0) */
+    case 0xDBF0: player_place(); break;
+    case 0xDC8A: player_moved(); break;
+    case 0xDCC0: player_place_still(); break;
+    case 0xDCB6: player_place_restart(); break;
+    default: call(c->a[0]); break;                  /* past the table: as the original jumps */
+    }
+}
+
+ENTRY(RoomPlayer, room_player)             /* $DBBE */
+ENTRY(PlayerPlace, player_place)           /* $DBF0 */
+ENTRY(PlayerMoved, player_moved)           /* $DC8A */
+ENTRY(PlayerPlaceRestart, player_place_restart)   /* $DCB6 */
+ENTRY(PlayerPlaceStill, player_place_still)       /* $DCC0 */
+ENTRY(PlayerReset, player_reset)           /* $DCCC */
+ENTRY(CompanionRoom, companion_room)       /* $F880 */
+static void companion_gfx_0(void) { c->d[0] = 0; F_L(0); companion_gfx(); }   /* $F89E */
+static void companion_gfx_6(void) { c->d[0] = 6; F_L(6); companion_gfx(); }   /* $F8A2 */
+static void companion_gfx_4(void) { c->d[0] = 4; F_L(4); companion_gfx(); }   /* $F8A6 */
+ENTRY(CompanionGfx0, companion_gfx_0)      /* $F89E */
+ENTRY(CompanionGfx6, companion_gfx_6)      /* $F8A2 */
+ENTRY(CompanionGfx4, companion_gfx_4)      /* $F8A6 */
+ENTRY(CompanionGfx, companion_gfx)         /* $F8A8 */
+ENTRY(CompanionRoom2, companion_room_2)    /* $F8B2 */
+ENTRY(CompanionAt, companion_at)           /* $F8E0 */
+ENTRY(CompanionJoin, companion_join)       /* $F906 */
+ENTRY(CompanionHide, companion_hide)       /* $F99C */
+ENTRY(CompanionPalette, companion_palette) /* $F9B2 */
+ENTRY(CompanionAgain, companion_again)     /* $F9C0 */
+ENTRY(CompanionMake, companion_make)       /* $F9C8 */
+ENTRY(CompanionNewA, companion_new_a)      /* $FA20 */
+ENTRY(CompanionNewB, companion_new_b)      /* $FA42 */
