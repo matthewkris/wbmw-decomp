@@ -1427,6 +1427,30 @@ int hybrid_fuzz(const char *name, long count)
             if (!strcmp(name, "DemoStep")) ram[0x8A4E] = (uint8_t)(rnd() % 3 ? 1 : rnd());
         }
         if (!strcmp(name, "TasksStart")) m68k_set_reg(M68K_REG_A1, rnd() % 2 ? 0x4FC0 : 0x50CC);
+        {   /* batch T45 (enemylib.c): a2 another entity, the spreads and frame counts not 0, a table of states for $428C */
+            char key[40]; snprintf(key, sizeof key, "|%s|", name);
+            if (strstr("|MakePartner|CopyToA2|VelocityToward|FaceEntity|DistXToEntity|DistY|DistYAbs|", key))
+                m68k_set_reg(M68K_REG_A2, 4 * (rnd() % 64));
+            if (strstr("|SpawnDebris|PuffA|PuffB|RandomSpread|", key)) {
+                m68k_set_reg(M68K_REG_D3, (rnd() << 16) | (1 + rnd() % 0x40)); m68k_set_reg(M68K_REG_D4, (rnd() << 16) | (1 + rnd() % 0x40));
+                m68k_set_reg(M68K_REG_D5, (rnd() << 16) | (1 + rnd() % 0x40));
+            }
+            if (!strcmp(name, "VelocityToward")) m68k_set_reg(M68K_REG_D1, (rnd() << 16) | (uint16_t)(rnd() % 2 ? 1 + rnd() % 0x40 : -(int)(1 + rnd() % 0x40)));
+            if (!strcmp(name, "RandomState")) {
+                for (int k3 = 0; k3 < 16; k3++) ram[0x4E00 + k3] = (uint8_t)(rnd() % 3 == 0 ? 0 : rnd() % 3 ? 2 * (rnd() % 8) : 0x80 | rnd());
+                m68k_set_reg(M68K_REG_A0, 0xFF4E00); m68k_set_reg(M68K_REG_D2, (rnd() << 16) | rnd() % 8);
+            }
+            if (!strcmp(name, "GroundedWait") || !strcmp(name, "SlowOnGround")) {   /* on the ground, slow enough to stop */
+                uint32_t sl = 4 * (rnd() % 64);
+                m68k_set_reg(M68K_REG_A4, sl);
+                if (rnd() % 2) ram[0xCF00 + sl] = 2;
+                if (rnd() % 2) put_word(0xCA00 + sl, (uint32_t)(int32_t)(rnd() % 0x81 - 0x40));
+                ram[0xD801 + sl] = (uint8_t)(rnd() % 3);
+            }
+            if (!strcmp(name, "MaybeBubble") || !strcmp(name, "BubbleInWater")) {
+                put_word(0x965A, rnd() % 2 ? rnd() & ~0x3Fu : rnd()); ram[0x966B] = (uint8_t)(rnd() & 1);
+            }
+        }
         if (!strcmp(name, "DrawLayout")) {          /* batch T44: one of the game's layouts on one of its planes */
             static const uint32_t layouts[] = { 0x7024, 0x7300, 0x73CC, 0x91C2 };
             static const uint8_t planes[] = { 0, 1, 2, 3, 0x80 };
