@@ -1242,6 +1242,17 @@ int hybrid_fuzz(const char *name, long count)
             for (uint32_t k4 = 0; k4 < 2; k4++) if (rnd() % 2) ram[0x99BE] ^= (uint8_t)(1 << k4);
             ram[0x99DF] = (uint8_t)rnd(); put_word(0x99E4, 2 * (rnd() % 4));
         }
+        if (!strncmp(name, "Lift", 4) || !strcmp(name, "Room2Setup") || !strcmp(name, "Room3Setup") || !strcmp(name, "Room4Setup")) {
+            /* a lift's room as $CC1C sets it up (x, the floors), the lift at either floor or moving, the player above or below */
+            static const uint32_t data[3] = { 0xCB64, 0xCB74, 0xCB84 };
+            uint32_t dd = data[rnd() % 3], p = (uint32_t)ram[0x9EEE] << 8 | ram[0x9EEF];
+            put_word(0x99E0, bus_read16(dd)); put_word(0x99E2, bus_read16(dd + 2)); put_word(0x99E4, bus_read16(dd + 4));
+            ram[0x99DE] = (uint8_t)(rnd() % 2); ram[0x99DF] = (uint8_t)(rnd() % 4);
+            ram[0x99E6] = (uint8_t)(rnd() % 3); ram[0x99E7] = (uint8_t)(rnd() % 3); ram[0x9995] = (uint8_t)rnd();
+            put_word(0xC900 + p, 0x1040 + rnd() % 0x2C0);
+            m68k_set_reg(M68K_REG_D0, (rnd() << 16) | rnd() % 8);
+            m68k_set_reg(M68K_REG_A0, dd);
+        }
         if (!strcmp(name, "CrumbleAdd")) {          /* some walls' records taken */
             for (uint32_t k4 = 0; k4 < 4; k4++) ram[0x9B96 + 8 * k4] = (uint8_t)(rnd() % 3 ? 0x80 | rnd() % 4 : 0);
             m68k_set_reg(M68K_REG_D6, (rnd() << 16) | (0xF0 + rnd() % 0x100)); m68k_set_reg(M68K_REG_D7, (rnd() << 16) | ((0x4000 + rnd() % 0x1500) & ~0x3Fu));

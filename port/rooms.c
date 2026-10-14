@@ -4566,3 +4566,132 @@ void Drops(Cpu *cpu)        { c = cpu; cont_68k(drops); }                       
 void Room0Frame(Cpu *cpu)   { c = cpu; NEEDS_PASS(0xC91E); cont_68k(room0_frame); }        /* $C91E */
 void Room0Release(Cpu *cpu) { c = cpu; NEEDS_PASS(0xC9B4); cont_68k(room0_release); }      /* $C9B4 */
 void Room1Frame(Cpu *cpu)   { c = cpu; NEEDS_PASS(0xCA66); cont_68k(room1_frame); }        /* $CA66 */
+
+/* ---- batch T25: the rooms' scripts 2-4 and 14: a lift between two floors ----
+ * Indexes 2, 3 and 4 (area 15's rooms 3, 8 and 9) each have a lift (a room object of kind $1A,
+ * made by $11BF0) between two floors, with a switch at each floor (two cells a switch, $CCD2).
+ * $99E0 is the lift's x, $99E2 and $99E4 the floors, $99DE bit 0 the lift at the lower floor
+ * and $99DF which side each switch is on (bit 0 the upper's, bit 1 the lower's). Index 14 (area
+ * 16's room 3) runs the same each frame. */
+
+/* $CC8E: switch d0's cells (0-3: the lift there, 4-7: called; bit 1 the lower floor's) */
+static void lift_switch(void)
+{
+    static const uint16_t cells[8][2] = {
+        { 0x2E2, 0x2E3 }, { 0x2E4, 0x2E5 }, { 0x2E2, 0x2E3 }, { 0x2E4, 0x2E5 },
+        { 0x2E0, 0x2E0 }, { 0x2E1, 0x2E1 }, { 0x2E0, 0x2E0 }, { 0x2E1, 0x2E1 },
+    };
+    c->d[6] = set_w(c->d[6], rd16(0xFFFF99E0u)); F_W(c->d[6]);
+    c->d[6] = set_w(c->d[6], lsr_n(&c->ccr, c->d[6], 4, 16));
+    c->d[7] = set_w(c->d[7], rd16(0xFFFF99E2u)); F_W(c->d[7]);
+    c->d[1] = 0; F_L(0);
+    f_bit(c->d[0] >> 1 & 1);
+    if (c->d[0] & 2) {
+        c->d[7] = set_w(c->d[7], rd16(0xFFFF99E4u)); F_W(c->d[7]);
+        c->d[1] = 1; F_L(1);
+    }
+    f_bit(rd8(0xFFFF99DFu) >> (c->d[1] & 7) & 1);
+    if (rd8(0xFFFF99DFu) >> (c->d[1] & 7) & 1) c->d[6] = set_w(c->d[6], add_w(&c->ccr, 4, c->d[6]));   /* right of the lift */
+    else c->d[6] = set_w(c->d[6], sub_w(&c->ccr, 1, c->d[6]));
+    c->d[7] = set_w(c->d[7], sub_w(&c->ccr, 0x20, c->d[7]));
+    c->d[7] = set_w(c->d[7], lsl_n(&c->ccr, c->d[7], 2, 16));
+    uint32_t i = c->d[0] & 7;
+    c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 2, 16));
+    c->a[0] = 0xCCD4u + 4 * i;
+    c->d[0] = set_w(c->d[0], cells[i][0]); F_W(c->d[0]);
+    c->a[7] -= 4; wr32(c->a[7], c->a[0]); F_L(c->a[0]);
+    push32(0xCCC6); cell_set_a(); c->a[7] += 4;
+    c->a[0] = pop32();
+    c->d[7] = set_w(c->d[7], add_w(&c->ccr, 0x40, c->d[7]));
+    c->d[0] = set_w(c->d[0], cells[i][1]); F_W(c->d[0]); c->a[0] += 2;
+    cell_set_draw_if_shown();
+}
+/* $CC1C: the lift from the four words at a0 (x, the floors, $99DE): made at the floor nearer
+ * the player, its switches drawn */
+static void lift_setup(void)
+{
+    c->d[6] = set_w(c->d[6], next16(0)); put16m(0xFFFF99E0u, c->d[6]);
+    c->d[7] = set_w(c->d[7], next16(0)); put16m(0xFFFF99E2u, c->d[7]);
+    c->d[0] = set_w(c->d[0], next16(0)); put16m(0xFFFF99E4u, c->d[0]);
+    put16m(SCRIPT_VARS, next16(0));
+    put16m(0xFFFF99E6u, 0);
+    put8(0xFFFFA0E0u, 8);
+    c->d[4] = set_w(c->d[4], c->d[0]); F_W(c->d[0]);
+    c->d[4] = set_w(c->d[4], sub_w(&c->ccr, c->d[7], c->d[4]));   /* the height between, its half */
+    c->d[1] = set_w(c->d[1], c->d[4]); F_W(c->d[4]);
+    c->d[4] = set_w(c->d[4], lsl_n(&c->ccr, c->d[4], 4, 16));
+    move_b(4, 6);
+    c->d[1] = set_w(c->d[1], lsr_n(&c->ccr, c->d[1], 1, 16));
+    c->d[1] = set_w(c->d[1], add_w(&c->ccr, c->d[7], c->d[1]));
+    c->a[4] = sx(rd16(PLAYER_ENT));
+    cmp_w(&c->ccr, rd16(c->a[4] - 0x3700), c->d[1]);
+    if ((c->d[1] & 0xFFFF) < rd16(c->a[4] - 0x3700)) {   /* the player below half-way: the lower floor */
+        mem_or8(SCRIPT_VARS, 1);
+        uint32_t t = c->d[0]; c->d[0] = c->d[7]; c->d[7] = t;
+        or_w(4, 0x8000);
+    }
+    c->d[5] = 0x1A; F_L(0x1A);
+    call(0x11BF0);
+    f_bit(rd8(SCRIPT_VARS) & 1);
+    if (!(rd8(SCRIPT_VARS) & 1)) {
+        c->d[0] = 2; F_L(2);
+        f_bit(rd8(0xFFFF99DFu) >> 1 & 1);
+        if (rd8(0xFFFF99DFu) & 2) { c->d[0] = 3; F_L(3); }
+    } else {
+        c->d[0] = 0; F_L(0);
+        f_bit(rd8(0xFFFF99DFu) & 1);
+        if (rd8(0xFFFF99DFu) & 1) { c->d[0] = 1; F_L(1); }
+    }
+    lift_switch();
+}
+static void room2_setup(void) { c->a[0] = 0xCB64; lift_setup(); }   /* $CB5C: x $1060, floors $1060 and $12B0 */
+static void room3_setup(void) { c->a[0] = 0xCB74; lift_setup(); }   /* $CB6C: $1080 and $11F0 */
+static void room4_setup(void) { c->a[0] = 0xCB84; lift_setup(); }   /* $CB7C: the same, switches the other way */
+/* $CB8C, each frame: the lift's object sets $9995 bit 0 as it leaves a floor (both switches
+ * show it moving; after 30 frames $9994 bit 2) and bit 1 as it arrives (30 frames later the
+ * switches show where it is) */
+static void lift_frame(void)
+{
+    if (mem_bclr(0xFFFF9995u, 0)) {
+        put8(0xFFFF99E7u, 0x1E);
+        put8(0xFFFF9F05u, 4);
+        f_bit(rd8(SCRIPT_VARS) & 1);
+        if (rd8(SCRIPT_VARS) & 1) {
+            c->d[0] = 2; F_L(2);
+            f_bit(rd8(0xFFFF99DFu) >> 1 & 1);
+            if (rd8(0xFFFF99DFu) & 2) { c->d[0] = 3; F_L(3); }
+        } else {
+            c->d[0] = 0; F_L(0);
+            f_bit(rd8(0xFFFF99DFu) & 1);
+            if (rd8(0xFFFF99DFu) & 1) { c->d[0] = 1; F_L(1); }
+        }
+        push32(0xCBC6); lift_switch(); c->a[7] += 4;
+    }
+    if (mem_bclr(0xFFFF9995u, 1)) put8(0xFFFF99E6u, 0x1E);
+    else {
+        F_B(rd8(0xFFFF99E6u));
+        if (rd8(0xFFFF99E6u) && !mem_dec8(0xFFFF99E6u)) {
+            f_bit(rd8(SCRIPT_VARS) & 1);
+            if (!(rd8(SCRIPT_VARS) & 1)) {
+                c->d[0] = 6; F_L(6);
+                f_bit(rd8(0xFFFF99DFu) >> 1 & 1);
+                if (rd8(0xFFFF99DFu) & 2) { c->d[0] = 7; F_L(7); }
+            } else {
+                c->d[0] = 4; F_L(4);
+                f_bit(rd8(0xFFFF99DFu) & 1);
+                if (rd8(0xFFFF99DFu) & 1) { c->d[0] = 5; F_L(5); }
+            }
+            push32(0xCC08); lift_switch(); c->a[7] += 4;
+        }
+    }
+    F_B(rd8(0xFFFF99E7u));
+    if (!rd8(0xFFFF99E7u) || mem_dec8(0xFFFF99E7u)) return;
+    { uint16_t v = (uint16_t)(rd16(0xFFFF9994u) | 4); wr16(0xFFFF9994u, v); F_W(v); }
+}
+
+ENTRY(Room2Setup, room2_setup)             /* $CB5C */
+ENTRY(Room3Setup, room3_setup)             /* $CB6C */
+ENTRY(Room4Setup, room4_setup)             /* $CB7C */
+ENTRY(LiftFrame, lift_frame)               /* $CB8C */
+ENTRY(LiftSetup, lift_setup)               /* $CC1C */
+ENTRY(LiftSwitch, lift_switch)             /* $CC8E */
