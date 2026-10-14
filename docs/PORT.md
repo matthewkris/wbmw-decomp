@@ -2184,6 +2184,32 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 mismatches, every instruction covered. Self-test caught 100 in 100 for each. Replace mode:
 thirteen runs, no problems.
 
+#### The room changes, batch T25: the rooms' scripts 2-4 and 14, a lift (2026-10-13)
+
+Indexes 2, 3 and 4 (area 15's rooms 3, 8 and 9) each have a lift between two floors: a room
+object of kind `$1A`, made by `$11BF0`. There is a switch at each floor, two cells each, from
+the table at `$CCD2`. In `port/rooms.c`, with every register and flag in the contract:
+
+* The setups (`$CB5C`, `$CB6C`, `$CB7C`) pass their four words to `$CC1C`: the lift's x, the two
+  floors, and `$99DE`. It puts the lift at the floor nearer the player and draws the switch
+  there (`$CC8E`). `$99DE` bit 0 means the lift is at the lower floor. `$99DF` says which side
+  of the lift each switch is on.
+* Each frame (`$CB8C`, also index 14, area 16's room 3): the lift's object sets `$9995` bit 0
+  as it leaves a floor. The switch shows it moving, and 30 frames later `$9994` bit 2 is set.
+  Bit 1 is set as it arrives; 30 frames later the switch shows where it is.
+
+The lower floor with the upper switch on the lift's right (`$CC88`) is in
+`analysis/coverage_skip.txt`: the three lifts' data words are `$0002`, `$0002` and `$0000`, so
+`$99DF` bit 0 is never set there.
+
+The fuzz runs these with the three lifts' data, the lift at either floor or moving, the
+switches' timers near their ends and the player above or below half-way.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(39 runs, all complete; 637,567 checked calls). 180,000 fuzz cases from six states, 0
+mismatches, every instruction covered. Self-test caught 100 in 100 for each. Replace mode:
+thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
