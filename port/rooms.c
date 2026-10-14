@@ -5200,3 +5200,165 @@ void SeqTalk(Cpu *cpu)          { c = cpu; NEEDS_PASS(0xC1E8); seq_talk(); }    
 void SeqReceive(Cpu *cpu)       { c = cpu; NEEDS_PASS(0xC27E); seq_receive(); }               /* $C27E */
 void SeqStatue(Cpu *cpu)        { c = cpu; NEEDS_PASS(0xC48C); seq_statue(); }                /* $C48C */
 void ReceivePalettes(Cpu *cpu)  { c = cpu; NEEDS_PASS(0xC31A); cont_68k(receive_palettes); }  /* $C31A */
+
+/* ---- batch T28: the rooms' scripts 11 and 12 ----
+ * Index 11 (area 11's room 6): a game of chance with three figures (room objects of kind 4 at
+ * $99E0) and the message $5B. Index 12 (area 4's room 1): until game flag $39, its graphics
+ * streamed in; after it, the way at ($108, $4100) shut. */
+
+/* $D176: the three figures' animations from the bytes at a1 */
+static void room11_looks(void)
+{
+    c->a[0] = 0xFFFF99E0u;
+    c->d[3] = 2; F_L(2);
+    do {
+        c->a[4] = sx(next16(0));
+        move_b(0, next8(1));
+        call(SET_ANIM);
+    } while (dbra(3));
+}
+/* $D00C as it loads: the three figures (looks and heights from $D05C), $9659 bit 7 */
+static void room11_setup(void)
+{
+    c->a[0] = 0xD05C;
+    c->a[1] = 0xFFFF99E0u;
+    c->d[3] = 2; F_L(2);
+    do {
+        call(FIND_EFFECT);
+        put16(1, c->a[4]);
+        call(CLEAR_ENTITY);
+        put16m(c->a[4] - 0x2BFE, 4);
+        put16m(c->a[4] - 0x3DFE, 0x400);
+        c->d[0] = set_w(c->d[0], 0x1600); F_W(0x1600);
+        move_b(0, next8(0));
+        put16m(c->a[4] - 0x3D00, c->d[0]);
+        put8(c->a[4] - 0x3CFD, next8(0));
+        put16m(c->a[4] - 0x3800, 0x10B0);
+        put16m(c->a[4] - 0x3700, next16(0));
+        c->d[0] = 0; F_L(0);
+        call(SET_ANIM);
+        put8(c->a[4] - 0x4000, 0xC0);
+    } while (dbra(3));
+    { uint8_t v = rd8(0xFFFF9659u); f_bit(v >> 7 & 1); wr8(0xFFFF9659u, v | 0x80); }
+}
+/* $D068, each frame until it is played ($99DE): the message runs, its choices ($8CC2) turning
+ * the figures for 30 frames and the middle one ($99E2) moving at random. The result ($8CD3):
+ * 0 the gold and the player's hearts ($DA00) gone, 1 the hearts, 2-3 to room $28 or $2F, others
+ * to room $5E with game flag $9688 set. 1 when it returns through the continuation, 0 when it went to the next room */
+static int room11_frame(uint32_t ret)
+{
+    static const uint8_t moves[8] = { 0, 2, 4, 2, 4, 0, 2, 4 };   /* $D0E0 */
+    push_cont(ret);
+    move_b(0, rd8(SCRIPT_VARS));
+    if (c->d[0] & 0xFF) { pop_cont(); return 1; }
+    mem_or8(0xFFFF9659u, 8);
+    c->d[0] = 0x5B; F_L(0x5B);
+    call(0x279C);
+    do {
+        wait_frame(0xD08A);
+        call(MESSAGES);
+        F_B(rd8(0xFFFF99DFu));
+        if (rd8(0xFFFF99DFu)) {
+            if (mem_dec8(0xFFFF99DFu)) continue;
+            c->a[1] = 0xD18A;
+            push32(0xD0C4); room11_looks(); c->a[7] += 4;
+            continue;
+        }
+        if (mem_bclr(0xFFFF8CC2u, 7)) c->a[1] = 0xD18D;
+        else if (mem_bclr(0xFFFF8CC2u, 6)) c->a[1] = 0xD190;
+        else {
+            c->a[4] = sx(rd16(0xFFFF99E2u));
+            if (mem_bclr(0xFFFF8CC2u, 0)) {
+                call(RANDOM);
+                and_w(0, 7);
+                move_b(0, moves[c->d[0] & 0xFFFF]);
+            } else {
+                F_B(rd8(c->a[4] - 0x3A00));
+                if (rd8(c->a[4] - 0x3A00)) continue;
+                c->d[0] = 0; F_L(0);
+            }
+            call(SET_ANIM);
+            continue;
+        }
+        put8(0xFFFF99DFu, 0x1E);
+        push32(0xD0C4); room11_looks(); c->a[7] += 4;
+    } while ((F_B(rd8(MESSAGE_ON)), rd8(MESSAGE_ON) & 0x80));
+    c->a[1] = 0xD18A;
+    push32(0xD100); room11_looks(); c->a[7] += 4;
+    mem_and8(0xFFFF9659u, 0xF7);
+    call(0x225C);
+    mem_bclr(0xFFFF9659u, 7);
+    move_b(0, rd8(0xFFFF8CD3u));
+    if (c->d[0] & 0xFF) {
+        c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 1, c->d[0]));
+        if (c->d[0] & 0xFF) {                           /* another room */
+            c->d[1] = 0x28; F_L(0x28);
+            c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 1, c->d[0]));
+            if (c->d[0] & 0xFF) {
+                c->d[1] = 0x2F; F_L(0x2F);
+                c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 1, c->d[0]));
+                if (c->d[0] & 0xFF) {
+                    move_b(0, rd8(0xFFFF9688u));
+                    push32(0xD150); flag_set(); c->a[7] += 4;
+                    c->d[1] = 0x5E; F_L(0x5E);
+                }
+            }
+            put16m(0xFFFF9676u, c->d[1]);
+            put8(0xFFFF966Au, 3);
+            put8(0xFFFF9678u, 4);
+            leave_to(NEXT_ROOM);
+            return 0;
+        }
+    } else put32m(0xFFFF962Cu, 0);
+    c->a[4] = sx(rd16(PLAYER_ENT));                     /* 0 and 1: the player's hearts gone */
+    put16m(c->a[4] - 0x2600, 0);
+    call(0x8AA2);
+    c->a[4] = sx(rd16(PLAYER_ENT));
+    put8(c->a[4] - 0x2BFF, 0);
+    mem_or8(c->a[4] - 0x3200, 0x80);
+    wr8(SCRIPT_VARS, (uint8_t)add_b(&c->ccr, 1, rd8(SCRIPT_VARS)));
+    pop_cont();
+    return 1;
+}
+
+/* index 12. $D1EC: the way at ($108, $4100) shut: 4 x 3 blocks of 0 */
+static void room12_blocks(void)
+{
+    c->d[0] = 4; F_L(4);
+    c->d[1] = 3; F_L(3);
+    c->d[2] = 0; F_L(0);
+    c->d[6] = set_w(c->d[6], 0x108); F_W(0x108);
+    c->d[7] = set_w(c->d[7], 0x4100); F_W(0x4100);
+    call(SET_MAP_BLOCKS);
+}
+/* $D194 as it loads: until game flag $39 the graphics at $D1C0 streamed in ($99E2 where the
+ * list ended); after it the palette $5000 and the way shut ($99DE set) */
+static void room12_setup(void)
+{
+    c->d[0] = 0x39; F_L(0x39);
+    push32(0xD19A); flag_test(); c->a[7] += 4;
+    if (c->ccr & CC_Z) {
+        c->a[0] = 0xD1C0;
+        call(0x23A6);
+        put32m(0xFFFF99E2u, c->a[1]);
+        return;
+    }
+    c->d[0] = set_w(c->d[0], 0x5000); F_W(0x5000);
+    c->d[1] = 0; F_L(0);
+    c->d[2] = 0x20; F_L(0x20);
+    call(0x22A8);
+    push32(0xD1BA); room12_blocks(); c->a[7] += 4;
+    wr8(SCRIPT_VARS, 0xFF);
+}
+
+ENTRY(Room11Setup, room11_setup)           /* $D00C */
+ENTRY(Room11Looks, room11_looks)           /* $D176 */
+ENTRY(Room12Setup, room12_setup)           /* $D194 */
+ENTRY(Room12Blocks, room12_blocks)         /* $D1EC */
+/* waits, and may leave for the next room instead of returning */
+void Room11Frame(Cpu *cpu)
+{
+    c = cpu; NEEDS_PASS(0xD068);
+    uint32_t ret = rd32(c->a[7]); c->a[7] += 4;
+    if (room11_frame(ret)) port_continue_at(c, c->a[0], 0);
+}                                                                                         /* $D068 */

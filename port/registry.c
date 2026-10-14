@@ -89,6 +89,7 @@ void Room5Setup(Cpu *), Room5Frame(Cpu *), Room6Setup(Cpu *), Room6Frame(Cpu *),
      Room8Frame(Cpu *), Room9Setup(Cpu *), Room9Frame(Cpu *), Room9Timer(Cpu *), Room10Setup(Cpu *);
 void SeqTalk(Cpu *), SeqReceive(Cpu *), SeqStatue(Cpu *), ReceivePalettes(Cpu *), ReceiveStep(Cpu *), ReceiveOwn(Cpu *), ReceiveHeart(Cpu *),
      ReceiveNone(Cpu *);
+void Room11Setup(Cpu *), Room11Frame(Cpu *), Room11Looks(Cpu *), Room12Setup(Cpu *), Room12Blocks(Cpu *);
 void NumText(Cpu *), CharAt(Cpu *), ScrollWindow(Cpu *), WindowFrame(Cpu *), WindowRow(Cpu *), TileUnder(Cpu *), WindowRestore(Cpu *), NewLine(Cpu *), MoreBlink(Cpu *), MoreHide(Cpu *), MoreShow(Cpu *), ChoiceBlink(Cpu *), ChoiceHide(Cpu *), ChoiceShow(Cpu *), PriceOf(Cpu *), NameOf(Cpu *), NameText(Cpu *), FoundThing(Cpu *), FoundGold(Cpu *), BoxText(Cpu *), BoxRows(Cpu *), BoxRow(Cpu *), ShowFoundGold(Cpu *), ShowFound(Cpu *), WindowGeometry(Cpu *), Cheaper(Cpu *), Owns(Cpu *), Give(Cpu *), Take(Cpu *), ItemCell(Cpu *), FlagCell(Cpu *), MessageData(Cpu *), OpenWindow(Cpu *), WindowAt(Cpu *), MsgStep(Cpu *), CharIn(Cpu *), NoteIn(Cpu *), OcarinaTune(Cpu *);   /* message.c */
 #define CT_ALL 0x3FFFF                /* every register and flag compared */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
@@ -567,6 +568,10 @@ const PortRoutine port_routines[] = {
     {0x00CF5A, 0x00CFD6, "Room9Frame", Room9Frame, CT_ALL},
     {0x00CFD6, 0x00CFE8, "Room9Timer", Room9Timer, CT_ALL},
     {0x00CFE8, 0x00D00C, "Room10Setup", Room10Setup, CT_ALL},
+    {0x00D00C, 0x00D068, "Room11Setup", Room11Setup, CT_ALL},    /* rooms.c: the rooms' scripts 11 and 12 */
+    {0x00D176, 0x00D194, "Room11Looks", Room11Looks, CT_ALL},
+    {0x00D194, 0x00D1EC, "Room12Setup", Room12Setup, CT_ALL},
+    {0x00D1EC, 0x00D1FE, "Room12Blocks", Room12Blocks, CT_ALL},   /* $D068 (11 each frame) waits for a session that runs it */
     {0x00C1E8, 0x00C27E, "SeqTalk", SeqTalk, CT_SP | CT_WAITS},  /* rooms.c: the sequences of a conversation, a thing received and a statue */
     {0x00C2DE, 0x00C2E6, "ReceiveOwn", ReceiveOwn, CT_ALL},
     {0x00C2E6, 0x00C2E8, "ReceiveNone", ReceiveNone, CT_ALL},

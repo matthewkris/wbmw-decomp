@@ -2272,6 +2272,29 @@ instructions; the rest are the restart after a fade and `$9C18`'s routine. They 
 the helpers, 0 mismatches, every instruction covered. Self-test caught 100 in 100 for each
 helper. Replace mode: thirteen runs, no problems.
 
+#### The room changes, batch T28: the rooms' scripts 11 and 12 (setups) (2026-10-14)
+
+The rest of the scripts' table lies past `$D000`, in `port/rooms.c` with the others:
+
+* Index 11 (area 11's room 6): a game of chance. The setup (`$D00C`) makes three figures, room
+  objects of kind 4 kept at `$99E0`, with their looks and heights from `$D05C`. Each frame
+  (`$D068`), until it is played, the message `$5B` runs. Its choices (`$8CC2`) turn the figures
+  for 30 frames (`$D176`), and the middle one moves at random. The result (`$8CD3`): 0, the gold
+  and the player's hearts (`$DA00`) are gone; 1, the hearts; 2 and 3 send the player to room
+  `$28` or `$2F`; others to room `$5E`, with game flag `$9688` set. `$D068` waits for frames and
+  may go to the next room (`$9100`) instead of returning, so its entry continues at the popped
+  address only when it returns.
+* Index 12 (area 4's room 1). The setup (`$D194`): until game flag `$39`, the room's graphics
+  are streamed in from `$D1C0` (`$99E2` keeps where the list ended). After it, the palette
+  `$5000` is loaded and the way at (`$108`, `$4100`) is shut (`$D1EC`: 4 x 3 empty blocks).
+
+`$D068` is written but not registered: no session plays the game.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(39 runs, all complete; 637,567 checked calls). 150,000 fuzz cases from six states, 0
+mismatches, every instruction covered. Self-test caught 100 in 100 for each. Replace mode:
+thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
