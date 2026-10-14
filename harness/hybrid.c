@@ -1286,6 +1286,15 @@ int hybrid_fuzz(const char *name, long count)
             if (rnd() % 2) ram[0x99BE + (0x39 >> 3)] ^= (uint8_t)(1 << (0x39 & 7));
             for (uint32_t sl = 0xE0; sl < 0x100; sl += 4) ram[0xC000 + sl] = (uint8_t)(rnd() % 3 ? 0 : 0x80);
         }
+        if (!strncmp(name, "Room13", 6) || !strncmp(name, "FindKind", 8)) {   /* the platforms' and figures' data, slots busy or not, some of kind $454 */
+            m68k_set_reg(M68K_REG_A1, 4 * (rnd() % 6));
+            m68k_set_reg(M68K_REG_A0, !strcmp(name, "Room13Figure") ? 0xD43A + 6 * (rnd() % 3) : 0xD422 + 8 * (rnd() % 3));
+            uint32_t base = 0x80 + 4 * (rnd() % 16);
+            put_word(0xA11A, base);
+            for (uint32_t k4 = 0; k4 < 16; k4++) { uint32_t sl = (base + 4 * k4) & 0xFF; ram[0xC000 + sl] = (uint8_t)(rnd() % 2 ? 0x80 : 0); put_word(0xD402 + sl, rnd() % 4 ? 0x454 : 2 * (rnd() % 0x300)); }
+            m68k_set_reg(M68K_REG_D1, (rnd() << 16) | (rnd() % 2 ? 0x454 : 0x400 + 2 * (rnd() % 0x40)));
+            for (uint32_t sl = 0xE0; sl < 0x100; sl += 4) ram[0xC000 + sl] = (uint8_t)(rnd() % 3 ? 0 : 0x80);
+        }
         if (!strcmp(name, "CrumbleAdd")) {          /* some walls' records taken */
             for (uint32_t k4 = 0; k4 < 4; k4++) ram[0x9B96 + 8 * k4] = (uint8_t)(rnd() % 3 ? 0x80 | rnd() % 4 : 0);
             m68k_set_reg(M68K_REG_D6, (rnd() << 16) | (0xF0 + rnd() % 0x100)); m68k_set_reg(M68K_REG_D7, (rnd() << 16) | ((0x4000 + rnd() % 0x1500) & ~0x3Fu));

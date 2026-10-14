@@ -5362,3 +5362,180 @@ void Room11Frame(Cpu *cpu)
     uint32_t ret = rd32(c->a[7]); c->a[7] += 4;
     if (room11_frame(ret)) port_continue_at(c, c->a[0], 0);
 }                                                                                         /* $D068 */
+
+/* ---- batch T29: the room script 12's frames, 13's setup ----
+ * Index 12 (area 4's room 1), each frame once room flag $11 is set: the player is walked in,
+ * the way behind shut as the view scrolls, a message, then a figure walked to the door, which
+ * opens and lets it out. Index 13 (area 16's room 4, area 18's room 6): three moving platforms
+ * and three figures. */
+
+/* $D36A: the entity of kind $454 among the 16 from $A11A (a4; none: past the last); $D36E kind d1 */
+static void find_kind_d1(void)
+{
+    c->a[4] = sx(rd16(0xFFFFA11Au));
+    c->d[0] = 0xF; F_L(0xF);
+    do {
+        F_B(rd8(c->a[4] - 0x4000));
+        if (rd8(c->a[4] - 0x4000) & 0x80) {
+            cmp_w(&c->ccr, rd16(c->a[4] - 0x2BFE), c->d[1]);
+            if ((c->d[1] & 0xFFFF) == rd16(c->a[4] - 0x2BFE)) return;
+        }
+        c->a[4] += 4;
+    } while (dbra(0));
+}
+static void find_kind(void) { c->d[1] = set_w(c->d[1], 0x454); F_W(0x454); find_kind_d1(); }
+/* $D352: the player's buttons for its frame routine: left */
+static void room12_walk(void) { put8(0xFFFF9F0Bu, 4); }
+/* $D1FE, each frame: by step ($99DE) */
+static void room12_frame(uint32_t ret)
+{
+    push_cont(ret);
+    move_b(0, rd8(SCRIPT_VARS));
+    switch (rd8(SCRIPT_VARS)) {
+    case 0:                                             /* room flag $11: game flag $39, the player walked left */
+        c->d[0] = 0x11; F_L(0x11);
+        push32(0xD214); room_flag_bit(); c->a[7] += 4;
+        f_bit(rd8(c->a[0] + sx(c->d[1])) >> (c->d[0] & 7) & 1);
+        if (!(rd8(c->a[0] + sx(c->d[1])) >> (c->d[0] & 7) & 1)) break;
+        c->d[0] = 0x39; F_L(0x39);
+        push32(0xD222); flag_set(); c->a[7] += 4;
+        wr8(SCRIPT_VARS, (uint8_t)add_b(&c->ccr, 1, rd8(SCRIPT_VARS)));
+        put8(0xFFFF9F05u, 6);
+        put32m(0xFFFF9F22u, 0xD352);
+        break;
+    case 1:                                             /* at $10E0: the player still, the figure walking */
+        c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 1, c->d[0]));
+        c->a[4] = sx(rd16(PLAYER_ENT));
+        cmp_w(&c->ccr, 0x10E0, rd16(c->a[4] - 0x3800));
+        if (rd16(c->a[4] - 0x3800) > 0x10E0) break;
+        wr8(SCRIPT_VARS, (uint8_t)add_b(&c->ccr, 1, rd8(SCRIPT_VARS)));
+        mem_or8(c->a[4] - 0x3FFE, 8);
+        put32m(0xFFFF9F22u, 0xDB36);
+        push32(0xD260); find_kind(); c->a[7] += 4;
+        put32m(c->a[4] - 0x2700, 0xD35A);
+        break;
+    case 2:                                             /* the view scrolled 96 left: the way shut */
+        c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 2, c->d[0]));
+        mem_sub_w(0xFFFF9734u, 1);
+        cmp_w(&c->ccr, 0xFFA0, rd16(0xFFFF9734u));
+        if ((int16_t)rd16(0xFFFF9734u) > -0x60) break;
+        put8(0xFFFF99DFu, 0x1E);
+        wr8(SCRIPT_VARS, (uint8_t)add_b(&c->ccr, 1, rd8(SCRIPT_VARS)));
+        push32(0xD28C); room12_blocks(); c->a[7] += 4;
+        break;
+    case 3:                                             /* 30 frames, then the streamed list's flag */
+        c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 3, c->d[0]));
+        if (mem_dec8(0xFFFF99DFu)) break;
+        wr8(SCRIPT_VARS, (uint8_t)add_b(&c->ccr, 1, rd8(SCRIPT_VARS)));
+        c->a[0] = rd32(0xFFFF99E2u);
+        mem_or8(c->a[0], 1);
+        break;
+    case 4:                                             /* once streamed: message $55 (room change 8) */
+        c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 4, c->d[0]));
+        c->a[0] = rd32(0xFFFF99E2u);
+        F_B(rd8(c->a[0]));
+        if (rd8(c->a[0]) & 0x80) break;
+        wr8(SCRIPT_VARS, (uint8_t)add_b(&c->ccr, 1, rd8(SCRIPT_VARS)));
+        put16m(0xFFFF9C16u, 0x55);
+        put16m(0xFFFF9962u, 8);
+        break;
+    case 5:                                             /* the figure walks on */
+        c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 5, c->d[0]));
+        wr8(SCRIPT_VARS, (uint8_t)add_b(&c->ccr, 1, rd8(SCRIPT_VARS)));
+        push32(0xD2D8); find_kind(); c->a[7] += 4;
+        put32m(c->a[4] - 0x2700, 0xD362);
+        break;
+    case 6:                                             /* at $1030: the door at ($1020, $1050) opens and it goes */
+        c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 6, c->d[0]));
+        push32(0xD2EA); find_kind(); c->a[7] += 4;
+        cmp_w(&c->ccr, 0x1030, rd16(c->a[4] - 0x3800));
+        if (rd16(c->a[4] - 0x3800) > 0x1030) break;
+        wr8(SCRIPT_VARS, (uint8_t)add_b(&c->ccr, 1, rd8(SCRIPT_VARS)));
+        put16m(DOOR, 0x1020);
+        put16m(DOOR + 2, 0x1050);
+        c->d[0] = 2; F_L(2);
+        put16m(DOOR + 4, c->d[0]);
+        put16m(DOOR + 6, c->d[0]);
+        c->d[0] = 0; F_L(0);
+        push32(0xD312); door_frame(); c->a[7] += 4;
+        put8(c->a[4] - 0x3CFD, 0x1E);
+        wait_frame(0xD31C);
+        push32(0xD320); door_blank(); c->a[7] += 4;
+        door_animation(0xD324, 0);
+        put8(0xFFFFC008u, 0);
+        push32(0xD32C); door_restore(); c->a[7] += 4;
+        push32(0xD32E); find_kind(); c->a[7] += 4;
+        put8(c->a[4] - 0x4000, 0);
+        break;
+    case 7:                                             /* the view back: done */
+        c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 7, c->d[0]));
+        if (mem_add_w(0xFFFF9734u, 1)) break;
+        wr8(SCRIPT_VARS, (uint8_t)add_b(&c->ccr, 1, rd8(SCRIPT_VARS)));
+        put8(0xFFFF9F05u, 0);
+        break;
+    default:
+        c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 8, c->d[0]));
+        break;
+    }
+    pop_cont();
+}
+
+/* index 13. $D3C8: moving platform a1 (of $11CE8) from the 8 bytes at a0 */
+static void room13_platform(void)
+{
+    put8(c->a[1] - 0x6072, 0x80);
+    put8(c->a[1] - 0x6071, rd8(c->a[0]));
+    c->a[0] += 2;
+    put16m(c->a[1] - 0x6070, 0xFFFF);
+    put32m(c->a[1] - 0x601E, next32(0));
+    c->d[0] = 0; F_L(0);
+    put32m(c->a[1] - 0x5FCA, c->d[0]);
+    move_b(0, next8(0));
+    put16m(c->a[1] - 0x5F76, c->d[0]);
+    move_b(0, next8(0));
+    put16m(c->a[1] - 0x5F74, c->d[0]);
+}
+/* $D3F2: figure a4 (a room object of kind 4) from the 6 bytes at a0 */
+static void room13_figure(void)
+{
+    call(0x0A1A);
+    put16m(c->a[4] - 0x3DFE, 0x360);
+    put16m(c->a[4] - 0x3800, next16(0));
+    put16m(c->a[4] - 0x3700, next16(0));
+    put16m(c->a[4] - 0x3D00, 0x160C);
+    move_b(0, next8(0));
+    put8(c->a[4] - 0x3CFD, next8(0));
+    call(SET_ANIM);
+    put16m(c->a[4] - 0x2BFE, 4);
+    put8(c->a[4] - 0x4000, 0xC0);
+}
+/* $D388 as it loads: the three platforms and figures from $D422; $99DE the player's form */
+static void room13_setup(void)
+{
+    call(0x11CE8);
+    c->a[0] = 0xD422;
+    put16m(0xFFFF99E0u, c->a[1]);
+    push32(0xD396); room13_platform(); c->a[7] += 4;
+    call(0x11CE8);
+    push32(0xD39C); room13_platform(); c->a[7] += 4;
+    call(0x11CE8);
+    push32(0xD3A2); room13_platform(); c->a[7] += 4;
+    call(FIND_EFFECT);
+    push32(0xD3A8); room13_figure(); c->a[7] += 4;
+    call(FIND_EFFECT);
+    put16m(0xFFFF99E2u, c->a[4]);
+    push32(0xD3B2); room13_figure(); c->a[7] += 4;
+    call(FIND_EFFECT);
+    put16m(0xFFFF99E4u, c->a[4]);
+    push32(0xD3BC); room13_figure(); c->a[7] += 4;
+    f_bit(rd8(0xFFFF9EF1u) >> 4 & 1);
+    wr8(SCRIPT_VARS, rd8(0xFFFF9EF1u) & 0x10 ? 0xFF : 0);
+}
+
+ENTRY(Room12Walk, room12_walk)             /* $D352 */
+ENTRY(FindKind, find_kind)                 /* $D36A */
+ENTRY(FindKindD1, find_kind_d1)            /* $D36E */
+ENTRY(Room13Setup, room13_setup)           /* $D388 */
+ENTRY(Room13Platform, room13_platform)     /* $D3C8 */
+ENTRY(Room13Figure, room13_figure)         /* $D3F2 */
+void Room12Frame(Cpu *cpu) { c = cpu; NEEDS_PASS(0xD1FE); cont_68k(room12_frame); }     /* $D1FE */
