@@ -5539,3 +5539,221 @@ ENTRY(Room13Setup, room13_setup)           /* $D388 */
 ENTRY(Room13Platform, room13_platform)     /* $D3C8 */
 ENTRY(Room13Figure, room13_figure)         /* $D3F2 */
 void Room12Frame(Cpu *cpu) { c = cpu; NEEDS_PASS(0xD1FE); cont_68k(room12_frame); }     /* $D1FE */
+
+/* ---- batch T30: the room script 13's ride, 14's and 15's setups ----
+ * Index 13 (area 16's room 4, area 18's room 6): standing on the first platform (its bit 0 set
+ * by the platform) the player rides: the figures carry it up, the screen fades, the room's
+ * graphics change and figures rain down, then all goes back. */
+
+/* $DAE6: d0 frames waited */
+static void script_wait(uint32_t ret)
+{
+    push_cont(ret);
+    put8(0xFFFF99DFu, c->d[0]);
+    do wait_frame(0xDAF8); while (mem_dec8(0xFFFF99DFu));
+    pop_cont();
+}
+/* $D61E: the palette $8B98 faded by $99E6 / 4 (signed) into $8C18 ($594A) */
+static void room13_fade(void)
+{
+    move_b(1, rd8(0xFFFF99E6u));
+    c->d[1] = set_w(c->d[1], (uint32_t)(int32_t)(int8_t)(c->d[1] & 0xFF)); F_W(c->d[1]);
+    c->d[1] = set_w(c->d[1], asr_n(&c->ccr, c->d[1], 2, 16));
+    c->d[2] = set_w(c->d[2], c->d[1]); F_W(c->d[1]);
+    c->d[2] = set_w(c->d[2], asl_n(&c->ccr, c->d[2], 4, 16));
+    c->d[3] = set_w(c->d[3], c->d[2]); F_W(c->d[2]);
+    c->d[3] = set_w(c->d[3], asl_n(&c->ccr, c->d[3], 4, 16));
+    c->a[0] = 0xFFFF8B98u;
+    c->a[1] = 0xFFFF8C18u;
+    c->d[0] = 0xE; F_L(0xE);
+    do call(0x594A); while (dbra(0));
+    mem_and8(0xFFFF8C56u, 0x3F);
+    mem_or8(0xFFFF8C56u, 0x81);
+}
+/* $D64E: a falling figure in the first free of the 40 entities from $40: at a random place
+ * across, height $FF0, a random speed down ($800 on) */
+static void room13_drop(void)
+{
+    c->a[4] = 0x40;
+    c->d[0] = 0x27; F_L(0x27);
+    for (;;) {
+        F_B(rd8(c->a[4] - 0x4000));
+        if (!(rd8(c->a[4] - 0x4000) & 0x80)) break;
+        c->a[4] += 4;
+        if (!dbra(0)) return;
+    }
+    call(0x0A1A);
+    put16m(c->a[4] - 0x3DFE, 0x360);
+    mem_or8(c->a[4] - 0x3FFE, 0x80);
+    put16m(c->a[4] - 0x3D00, 0x160C);
+    c->d[0] = 6; F_L(6);
+    call(SET_ANIM);
+    put8(c->a[4] - 0x4000, 0xC0);
+    put8(c->a[4] - 0x3CFD, 8);
+    put16m(c->a[4] - 0x3700, 0xFF0);
+    call(RANDOM);
+    c->d[1] = set_w(c->d[1], c->d[0]); F_W(c->d[0]);
+    and_w(0, 0xFF);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, 0x1000, c->d[0]));
+    put16m(c->a[4] - 0x3800, c->d[0]);
+    c->d[0] = set_w(c->d[0], 0x800); F_W(0x800);
+    and_w(1, 0xFF00);
+    c->d[1] = set_w(c->d[1], lsr_n(&c->ccr, c->d[1], 5, 16));
+    for (int k = 0; k < 3; k++) c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[1], c->d[0]));
+    put16m(c->a[4] - 0x35FE, c->d[0]);
+    cmp_w(&c->ccr, 0x1400, c->d[0]);
+    if ((c->d[0] & 0xFFFF) < 0x1400) put8(c->a[4] - 0x3CFD, 0x12);
+}
+/* $D6C4: the falling figures moved, gone below $10B0; $99DF set while any is left */
+static void room13_drops(void)
+{
+    c->a[4] = 0x40;
+    c->d[7] = 0x27; F_L(0x27);
+    put8(0xFFFF99DFu, 0);
+    do {
+        F_B(rd8(c->a[4] - 0x4000));
+        if (rd8(c->a[4] - 0x4000) & 0x80) {
+            wr8(0xFFFF99DFu, 0xFF);
+            call(APPLY_VEL_Y);
+            cmp_w(&c->ccr, 0x10B0, rd16(c->a[4] - 0x3700));
+            if (rd16(c->a[4] - 0x3700) >= 0x10B0) put8(c->a[4] - 0x4000, 0);
+        }
+        c->a[4] += 4;
+    } while (dbra(7));
+}
+/* the two figures ($99E2, $99E4, or only the second) moved for 64 frames at speed v */
+static void room13_move(int both, uint32_t v, uint32_t resume)
+{
+    if (both) { c->a[4] = sx(rd16(0xFFFF99E2u)); put16m(c->a[4] - 0x35FE, v); }
+    c->a[4] = sx(rd16(0xFFFF99E4u)); put16m(c->a[4] - 0x35FE, v);
+    put8(0xFFFF99DFu, 0x40);
+    do {
+        wait_frame(resume);
+        if (both) { c->a[4] = sx(rd16(0xFFFF99E2u)); call(APPLY_VEL_Y); }
+        c->a[4] = sx(rd16(0xFFFF99E4u)); call(APPLY_VEL_Y);
+    } while (mem_dec8(0xFFFF99DFu));
+}
+/* $D48C: the ride */
+static void room13_ride(uint32_t ret)
+{
+    push_cont(ret);
+    c->d[0] = 0x51; F_L(0x51);
+    call(QUEUE_SOUND);
+    room13_move(1, 0x100, 0xD4BA);                      /* both down */
+    c->d[0] = 0x1E; F_L(0x1E);
+    script_wait(0xD4D6);
+    room13_move(0, 0xFF00, 0xD4EA);                     /* the second up */
+    do {                                                /* faded out */
+        wait_frame(0xD4FC);
+        mem_dec8(0xFFFF99E6u);
+        push32(0xD504); room13_fade(); c->a[7] += 4;
+        cmp_byte(0xC8, rd8(0xFFFF99E6u));
+    } while (rd8(0xFFFF99E6u) > 0xC8);
+    c->a[0] = 0xD6F0;                                   /* the graphics and palette by area */
+    cmp_byte(0x10, rd8(AREA));
+    if (rd8(AREA) != 0x10) c->a[0] = 0xD6F9;
+    put8(0xFFFF9670u, next8(0));
+    call(SET_GFX_SLOTS);
+    call(STREAM_GFX);
+    c->a[0] = 0xFFFF966Eu;
+    call(LOAD_PALETTES);
+    c->d[0] = 0x15; F_L(0x15);
+    call(QUEUE_SOUND);
+    c->a[0] = 0xD702;                                   /* the rain: counts and gaps */
+    put32m(0xFFFF99EAu, c->a[0]);
+    put16m(0xFFFF99E8u, 0x101);
+    for (;;) {
+        wait_frame(0xD548);
+        push32(0xD54C); room13_drops(); c->a[7] += 4;
+        if (mem_dec8(0xFFFF99E8u)) continue;
+        for (;;) {
+            put8(0xFFFF99E8u, rd8(0xFFFF99E7u));
+            if (mem_dec8(0xFFFF99E9u)) { push32(0xD562); room13_drop(); c->a[7] += 4; break; }
+            c->a[0] = rd32(0xFFFF99EAu);
+            put8(0xFFFF99E9u, next8(0));
+            if (!rd8(0xFFFF99E9u)) goto rained;
+            put8(0xFFFF99E7u, next8(0));
+            put32m(0xFFFF99EAu, c->a[0]);
+        }
+    }
+rained:
+    c->d[0] = 0xFFFFFFFEu; F_L(c->d[0]);
+    call(QUEUE_SOUND);
+    do {
+        wait_frame(0xD582);
+        push32(0xD586); room13_drops(); c->a[7] += 4;
+        F_B(rd8(0xFFFF99DFu));
+    } while (rd8(0xFFFF99DFu));
+    move_b(0, rd8(0xFFFF9660u));                        /* the room's music again */
+    call(QUEUE_SOUND);
+    do {                                                /* faded in */
+        wait_frame(0xD598);
+        wr8(0xFFFF99E6u, (uint8_t)add_b(&c->ccr, 1, rd8(0xFFFF99E6u)));
+        push32(0xD5A0); room13_fade(); c->a[7] += 4;
+        F_B(rd8(0xFFFF99E6u));
+    } while (rd8(0xFFFF99E6u));
+    room13_move(0, 0x100, 0xD5BA);                      /* the second down */
+    c->d[0] = 0x1E; F_L(0x1E);
+    script_wait(0xD5CE);
+    c->d[0] = 0x51; F_L(0x51);
+    call(QUEUE_SOUND);
+    room13_move(1, 0xFF00, 0xD5F2);                     /* both up */
+    c->a[1] = sx(rd16(0xFFFF99E0u));
+    put8(c->a[1] - 0x6071, 1);
+    pop_cont();
+}
+/* $D44C, each frame: the first platform stood on ($9F8E bit 0, not in a conversation): the ride,
+ * once, and room flag $10 */
+static void room13_frame(uint32_t ret)
+{
+    push_cont(ret);
+    move_b(0, rd8(SCRIPT_VARS));
+    if (!(c->d[0] & 0xFF)) {
+        c->a[1] = sx(rd16(0xFFFF99E0u));
+        if (mem_bclr(c->a[1] - 0x6072, 0)) {
+            f_bit(rd8(0xFFFF9659u) >> 2 & 1);
+            if (!(rd8(0xFFFF9659u) & 4)) {
+                wr8(SCRIPT_VARS, (uint8_t)add_b(&c->ccr, 1, rd8(SCRIPT_VARS)));
+                room13_ride(0xD476);
+                c->d[0] = 0x10; F_L(0x10);
+                push32(0xD47C); room_flag_bit(); c->a[7] += 4;
+                { uint32_t a = c->a[0] + sx(c->d[1]); uint8_t v = rd8(a); f_bit(v >> (c->d[0] & 7) & 1); wr8(a, (uint8_t)(v | 1 << (c->d[0] & 7))); }
+            }
+        }
+    }
+    pop_cont();
+}
+
+/* index 14 (area 16's room 3). $D71A: a lift (x $1030, floors $1080 and $15C0) */
+static void room14_setup(void) { c->a[0] = 0xD722; lift_setup(); }
+/* index 15 (area 14's room 6). $D72A as it loads: before game flag $43, with item $3A the
+ * player's speed at least $100 and $9F05 8 (else $99DE set); after it, $99DE set and the
+ * effects at $D886 */
+static void room15_setup(void)
+{
+    c->d[0] = 0x43; F_L(0x43);
+    push32(0xD730); flag_test(); c->a[7] += 4;
+    if (!(c->ccr & CC_Z)) {
+        wr8(SCRIPT_VARS, 0xFF);
+        c->a[0] = 0xD886;
+        call(0x2852);
+        return;
+    }
+    c->d[0] = 0x3A; F_L(0x3A);
+    call(OWNS);
+    if (c->ccr & CC_Z) { wr8(SCRIPT_VARS, 0xFF); return; }
+    c->a[0] = sx(rd16(PLAYER_ENT));
+    c->d[0] = set_w(c->d[0], 0x100); F_W(0x100);
+    cmp_w(&c->ccr, rd16(c->a[0] - 0x3600), c->d[0]);
+    if (!((int16_t)0x100 <= (int16_t)rd16(c->a[0] - 0x3600))) put16m(c->a[0] - 0x3600, c->d[0]);
+    put8(0xFFFF9F05u, 8);
+}
+
+ENTRY(Room13Fade, room13_fade)             /* $D61E */
+ENTRY(Room13Drop, room13_drop)             /* $D64E */
+ENTRY(Room13Drops, room13_drops)           /* $D6C4 */
+ENTRY(Room14Setup, room14_setup)           /* $D71A */
+ENTRY(Room15Setup, room15_setup)           /* $D72A */
+void Room13Frame(Cpu *cpu) { c = cpu; NEEDS_PASS(0xD44C); cont_68k(room13_frame); }     /* $D44C */
+void Room13Ride(Cpu *cpu)  { c = cpu; NEEDS_PASS(0xD48C); cont_68k(room13_ride); }      /* $D48C */
+void ScriptWait(Cpu *cpu)  { c = cpu; NEEDS_PASS(0xDAE6); cont_68k(script_wait); }      /* $DAE6 */
