@@ -103,6 +103,7 @@ void CompanionRoom(Cpu *), CompanionGfx0(Cpu *), CompanionGfx6(Cpu *), Companion
 void CompanionFrame(Cpu *), CompanionKind4(Cpu *), CompanionShoot(Cpu *), CompanionAppear4(Cpu *), CompanionAppeared4(Cpu *), CompanionKind0(Cpu *), CompanionAppear0(Cpu *), CompanionRest(Cpu *), CompanionOverPlayer(Cpu *), CompanionShown(Cpu *), CompanionFollow(Cpu *), CompanionReturn(Cpu *), CompanionDrop(Cpu *), CompanionGrab(Cpu *), CompanionChase(Cpu *), CompanionRide(Cpu *), CompanionChanceAway(Cpu *), CompanionChanceEnemy(Cpu *), CompanionChanceArea(Cpu *), CompanionNear(Cpu *), CompanionGone(Cpu *);
 void PoseKeep(Cpu *), PoseFree(Cpu *), ExitRoom(Cpu *), ExitArrive(Cpu *), PlayerPickups(Cpu *);
 void CompanionKind6(Cpu *), CompanionKind2(Cpu *), CompanionEnter(Cpu *), CompanionWalk(Cpu *), CompanionStep(Cpu *), CompanionRun(Cpu *), CompanionJump(Cpu *), CompanionJumping(Cpu *), CompanionSit(Cpu *), CompanionEdge(Cpu *), CompanionDive(Cpu *), CompanionWait(Cpu *), CompanionHop(Cpu *), CompanionPlace(Cpu *), CompanionChanceSit(Cpu *), CompanionSpit(Cpu *), CompanionTrailStart(Cpu *), CompanionTrail(Cpu *), CompanionFell(Cpu *);
+void RecordStart(Cpu *), DemoStart(Cpu *), RecordStep(Cpu *), DemoStep(Cpu *), TasksStart(Cpu *), Clear9996(Cpu *), SoundStop25(Cpu *), PadWhich(Cpu *), ScreenReset(Cpu *), ScreenNew(Cpu *), ReadPads(Cpu *), ReadPad(Cpu *), Presses(Cpu *), FrameWork(Cpu *), ScrollUpload(Cpu *), HScrollUpload(Cpu *), VdpRegs(Cpu *), PaletteUpload(Cpu *), ClearEntities(Cpu *), SpritesUpload(Cpu *), PaletteClear(Cpu *), PaletteCopy(Cpu *), FadeReset(Cpu *);
 void Looks(Cpu *), LooksExtra(Cpu *), LooksBlock(Cpu *), LooksBody(Cpu *), LooksSword(Cpu *), LooksShield(Cpu *), EquipChange(Cpu *);
 void HudPanel(Cpu *), GoldLabel(Cpu *), ThreeLabels(Cpu *), DigitsOut(Cpu *), ItemsChoose(Cpu *), MagicChoose(Cpu *), SlotChoose(Cpu *), ActionToSlot(Cpu *),
      ItemToSlot(Cpu *), WornBlink(Cpu *), StatusFadeIn(Cpu *), StatusFadeOut(Cpu *), StatusWait(Cpu *);
@@ -167,6 +168,29 @@ const PortRoutine port_routines[] = {
     {0x006BC4, 0x006EA8, "DecodeGfxBlock", DecodeGfxBlock},
     {0x0022F0, 0x00234C, "StreamGfxBlocks", StreamGfxBlocks},
     {0x0022A8, 0x0022F0, "CopyRawTiles", CopyRawTiles},
+    {0x004FEE, 0x005016, "RecordStart", RecordStart, CT_SP},   /* vblank.c: the frame's work, the pads, the palettes, the screen reset, the demo input */
+    {0x00501C, 0x005036, "DemoStart", DemoStart, CT_SP},
+    {0x005036, 0x00505C, "RecordStep", RecordStep, CT_SP},
+    {0x00505C, 0x00507C, "DemoStep", DemoStep, CT_SP},
+    {0x005106, 0x005124, "TasksStart", TasksStart, CT_SP},
+    {0x005124, 0x005132, "Clear9996", Clear9996, CT_SP},
+    {0x005132, 0x00513C, "SoundStop25", SoundStop25, CT_SP},
+    {0x00513C, 0x005170, "PadWhich", PadWhich, CT_ALL},   /* callers branch on its Z */
+    {0x005170, 0x005188, "ScreenReset", ScreenReset, CT_SP},
+    {0x005188, 0x0051C6, "ScreenNew", ScreenNew, CT_SP},
+    {0x0051C6, 0x005216, "ReadPads", ReadPads, CT_SP},
+    {0x005216, 0x005250, "ReadPad", ReadPad, CT_SP},
+    {0x005250, 0x005262, "Presses", Presses, CT_SP},
+    {0x005262, 0x00529E, "FrameWork", FrameWork, CT_SP},
+    {0x00529E, 0x0052DA, "ScrollUpload", ScrollUpload, CT_SP},
+    {0x0052DA, 0x005338, "HScrollUpload", HScrollUpload, CT_SP},
+    {0x005338, 0x005370, "VdpRegs", VdpRegs, CT_SP},
+    {0x005370, 0x005398, "PaletteUpload", PaletteUpload, CT_SP},
+    {0x005398, 0x0053AA, "ClearEntities", ClearEntities, CT_SP},
+    {0x00557E, 0x00559E, "SpritesUpload", SpritesUpload, CT_SP},
+    {0x00559E, 0x0055BA, "PaletteClear", PaletteClear, CT_SP},
+    {0x0055BA, 0x0055DA, "PaletteCopy", PaletteCopy, CT_SP},
+    {0x0055DA, 0x005608, "FadeReset", FadeReset, CT_SP},
     {0x0053AA, 0x0054C4, "BuildSprites", BuildSprites},
     {0x0054C4, 0x00557E, "AddEntitySprites", AddEntitySprites},
     {0x000C36, 0x000C3E, "HitboxOverlapSwap", HitboxOverlapSwap},
