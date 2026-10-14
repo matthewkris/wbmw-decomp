@@ -2295,6 +2295,30 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 mismatches, every instruction covered. Self-test caught 100 in 100 for each. Replace mode:
 thirteen runs, no problems.
 
+#### The room changes, batch T29: the room script 12's frames, 13's setup (2026-10-14)
+
+In `port/rooms.c`:
+
+* Index 12 (area 4's room 1), each frame (`$D1FE`), by step, once room flag `$11` is set. It
+  sets game flag `$39` and walks the player left (`$D352`, the frame routine's buttons). At
+  `$10E0` the player stops and a figure (kind `$454`, found by `$D36A` and `$D36E`) walks on
+  its script `$D35A`. The view scrolls 96 pixels and the way behind shuts (`$D1EC`). After 30
+  frames, the streamed list is marked, and once it has streamed, message `$55` (room change 8).
+  The figure walks on (`$D362`). At `$1030` the door at (`$1020`, `$1050`) opens (`$B912`,
+  `$BA34`, `$BD0A`, `$BAA8`) and the figure goes. Finally the view scrolls back.
+* Index 13 (area 16's room 4, area 18's room 6), its setup (`$D388`): three moving platforms
+  (`$11CE8`, filled by `$D3C8` from `$D422`) and three figures (`$D3F2`). `$99DE` holds the
+  player's form.
+
+`$D1FE` waits for frames. It is written but not registered: no session reaches the room. The
+player's frame routine `$DB36`, which index 1's and 12's scripts store, is now only in C, so it
+is in `analysis/translate.json`'s `seen`.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(39 runs, all complete; 637,567 checked calls). 210,000 fuzz cases from six states, 0
+mismatches, every instruction covered. Self-test caught 100 in 100 for each. Replace mode:
+thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
