@@ -1350,6 +1350,44 @@ int hybrid_fuzz(const char *name, long count)
             for (uint32_t sl = 0xE0; sl < 0x100; sl += 4) ram[0xC000 + sl] = (uint8_t)(rnd() % 3 ? 0 : 0x80);
             if (rnd() % 2) for (uint32_t k4 = 0; k4 < 32; k4++) { ram[0x99BE + k4] = (uint8_t)rnd(); ram[0x9992 + k4] = (uint8_t)rnd(); }
         }
+        if (!strcmp(name, "RoomEvents") || !strncmp(name, "Event", 5)) {
+            /* one of the rooms' real event lists (room command 5's, 170); an event's entry starts just past an event of its kind in one */
+            static const uint32_t lists[] = {
+                0x0237CE, 0x023CB8, 0x023CF6, 0x023D1C, 0x023D3A, 0x023D6A, 0x023D8E, 0x023DBA, 0x023DEE, 0x024538, 0x02454C,
+                0x02456A, 0x02458A, 0x0245C6, 0x0245FC, 0x024658, 0x02466C, 0x0246B8, 0x02667E, 0x0266A6, 0x0266D2, 0x0266E6,
+                0x026704, 0x027842, 0x027902, 0x027926, 0x0283A2, 0x0283BA, 0x0283DA, 0x0283F2, 0x0283FC, 0x02841A, 0x02843C,
+                0x028454, 0x028480, 0x029FDE, 0x02A072, 0x02A08A, 0x02A09E, 0x02B31C, 0x02B33C, 0x02B382, 0x02B3B0, 0x02B3C4,
+                0x02B3D0, 0x02B3EA, 0x02B3FE, 0x02B412, 0x02CCAC, 0x02CCF0, 0x02CD28, 0x02CD32, 0x02CD40, 0x02CD78, 0x02CD94,
+                0x02CDBE, 0x02CDDE, 0x02CE40, 0x02CE58, 0x02CE7C, 0x02CE88, 0x02CE92, 0x02E9C2, 0x02EA00, 0x02EA1E, 0x02EA42,
+                0x02EA5A, 0x02EA6E, 0x02EA9C, 0x02EAB4, 0x02EACA, 0x03078C, 0x0307A8, 0x03083C, 0x030858, 0x0308D8, 0x0308EC,
+                0x030900, 0x030914, 0x030926, 0x03232E, 0x03238C, 0x0323C8, 0x0323F4, 0x032452, 0x032466, 0x032482, 0x032488,
+                0x0324CA, 0x033E00, 0x033E14, 0x033E28, 0x033E7E, 0x033E84, 0x033E90, 0x033EA4, 0x033EBC, 0x033ED0, 0x033EEC,
+                0x033EF2, 0x035D00, 0x035D1E, 0x035DCE, 0x035DDE, 0x035DE8, 0x035DF2, 0x035E04, 0x035E0E, 0x035E18, 0x035E48,
+                0x035E6A, 0x037516, 0x03752A, 0x03756C, 0x037580, 0x037594, 0x0375A0, 0x0375B4, 0x0375DA, 0x0375EE, 0x0385A0,
+                0x0385B4, 0x0385CA, 0x0385E0, 0x0385F0, 0x0385FE, 0x03862E, 0x0386AC, 0x0386C0, 0x0386D4, 0x0386E8, 0x0386FC,
+                0x03870C, 0x038738, 0x038764, 0x038766, 0x03BBE0, 0x03BC28, 0x03BC54, 0x03BC68, 0x03BC7C, 0x03D11A, 0x03D136,
+                0x03D15C, 0x03D182, 0x03D1A8, 0x03D1D6, 0x03D1FC, 0x03D23C, 0x03D252, 0x03D26E, 0x03D2A2, 0x03D2D6, 0x03D302,
+                0x03D330, 0x03D354, 0x03D35A, 0x03D366, 0x03ECE6, 0x03ED1E, 0x03ED40, 0x03ED62, 0x03ED84, 0x03EDA6, 0x03EE2C,
+                0x03EE42, 0x03EE62, 0x03EE82, 0x03EE84, 0x03EEA4
+            };
+            static const uint8_t sizes[16] = { 5, 5, 5, 7, 2, 3, 4, 3, 3, 4, 2, 0, 7, 6, 1, 0 };
+            static const uint8_t cmd_len[32] = { 1, 0, 1, 1, 0, 0, 0, 0, 9, 2, 6, 6, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 2, 3, 3, 1, 1, 3, 5, 2, 0 };
+            int want = !strcmp(name, "EventDoor") ? 7 : !strcmp(name, "EventSwitch") ? 8 : !strcmp(name, "EventPicture") ? 12 : !strcmp(name, "EventGate") ? 13 : -1;
+            uint32_t nl = sizeof lists / sizeof *lists, list = lists[rnd() % nl], at = 0, found[256]; int nf = 0;
+            if (want >= 0)                          /* every event of the kind in all the lists */
+                for (uint32_t li = 0; li < nl; li++)
+                    for (uint32_t q = lists[li], n = 0; n < 300; n++) {
+                        uint32_t b = bus_read8(q++);
+                        if (b < 0xC0) { if ((int)b == want && nf < 256) found[nf++] = q; if (b >= 16) break; q += sizes[b]; }
+                        else if (b >= 0xE0) { if (b == 0xFF) break; q += cmd_len[b - 0xE0]; }
+                    }
+            if (nf) at = found[rnd() % (unsigned)nf];
+            if (want < 0) put_long(0x996C, rnd() % 8 ? list : 0);
+            else m68k_set_reg(M68K_REG_A2, at);
+            put_word(0x9978, 0x1000 + 0x10 * (rnd() % 0x20)); put_word(0x997A, 0x1000 + 0x10 * (rnd() % 0x20));
+            for (uint32_t sl = 0xE0; sl < 0x100; sl += 4) ram[0xC000 + sl] = (uint8_t)(rnd() % 3 ? 0 : 0x80);
+            if (rnd() % 2) for (uint32_t k4 = 0; k4 < 32; k4++) { ram[0x99BE + k4] = (uint8_t)rnd(); ram[0x9992 + k4] = (uint8_t)rnd(); }
+        }
         if (!strcmp(name, "CrumbleAdd")) {          /* some walls' records taken */
             for (uint32_t k4 = 0; k4 < 4; k4++) ram[0x9B96 + 8 * k4] = (uint8_t)(rnd() % 3 ? 0x80 | rnd() % 4 : 0);
             m68k_set_reg(M68K_REG_D6, (rnd() << 16) | (0xF0 + rnd() % 0x100)); m68k_set_reg(M68K_REG_D7, (rnd() << 16) | ((0x4000 + rnd() % 0x1500) & ~0x3Fu));

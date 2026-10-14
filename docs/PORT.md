@@ -2409,6 +2409,38 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 fuzz cases from six states, 0 mismatches, every instruction covered. Self-test caught 100 in 100
 for each. Replace mode: thirteen runs, no problems.
 
+#### The rooms, batch T33: the room's event list (2026-10-14)
+
+`$ABBE` runs the room's event list (`$996C`) as the room loads. In `port/rooms.c`, with every
+register and flag in the contract:
+
+* Bytes `$C0`-`$CF` set the zone's width and `$D0`-`$DF` its height, in 16s. After each event
+  they go back to 16. `$E0`-`$FF` are T32's commands. `$FF` drops the loop's return address, so
+  the list's caller goes on from there.
+* Bytes under `$C0` are events. Their bytes' counts are at `$A480`; most are only read later
+  by the triggers. Four have handlers:
+  * 7 (`$AC68`): a door's picture, 2 x 2 cells (`$160`-`$165`), open when its flag is set.
+  * 8 (`$ACC6`): a switch, made by `$2CF0`, its look set by its flag.
+  * 12 (`$ADEC`): unless its flag is set, the picture at its offset put in the rectangle from
+    its bytes (`$2A6C`).
+  * 13 (`$AE4E`): a gate's places at `$9A8A`-`$9A92`. If its game flag is already set, `$2C08`
+    instead.
+* The handlers jump back into the loop at `$AC36`. So each event's entry here runs the event
+  and then the rest of the list, to its `$FF`, as the original would.
+
+Event 12 with a game flag (its first byte's bit 0) is in `analysis/coverage_skip.txt`: the nine
+event 12s in the rooms' lists all start with `$00`.
+
+The fuzz runs the rooms' own lists: the 170 that room command 5 points at, with random flags.
+Each event's entry starts just past one of the events of its kind found in all the lists. The
+first version picked a list at random 400 times, and found none of event 13's three about once
+in 1,300 cases; the interpreter then ran from address 0 for ever.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(39 runs, all complete; 637,567 checked calls); the sessions run 44 of `$ABBE`'s 45 instructions.
+150,000 fuzz cases from six states, 0 mismatches, every instruction covered. Self-test caught 100
+in 100 for each. Replace mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
