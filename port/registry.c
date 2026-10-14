@@ -96,6 +96,7 @@ void Room15Frame(Cpu *), ScriptMessage(Cpu *), WalkStop(Cpu *), Room15Walk(Cpu *
      Room20Frame(Cpu *), Room21Setup(Cpu *), Room21Frame(Cpu *), Room22Setup(Cpu *), Room23Setup(Cpu *), Room23Flags(Cpu *), Room23Frame(Cpu *);
 void EventNear(Cpu *), ListOrigin(Cpu *), ListWidth(Cpu *), ListHeight(Cpu *), ListObject(Cpu *), ListEffects(Cpu *), ListThing(Cpu *), ListBlocks(Cpu *), ListPicture(Cpu *), ListIfEquipped(Cpu *), ListIfForm(Cpu *), ListIfRoomFlag(Cpu *), ListIfFlag(Cpu *), ListRoomFlag(Cpu *), ListFlag(Cpu *), ListIfOwns(Cpu *), ListIfZone(Cpu *), ListSkip(Cpu *), ListEnd(Cpu *);
 void RoomEvents(Cpu *), EventDoor(Cpu *), EventSwitch(Cpu *), EventPicture(Cpu *), EventGate(Cpu *);
+void RoomObjects(Cpu *), RoomObjNone(Cpu *), RoomObjSparkle(Cpu *), RoomObjMover(Cpu *), RoomObjBlock(Cpu *), BlockPlace(Cpu *), RoomObjChest(Cpu *), ChestOpened(Cpu *);
 void NumText(Cpu *), CharAt(Cpu *), ScrollWindow(Cpu *), WindowFrame(Cpu *), WindowRow(Cpu *), TileUnder(Cpu *), WindowRestore(Cpu *), NewLine(Cpu *), MoreBlink(Cpu *), MoreHide(Cpu *), MoreShow(Cpu *), ChoiceBlink(Cpu *), ChoiceHide(Cpu *), ChoiceShow(Cpu *), PriceOf(Cpu *), NameOf(Cpu *), NameText(Cpu *), FoundThing(Cpu *), FoundGold(Cpu *), BoxText(Cpu *), BoxRows(Cpu *), BoxRow(Cpu *), ShowFoundGold(Cpu *), ShowFound(Cpu *), WindowGeometry(Cpu *), Cheaper(Cpu *), Owns(Cpu *), Give(Cpu *), Take(Cpu *), ItemCell(Cpu *), FlagCell(Cpu *), MessageData(Cpu *), OpenWindow(Cpu *), WindowAt(Cpu *), MsgStep(Cpu *), CharIn(Cpu *), NoteIn(Cpu *), OcarinaTune(Cpu *);   /* message.c */
 #define CT_ALL 0x3FFFF                /* every register and flag compared */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
@@ -509,6 +510,14 @@ const PortRoutine port_routines[] = {
     {0x00ACC6, 0x00ACFA, "EventSwitch", EventSwitch, CT_ALL},
     {0x00ADEC, 0x00AE4E, "EventPicture", EventPicture, CT_ALL},
     {0x00AE4E, 0x00AEA2, "EventGate", EventGate, CT_ALL},
+    {0x00ACFA, 0x00ADAC, "RoomObjChest", RoomObjChest, CT_SP},   /* rooms.c: the room objects' runner and kinds 0, 6, 10 and 16 (the chest as $2EDE, MoveOnSlopes, which it calls) */
+    {0x00ADAC, 0x00ADEC, "ChestOpened", ChestOpened, CT_ALL},
+    {0x00AEA2, 0x00AEF0, "RoomObjects", RoomObjects, CT_ALL},
+    {0x00AEF0, 0x00AEF2, "RoomObjNone", RoomObjNone, CT_ALL},
+    {0x00AEF2, 0x00AF06, "RoomObjSparkle", RoomObjSparkle, CT_ALL},
+    {0x00AF06, 0x00AF16, "RoomObjMover", RoomObjMover, CT_ALL},
+    {0x00AF16, 0x00AFA0, "RoomObjBlock", RoomObjBlock, CT_ALL},
+    {0x00AFA0, 0x00B00A, "BlockPlace", BlockPlace, CT_ALL},
     {0x00B8D4, 0x00B90A, "CrackedAt", CrackedAt, CT_ALL},   /* rooms.c: the room changes' helpers */
     {0x00B90A, 0x00B912, "ResetContinuations", ResetContinuations, CT_ALL},
     {0x00B912, 0x00B946, "DoorFrame", DoorFrame, CT_ALL},

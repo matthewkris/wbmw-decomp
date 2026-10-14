@@ -6567,3 +6567,201 @@ ENTRY(EventDoor, events_door)              /* $AC68 */
 ENTRY(EventSwitch, events_switch)          /* $ACC6 */
 ENTRY(EventPicture, events_picture)        /* $ADEC */
 ENTRY(EventGate, events_gate)              /* $AE4E */
+
+/* ---- batch T34: the room objects' runner and kinds 0, 6, 10 and 16 ----
+ * $AEA2 runs the eight room objects each frame by kind (the table at $AECC): 0 a block falling
+ * into place (from $C9B4's list), 2 T23's broken block, 4 nothing, 6 a sparkle, 8 T23's lift, 10
+ * a mover with a timer, 12 $1A1C6 (still the original's), 14 T23's drifting thing, 16 a chest. */
+
+#define ROOM_OBJECT_COUNT 0xFFFF99FEu
+
+/* $AEF2, kind 6: gone when its animation ends */
+static void room_obj_sparkle(void)
+{
+    f_bit(rd8(e(0xFFFFC000u)) >> 6 & 1);
+    if (!(rd8(e(0xFFFFC000u)) & 0x40)) return;
+    move_b(0, rd8(e(0xFFFFC600u)));
+    if (c->d[0] & 0xFF) return;
+    put8(e(0xFFFFC000u), c->d[0]);
+}
+/* $AF06, kind 10: moved by its speeds, gone when its timer ($DA00) runs out */
+static void room_obj_mover(void)
+{
+    call(APPLY_VELOCITY);
+    if (mem_sub_w(e(0xFFFFDA00u), 1)) return;
+    put8(e(0xFFFFC000u), 0);
+}
+/* $AFA0: the falling block's column and floor from its look ($DA02, 3 bytes each at $AFC8):
+ * d0 its x, d1 its top, d2 its floor */
+static void block_place(void)
+{
+    c->d[1] = 0; F_L(0);
+    move_b(1, rd8(e(0xFFFFDA02u)));
+    uint32_t r = 0xAFC8u + (c->d[1] & 0xFFFF);
+    c->d[0] = 0; F_L(0);
+    move_b(0, rd8(r));
+    c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 4, 16));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, 0x1000, c->d[0]));
+    c->d[2] = 0; F_L(0);
+    move_b(2, rd8(r + 2));
+    c->d[2] = set_w(c->d[2], lsl_n(&c->ccr, c->d[2], 4, 16));
+    move_b(1, rd8(r + 1));
+    c->d[1] = set_w(c->d[1], lsl_n(&c->ccr, c->d[1], 4, 16));
+    c->d[1] = set_w(c->d[1], add_w(&c->ccr, 0x1000, c->d[1]));
+    c->d[2] = set_w(c->d[2], add_w(&c->ccr, c->d[1], c->d[2]));
+}
+/* $AF16, kind 0: a block that empties its cell and falls to its floor, where it becomes a cell
+ * ($300) again */
+static void room_obj_block(void)
+{
+    f_bit(rd8(e(0xFFFFC000u)) >> 6 & 1);
+    if (!(rd8(e(0xFFFFC000u)) & 0x40)) {
+        call(CLEAR_ENTITY);
+        put16m(e(0xFFFFC300u), 0x604);
+        c->d[0] = 0; F_L(0);
+        call(SET_ANIM);
+        put8(e(0xFFFFC303u), 0x14);
+        put16m(e(0xFFFFCC02u), 0x50);
+        e_or(0xFFFFD100u, 2);
+        put16m(e(0xFFFFCD02u), 0x800);
+        push32(0xAF48); block_place(); c->a[7] += 4;
+        c->d[0] = set_w(c->d[0], add_w(&c->ccr, 8, c->d[0]));
+        put16m(e(0xFFFFC800u), c->d[0]);
+        c->d[1] = set_w(c->d[1], add_w(&c->ccr, 8, c->d[1]));
+        put16m(e(0xFFFFC900u), c->d[1]);
+        e_or(0xFFFFC000u, 0x40);
+        return;
+    }
+    F_B(rd8(e(0xFFFFD401u)));
+    if (!rd8(e(0xFFFFD401u))) {                         /* the first frame: its cell emptied */
+        e_inc(0xFFFFD401u, 1);
+        push32(0xAF68); block_place(); c->a[7] += 4;
+        c->d[6] = set_w(c->d[6], c->d[0]); F_W(c->d[0]);
+        c->d[6] = set_w(c->d[6], lsr_n(&c->ccr, c->d[6], 4, 16));
+        c->d[7] = set_w(c->d[7], c->d[1]); F_W(c->d[1]);
+        c->d[7] = set_w(c->d[7], lsl_n(&c->ccr, c->d[7], 2, 16));
+        c->d[0] = 0; F_L(0);
+        push32(0xAF76); cell_set_a(); c->a[7] += 4;
+    }
+    call(ACCEL_Y);
+    call(APPLY_VEL_Y);
+    push32(0xAF80); block_place(); c->a[7] += 4;
+    c->d[2] = set_w(c->d[2], add_w(&c->ccr, 8, c->d[2]));
+    cmp_w(&c->ccr, rd16(e(0xFFFFC900u)), c->d[2]);
+    if ((c->d[2] & 0xFFFF) > rd16(e(0xFFFFC900u))) return;
+    c->d[2] = set_w(c->d[2], sub_w(&c->ccr, 8, c->d[2]));
+    c->d[6] = set_w(c->d[6], c->d[0]); F_W(c->d[0]);
+    c->d[6] = set_w(c->d[6], lsr_n(&c->ccr, c->d[6], 4, 16));
+    c->d[7] = set_w(c->d[7], c->d[2]); F_W(c->d[2]);
+    c->d[7] = set_w(c->d[7], lsl_n(&c->ccr, c->d[7], 2, 16));
+    c->d[0] = set_w(c->d[0], 0x300); F_W(0x300);
+    push32(0xAF9A); cell_set_a(); c->a[7] += 4;
+    put8(e(0xFFFFC000u), 0);
+}
+/* $ADAC (through $998A, as the player opens it): the chest's flag set (unless negative), its
+ * drops ($A666, its list $D801), its open look, $9994 bit 15; a negative flag's chest goes
+ * after 64 frames */
+static void chest_opened(void)
+{
+    c->a[7] -= 2; wr16(c->a[7], c->a[4]);
+    c->a[4] = sx(rd16(0xFFFF9982u));
+    c->d[0] = set_w(c->d[0], rd16(e(0xFFFFCE02u))); F_W(c->d[0]);
+    if (!(c->d[0] & 0x8000)) { push32(0xADBC); flag2_set(); c->a[7] += 4; }
+    c->d[0] = 0; F_L(0);
+    move_b(0, rd8(e(0xFFFFD801u)));
+    c->d[6] = set_w(c->d[6], rd16(e(0xFFFFC800u))); F_W(c->d[6]);
+    c->d[7] = 0x10; F_L(0x10);
+    c->d[7] = set_w(c->d[7], add_w(&c->ccr, rd16(e(0xFFFFC900u)), c->d[7]));
+    call(0xA666);
+    c->d[0] = 2; F_L(2);
+    call(SET_ANIM);
+    { uint16_t v = (uint16_t)(rd16(0xFFFF9994u) | 0x8000); wr16(0xFFFF9994u, v); F_W(v); }
+    F_W(rd16(e(0xFFFFCE02u)));
+    if (rd16(e(0xFFFFCE02u)) & 0x8000) put8(e(0xFFFFD800u), 0x40);
+    c->a[4] = sx(rd16(c->a[7])); c->a[7] += 2;
+}
+/* $ACFA, kind 16: a chest. Dropped ($CE00 set): it falls to its place ($DF02) and lands
+ * ($2EDE, $4362). Shut: the player standing at it (within 8 across, on its top) opens it by
+ * $998A ($ADAC). Opened: after its time ($D800) it becomes kind 6 and vanishes */
+static void room_obj_chest(void)
+{
+    F_B(rd8(e(0xFFFFCE00u)));
+    if (rd8(e(0xFFFFCE00u))) {
+        put8(e(0xFFFFD100u), 3);
+        put16m(e(0xFFFFCB02u), 0x1010);
+        put16m(e(0xFFFFCC02u), 0x40);
+        put16m(e(0xFFFFCD02u), 0x600);
+        call(ACCEL_Y);
+        F_W(rd16(e(0xFFFFCA02u)));
+        if (!(rd16(e(0xFFFFCA02u)) & 0x8000)) {
+            c->d[0] = set_w(c->d[0], rd16(e(0xFFFFDF02u))); F_W(c->d[0]);
+            c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 8, c->d[0]));
+            cmp_w(&c->ccr, rd16(e(0xFFFFC900u)), c->d[0]);
+            if ((c->d[0] & 0xFFFF) < rd16(e(0xFFFFC900u))) {   /* below its place: landed */
+                call(0x2EDE);
+                call(0x4362);
+                if (!(c->ccr & CC_Z)) return;
+                put8(e(0xFFFFCE00u), c->d[0]);
+                return;
+            }
+        }
+        call(APPLY_VELOCITY);
+        return;
+    }
+    F_B(rd8(e(0xFFFFC302u)));
+    if (rd8(e(0xFFFFC302u))) {                          /* open */
+        F_B(rd8(e(0xFFFFD800u)));
+        if (!rd8(e(0xFFFFD800u)) || e_dec(0xFFFFD800u)) return;
+        put16m(e(0xFFFFD402u), 6);
+        put16m(e(0xFFFFC300u), 0x120A);
+        c->d[0] = 0; F_L(0);
+        call(0x07FC);
+        return;
+    }
+    F_B(rd8(DROPS));
+    if (rd8(DROPS) & 0x80) return;
+    c->a[2] = sx(rd16(PLAYER_ENT));
+    c->d[0] = set_w(c->d[0], rd16(c->a[2] - 0x3800)); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, rd16(e(0xFFFFC800u)), c->d[0]));
+    if (c->ccr & CC_N) c->d[0] = set_w(c->d[0], neg_w(&c->ccr, c->d[0]));
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 8, c->d[0]));
+    if (!(c->ccr & CC_C)) return;
+    c->d[0] = 0; F_L(0);
+    move_b(0, rd8(c->a[2] - 0x34FD));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(c->a[2] - 0x3700), c->d[0]));
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 0x10, c->d[0]));
+    cmp_w(&c->ccr, rd16(e(0xFFFFC900u)), c->d[0]);
+    if ((c->d[0] & 0xFFFF) != rd16(e(0xFFFFC900u))) return;
+    put16m(0xFFFF9982u, c->a[4]);
+    put32m(0xFFFF998Au, 0xADAC);
+    wr8(0xFFFF9980u, 0xFF);
+    mem_or8(0xFFFF9966u, 1);
+}
+/* $AEA2: the eight room objects ($E0-$FC) in use, by kind */
+static void room_objects(void)
+{
+    static const uint32_t kinds[9] = { 0xAF16, 0xB00A, 0xAEF0, 0xAEF2, 0xB0DA, 0xAF06, 0x1A1C6, 0xB236, 0xACFA };   /* $AECC */
+    c->a[4] = 0xE0;
+    put16m(ROOM_OBJECT_COUNT, 0);
+    do {
+        F_B(rd8(e(0xFFFFC000u)));
+        if (rd8(e(0xFFFFC000u)) & 0x80) {
+            c->d[0] = set_w(c->d[0], rd16(e(0xFFFFD402u))); F_W(c->d[0]);
+            c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+            c->a[0] = kinds[(c->d[0] & 0xFFFF) / 4];
+            call(c->a[0]);
+        }
+        c->a[4] += 4;
+        mem_add_w(ROOM_OBJECT_COUNT, 1);
+        cmp_w(&c->ccr, 8, rd16(ROOM_OBJECT_COUNT));
+    } while (rd16(ROOM_OBJECT_COUNT) < 8);
+}
+
+ENTRY(RoomObjects, room_objects)           /* $AEA2 */
+ENTRY(RoomObjNone, nothing)                /* $AEF0 */
+ENTRY(RoomObjSparkle, room_obj_sparkle)    /* $AEF2 */
+ENTRY(RoomObjMover, room_obj_mover)        /* $AF06 */
+ENTRY(RoomObjBlock, room_obj_block)        /* $AF16 */
+ENTRY(BlockPlace, block_place)             /* $AFA0 */
+ENTRY(RoomObjChest, room_obj_chest)        /* $ACFA */
+ENTRY(ChestOpened, chest_opened)           /* $ADAC */
