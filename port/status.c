@@ -1696,6 +1696,26 @@ static void pause_screen(void)
 #define NEEDS_PASS(self) do { if (!task_in_pass()) { port_leave_to_68k(c, (self)); return; } } while (0)
 void StatusScreen(Cpu *cpu) { c = cpu; NEEDS_PASS(0x7582); status_screen(); }   /* $7582 */
 void PauseScreen(Cpu *cpu)  { c = cpu; NEEDS_PASS(0x7F0E); pause_screen(); }    /* $7F0E */
+/* the screen's parts that wait, as entries: nothing in the original calls them any more (the
+ * screen's C calls them itself, and the sessions check them as part of it); an entry takes its
+ * return address, as the original's routine does, and goes on where the original's jmp (a0)
+ * from that cell would */
+static void status_part(void (*fn)(uint32_t), uint32_t cell)
+{
+    uint32_t ret = rd32(c->a[7]); c->a[7] += 4;
+    fn(ret);
+    c->a[0] = rd32(cell);
+    port_continue_at(c, c->a[0], 0);
+}
+void ItemsChoose(Cpu *cpu)   { c = cpu; NEEDS_PASS(0x7882); status_part(items_choose, 0xFFFF9650u); }   /* $7882 */
+void MagicChoose(Cpu *cpu)   { c = cpu; NEEDS_PASS(0x78DC); status_part(magic_choose, 0xFFFF9644u); }   /* $78DC */
+void SlotChoose(Cpu *cpu)    { c = cpu; NEEDS_PASS(0x799E); status_part(choose_slot, 0xFFFF964Cu); }    /* $799E */
+void ActionToSlot(Cpu *cpu)  { c = cpu; NEEDS_PASS(0x79EE); status_part(put_in_slot, 0xFFFF9640u); }    /* $79EE */
+void ItemToSlot(Cpu *cpu)    { c = cpu; NEEDS_PASS(0x7A44); status_part(item_in_slot, 0xFFFF9654u); }   /* $7A44 */
+void WornBlink(Cpu *cpu)     { c = cpu; NEEDS_PASS(0x7E12); status_part(blink_worn, 0xFFFF9648u); }     /* $7E12 */
+void StatusFadeIn(Cpu *cpu)  { c = cpu; NEEDS_PASS(0x7E8C); status_part(fade_in, 0xFFFF963Cu); }        /* $7E8C */
+void StatusFadeOut(Cpu *cpu) { c = cpu; NEEDS_PASS(0x7EBA); status_part(fade_out, 0xFFFF963Cu); }       /* $7EBA */
+void StatusWait(Cpu *cpu)    { c = cpu; NEEDS_PASS(0x805A); status_part(wait_input, 0xFFFF9634u); }     /* $805A */
 
 /* call_68k leaves its mark in ret: cleared, as none of these goes on elsewhere */
 #define ENTRY(name, fn) void name(Cpu *cpu) { c = cpu; fn(); c->ret = 0; }

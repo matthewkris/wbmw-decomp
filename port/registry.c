@@ -98,6 +98,8 @@ void EventNear(Cpu *), ListOrigin(Cpu *), ListWidth(Cpu *), ListHeight(Cpu *), L
 void RoomEvents(Cpu *), EventDoor(Cpu *), EventSwitch(Cpu *), EventPicture(Cpu *), EventGate(Cpu *);
 void RoomObjects(Cpu *), RoomObjNone(Cpu *), RoomObjSparkle(Cpu *), RoomObjMover(Cpu *), RoomObjBlock(Cpu *), BlockPlace(Cpu *), RoomObjChest(Cpu *), ChestOpened(Cpu *);
 void StartEntry(Cpu *), GameRestart(Cpu *), RoomEnter(Cpu *), ArrivePlain(Cpu *), NextRoom(Cpu *), GameOver(Cpu *), RoomMessage(Cpu *);
+void HudPanel(Cpu *), GoldLabel(Cpu *), ThreeLabels(Cpu *), DigitsOut(Cpu *), ItemsChoose(Cpu *), MagicChoose(Cpu *), SlotChoose(Cpu *), ActionToSlot(Cpu *),
+     ItemToSlot(Cpu *), WornBlink(Cpu *), StatusFadeIn(Cpu *), StatusFadeOut(Cpu *), StatusWait(Cpu *);
 void NumText(Cpu *), CharAt(Cpu *), ScrollWindow(Cpu *), WindowFrame(Cpu *), WindowRow(Cpu *), TileUnder(Cpu *), WindowRestore(Cpu *), NewLine(Cpu *), MoreBlink(Cpu *), MoreHide(Cpu *), MoreShow(Cpu *), ChoiceBlink(Cpu *), ChoiceHide(Cpu *), ChoiceShow(Cpu *), PriceOf(Cpu *), NameOf(Cpu *), NameText(Cpu *), FoundThing(Cpu *), FoundGold(Cpu *), BoxText(Cpu *), BoxRows(Cpu *), BoxRow(Cpu *), ShowFoundGold(Cpu *), ShowFound(Cpu *), WindowGeometry(Cpu *), Cheaper(Cpu *), Owns(Cpu *), Give(Cpu *), Take(Cpu *), ItemCell(Cpu *), FlagCell(Cpu *), MessageData(Cpu *), OpenWindow(Cpu *), WindowAt(Cpu *), MsgStep(Cpu *), CharIn(Cpu *), NoteIn(Cpu *), OcarinaTune(Cpu *);   /* message.c */
 #define CT_ALL 0x3FFFF                /* every register and flag compared */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
@@ -467,6 +469,19 @@ const PortRoutine port_routines[] = {
     {0x008FEA, 0x008FFC, "ArrivePlain", ArrivePlain, CT_SP | CT_WAITS},
     {0x009100, 0x009144, "NextRoom", NextRoom, CT_SP | CT_WAITS},
     {0x009144, 0x0091EA, "GameOver", GameOver, CT_SP | CT_WAITS},   /* $9228 (the room's message) waits for a session that runs it */
+    {0x007544, 0x00757A, "HudPanel", HudPanel, CT_SP},           /* rooms.c: the HUD's panel and the status screen's labels; status.c: its parts that wait, as entries */
+    {0x008596, 0x0085A8, "GoldLabel", GoldLabel, CT_SP},
+    {0x0084C4, 0x0084DE, "ThreeLabels", ThreeLabels, CT_ALL},
+    {0x00850C, 0x008522, "DigitsOut", DigitsOut, CT_ALL},
+    {0x007882, 0x0078DC, "ItemsChoose", ItemsChoose, CT_SP | CT_WAITS},
+    {0x0078DC, 0x007924, "MagicChoose", MagicChoose, CT_SP | CT_WAITS},
+    {0x00799E, 0x0079EE, "SlotChoose", SlotChoose, CT_SP | CT_WAITS},
+    {0x0079EE, 0x007A44, "ActionToSlot", ActionToSlot, CT_SP | CT_WAITS},
+    {0x007A44, 0x007AAA, "ItemToSlot", ItemToSlot, CT_SP | CT_WAITS},
+    {0x007E12, 0x007E72, "WornBlink", WornBlink, CT_SP | CT_WAITS},
+    {0x007E8C, 0x007EBA, "StatusFadeIn", StatusFadeIn, CT_SP | CT_WAITS},
+    {0x007EBA, 0x007EEE, "StatusFadeOut", StatusFadeOut, CT_SP | CT_WAITS},
+    {0x00805A, 0x0080A8, "StatusWait", StatusWait, CT_SP | CT_WAITS},
     {0x0092A4, 0x0092D4, "FadeStep", FadeStep, CT_ALL},
     {0x00A3D8, 0x00A4EE, "Triggers", Triggers, CT_ALL},   /* rooms.c: the room's triggers (the handlers go on in the original at $A46E) */
     {0x00A4EE, 0x00A506, "TrigExitX", TrigExitX, CT_SP},

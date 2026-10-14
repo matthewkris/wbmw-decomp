@@ -6940,3 +6940,65 @@ void ArrivePlain(Cpu *cpu) { c = cpu; NEEDS_PASS(0x8FEA); arrive_plain(); }     
 void NextRoom(Cpu *cpu)    { c = cpu; NEEDS_PASS(0x9100); next_room(); }                 /* $9100 */
 void GameOver(Cpu *cpu)    { c = cpu; NEEDS_PASS(0x9144); game_over(); }                 /* $9144 */
 void RoomMessage(Cpu *cpu) { c = cpu; NEEDS_PASS(0x9228); room_message(); }              /* $9228 */
+
+/* ---- batch T36: the HUD's panel and the status screen's labels ----
+ * Small pieces of the status screen's region still in the original, which the C calls. */
+
+/* $8596: the gold's label at (5, $16) ($84E7), then the gold ($85A8) */
+static void gold_label(void)
+{
+    c->d[3] = 6; F_L(6);
+    c->d[7] = set_w(c->d[7], 0x1605); F_W(0x1605);
+    call(0x83B0);
+    c->a[1] = 0x84E7;
+    call(0x786A);
+    call(0x85A8);
+}
+/* $7544: the HUD's panel drawn whole (a room's start, $97F0): the slots' looks unset, the frame
+ * ($7F54), the boss bar cleared ($89B6), the hearts ($8AA2), the HUD ($76C4), palette step 8,
+ * the gold */
+static void hud_panel(void)
+{
+    c->d[0] = 0xFFFFFF80u; F_L(c->d[0]);
+    put8(0xFFFF95DCu, c->d[0]);
+    put8(0xFFFF95DDu, c->d[0]);
+    put32m(0xFFFF9628u, 0);
+    put32m(0xFFFF9602u, 0);
+    put16m(0xFFFF95F2u, 0);
+    call(0x7F54);
+    call(0x89B6);
+    call(0x8AA2);
+    call(0x76C4);
+    put8(0xFFFF8A77u, 8);
+    mem_or8(0xFFFF8006u, 4);
+    gold_label();
+}
+/* $84C4: three labels ($84DE) at (9, 2), (9, 4), (9, 6) */
+static void three_labels(void)
+{
+    c->d[7] = set_w(c->d[7], 0x209); F_W(0x209);
+    c->a[1] = 0x84DE;
+    c->d[3] = 2; F_L(2);
+    do {
+        call(0x83B0);
+        call(0x786A);
+        c->d[7] = set_b(c->d[7], add_b(&c->ccr, 2, c->d[7]));
+    } while (dbra(3));
+}
+/* $850C: d3 digits from a0 backwards to the VDP's data port (tiles $8030 on) */
+static void digits_out(void)
+{
+    c->d[3] = set_w(c->d[3], sub_w(&c->ccr, 1, c->d[3]));
+    do {
+        c->d[0] = 0; F_L(0);
+        c->a[0] -= 1;
+        move_b(0, rd8(c->a[0]));
+        c->d[0] = set_w(c->d[0], add_w(&c->ccr, 0x8030, c->d[0]));
+        wr16(0xC00000, c->d[0]); F_W(c->d[0]);
+    } while (dbra(3));
+}
+
+ENTRY(HudPanel, hud_panel)                 /* $7544 */
+ENTRY(GoldLabel, gold_label)               /* $8596 */
+ENTRY(ThreeLabels, three_labels)           /* $84C4 */
+ENTRY(DigitsOut, digits_out)               /* $850C */

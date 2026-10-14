@@ -1409,6 +1409,10 @@ int hybrid_fuzz(const char *name, long count)
             for (uint32_t sl = 0xE0; sl < 0x100; sl += 4) { ram[0xC000 + sl] = (uint8_t)(rnd() % 2 ? 0x80 | (rnd() % 2 ? 0x40 : 0) : 0); put_word(0xD402 + sl, rnd() % 2 ? 4 : 6); ram[0xC600 + sl] = (uint8_t)(rnd() % 2 ? 0 : rnd()); }
         }
         if (!strcmp(name, "StartEntry")) ram[0x965E] = (uint8_t)(rnd() % 16);   /* the start points' table ($8FAA, 16) */
+        if (!strcmp(name, "DigitsOut")) {            /* up to six digits (0-9) before $FF4E10 */
+            for (uint32_t k4 = 0; k4 < 6; k4++) ram[0x4E0A + k4] = (uint8_t)(rnd() % 10);
+            m68k_set_reg(M68K_REG_A0, 0xFFFF4E10); m68k_set_reg(M68K_REG_D3, (rnd() << 16) | (1 + rnd() % 6));
+        }
         if (!strcmp(name, "CrumbleAdd")) {          /* some walls' records taken */
             for (uint32_t k4 = 0; k4 < 4; k4++) ram[0x9B96 + 8 * k4] = (uint8_t)(rnd() % 3 ? 0x80 | rnd() % 4 : 0);
             m68k_set_reg(M68K_REG_D6, (rnd() << 16) | (0xF0 + rnd() % 0x100)); m68k_set_reg(M68K_REG_D7, (rnd() << 16) | ((0x4000 + rnd() % 0x1500) & ~0x3Fu));
