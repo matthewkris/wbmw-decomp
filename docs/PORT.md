@@ -2466,6 +2466,36 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 cases from six states, 0 mismatches, every instruction covered. Self-test caught 100 in 100 for
 each. Replace mode: thirteen runs, no problems.
 
+#### The gameplay loop, batch T35: room entry, next room, game over (2026-10-14)
+
+Parts of the game's task (`$8EB4`-`$92A2`) that the room changes leave to, in `port/rooms.c`:
+
+* `$8EB4`: the game started again at its start point (`$965E`, `$8F98`): its message, the state
+  reset (`$8E56`) and the room's music, then the room is entered.
+* `$8EE6`: a room entered. It is loaded (`$9330`) with its layers, event list, script, gates and
+  things, its palettes, and its music (unless a message `$9686` comes first). Then the arrival
+  by `$9678` (T20's table at `$8F6C`; the arrivals not yet registered are in
+  `analysis/translate.json`'s `seen`).
+* `$8FEA`, arrivals 0 and 1: the screen faded in, then the game.
+* `$9100`: the next room. The area's data is loaded again if it changed, the music fades if it
+  differs, the screen fades out, and the room is entered.
+* `$9144`: the game over. Its picture fades in and is held for 240 frames or until a button,
+  then the game restarts (`$4CA8`).
+* `$9228`: the room's message, after a fade through 56 steps. It is written but not registered:
+  no session reaches it.
+
+The task's loop (`$8FFC`-`$9100`, `$91EA`) stays the original's. It calls `$C7E6` (the room
+scripts, some still the original's code that waits) and `$DB3C` (which waits), and C cannot call
+such code.
+
+`$8EE6` ends by going on to an arrival, so it never returns to the fuzz, whose limit then stops
+the case. The sessions run it, and all 39 runs complete.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(39 runs, all complete; 637,585 checked calls). The sessions run all of `$8EB4`, `$8FEA` and
+`$9144`, 34 of `$8EE6`'s 35 instructions, and all of `$9100` but the restart's case. The fuzz,
+for the routines that return: 0 mismatches. Replace mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
