@@ -1341,6 +1341,38 @@ int hybrid_fuzz(const char *name, long count)
             m68k_set_reg(M68K_REG_A2, slot); m68k_set_reg(M68K_REG_A4, slot);
             ram[0x99C5] = (uint8_t)((ram[0x99C5] & ~1) | (rnd() & 1));   /* game flag $38 */
         }
+        if (!strncmp(name, "Companion", 9) && strstr("|Frame|Kind4|Kind0|Shoot|Appear4|Appeared4|Appear0|Rest|OverPlayer|Shown|Follow|Return|Drop|Grab|Chase|Ride|ChanceAway|ChanceEnemy|ChanceArea|Near|Gone|", name + 9)
+                && name[9]) {                       /* its state: kind 0 or 4, a state of the table (begun or not), its step, timers near their ends, an enemy to go for */
+            uint32_t slot = (uint32_t)ram[0x9F30] << 8 | ram[0x9F31], pl = (uint32_t)ram[0x9EEE] << 8 | ram[0x9EEF];
+            uint32_t en = ((uint32_t)ram[0xA11A] << 8 | ram[0xA11B]) + 4 * (rnd() % 16);
+            ram[0xC000 + slot] = (uint8_t)((rnd() % 8 ? 0x80 : 0) | (rnd() & 0x41));
+            uint32_t kind = rnd() % 2 ? 0 : 4;
+            static const uint16_t sets0[] = { 0x200, 0x1208, 0x1002 }, sets4[] = { 0x204, 0x1208, 0x1616 };
+            put_word(0xD402 + slot, kind);
+            put_word(0xC300 + slot, kind ? sets4[rnd() % 3] : sets0[rnd() % 3]);   /* its animation set, as the game gives it */
+            put_word(0x965A, rnd());                    /* the frame count: the every-8 and every-16 chances */
+            uint32_t ng = ram[0xA143] < 2 ? 2 : ram[0xA143] > 8 ? 8 : ram[0xA143];   /* the looks $4910 finds: $402 and $462 loaded */
+            ram[0xA143] = (uint8_t)ng; put_word(0xA122, 0x402); put_word(0xA126, 0x462);
+            ram[0xD401 + slot] = (uint8_t)(2 * (rnd() % 6) | (rnd() & 0x80));
+            ram[0xCE01 + slot] = (uint8_t)(2 * (rnd() % 2) | (rnd() & 0x80));
+            put_word(0xD802 + slot, en & 0xFF);
+            ram[0xD800 + slot] = (uint8_t)(rnd() % 3 ? rnd() % 3 : rnd()); ram[0xD801 + slot] = (uint8_t)(rnd() % 3 ? 1 + rnd() % 2 : rnd());
+            m68k_set_reg(M68K_REG_A4, slot);
+            m68k_set_reg(M68K_REG_A2, !strcmp(name, "CompanionChase") || !strcmp(name, "CompanionRide") ? (en & 0xFF) : pl);
+            if (!strcmp(name, "CompanionShoot") && rnd() % 4 == 0)   /* no room for its shot */
+                for (uint32_t e = 0x80; e < 0xC0; e += 4) { ram[0xC000 + e] = 0x80; put_word(0xD402 + e, 0x214); }   /* busy with shots, none drawn: none to replace */
+            put_word(0xA11A, 0x40);                     /* enemies it can go for: in use, drawn, on screen, free, alive */
+            for (uint32_t k4 = 0; k4 < 16; k4++) if (rnd() % 4 == 0) {
+                uint32_t e = 0x40 + 4 * k4;
+                ram[0xC000 + e] |= 0xC1; ram[0xD402 + e] = 0; put_word(0xDA00 + e, 1 + rnd() % 0x100);
+            }
+            if (rnd() % 2) {                            /* within reach of the player (or of the enemy it goes for) */
+                uint32_t t = !strcmp(name, "CompanionChase") || !strcmp(name, "CompanionRide") ? (en & 0xFF) : pl;
+                put_word(0xC800 + slot, (uint32_t)ram[0xC800 + t] << 8 | ram[0xC801 + t]);
+                put_word(0xC900 + slot, ((uint32_t)ram[0xC900 + t] << 8 | ram[0xC901 + t]) - (t == pl ? 0x18 : 0));
+                ram[0xCB03 + slot] = 0; ram[0xCB03 + t] = 0;
+            }
+        }
         if (!strcmp(name, "RoomPlayer") || !strncmp(name, "PlayerPlace", 11) || !strcmp(name, "PlayerMoved") || !strcmp(name, "PlayerReset")) {
             /* the arrivals the table has (0-20, even), the player's slot, a companion or none */
             ram[0x9678] = (uint8_t)(2 * (rnd() % 11));
