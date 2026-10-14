@@ -105,6 +105,7 @@ void PoseKeep(Cpu *), PoseFree(Cpu *), ExitRoom(Cpu *), ExitArrive(Cpu *), Playe
 void CompanionKind6(Cpu *), CompanionKind2(Cpu *), CompanionEnter(Cpu *), CompanionWalk(Cpu *), CompanionStep(Cpu *), CompanionRun(Cpu *), CompanionJump(Cpu *), CompanionJumping(Cpu *), CompanionSit(Cpu *), CompanionEdge(Cpu *), CompanionDive(Cpu *), CompanionWait(Cpu *), CompanionHop(Cpu *), CompanionPlace(Cpu *), CompanionChanceSit(Cpu *), CompanionSpit(Cpu *), CompanionTrailStart(Cpu *), CompanionTrail(Cpu *), CompanionFell(Cpu *);
 void RecordStart(Cpu *), DemoStart(Cpu *), RecordStep(Cpu *), DemoStep(Cpu *), TasksStart(Cpu *), Clear9996(Cpu *), SoundStop25(Cpu *), PadWhich(Cpu *), ScreenReset(Cpu *), ScreenNew(Cpu *), ReadPads(Cpu *), ReadPad(Cpu *), Presses(Cpu *), FrameWork(Cpu *), ScrollUpload(Cpu *), HScrollUpload(Cpu *), VdpRegs(Cpu *), PaletteUpload(Cpu *), ClearEntities(Cpu *), SpritesUpload(Cpu *), PaletteClear(Cpu *), PaletteCopy(Cpu *), FadeReset(Cpu *);
 void ColourFrame(Cpu *), ColorScriptStart(Cpu *), ColorEnd(Cpu *), ColorScripts(Cpu *), CycleStart(Cpu *), CyclesRun(Cpu *), FadeIn(Cpu *), FadeOut(Cpu *), FadeOutSlow(Cpu *), FadeOwner(Cpu *), FadeInStep(Cpu *), FadeOutStep(Cpu *), FadeApply(Cpu *), ColorAdjust(Cpu *), PaletteWhite(Cpu *);
+void CellVram(Cpu *), PlaneAClear(Cpu *), PlaneBClear(Cpu *), WindowClear(Cpu *), ScrollClear(Cpu *), ScrollClearPair(Cpu *), DrawLayout(Cpu *), GfxTablesReset(Cpu *), TileAnimsClear(Cpu *), TileAnimsTask(Cpu *), SegaTask(Cpu *);
 void Looks(Cpu *), LooksExtra(Cpu *), LooksBlock(Cpu *), LooksBody(Cpu *), LooksSword(Cpu *), LooksShield(Cpu *), EquipChange(Cpu *);
 void HudPanel(Cpu *), GoldLabel(Cpu *), ThreeLabels(Cpu *), DigitsOut(Cpu *), ItemsChoose(Cpu *), MagicChoose(Cpu *), SlotChoose(Cpu *), ActionToSlot(Cpu *),
      ItemToSlot(Cpu *), WornBlink(Cpu *), StatusFadeIn(Cpu *), StatusFadeOut(Cpu *), StatusWait(Cpu *);
@@ -207,6 +208,17 @@ const PortRoutine port_routines[] = {
     {0x005916, 0x00594A, "FadeApply", FadeApply, CT_SP},
     {0x00594A, 0x005986, "ColorAdjust", ColorAdjust, CT_SP},
     {0x005986, 0x00599C, "PaletteWhite", PaletteWhite, CT_SP},
+    {0x0005CA, 0x0005D8, "CellVram", CellVram, CT_SP},   /* vblank.c: the planes cleared, a layout drawn, the animated tiles and the Sega screen (tasks: they wait) */
+    {0x006910, 0x006916, "PlaneAClear", PlaneAClear, CT_SP},
+    {0x006916, 0x00693E, "PlaneBClear", PlaneBClear, CT_SP},
+    {0x00693E, 0x00696C, "WindowClear", WindowClear, CT_SP},
+    {0x00696C, 0x00699E, "ScrollClear", ScrollClear, CT_SP},
+    {0x00699E, 0x0069AE, "ScrollClearPair", ScrollClearPair, CT_SP},
+    {0x0069AE, 0x006BA0, "DrawLayout", DrawLayout, CT_SP},
+    {0x006BA0, 0x006BAE, "GfxTablesReset", GfxTablesReset, CT_SP},
+    {0x006BAE, 0x006BC4, "TileAnimsClear", TileAnimsClear, CT_SP},
+    {0x006EAC, 0x006F86, "TileAnimsTask", TileAnimsTask, CT_SP | CT_WAITS},
+    {0x006F8A, 0x007018, "SegaTask", SegaTask, CT_SP | CT_WAITS},
     {0x0053AA, 0x0054C4, "BuildSprites", BuildSprites},
     {0x0054C4, 0x00557E, "AddEntitySprites", AddEntitySprites},
     {0x000C36, 0x000C3E, "HitboxOverlapSwap", HitboxOverlapSwap},

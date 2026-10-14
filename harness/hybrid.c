@@ -850,6 +850,7 @@ int hybrid_fuzz(const char *name, long count)
             m68k_set_reg(M68K_REG_D5, (m68k_get_reg(NULL, M68K_REG_D5) & ~0xFFFFu) | (1 + rnd() % 20));
             m68k_set_reg(M68K_REG_D0, (m68k_get_reg(NULL, M68K_REG_D0) & ~0xFFFFu) | 2 * (rnd() % 2));
             m68k_set_reg(M68K_REG_A1, 0xC00000);
+            put_word(0x2400, rnd()); put_word(0x2600, rnd()); put_word(0x8A8C, rnd()); put_word(0x8AB4, rnd());   /* scrolled: rows that wrap */
             if (!strcmp(name, "TileRows") || !strcmp(name, "MaybePicture")) m68k_set_reg(M68K_REG_A0, 0x7B9A + 4 * (rnd() % 4));
             if (!strcmp(name, "BuildList") || !strcmp(name, "ListPage")) {      /* the things owned of each list, its top */
                 for (uint32_t k4 = 0; k4 < 4; k4++) ram[0x95CA + k4] = (uint8_t)rnd();
@@ -1426,6 +1427,20 @@ int hybrid_fuzz(const char *name, long count)
             if (!strcmp(name, "DemoStep")) ram[0x8A4E] = (uint8_t)(rnd() % 3 ? 1 : rnd());
         }
         if (!strcmp(name, "TasksStart")) m68k_set_reg(M68K_REG_A1, rnd() % 2 ? 0x4FC0 : 0x50CC);
+        if (!strcmp(name, "DrawLayout")) {          /* batch T44: one of the game's layouts on one of its planes */
+            static const uint32_t layouts[] = { 0x7024, 0x7300, 0x73CC, 0x91C2 };
+            static const uint8_t planes[] = { 0, 1, 2, 3, 0x80 };
+            m68k_set_reg(M68K_REG_A2, layouts[rnd() % 4]); ram[0x8C76] = planes[rnd() % 5];
+            m68k_set_reg(M68K_REG_A1, 0xC00000);
+        }
+        if (!strcmp(name, "ScrollClearPair")) {
+            m68k_set_reg(M68K_REG_A0, 0xFF2400); m68k_set_reg(M68K_REG_A1, 0xFF2600);
+            m68k_set_reg(M68K_REG_D1, (rnd() << 16) | rnd() % 0x80);
+        }
+        if (!strcmp(name, "CellVram")) {
+            m68k_set_reg(M68K_REG_D0, (rnd() << 16) | rnd() % 0x80); m68k_set_reg(M68K_REG_D1, (rnd() << 16) | rnd() % 0x40);
+            if (rnd() % 4 == 0) ram[0x8A8A] = (uint8_t)rnd();
+        }
         if (!strncmp(name, "Colo", 4) || !strncmp(name, "Cycle", 5) || !strncmp(name, "Fade", 4) || !strcmp(name, "PaletteWhite")) {
             /* batch T43, the colour task: a real script ($643C) at its start, near its wait's end; a cycle with a level of 0 to
              * -14 and a small step; the fade's counters near their ends; ColorAdjust on the palettes with small levels */

@@ -1,6 +1,7 @@
 /* The kernel's frame work ($4FEE-$5608): what runs once a frame after the vertical blank ($5262,
  * from the wait at $3B8), the joypads, the palette buffers, the screen reset and the demo input.
- * Batch T42 on.
+ * Batch T42 on; T44 adds the planes cleared, the layouts drawn and the kernel's two tasks
+ * (the animated tiles, the Sega screen).
  *
  * Written as plain C: these promise the stack pointer and what they write (RAM, VRAM, the VDP's
  * registers). Registers are left as the original leaves them where that is cheap; flags only
@@ -628,3 +629,384 @@ ENTRY(FadeInStep, fade_in_step)            /* $5892 */
 ENTRY(FadeApply, fade_apply)               /* $5916 */
 ENTRY(ColorAdjust, color_adjust)           /* $594A */
 ENTRY(PaletteWhite, palette_white)         /* $5986 */
+
+/* ---- batch T44: clearing the planes, drawing a layout, the animated tiles, the Sega screen ---- */
+
+#define PLANE_W       0xFFFF8A70u   /* word: cells across a plane */
+#define PLANE_H       0xFFFF8A72u   /* word: cells down */
+#define LAYOUT_PLANE  0xFFFF8C76u   /* bit 7 the window; else bit 0 plane B; bit 1 by the scroll */
+#define TILE_ANIMS    0xFFFF950Cu   /* 8 slots of 16 bytes: the animated tiles */
+
+/* $6910 (plane A, $8A62) and $6916 (plane B, $8A64): the plane cleared */
+static void plane_clear_at(uint32_t base)
+{
+    c->d[0] = set_w(c->d[0], rd16(base));
+    call(0x5A0);
+    c->d[0] = 0;
+    c->a[0] = VDP_DATA;
+    c->d[2] = set_w(c->d[2], rd16(PLANE_H));
+    c->d[3] = set_w(c->d[3], rd16(PLANE_W) >> 1);
+    do {
+        c->d[1] = set_w(c->d[1], c->d[3]);
+        do { wr32(VDP_DATA, 0); c->d[1] = set_w(c->d[1], c->d[1] - 1); } while (c->d[1] & 0xFFFF);
+        c->d[2] = set_w(c->d[2], c->d[2] - 1);
+    } while (c->d[2] & 0xFFFF);
+}
+static void plane_a_clear(void) { plane_clear_at(0xFFFF8A62u); }
+static void plane_b_clear(void) { plane_clear_at(0xFFFF8A64u); }
+/* $693E: the window plane ($8A66, 2K) cleared, the window registers off, $8AE4 0, asked for */
+static void window_clear(void)
+{
+    c->d[0] = set_w(c->d[0], rd16(0xFFFF8A66u));
+    call(0x5A0);
+    c->d[0] = 0;
+    c->a[0] = VDP_DATA;
+    for (int k = 0; k < 0x200; k++) wr32(VDP_DATA, 0);
+    c->d[1] = set_w(c->d[1], 0xFFFF);
+    wr8(0xFFFF8A75u, 0); wr8(0xFFFF8A77u, 0); wr16(0xFFFF8AE4u, 0);
+    wr8(FRAME_FLAGS, rd8(FRAME_FLAGS) | 4);
+}
+/* $699E: d1+1 longs of d0 at a0 and at a1; the scroll asked for */
+static void scroll_clear_pair(void)
+{
+    do {
+        wr32(c->a[0], c->d[0]); c->a[0] += 4;
+        wr32(c->a[1], c->d[0]); c->a[1] += 4;
+        c->d[1] = set_w(c->d[1], c->d[1] - 1);
+    } while ((c->d[1] & 0xFFFF) != 0xFFFF);
+    wr8(FRAME_FLAGS, rd8(FRAME_FLAGS) | 8);
+}
+/* $696C: the scroll's positions and tables cleared */
+static void scroll_clear(void)
+{
+    c->d[0] = 0;
+    wr16(0xFFFF8ADCu, 0); wr16(0xFFFF8ADEu, 0); wr16(0xFFFF8AE0u, 0); wr16(0xFFFF8AE2u, 0);
+    c->a[0] = 0xFF2400; c->a[1] = 0xFF2600;
+    c->d[1] = set_w(c->d[1], 0x7F);
+    scroll_clear_pair();
+    c->a[0] = 0xFFFF8A8Cu; c->a[1] = 0xFFFF8AB4u;
+    c->d[1] = 9;
+    scroll_clear_pair();
+}
+/* $6BAE: the animated tiles' slots freed (the Mxcg task's end) */
+static void tile_anims_clear(void)
+{
+    c->a[0] = TILE_ANIMS; c->d[0] = 7; c->d[1] = 0;
+    for (int k = 0; k < 8; k++) { wr16(c->a[0], 0); c->a[0] += 16; }
+    c->d[0] = 0xFFFF;
+}
+/* $6BA0: $8E08 (64 longs) all -1, the animated tiles' slots freed */
+static void gfx_tables_reset(void)
+{
+    c->a[0] = 0xFFFF8E08u; c->d[1] = 0xFFFFFFFFu;
+    for (int k = 0; k < 64; k++) { wr32(c->a[0], 0xFFFFFFFFu); c->a[0] += 4; }
+    tile_anims_clear();
+}
+
+/* $69AE: a layout of tiles from a2 drawn on the plane $8C76 says. Bytes above $C are tiles (the
+ * high byte set by command 2); 0-$C are commands (the table at $69D8): 0 the end, 1 a position,
+ * 2 the attributes, 3 a tile repeated, 4 a run of tiles, 5 several runs, 6 pairs, 7 one tile, 9
+ * the line's length, 10 blanks, 12 another plane; 8 and 11 do nothing. Its state is in a stack
+ * frame (link a6) as the original's, read uninitialised as it is when a layout sets no length. */
+#define PIC_X         (c->a[6] - 2)     /* words: the cursor, the line's start */
+#define PIC_Y         (c->a[6] - 4)
+#define PIC_X0        (c->a[6] - 6)
+#define PIC_Y0        (c->a[6] - 8)
+#define PIC_LEN       (c->a[6] - 0xA)   /* bytes: the line's length, the tiles left on it */
+#define PIC_LEFT      (c->a[6] - 0xC)
+#define PIC_BASE      (c->a[6] - 0xE)   /* words: the plane's VRAM, the scroll's offsets */
+#define PIC_XOFF      (c->a[6] - 0x10)
+#define PIC_YOFF      (c->a[6] - 0x12)
+
+/* $69F2: the plane's VRAM and (bit 1) the offsets that put the layout where the plane shows */
+static void pic_plane(void)
+{
+    c->d[0] = 0;
+    wr16(PIC_XOFF, 0); wr16(PIC_YOFF, 0);
+    uint8_t p = rd8(LAYOUT_PLANE);
+    if (p & 0x80) { wr16(PIC_BASE, rd16(0xFFFF8A66u)); return; }
+    int b = p & 1;
+    c->d[0] = set_w(c->d[0], rd16(b ? 0xFFFF8A64u : 0xFFFF8A62u));
+    c->d[1] = set_w(c->d[1], rd16(b ? 0xFF2600 : 0xFF2400));
+    c->d[2] = set_w(c->d[2], rd16(b ? 0xFFFF8AB4u : 0xFFFF8A8Cu));
+    wr16(PIC_BASE, (uint16_t)c->d[0]);
+    if (!(p & 2)) return;
+    c->d[1] = set_w(c->d[1], (uint16_t)(((uint16_t)(-c->d[1] + 4) & rd16(0xFFFF8A88u)) >> 3));
+    c->d[2] = set_w(c->d[2], (uint16_t)(((uint16_t)(c->d[2] + 4) & rd16(0xFFFF8A86u)) >> 3));
+    wr16(PIC_XOFF, (uint16_t)c->d[1]);
+    wr16(PIC_YOFF, (uint16_t)c->d[2]);
+}
+/* $5CA: the offset of cell (d0, d1) in a plane ($8A8A: the shift for a row) */
+static void pic_cell(void)
+{
+    c->d[0] = set_w(c->d[0], c->d[0] * 2);
+    c->d[1] = set_w(c->d[1], c->d[1] * 2);
+    c->d[2] = set_b(c->d[2], rd8(0xFFFF8A8Au));
+    c->d[1] = set_w(c->d[1], (c->d[2] & 63) >= 16 ? 0 : (uint32_t)(uint16_t)c->d[1] << (c->d[2] & 63));
+    c->d[0] = set_w(c->d[0], c->d[0] + c->d[1]);
+}
+static uint16_t count_w(uint32_t a) { uint16_t n = (uint16_t)(rd16(a) - 1); wr16(a, n); return n; }
+/* $6A9C: the cell (d0, d1)'s VRAM, then the VDP set to write there ($5A0) */
+static void pic_seek(void)
+{
+    pic_cell();
+    c->d[0] = set_w(c->d[0], c->d[0] + rd16(PIC_BASE));
+    call(0x5A0);
+    c->a[1] = VDP_DATA;
+}
+/* $6B64: tile d7 put; at the line's end the next line from its start, else the next cell (the
+ * plane wrapping) */
+static void pic_put(void)
+{
+    wr16(c->a[1], (uint16_t)c->d[7]);                /* move.w d7,(a1): the VDP once a position is set */
+    uint8_t left = (uint8_t)(rd8(PIC_LEFT) - 1);
+    wr8(PIC_LEFT, left);
+    if (left & 0x80) {
+        wr8(PIC_LEFT, rd8(PIC_LEN));
+        c->d[0] = set_w(c->d[0], rd16(PIC_X0));
+        c->d[1] = set_w(c->d[1], rd16(PIC_Y) + 1);
+        if ((uint16_t)c->d[1] >= rd16(PLANE_H)) c->d[1] = 0;
+        wr16(PIC_Y, (uint16_t)c->d[1]);
+        wr16(PIC_X, (uint16_t)c->d[0]);
+        pic_seek();
+        return;
+    }
+    c->d[0] = set_w(c->d[0], rd16(PIC_X) + 1);
+    if ((uint16_t)c->d[0] < rd16(PLANE_W)) { wr16(PIC_X, (uint16_t)c->d[0]); return; }
+    c->d[0] = 0;
+    wr16(PIC_X, 0);
+    c->d[1] = set_w(c->d[1], rd16(PIC_Y));
+    pic_seek();
+}
+static uint8_t pic_byte(void) { return rd8(c->a[2]++); }
+/* $6AE0: d3+1 tiles from d7 up */
+static void pic_run(void)
+{
+    do {
+        pic_put();
+        c->d[7] = set_b(c->d[7], c->d[7] + 1);
+        c->d[3] = set_w(c->d[3], c->d[3] - 1);
+    } while (!(c->d[3] & 0x8000));
+}
+static void pic_command(uint8_t n)
+{
+    switch (n) {
+    case 1:                                         /* $6A5E: the cursor at (x, y) past the offsets */
+        c->d[0] = pic_byte();
+        c->d[0] = set_w(c->d[0], (c->d[0] + rd16(PIC_XOFF)) & (uint16_t)(rd16(PLANE_W) - 1));
+        wr16(PIC_X0, (uint16_t)c->d[0]); wr16(PIC_X, (uint16_t)c->d[0]);
+        c->d[1] = pic_byte();
+        c->d[1] = set_w(c->d[1], (c->d[1] + rd16(PIC_YOFF)) & (uint16_t)(rd16(PLANE_H) - 1));
+        c->d[2] = set_w(c->d[2], rd16(PLANE_H) - 1);
+        wr16(PIC_Y0, (uint16_t)c->d[1]); wr16(PIC_Y, (uint16_t)c->d[1]);
+        pic_seek();
+        break;
+    case 2:                                         /* $6AA6: the tiles' high byte */
+        c->d[7] = set_w(c->d[7], (uint32_t)pic_byte() << 8);
+        break;
+    case 3:                                         /* $6AAC: a tile n+1 times */
+        c->d[3] = pic_byte();
+        c->d[7] = set_b(c->d[7], pic_byte());
+        do { pic_put(); c->d[3] = set_w(c->d[3], c->d[3] - 1); } while (!(c->d[3] & 0x8000));
+        break;
+    case 4:                                         /* $6ABC: a run of n+1 tiles */
+        c->d[3] = pic_byte();
+        c->d[7] = set_b(c->d[7], pic_byte());
+        pic_run();
+        break;
+    case 5:                                         /* $6AC8: the same run n+1 times */
+        c->d[4] = pic_byte();
+        do {
+            c->d[3] = rd8(c->a[2]);
+            c->d[7] = set_b(c->d[7], rd8(c->a[2] + 1));
+            pic_run();
+            c->d[4] = set_w(c->d[4], c->d[4] - 1);
+        } while (!(c->d[4] & 0x8000));
+        c->a[2] += 2;
+        break;
+    case 6:                                         /* $6AEC: a tile and the next, n+1 times */
+        c->d[3] = pic_byte();
+        do {
+            c->d[7] = set_b(c->d[7], rd8(c->a[2]));
+            pic_put(); c->d[7] = set_b(c->d[7], c->d[7] + 1);
+            pic_put(); c->d[7] = set_b(c->d[7], c->d[7] + 1);
+            c->d[3] = set_w(c->d[3], c->d[3] - 1);
+        } while (!(c->d[3] & 0x8000));
+        c->a[2] += 1;
+        break;
+    case 7:                                         /* $6B06: one tile, any value */
+        c->d[7] = set_b(c->d[7], pic_byte());
+        pic_put();
+        break;
+    case 9:                                         /* $6B10: the line's length */
+        c->d[0] = set_b(c->d[0], pic_byte());
+        wr8(PIC_LEN, (uint8_t)c->d[0]); wr8(PIC_LEFT, (uint8_t)c->d[0]);
+        break;
+    case 10:                                        /* $6B1C: n+1 blank cells */
+        c->d[3] = pic_byte();
+        c->d[7] = c->d[7] << 16;                    /* swap, clr.w */
+        do { pic_put(); c->d[3] = set_w(c->d[3], c->d[3] - 1); } while (!(c->d[3] & 0x8000));
+        c->d[7] = c->d[7] >> 16;                    /* swap back */
+        break;
+    case 12:                                        /* $6B32: another plane */
+        wr8(LAYOUT_PLANE, pic_byte());
+        pic_plane();
+        break;
+    default:                                        /* 8, 11 */
+        break;
+    }
+}
+static void draw_layout(void)
+{
+    c->a[7] -= 4; wr32(c->a[7], c->a[6]); c->a[6] = c->a[7]; c->a[7] -= 0x12;   /* link a6,#-$12 */
+    pic_plane();
+    c->d[7] = 0;
+    for (;;) {
+        c->d[7] = set_b(c->d[7], pic_byte());
+        uint8_t b = (uint8_t)c->d[7];
+        if (b > 0xC) { pic_put(); continue; }
+        c->d[0] = (uint32_t)b * 2;
+        c->a[0] = 0x69D8 + rd16(0x69D8 + c->d[0]);
+        if (!b) break;
+        pic_command(b);
+    }
+    c->a[7] = c->a[6]; c->a[6] = rd32(c->a[7]); c->a[7] += 4;                    /* unlk a6 */
+}
+
+static void wait_frame(uint32_t resume) { Cpu *me = c; task_wait_frame(me, resume); c = me; }
+/* $40C (YieldIfLate): with the display on ($8A5D bit 6), late is in the vertical blank or past line
+ * $D0 (the H/V counter read until two reads agree), and then it yields */
+static int frame_late(void)
+{
+    if (!(rd8(0xFFFF8A5Du) & 0x40)) return 0;
+    c->d[0] = set_w(c->d[0], rd16(VDP_CTRL) & 8);
+    if (c->d[0] & 0xFFFF) return 1;
+    c->d[0] = set_w(c->d[0], rd16(0xC00008) & 0xFF00);
+    do {
+        c->d[2] = set_w(c->d[2], c->d[0]);
+        c->d[0] = set_w(c->d[0], rd16(0xC00008) & 0xFF00);
+    } while ((uint16_t)c->d[0] != (uint16_t)c->d[2]);
+    return (uint16_t)c->d[2] >= 0xD000;
+}
+static int count8(uint32_t a) { uint8_t n = (uint8_t)(rd8(a) - 1); wr8(a, n); return n; }   /* subq.b #1; ne */
+
+/* $6EAC, the Mxcg task: the animated tiles, each frame. Each slot of $950C (in use: bit 15) counts
+ * down ($2) by the frames passed ($8F08); when it runs out its script ($C) goes on: 0 ends the
+ * slot, $8000 restarts it ($8), $8001 jumps once more if bit 0 is set, other $80xx jump; else a
+ * frame: (tiles << 8 | time), then the tiles' index, copied to the slot's VRAM ($4) by $22A8.
+ * Nothing moves while $950A is set; the task ends ($4E6) when no slot is in use. */
+static void tile_anims_task(void)
+{
+    wr32(c->a[5] + 8, 0x6BAE);
+    wr16(c->a[5] + 0x40, rd16(0xFFFF8F08u));
+    goto slots;
+frame:                                              /* $6EBC */
+    do wait_frame(0x6EC0); while (rd8(0xFFFF950Au));
+    wr16(0xFFFF8F08u, (uint16_t)(rd16(0xFFFF8F08u) + 1));
+    c->d[0] = set_w(c->d[0], rd16(0xFFFF8F08u));
+    c->d[1] = set_w(c->d[1], c->d[0] - rd16(c->a[5] + 0x40));
+    wr16(c->a[5] + 0x40, (uint16_t)c->d[0]);
+    c->a[0] = TILE_ANIMS;
+    c->d[2] = 0;
+    for (int k = 0; k < 8; k++) {
+        if (rd16(c->a[0]) & 0x8000) {
+            wr16(c->a[0] + 2, (uint16_t)(rd16(c->a[0] + 2) - (uint16_t)c->d[1]));
+            c->d[2] = set_b(c->d[2], c->d[2] + 1);
+        }
+        c->a[0] += 16;
+    }
+    c->d[0] = 0xFFFF;
+    if (!(c->d[2] & 0xFFFF)) {
+        wr32(c->a[5] + 8, c->d[2]);
+        port_continue_at(c, 0x4E6, 0);
+        return;
+    }
+slots:                                              /* $6EFE */
+    c->a[0] = TILE_ANIMS;
+    wr8(c->a[5] + 0x42, 8);
+next_vblank:                                        /* $6F08 */
+    wr16(c->a[5] + 0x44, (uint16_t)c->a[0]);
+    if (frame_late()) wait_frame(0x6F10);
+    c->a[0] = sx16(rd16(c->a[5] + 0x44));
+slot:                                               /* $6F14 */
+    {
+        int16_t t = (int16_t)rd16(c->a[0] + 2);
+        if (!(rd16(c->a[0]) & 0x8000) || t > 0) goto skip;
+    }
+    c->a[1] = rd32(c->a[0] + 0xC);
+    for (;;) {                                      /* $6F30 */
+        c->d[0] = set_w(c->d[0], rd16(c->a[1])); c->a[1] += 2;
+        uint16_t w = (uint16_t)c->d[0];
+        if (!w) { wr16(c->a[0], 0); goto skip; }
+        if (!(w & 0x8000)) break;
+        c->d[0] = set_w(c->d[0], w * 2);
+        if (!(c->d[0] & 0xFFFF)) { c->a[1] = rd32(c->a[0] + 8); continue; }
+        c->d[1] = set_w(c->d[1], rd16(c->a[1])); c->a[1] += 2;
+        c->d[0] = set_w(c->d[0], c->d[0] - 2);
+        if (!(c->d[0] & 0xFFFF)) {
+            uint8_t f = rd8(c->a[0]);
+            wr8(c->a[0], (uint8_t)(f & ~1));
+            if (f & 1) continue;
+        }
+        c->a[1] = c->a[1] - 2 + sx16(c->d[1]);
+    }
+    c->d[2] = set_w(c->d[2], (c->d[0] & 0x7F00) >> 5);
+    c->d[0] = set_w(c->d[0], c->d[0] & 0xFF);
+    wr16(c->a[0] + 2, (uint16_t)(rd16(c->a[0] + 2) + (uint16_t)c->d[0]));
+    c->d[1] = set_w(c->d[1], rd16(c->a[1])); c->a[1] += 2;
+    wr32(c->a[0] + 0xC, c->a[1]);
+    c->a[2] = sx16(c->a[0]);
+    c->d[0] = set_w(c->d[0], rd16(c->a[0] + 4));
+    call(0x22A8);
+    c->a[0] = c->a[2] + 16;
+    if (count8(c->a[5] + 0x42)) goto next_vblank;
+    goto frame;
+skip:                                               /* $6F18 */
+    c->a[0] += 16;
+    if (count8(c->a[5] + 0x42)) goto slot;
+    goto frame;
+}
+
+/* $6F8A, the Kseg task: the Sega screen. A new screen, its graphics, palette and layout, colour
+ * script $18 (the logo's shine), a fade in, half a second, script $1C, three seconds, a fade out,
+ * then the next scene ($4CA8, d0 0) */
+static void sega_task(void)
+{
+    call(0x5188);
+    c->a[0] = 0x701C; call(0x234C);
+    call(0x22F0);
+    c->a[0] = 0x7018; call(0x135C);
+    wr16(PALETTE, 0);
+    fade_reset();
+    c->d[0] = 0x18;
+    if (color_script_start()) return;
+    wait_frame(0x6FB4);
+    wr8(LAYOUT_PLANE, 2);
+    c->a[2] = 0x7024; draw_layout();
+    fade_in();
+    do wait_frame(0x6FCA); while (!(rd8(PAL_FLAGS) & 0x10));
+    wr16(c->a[5] + 0x40, 0x1E);
+    do wait_frame(0x6FDE); while (count_w(c->a[5] + 0x40));
+    wr16(c->a[5] + 0x40, 0xB4);
+    c->d[0] = 0x1C;
+    if (color_script_start()) return;
+    do wait_frame(0x6FF4); while (count_w(c->a[5] + 0x40));
+    fade_out();
+    do wait_frame(0x7004); while (!(rd8(PAL_FLAGS) & 0x10));
+    c->d[0] = set_w(c->d[0], rd16(c->a[5] + 0x40));
+    port_continue_at(c, 0x4CA8, 0);
+}
+
+ENTRY(PlaneAClear, plane_a_clear)          /* $6910 */
+ENTRY(PlaneBClear, plane_b_clear)          /* $6916 */
+ENTRY(WindowClear, window_clear)           /* $693E */
+ENTRY(ScrollClear, scroll_clear)           /* $696C */
+ENTRY(ScrollClearPair, scroll_clear_pair)  /* $699E */
+ENTRY(DrawLayout, draw_layout)             /* $69AE */
+ENTRY(GfxTablesReset, gfx_tables_reset)    /* $6BA0 */
+ENTRY(TileAnimsClear, tile_anims_clear)    /* $6BAE */
+ENTRY(CellVram, pic_cell)                  /* $5CA */
+/* the tasks wait for frames and leave by port_continue_at */
+#define NEEDS_PASS(self) do { if (!task_in_pass()) { port_leave_to_68k(c, (self)); return; } } while (0)
+void TileAnimsTask(Cpu *cpu) { c = cpu; NEEDS_PASS(0x6EAC); tile_anims_task(); }   /* $6EAC */
+void SegaTask(Cpu *cpu)      { c = cpu; NEEDS_PASS(0x6F8A); sega_task(); }         /* $6F8A */

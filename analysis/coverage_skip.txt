@@ -57,3 +57,28 @@
 005752
 005754
 005902  # $58D6, the fade out's end: its rts runs after $62A's wait for the frame, after the check has ended
+006AC8  # $69AE, layout commands 5, 6, 8, 11 and 12: none of the four layouts drawn ($7024, $7300, $73CC, $91C2) uses them
+006ACA
+006ACC
+006ACE
+006AD0
+006AD4
+006AD8
+006ADA
+006ADC
+006ADE
+006AEC
+006AEE
+006AF0
+006AF2
+006AF6
+006AF8
+006AFC
+006AFE
+006B00
+006B02
+006B04
+006B0E
+006B30
+006B32
+006B36
