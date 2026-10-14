@@ -108,6 +108,7 @@ void ColourFrame(Cpu *), ColorScriptStart(Cpu *), ColorEnd(Cpu *), ColorScripts(
 void CellVram(Cpu *), PlaneAClear(Cpu *), PlaneBClear(Cpu *), WindowClear(Cpu *), ScrollClear(Cpu *), ScrollClearPair(Cpu *), DrawLayout(Cpu *), GfxTablesReset(Cpu *), TileAnimsClear(Cpu *), TileAnimsTask(Cpu *), SegaTask(Cpu *);
 void MakePartner(Cpu *), CopyToA2(Cpu *), MaybeBubble(Cpu *), BubbleInWater(Cpu *), Bubble(Cpu *), SwimMove(Cpu *), SwimLimit(Cpu *), BobToward(Cpu *), RandomState(Cpu *), GroundedWait(Cpu *), ContactAndMove(Cpu *), ShieldAndMove(Cpu *), PuffA(Cpu *), PuffB(Cpu *), SpawnDebris(Cpu *), RandomSpread(Cpu *), SlowOnGround(Cpu *), TouchedState(Cpu *), BackOff(Cpu *), TakeHit(Cpu *), HitAction(Cpu *), RandomTimer(Cpu *), RandomTimer32(Cpu *), RandomDelay(Cpu *), Range40(Cpu *), Range80(Cpu *), WallTurnReturn(Cpu *), TurnAtWall(Cpu *), BumpAwayReturn(Cpu *), BumpAway(Cpu *), FaceAway(Cpu *), BumpTurnReturn(Cpu *), BumpTurn(Cpu *), Turn(Cpu *), WalkForward(Cpu *), SetVelXFacing(Cpu *), FaceVelocity(Cpu *), VelocityToward(Cpu *), FaceAndWalk(Cpu *), FacePlayer(Cpu *), FaceEntity(Cpu *), FaceX(Cpu *), Jump(Cpu *), Hop(Cpu *), SetVelY(Cpu *), StartBlinkFrozen(Cpu *), StartBlink(Cpu *), ThrownBack(Cpu *), KnockBackAt(Cpu *), KnockBack(Cpu *), DistXToPlayer(Cpu *), DistXToEntity(Cpu *), DistYToTarget(Cpu *), DistY(Cpu *), DistYAbsTarget(Cpu *), DistYAbs(Cpu *), WallClimbAction(Cpu *), RoomAbove(Cpu *), RangeTurnReturn(Cpu *), RangeTurn(Cpu *), PastRange80(Cpu *), PastRange(Cpu *);
 void TargetFromHome(Cpu *), EdgeTurnReturn(Cpu *), EdgeTurn(Cpu *), EdgeAhead(Cpu *), GroundAhead(Cpu *), FlyFacing(Cpu *), AccelFacing(Cpu *), FallAndMove(Cpu *), EnemyMove(Cpu *), ShieldContact(Cpu *), PlayerAhead(Cpu *), ShieldHit(Cpu *), PlayerTouch(Cpu *), PlayerContactAll(Cpu *), PlayerContactShield(Cpu *), FreezeEnemies(Cpu *), Despawn(Cpu *), EnemyDefeated(Cpu *), OffscreenDespawn(Cpu *), RoomKind(Cpu *), MaxHealth(Cpu *), HealthOf(Cpu *), DamageShown(Cpu *), ScaleDamage(Cpu *), DamageEnemy(Cpu *);
+void TileAtA(Cpu *), SlopeAtFeet(Cpu *), DirOffset(Cpu *), ProbeBelowA(Cpu *), SceneSega(Cpu *), SceneTitle(Cpu *), SceneTitleShown(Cpu *), SceneTitleAfter(Cpu *), SceneMenu(Cpu *), SceneDemo(Cpu *), SceneGame(Cpu *);
 void Looks(Cpu *), LooksExtra(Cpu *), LooksBlock(Cpu *), LooksBody(Cpu *), LooksSword(Cpu *), LooksShield(Cpu *), EquipChange(Cpu *);
 void HudPanel(Cpu *), GoldLabel(Cpu *), ThreeLabels(Cpu *), DigitsOut(Cpu *), ItemsChoose(Cpu *), MagicChoose(Cpu *), SlotChoose(Cpu *), ActionToSlot(Cpu *),
      ItemToSlot(Cpu *), WornBlink(Cpu *), StatusFadeIn(Cpu *), StatusFadeOut(Cpu *), StatusWait(Cpu *);
@@ -229,6 +230,17 @@ const PortRoutine port_routines[] = {
     {0x004948, 0x004964, "DamageShown", DamageShown, CT_SP},
     {0x004964, 0x004986, "ScaleDamage", ScaleDamage, CT_SP | CT_D0},
     {0x004986, 0x0049F8, "DamageEnemy", DamageEnemy, CT_SP | CT_NZVC},
+    {0x0030CE, 0x0030D2, "TileAtA", TileAtA, CT_SP},   /* enemylib.c: plane A's prefixes, a direction's offset, a slope at the feet */
+    {0x0033B8, 0x00341C, "SlopeAtFeet", SlopeAtFeet, CT_SP},
+    {0x003E20, 0x003E32, "DirOffset", DirOffset, CT_SP | CT_D0 << 1},
+    {0x003F54, 0x003F58, "ProbeBelowA", ProbeBelowA, CT_SP},
+    {0x004CC8, 0x004D0C, "SceneSega", SceneSega, CT_SP | CT_WAITS},   /* vblank.c: the scenes' tasks (they wait; the ending's four, $4F58-$4FEE, wait for a recording that reaches it) */
+    {0x004D18, 0x004D4A, "SceneTitle", SceneTitle, CT_SP | CT_WAITS},
+    {0x004D56, 0x004D5C, "SceneTitleShown", SceneTitleShown, CT_SP | CT_WAITS},
+    {0x004D68, 0x004D9C, "SceneTitleAfter", SceneTitleAfter, CT_SP | CT_WAITS},
+    {0x004DA8, 0x004DD6, "SceneMenu", SceneMenu, CT_SP | CT_WAITS},
+    {0x004DE2, 0x004E5C, "SceneDemo", SceneDemo, CT_SP | CT_WAITS},
+    {0x005080, 0x0050CC, "SceneGame", SceneGame, CT_SP | CT_WAITS},
     {0x004362, 0x00436C, "CheckGrounded", CheckGrounded},
     {0x000EE2, 0x000EE6, "Cosine", Cosine},
     {0x000EE6, 0x000FA8, "Sine", Sine},
