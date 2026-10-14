@@ -6765,3 +6765,178 @@ ENTRY(RoomObjBlock, room_obj_block)        /* $AF16 */
 ENTRY(BlockPlace, block_place)             /* $AFA0 */
 ENTRY(RoomObjChest, room_obj_chest)        /* $ACFA */
 ENTRY(ChestOpened, chest_opened)           /* $ADAC */
+
+/* ---- batch T35: the game task's room entry, next room, game over and the room's message ----
+ * Parts of the game's task ($8EB4-$92A2) that the room changes leave to. The task's loop itself
+ * ($8FFC-$9100, $91EA) stays the original's for now: it calls $C7E6 (the room scripts, some of
+ * them still the original's code that waits) and $DB3C (which waits), and C cannot call such
+ * code. */
+
+/* $8F98: the start point by $965E (into $9676), a0 past it (at its message) */
+static void start_entry(void)
+{
+    c->d[0] = 0; F_L(0);
+    move_b(0, rd8(0xFFFF965Eu));
+    c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 2, 16));
+    c->a[0] = 0x8FAA + sx(c->d[0]);
+    put16m(0xFFFF9676u, next16(0));
+}
+/* $8EE6: a room entered: loaded ($9330) with its layers, events, script, gates and things, its
+ * palettes, its music (unless a message $9686 comes first), then the arrival by $9678 */
+static void room_enter(void)
+{
+    { uint8_t v = rd8(0xFFFF9659u); f_bit(v & 1); wr8(0xFFFF9659u, v | 1); }
+    mem_bclr(0xFFFF9659u, 4);
+    put16m(0xFFFF965Au, 0);
+    call(0x5188);
+    call(0x9330);
+    call(0xDBBE);
+    call(0x9720);
+    call(0x9808);
+    call(0xABBE);
+    call(0xC75C);
+    call(0x97F0);
+    call(0xB50C);
+    call(0x133B2);
+    put16m(0xFFFF965Cu, 0);
+    c->a[0] = 0xFFFF966Eu;
+    call(LOAD_PALETTES);
+    put16m(0xFFFF8B56u, rd16(0xFFFF966Cu));
+    F_W(rd16(0xFFFF9686u));
+    if (rd16(0xFFFF9686u) & 0x8000) {
+        move_b(0, rd8(0xFFFF9660u));
+        cmp_byte(rd8(0xFFFF9661u), c->d[0]);
+        if ((c->d[0] & 0xFF) != rd8(0xFFFF9661u)) { put8(0xFFFF9661u, c->d[0]); call(QUEUE_SOUND); }
+    }
+    move_b(0, rd8(0xFFFF9658u));
+    if (!(c->d[0] & 0x80)) {
+        wr8(0xFFFF9658u, 0xFF);
+        F_B(c->d[0]);
+        if (c->d[0] & 0xFF) { uint16_t v = (uint16_t)(rd16(0xFFFF9994u) | 1); wr16(0xFFFF9994u, v); F_W(v); }
+    }
+    c->d[0] = 0; F_L(0);
+    move_b(0, rd8(0xFFFF9678u));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+    c->a[0] = rd32(0x8F6C + (c->d[0] & 0xFFFF));       /* the arrivals' table (T20) */
+    leave_to(c->a[0]);
+}
+/* $8EB4: the game (re)started at its start point ($965E): its message, the state reset ($8E56),
+ * the room's music, then the room entered */
+static void game_restart(void)
+{
+    call(0x1C254);
+    push32(0x8EBE); start_entry(); c->a[7] += 4;
+    put16m(0xFFFF9C16u, next16(0));
+    put8(0xFFFF966Au, 0);
+    call(0x8E56);
+    put8(0xFFFF9659u, 0);
+    put16m(0xFFFF9992u, 0);
+    wr8(0xFFFF9661u, 0xFF);
+    put8(0xFFFF965Fu, 0);
+    call(0xA37E);
+    call(0x92D4);
+    put16m(0xFFFF9F30u, 4);
+    room_enter();
+}
+/* $8FEA, arrivals 0 and 1: the screen faded in, then the game */
+static void arrive_plain(void)
+{
+    call(0x581A);
+    do {
+        wait_frame(0x8FF2);
+        f_bit(rd8(0xFFFF8C56u) >> 4 & 1);
+    } while (!(rd8(0xFFFF8C56u) & 0x10));
+    leave_to(GAME_LOOP);
+}
+/* $9100: the next room: after a restart's room change ($965F bit 1) only bit 2; else the area's
+ * data again if it changed ($966A bit 1), the music faded if it differs, the screen faded out,
+ * the room entered */
+static void next_room(void)
+{
+    if (mem_bclr(0xFFFF965Fu, 1)) { mem_or8(0xFFFF965Fu, 4); leave_to(GAME_LOOP); return; }
+    if (mem_bclr(0xFFFF966Au, 1)) call(0xA37E);
+    call(0x92D4);
+    cmp_byte(rd8(0xFFFF9661u), c->d[0]);
+    if ((c->d[0] & 0xFF) != rd8(0xFFFF9661u)) { c->d[0] = 0xFFFFFFFEu; F_L(c->d[0]); call(QUEUE_SOUND); }
+    call(0x5842);
+    do {
+        wait_frame(0x9138);
+        f_bit(rd8(0xFFFF8C56u) >> 4 & 1);
+    } while (!(rd8(0xFFFF8C56u) & 0x10));
+    room_enter();
+}
+/* $9144: the game over: faded out, its picture ($91BE, $91C2) and palette faded in, held 240
+ * frames or until a button, faded out, then the game restarted ($4CA8, 0) */
+static void game_over(void)
+{
+    call(0x5842);
+    do { wait_frame(0x914C); f_bit(rd8(0xFFFF8C56u) >> 4 & 1); } while (!(rd8(0xFFFF8C56u) & 0x10));
+    call(0x5188);
+    c->a[0] = 0x91BE;
+    call(SET_GFX_SLOTS);
+    call(STREAM_GFX);
+    c->a[2] = 0x91C2;
+    put8(0xFFFF8C76u, 2);
+    call(0x69AE);
+    c->a[0] = 0x91BA;
+    call(LOAD_PALETTES);
+    call(0x581A);
+    do { wait_frame(0x9182); f_bit(rd8(0xFFFF8C56u) >> 4 & 1); } while (!(rd8(0xFFFF8C56u) & 0x10));
+    put16m(c->a[5] + 0x40, 0xF0);
+    for (;;) {
+        wait_frame(0x9194);
+        c->d[0] = 0xFFFFFFF0u; F_L(c->d[0]);
+        c->d[0] = set_b(c->d[0], c->d[0] & rd8(0xFFFF8A7Cu)); F_B(c->d[0]);
+        if (c->d[0] & 0xFF) break;
+        if (!mem_sub_w(c->a[5] + 0x40, 1)) break;
+    }
+    call(0x5842);
+    do { wait_frame(0x91AA); f_bit(rd8(0xFFFF8C56u) >> 4 & 1); } while (!(rd8(0xFFFF8C56u) & 0x10));
+    c->d[0] = 0; F_L(0);
+    leave_to(0x4CA8);
+}
+/* $9228 (from the loop: a message $9686 waiting and $9667 clear): sound 56, the player kept
+ * ($9F05 8) while the screen fades through 56 steps, the palette $9689, back over 56, then the
+ * message $9686 run, and the room's music */
+static void room_message(void)
+{
+    c->d[0] = 0x38; F_L(0x38);
+    call(QUEUE_SOUND);
+    put8(0xFFFF9F05u, 8);
+    put8(0xFFFF9666u, 0);
+    do {
+        wait_frame(0x923C);
+        call(0xDD08);
+        push32(0x9242); fade_step(); c->a[7] += 4;
+        wr8(0xFFFF9666u, (uint8_t)add_b(&c->ccr, 1, rd8(0xFFFF9666u)));
+        cmp_byte(0x38, rd8(0xFFFF9666u));
+    } while (rd8(0xFFFF9666u) < 0x38);
+    put8(0xFFFF9F05u, 0);
+    put8(0xFFFF9671u, rd8(0xFFFF9689u));
+    c->a[0] = 0xFFFF966Eu;
+    call(LOAD_PALETTES);
+    do {
+        wait_frame(0x9264);
+        mem_dec8(0xFFFF9666u);
+        push32(0x926A); fade_step(); c->a[7] += 4;
+        F_B(rd8(0xFFFF9666u));
+    } while (rd8(0xFFFF9666u));
+    c->d[0] = set_w(c->d[0], rd16(0xFFFF9686u)); F_W(c->d[0]);
+    call(0x279C);
+    do { wait_frame(0x927C); call(MESSAGES); F_B(rd8(MESSAGE_ON)); } while (rd8(MESSAGE_ON) & 0x80);
+    call(0x225C);
+    wr8(0xFFFF9686u, 0xFF);
+    move_b(0, rd8(0xFFFF9660u));
+    cmp_byte(rd8(0xFFFF9661u), c->d[0]);
+    if ((c->d[0] & 0xFF) != rd8(0xFFFF9661u)) { put8(0xFFFF9661u, c->d[0]); call(QUEUE_SOUND); }
+    leave_to(GAME_LOOP);
+}
+
+ENTRY(StartEntry, start_entry)             /* $8F98 */
+/* these leave by port_continue_at, so ret is theirs to set */
+void GameRestart(Cpu *cpu) { c = cpu; game_restart(); }                                  /* $8EB4 */
+void RoomEnter(Cpu *cpu)   { c = cpu; room_enter(); }                                    /* $8EE6 */
+void ArrivePlain(Cpu *cpu) { c = cpu; NEEDS_PASS(0x8FEA); arrive_plain(); }              /* $8FEA */
+void NextRoom(Cpu *cpu)    { c = cpu; NEEDS_PASS(0x9100); next_room(); }                 /* $9100 */
+void GameOver(Cpu *cpu)    { c = cpu; NEEDS_PASS(0x9144); game_over(); }                 /* $9144 */
+void RoomMessage(Cpu *cpu) { c = cpu; NEEDS_PASS(0x9228); room_message(); }              /* $9228 */

@@ -97,6 +97,7 @@ void Room15Frame(Cpu *), ScriptMessage(Cpu *), WalkStop(Cpu *), Room15Walk(Cpu *
 void EventNear(Cpu *), ListOrigin(Cpu *), ListWidth(Cpu *), ListHeight(Cpu *), ListObject(Cpu *), ListEffects(Cpu *), ListThing(Cpu *), ListBlocks(Cpu *), ListPicture(Cpu *), ListIfEquipped(Cpu *), ListIfForm(Cpu *), ListIfRoomFlag(Cpu *), ListIfFlag(Cpu *), ListRoomFlag(Cpu *), ListFlag(Cpu *), ListIfOwns(Cpu *), ListIfZone(Cpu *), ListSkip(Cpu *), ListEnd(Cpu *);
 void RoomEvents(Cpu *), EventDoor(Cpu *), EventSwitch(Cpu *), EventPicture(Cpu *), EventGate(Cpu *);
 void RoomObjects(Cpu *), RoomObjNone(Cpu *), RoomObjSparkle(Cpu *), RoomObjMover(Cpu *), RoomObjBlock(Cpu *), BlockPlace(Cpu *), RoomObjChest(Cpu *), ChestOpened(Cpu *);
+void StartEntry(Cpu *), GameRestart(Cpu *), RoomEnter(Cpu *), ArrivePlain(Cpu *), NextRoom(Cpu *), GameOver(Cpu *), RoomMessage(Cpu *);
 void NumText(Cpu *), CharAt(Cpu *), ScrollWindow(Cpu *), WindowFrame(Cpu *), WindowRow(Cpu *), TileUnder(Cpu *), WindowRestore(Cpu *), NewLine(Cpu *), MoreBlink(Cpu *), MoreHide(Cpu *), MoreShow(Cpu *), ChoiceBlink(Cpu *), ChoiceHide(Cpu *), ChoiceShow(Cpu *), PriceOf(Cpu *), NameOf(Cpu *), NameText(Cpu *), FoundThing(Cpu *), FoundGold(Cpu *), BoxText(Cpu *), BoxRows(Cpu *), BoxRow(Cpu *), ShowFoundGold(Cpu *), ShowFound(Cpu *), WindowGeometry(Cpu *), Cheaper(Cpu *), Owns(Cpu *), Give(Cpu *), Take(Cpu *), ItemCell(Cpu *), FlagCell(Cpu *), MessageData(Cpu *), OpenWindow(Cpu *), WindowAt(Cpu *), MsgStep(Cpu *), CharIn(Cpu *), NoteIn(Cpu *), OcarinaTune(Cpu *);   /* message.c */
 #define CT_ALL 0x3FFFF                /* every register and flag compared */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
@@ -460,6 +461,12 @@ const PortRoutine port_routines[] = {
     {0x00A3A4, 0x00A3B4, "StartAt", StartAt, CT_ALL},
     {0x00A3B4, 0x00A3CA, "ToPosition", ToPosition, CT_ALL},
     {0x00A3CA, 0x00A3D8, "WaterDouble", WaterDouble, CT_ALL},
+    {0x008EB4, 0x008EE6, "GameRestart", GameRestart, CT_SP},     /* rooms.c: the game task's room entry, next room, game over, the room's message */
+    {0x008EE6, 0x008F98, "RoomEnter", RoomEnter, CT_SP},
+    {0x008F98, 0x008FEA, "StartEntry", StartEntry, CT_ALL},
+    {0x008FEA, 0x008FFC, "ArrivePlain", ArrivePlain, CT_SP | CT_WAITS},
+    {0x009100, 0x009144, "NextRoom", NextRoom, CT_SP | CT_WAITS},
+    {0x009144, 0x0091EA, "GameOver", GameOver, CT_SP | CT_WAITS},   /* $9228 (the room's message) waits for a session that runs it */
     {0x0092A4, 0x0092D4, "FadeStep", FadeStep, CT_ALL},
     {0x00A3D8, 0x00A4EE, "Triggers", Triggers, CT_ALL},   /* rooms.c: the room's triggers (the handlers go on in the original at $A46E) */
     {0x00A4EE, 0x00A506, "TrigExitX", TrigExitX, CT_SP},
