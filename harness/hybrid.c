@@ -1755,6 +1755,8 @@ int hybrid_fuzz(const char *name, long count)
                 m68k_set_reg(M68K_REG_D7, (rnd() << 16) | ((0x4000 + row * 64) & 0xFFFF));
             }
         }
+        if (!strcmp(name, "SlopeAtFeet") && rnd() % 4 == 0)   /* still (after the collision scene) */
+            put_word(0xCA00 + (m68k_get_reg(NULL, M68K_REG_A4) & 0xFC), 0);
         if (!strncmp(name, "Player", 6)) {
             /* the player, in a valid state and form, with random buttons and ground; often at a
              * ladder or vine of the map, or by a platform carrying a vine */

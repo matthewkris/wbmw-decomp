@@ -2780,6 +2780,26 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 entries that pop their caller's frame caught every case they ran, then ran away. Replace mode:
 thirteen runs, no problems.
 
+#### The kernel and the enemy library, batch T47: the scenes' tasks and the last library pieces (2026-10-14)
+
+* In `port/vblank.c`, the scenes' tasks. A scene starts its tasks (`$5106`), then each frame
+  watches for Start or for its first task to end. It then hands over to the next scene through
+  the original's `$50D4` (faded and blanked first) or `$50E2`.
+  * The Sega screen (`$4CC8`) and the title (`$4D18`, `$4D56`, `$4D68`).
+  * The menu (`$4DA8`), the demo with its recorded input (`$4DE2`), and the game (`$5080`).
+* The ending's four (`$4F58`, `$4F66`, `$4FA6`, `$4FCC`) are written but not registered: no
+  session reaches the ending yet.
+* In `port/enemylib.c`:
+  * `$30CE` and `$3F54`, plane A's prefixes to `$30D2` and `$3F58`;
+  * a direction's offset (`$3E20`);
+  * a slope at the feet (`$33B8`; its `link` frame as the original's).
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(46 runs, all complete; 1,247,439 checked calls). Play runs most of the menu, the demo and the
+game's scenes. 450,000 fuzz cases from six states, 0 mismatches, every instruction of the four
+library pieces covered. Self-test caught 100 in 100 for those four. Replace mode: thirteen runs,
+no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

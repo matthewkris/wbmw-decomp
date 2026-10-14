@@ -826,3 +826,52 @@ ENTRY(HealthOf, health_of)                 /* $492E */
 ENTRY(DamageShown, damage_shown)           /* $4948 */
 ENTRY(ScaleDamage, scale_damage)           /* $4964 */
 ENTRY(DamageEnemy, damage_enemy)           /* $4986 */
+
+/* ---- batch T47: the plane A prefixes, a direction's offset, a slope at the feet ---- */
+
+/* $30CE: $30D2 (the cell's attributes at pixel d6, d7) on plane A */
+static void tile_at_a(void) { c->a[3] = 0xFFFF9754u; call(0x30D2); }
+/* $3F54: $3F58 (the tile below) on plane A */
+static void probe_below_a(void) { c->a[3] = 0xFFFF9754u; call(0x3F58); }
+/* $3E20: the signed offset (the table at $3E32) for d1's direction (bits 4-7) */
+static void dir_offset(void)
+{
+    c->d[1] = set_w(c->d[1], (c->d[1] & 0xF0) >> 4);
+    c->a[0] = 0x3E32;
+    c->d[1] = set_b(c->d[1], rd8(c->a[0] + sx(c->d[1])));
+    c->d[1] = ext_w(c->d[1]); F_W(c->d[1]);
+}
+/* $33B8: moving, a slope at its feet the way it moves ($30D2's d2 bit 0 right, 1 left): pushed
+ * up the slope's height (-$3000) and marked on it ($CF00 bits 0, 2) */
+static void slope_at_feet(void)
+{
+    F_W(rd16(e(-0x3600)));
+    if (!rd16(e(-0x3600))) return;
+    c->a[7] -= 4; wr32(c->a[7], c->a[6]); c->a[6] = c->a[7]; c->a[7] -= 2;   /* link a6,#-2 */
+    uint8_t left = (rd16(e(-0x3600)) & 0x8000) ? 1 : 0;
+    wr8(c->a[6] - 2, left);
+    c->d[6] = set_w(c->d[6], rd16(e(-0x3800)));
+    c->d[7] = (uint8_t)(rd8(e(-0x34FD)) - 1);
+    c->d[7] = set_w(c->d[7], c->d[7] + rd16(e(-0x3700)));
+    call(0x30D2);
+    c->d[1] = set_b(c->d[1], rd8(c->a[6] - 2));
+    if (c->d[2] >> (c->d[1] & 31) & 1) {
+        c->d[0] = set_w(c->d[0], rd16(e(-0x3800)));
+        if (!(c->d[1] & 0xFF)) {
+            c->d[0] = set_w(c->d[0], (c->d[0] & 0xF) + 1);
+            neg_d(0);
+            or8(e(-0x3100), 1);
+        } else {
+            neg_d(0);
+            c->d[0] = set_w(c->d[0], c->d[0] & 0xF);
+            or8(e(-0x3100), 5);
+        }
+        put16(e(-0x3000), c->d[0]);
+    }
+    c->a[7] = c->a[6]; c->a[6] = rd32(c->a[7]); c->a[7] += 4;                    /* unlk a6 */
+}
+
+ENTRY(TileAtA, tile_at_a)                  /* $30CE */
+ENTRY(SlopeAtFeet, slope_at_feet)          /* $33B8 */
+ENTRY(DirOffset, dir_offset)               /* $3E20 */
+ENTRY(ProbeBelowA, probe_below_a)          /* $3F54 */
