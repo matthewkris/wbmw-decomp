@@ -1267,6 +1267,18 @@ int hybrid_fuzz(const char *name, long count)
             m68k_set_reg(M68K_REG_D5, rnd() % 4); m68k_set_reg(M68K_REG_D6, (rnd() << 16) | (0x110 + rnd() % 0x10)); m68k_set_reg(M68K_REG_D7, (rnd() << 16) | 0x4200);
             for (uint32_t sl = 0xE0; sl < 0x100; sl += 4) ram[0xC000 + sl] = (uint8_t)(rnd() % 3 ? 0x80 : 0);
         }
+        if (!strncmp(name, "Receive", 7)) {         /* a thing received ($9968, one of $E0-$FC) rising, begun or not, its timers near their ends; sparkles (kind 6) about */
+            uint32_t e = 0xE0 + 4 * (rnd() % 8), it = rnd() % 3 ? rnd() % 0x20 : 0x20 + rnd() % 0x22;
+            if (it == 0x27 || it == 0x2F) it = 0x40;
+            put_word(0x9968, e); m68k_set_reg(M68K_REG_A4, e);
+            for (uint32_t sl = 0xE0; sl < 0x100; sl += 4) {
+                ram[0xC000 + sl] = (uint8_t)(rnd() % 2 ? 0x80 | (rnd() % 4 ? 0 : 0x20) : 0);
+                put_word(0xD402 + sl, rnd() % 2 ? 6 : 2 * (rnd() % 8)); put_word(0xC300 + sl, 0x1604);
+            }
+            ram[0xC000 + e] = (uint8_t)(0x80 | (rnd() % 2 ? 0x40 : 0)); put_word(0xD402 + e, 4);
+            put_word(0xDD00 + e, it); ram[0xD800 + e] = (uint8_t)(1 + rnd() % 3); ram[0xD801 + e] = (uint8_t)(1 + rnd() % 3);
+            put_word(0x9F00, 0xC00 + 0x100 * (rnd() % 3));
+        }
         if (!strcmp(name, "CrumbleAdd")) {          /* some walls' records taken */
             for (uint32_t k4 = 0; k4 < 4; k4++) ram[0x9B96 + 8 * k4] = (uint8_t)(rnd() % 3 ? 0x80 | rnd() % 4 : 0);
             m68k_set_reg(M68K_REG_D6, (rnd() << 16) | (0xF0 + rnd() % 0x100)); m68k_set_reg(M68K_REG_D7, (rnd() << 16) | ((0x4000 + rnd() % 0x1500) & ~0x3Fu));

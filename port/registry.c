@@ -87,6 +87,8 @@ void DropThing(Cpu *), RoomScriptSetup(Cpu *), ScriptNone(Cpu *), ScriptFrameNon
 void Room2Setup(Cpu *), Room3Setup(Cpu *), Room4Setup(Cpu *), LiftFrame(Cpu *), LiftSetup(Cpu *), LiftSwitch(Cpu *);
 void Room5Setup(Cpu *), Room5Frame(Cpu *), Room6Setup(Cpu *), Room6Frame(Cpu *), RubbleTwo(Cpu *), RubbleOne(Cpu *), Room7Frame(Cpu *),
      Room8Frame(Cpu *), Room9Setup(Cpu *), Room9Frame(Cpu *), Room9Timer(Cpu *), Room10Setup(Cpu *);
+void SeqTalk(Cpu *), SeqReceive(Cpu *), SeqStatue(Cpu *), ReceivePalettes(Cpu *), ReceiveStep(Cpu *), ReceiveOwn(Cpu *), ReceiveHeart(Cpu *),
+     ReceiveNone(Cpu *);
 void NumText(Cpu *), CharAt(Cpu *), ScrollWindow(Cpu *), WindowFrame(Cpu *), WindowRow(Cpu *), TileUnder(Cpu *), WindowRestore(Cpu *), NewLine(Cpu *), MoreBlink(Cpu *), MoreHide(Cpu *), MoreShow(Cpu *), ChoiceBlink(Cpu *), ChoiceHide(Cpu *), ChoiceShow(Cpu *), PriceOf(Cpu *), NameOf(Cpu *), NameText(Cpu *), FoundThing(Cpu *), FoundGold(Cpu *), BoxText(Cpu *), BoxRows(Cpu *), BoxRow(Cpu *), ShowFoundGold(Cpu *), ShowFound(Cpu *), WindowGeometry(Cpu *), Cheaper(Cpu *), Owns(Cpu *), Give(Cpu *), Take(Cpu *), ItemCell(Cpu *), FlagCell(Cpu *), MessageData(Cpu *), OpenWindow(Cpu *), WindowAt(Cpu *), MsgStep(Cpu *), CharIn(Cpu *), NoteIn(Cpu *), OcarinaTune(Cpu *);   /* message.c */
 #define CT_ALL 0x3FFFF                /* every register and flag compared */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
@@ -565,6 +567,12 @@ const PortRoutine port_routines[] = {
     {0x00CF5A, 0x00CFD6, "Room9Frame", Room9Frame, CT_ALL},
     {0x00CFD6, 0x00CFE8, "Room9Timer", Room9Timer, CT_ALL},
     {0x00CFE8, 0x00D00C, "Room10Setup", Room10Setup, CT_ALL},
+    {0x00C1E8, 0x00C27E, "SeqTalk", SeqTalk, CT_SP | CT_WAITS},  /* rooms.c: the sequences of a conversation, a thing received and a statue */
+    {0x00C2DE, 0x00C2E6, "ReceiveOwn", ReceiveOwn, CT_ALL},
+    {0x00C2E6, 0x00C2E8, "ReceiveNone", ReceiveNone, CT_ALL},
+    {0x00C2E8, 0x00C31A, "ReceiveHeart", ReceiveHeart, CT_SP | CT_A0 << 4},   /* as $8AA2 (Hearts), which it ends with */
+    {0x00C376, 0x00C48C, "ReceiveStep", ReceiveStep, CT_ALL},
+    {0x00C48C, 0x00C572, "SeqStatue", SeqStatue, CT_SP | CT_WAITS},   /* $C27E and $C31A (a thing received) wait for a session that runs them */
     {0x01090C, 0x010910, "SpawnItem", SpawnItem},                 /* effects.c: every register as the original */
     {0x010910, 0x010A1E, "SpawnItemAt", SpawnItemAt},
     {0x010A1E, 0x011094, "RunItems", RunItems, CT_SP},

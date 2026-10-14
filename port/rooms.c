@@ -4930,3 +4930,273 @@ ENTRY(Room9Setup, room9_setup)             /* $CF48 */
 ENTRY(Room9Frame, room9_frame)             /* $CF5A */
 ENTRY(Room9Timer, room9_timer)             /* $CFD6 */
 ENTRY(Room10Setup, room10_setup)           /* $CFE8 */
+
+/* ---- batch T27: the sequences of a conversation, a thing received and a statue ----
+ * Entered by the game's task like T19's (from its table at $91F4, or from $C728). They wait for
+ * frames on the task's coroutine and leave as the original does. */
+
+#define MESSAGES      0x13BCu       /* the message interpreter, each frame */
+#define MESSAGE_ON    0xFFFF8CA4u   /* bit 7: a message running */
+#define MESSAGE_AT    0xFFFF8C7Au   /* long: the message to run */
+#define TALK_STATE    0xFFFF9BF3u   /* bit 0: ended by a fade; bit 1: then restart */
+#define TALK_DONE     0xFFFF9C18u   /* long: called each frame while it runs (negative: none) */
+
+/* $C1E8: a conversation: the others frozen, the message $9C16 run until it ends. Then back to
+ * the game; or, ended by a fade ($9BF3 bit 0), the screen faded out and either the game
+ * restarted ($4CA8, bit 1) or, after sound 84, 300 frames' sleep (the inn's, $C262: left to the
+ * original, which waits on the VBlank flag) */
+static void seq_talk(void)
+{
+    push32(0xC1EC); reset_continuations(); c->a[7] += 4;
+    mem_or8(0xFFFF9659u, 8);
+    put8(TALK_STATE, 0);
+    put16m(0xFFFF9962u, 0);
+    call(FREEZE);
+    c->d[0] = set_w(c->d[0], rd16(0xFFFF9C16u)); F_W(c->d[0]);
+    call(0x279C);
+    for (;;) {
+        wait_frame(0xC20A);
+        call(MESSAGES);
+        c->d[0] = rd32(TALK_DONE); F_L(c->d[0]);
+        if (!(c->d[0] & 0x80000000u)) { c->a[0] = c->d[0]; call(c->a[0]); }
+        f_bit(rd8(TALK_STATE) & 1);
+        if (rd8(TALK_STATE) & 1) break;
+        F_B(rd8(MESSAGE_ON));
+        if (rd8(MESSAGE_ON) & 0x80) continue;
+        wr8(TALK_DONE, 0xFF);
+        mem_and8(0xFFFF9659u, 0xF7);
+        call(0x225C);
+        call(UNFREEZE);
+        leave_to(GAME_LOOP);
+        return;
+    }
+    wr8(TALK_DONE, 0xFF);                               /* ended by a fade */
+    call(0x5842);
+    do {
+        wait_frame(0xC248);
+        f_bit(rd8(0xFFFF8C56u) >> 4 & 1);
+    } while (!(rd8(0xFFFF8C56u) & 0x10));
+    f_bit(rd8(TALK_STATE) >> 1 & 1);
+    if (rd8(TALK_STATE) & 2) { c->d[0] = 0; F_L(0); leave_to(0x4CA8); return; }
+    c->d[0] = 0x54; F_L(0x54);
+    call(QUEUE_SOUND);
+    c->d[0] = set_w(c->d[0], 0x12B); F_W(0x12B);
+    leave_to(0xC262);
+}
+
+/* $C376: each frame of a thing received: the room objects of kind 6 (its sparkles, $AEF2) run,
+ * and the thing ($9968) rises: first set up (its look, raised 8, its name's colours $22A8 from
+ * $13AD0), then a sparkle every 3 frames beside it, for 64 frames */
+static void receive_step(void)
+{
+    c->a[4] = 0xE0;
+    do {
+        F_B(rd8(c->a[4] - 0x4000));
+        if (rd8(c->a[4] - 0x4000) & 0x80) {
+            f_bit(rd8(c->a[4] - 0x4000) >> 5 & 1);
+            if (!(rd8(c->a[4] - 0x4000) & 0x20)) {
+                cmp_w(&c->ccr, 6, rd16(c->a[4] - 0x2BFE));
+                if (rd16(c->a[4] - 0x2BFE) == 6) { push32(0xC394); call(0xAEF2); c->a[7] += 4; }
+            }
+        }
+        c->a[4] += 4;
+        cmp_l(&c->ccr, 0x100, c->a[4]);
+    } while (c->ccr & CC_C);
+    c->a[4] = sx(rd16(0xFFFF9968u));
+    f_bit(rd8(c->a[4] - 0x4000) >> 6 & 1);
+    if (!(rd8(c->a[4] - 0x4000) & 0x40)) {
+        call(CLEAR_ENTITY);
+        put16m(c->a[4] - 0x3DFE, 0x7EC);
+        put8(c->a[4] - 0x3CFD, 8);
+        put8(c->a[4] - 0x3FFE, 0x80);
+        put16m(c->a[4] - 0x3D00, 0xE0C);
+        c->d[0] = 0; F_L(0);
+        call(SET_ANIM);
+        mem_sub_w(c->a[4] - 0x3700, 8);
+        c->d[0] = set_w(c->d[0], rd16(c->a[4] - 0x2300)); F_W(c->d[0]);
+        c->a[0] = 0x13AD0;
+        c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+        c->d[1] = set_w(c->d[1], rd16(c->a[0] + sx(c->d[0]))); F_W(c->d[1]);
+        c->d[0] = set_w(c->d[0], 0xFD80); F_W(0xFD80);
+        c->d[2] = 0x20; F_L(0x20);
+        call(0x22A8);
+        put16m(c->a[4] - 0x35FE, 0xFF00);
+        put8(c->a[4] - 0x2800, 0x40);
+        put8(c->a[4] - 0x27FF, 1);
+        mem_or8(c->a[4] - 0x4000, 0x40);
+        return;
+    }
+    if (!mem_dec8(c->a[4] - 0x27FF)) {
+        put8(c->a[4] - 0x27FF, 3);
+        c->a[3] = sx(c->a[4]);
+        call(FIND_EFFECT);
+        if (!(c->ccr & CC_N)) {                         /* a sparkle at random beside it */
+            call(CLEAR_ENTITY);
+            call(RANDOM);
+            and_w(0, 0xF);
+            c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 8, c->d[0]));
+            c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(c->a[3] - 0x3800), c->d[0]));
+            put16m(c->a[4] - 0x3800, c->d[0]);
+            c->d[0] = 4; F_L(4);
+            c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(c->a[3] - 0x3700), c->d[0]));
+            put16m(c->a[4] - 0x3700, c->d[0]);
+            put8(c->a[4] - 0x3FFE, 0x80);
+            put8(c->a[4] - 0x3CFD, 6);
+            put16m(c->a[4] - 0x2BFE, 6);
+            put16m(c->a[4] - 0x3D00, 0x1604);
+            put8(c->a[4] - 0x4000, 0xC0);
+            c->d[0] = 0; F_L(0);
+            call(SET_ANIM);
+        }
+        uint32_t t = c->a[3]; c->a[3] = c->a[4]; c->a[4] = t;
+    }
+    call(APPLY_VEL_Y);
+    if (mem_dec8(c->a[4] - 0x2800)) return;
+    put8(c->a[4] - 0x4000, 0);
+}
+/* $C2DE: the thing's own routine ($245A) */
+static void receive_own(void)
+{
+    c->d[0] = set_w(c->d[0], rd16(c->a[4] - 0x2300)); F_W(c->d[0]);
+    call(0x245A);
+}
+/* $C2E8: a heart: the most hearts one more (to 14), the player's own one more too */
+static void receive_heart(void)
+{
+    c->d[0] = set_w(c->d[0], rd16(0xFFFF9F00u)); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, 0x100, c->d[0]));
+    cmp_w(&c->ccr, 0xE00, c->d[0]);
+    if ((c->d[0] & 0xFFFF) >= 0xE00) { c->d[0] = set_w(c->d[0], 0xE00); F_W(0xE00); }
+    put16m(0xFFFF9F00u, c->d[0]);
+    c->a[0] = sx(rd16(PLAYER_ENT));
+    c->d[1] = set_w(c->d[1], rd16(c->a[0] - 0x2600)); F_W(c->d[1]);
+    c->d[1] = set_w(c->d[1], add_w(&c->ccr, 0x100, c->d[1]));
+    cmp_w(&c->ccr, c->d[1], c->d[0]);
+    if ((c->d[0] & 0xFFFF) < (c->d[1] & 0xFFFF)) { c->d[1] = set_w(c->d[1], c->d[0]); F_W(c->d[0]); }
+    put16m(c->a[0] - 0x2600, c->d[1]);
+    call(0x8AA2);
+}
+/* $C31A: the thing's own routine, then the back palette stepped through its list ($C36E by
+ * $9685; two frames each) */
+static void receive_palettes(uint32_t ret)
+{
+    push_cont(ret);
+    c->d[0] = set_w(c->d[0], rd16(c->a[4] - 0x2300)); F_W(c->d[0]);
+    call(0x245A);
+    c->d[0] = 0; F_L(0);
+    move_b(0, rd8(0xFFFF9685u));
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 1, c->d[0]));
+    c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 3, 16));
+    c->a[0] = 0xC36E + sx(c->d[0]);
+    for (;;) {
+        move_b(0, next8(0));
+        if (!(c->d[0] & 0xFF)) break;
+        put32m(0xFFFF9C2Cu, c->a[0]);
+        c->a[0] = 0xFFFF966Eu;
+        put8(0xFFFF9670u, c->d[0]);
+        call(LOAD_PALETTES);
+        call(0x55BA);
+        wait_frame(0xC35C);
+        wait_frame(0xC360);
+        c->a[0] = rd32(0xFFFF9C2Cu);
+    }
+    pop_cont();
+}
+/* $C27E, room change 9: a thing received ($B42A). It rises with sparkles until it is gone,
+ * then takes effect: below $20 its own routine; from $20 by the table at $C46A (its own routine,
+ * nothing, a heart, or the palettes; $27 and $2F hang, as in the original), and its message */
+static void seq_receive(void)
+{
+    push32(0xC282); reset_continuations(); c->a[7] += 4;
+    put16m(0xFFFF9962u, 0);
+    call(FREEZE);
+    for (;;) {
+        push32(0xC28E); receive_step(); c->a[7] += 4;
+        F_B(rd8(c->a[4] - 0x4000));
+        if (!(rd8(c->a[4] - 0x4000) & 0x80)) break;
+        wait_frame(0xC298);
+    }
+    c->d[0] = set_w(c->d[0], rd16(c->a[4] - 0x2300)); F_W(c->d[0]);
+    c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 0x20, c->d[0]));
+    if (c->ccr & CC_C) {
+        push32(0xC2AA); receive_own(); c->a[7] += 4;
+    } else {
+        c->a[0] = 0xC46A;                                /* by thing: 0 own, 2 nothing, 4 heart, 6 palettes, -1 none */
+        move_b(0, rd8(c->a[0] + (c->d[0] & 0xFFFF)));
+        if (c->ccr & CC_N) { leave_to(0xC2B4); return; }   /* bmi to itself */
+        static const uint16_t at[4] = { 0xC2DE, 0xC2E6, 0xC2E8, 0xC31A };
+        c->a[0] = at[(c->d[0] & 0xFF) / 2];
+        switch (c->d[0] & 0xFF) {
+        case 0: push32(0xC2C2); receive_own(); c->a[7] += 4; break;
+        case 2: break;
+        case 4: push32(0xC2C2); receive_heart(); c->a[7] += 4; break;
+        default: receive_palettes(0xC2C2); break;
+        }
+    }
+    c->a[0] = sx(rd16(0xFFFF9968u));
+    c->d[0] = set_w(c->d[0], rd16(c->a[0] - 0x2300)); F_W(c->d[0]);
+    call(0x1FD0);
+    call(UNFREEZE);
+    leave_to(GAME_LOOP);
+}
+
+/* $C48C: a statue ($A0DE): its window ($C56E) and message; with the ocarina, the statue's tune
+ * played ($2AAE): a right one sets its room flag, and the message says how it went */
+static void seq_statue(void)
+{
+    push32(0xC490); reset_continuations(); c->a[7] += 4;
+    c->d[0] = 0xFFFFFFFCu; F_L(c->d[0]);
+    call(QUEUE_SOUND);
+    put16m(0xFFFF9962u, 0);
+    call(FREEZE);
+    F_W(rd16(0xFFFFA0DEu));
+    c->a[1] = 0xC56E;
+    if (rd16(0xFFFFA0DEu) & 0x8000) {                   /* no statue: a message only */
+        call(0x27B0);
+        put32m(MESSAGE_AT, 0x2B56);
+        put8(MESSAGE_ON, 0x80);
+        do { wait_frame(0xC4BE); call(MESSAGES); F_B(rd8(MESSAGE_ON)); } while (rd8(MESSAGE_ON) & 0x80);
+    } else {
+        call(0x27B0);
+        put32m(MESSAGE_AT, 0x2B8F);
+        put8(MESSAGE_ON, 0x80);
+        do { wait_frame(0xC4E4); call(MESSAGES); F_B(rd8(MESSAGE_ON)); } while (rd8(MESSAGE_ON) & 0x80);
+        c->a[0] = sx(rd16(0xFFFFA0DEu));
+        move_b(0, rd8(c->a[0] - 0x31FE));
+        call(0x2AAE);
+        wr8(0xFFFF9ED4u, 0xFF);
+        F_B(c->d[0]);
+        if (!(c->d[0] & 0xFF)) {                        /* the right tune */
+            c->a[0] = sx(rd16(0xFFFFA0DEu));
+            move_b(0, rd8(c->a[0] - 0x31FE));
+            push32(0xC50E); room_flag_bit(); c->a[7] += 4;
+            { uint32_t a = c->a[0] + sx(c->d[1]); uint8_t v = rd8(a); f_bit(v >> (c->d[0] & 7) & 1); wr8(a, (uint8_t)(v | 1 << (c->d[0] & 7))); }
+            put32m(MESSAGE_AT, 0x2BA9);
+        } else {
+            wr8(0xFFFF9ED4u, 0);
+            put32m(MESSAGE_AT, c->d[0] & 0x80 ? 0x2BE5 : 0x2BC4);
+        }
+        put8(MESSAGE_ON, 0xC0);
+        do { wait_frame(0xC53E); call(MESSAGES); F_B(rd8(MESSAGE_ON)); } while (rd8(MESSAGE_ON) & 0x80);
+    }
+    call(0x225C);
+    call(UNFREEZE);
+    c->d[0] = 0xFFFFFFFDu; F_L(c->d[0]);
+    call(QUEUE_SOUND);
+    c->a[4] = sx(rd16(PLAYER_ENT));
+    c->d[0] = 0; F_L(0);
+    put16m(c->a[4] - 0x3D00, rd16(0xFFFF9EECu));
+    put16m(c->a[4] - 0x3DFE, c->d[0]);
+    call(SET_ANIM);
+    leave_to(GAME_LOOP);
+}
+
+ENTRY(ReceiveStep, receive_step)           /* $C376 */
+ENTRY(ReceiveOwn, receive_own)             /* $C2DE */
+ENTRY(ReceiveHeart, receive_heart)         /* $C2E8 */
+ENTRY(ReceiveNone, nothing)                /* $C2E6 */
+/* the sequences leave by port_continue_at, so ret is theirs to set */
+void SeqTalk(Cpu *cpu)          { c = cpu; NEEDS_PASS(0xC1E8); seq_talk(); }                  /* $C1E8 */
+void SeqReceive(Cpu *cpu)       { c = cpu; NEEDS_PASS(0xC27E); seq_receive(); }               /* $C27E */
+void SeqStatue(Cpu *cpu)        { c = cpu; NEEDS_PASS(0xC48C); seq_statue(); }                /* $C48C */
+void ReceivePalettes(Cpu *cpu)  { c = cpu; NEEDS_PASS(0xC31A); cont_68k(receive_palettes); }  /* $C31A */
