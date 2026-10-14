@@ -94,6 +94,7 @@ void Room12Frame(Cpu *), Room12Walk(Cpu *), FindKind(Cpu *), FindKindD1(Cpu *), 
 void Room13Frame(Cpu *), Room13Ride(Cpu *), ScriptWait(Cpu *), Room13Fade(Cpu *), Room13Drop(Cpu *), Room13Drops(Cpu *), Room14Setup(Cpu *), Room15Setup(Cpu *);
 void Room15Frame(Cpu *), ScriptMessage(Cpu *), WalkStop(Cpu *), Room15Walk(Cpu *), Room19Frame(Cpu *), Room19Walk(Cpu *), Room20Setup(Cpu *),
      Room20Frame(Cpu *), Room21Setup(Cpu *), Room21Frame(Cpu *), Room22Setup(Cpu *), Room23Setup(Cpu *), Room23Flags(Cpu *), Room23Frame(Cpu *);
+void EventNear(Cpu *), ListOrigin(Cpu *), ListWidth(Cpu *), ListHeight(Cpu *), ListObject(Cpu *), ListEffects(Cpu *), ListThing(Cpu *), ListBlocks(Cpu *), ListPicture(Cpu *), ListIfEquipped(Cpu *), ListIfForm(Cpu *), ListIfRoomFlag(Cpu *), ListIfFlag(Cpu *), ListRoomFlag(Cpu *), ListFlag(Cpu *), ListIfOwns(Cpu *), ListIfZone(Cpu *), ListSkip(Cpu *), ListEnd(Cpu *);
 void NumText(Cpu *), CharAt(Cpu *), ScrollWindow(Cpu *), WindowFrame(Cpu *), WindowRow(Cpu *), TileUnder(Cpu *), WindowRestore(Cpu *), NewLine(Cpu *), MoreBlink(Cpu *), MoreHide(Cpu *), MoreShow(Cpu *), ChoiceBlink(Cpu *), ChoiceHide(Cpu *), ChoiceShow(Cpu *), PriceOf(Cpu *), NameOf(Cpu *), NameText(Cpu *), FoundThing(Cpu *), FoundGold(Cpu *), BoxText(Cpu *), BoxRows(Cpu *), BoxRow(Cpu *), ShowFoundGold(Cpu *), ShowFound(Cpu *), WindowGeometry(Cpu *), Cheaper(Cpu *), Owns(Cpu *), Give(Cpu *), Take(Cpu *), ItemCell(Cpu *), FlagCell(Cpu *), MessageData(Cpu *), OpenWindow(Cpu *), WindowAt(Cpu *), MsgStep(Cpu *), CharIn(Cpu *), NoteIn(Cpu *), OcarinaTune(Cpu *);   /* message.c */
 #define CT_ALL 0x3FFFF                /* every register and flag compared */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
@@ -483,6 +484,25 @@ const PortRoutine port_routines[] = {
     {0x00A914, 0x00A92C, "ZonePlace", ZonePlace, CT_ALL},
     {0x00A92C, 0x00A962, "InZone", InZone, CT_ALL},
     {0x00A962, 0x00A990, "ExitTo", ExitTo, CT_ALL},
+    {0x00A990, 0x00A9DA, "EventNear", EventNear, CT_ALL},
+    {0x00A9DA, 0x00AA04, "ListOrigin", ListOrigin, CT_ALL},       /* rooms.c: the room's event list's commands */
+    {0x00AA04, 0x00AA10, "ListWidth", ListWidth, CT_ALL},
+    {0x00AA10, 0x00AA1C, "ListHeight", ListHeight, CT_ALL},
+    {0x00AA1C, 0x00AA66, "ListObject", ListObject, CT_ALL},
+    {0x00AA66, 0x00AA7A, "ListEffects", ListEffects, CT_ALL},
+    {0x00AA7A, 0x00AAA6, "ListThing", ListThing, CT_ALL},
+    {0x00AAA6, 0x00AACA, "ListBlocks", ListBlocks, CT_ALL},
+    {0x00AACA, 0x00AAEA, "ListPicture", ListPicture, CT_ALL},
+    {0x00AAEA, 0x00AB0C, "ListIfEquipped", ListIfEquipped, CT_ALL},
+    {0x00AB0C, 0x00AB1A, "ListIfForm", ListIfForm, CT_ALL},
+    {0x00AB1A, 0x00AB32, "ListIfRoomFlag", ListIfRoomFlag, CT_ALL},
+    {0x00AB32, 0x00AB46, "ListIfFlag", ListIfFlag, CT_ALL},
+    {0x00AB46, 0x00AB52, "ListRoomFlag", ListRoomFlag, CT_ALL},
+    {0x00AB52, 0x00AB58, "ListFlag", ListFlag, CT_ALL},
+    {0x00AB58, 0x00AB74, "ListIfOwns", ListIfOwns, CT_ALL},
+    {0x00AB74, 0x00ABAC, "ListIfZone", ListIfZone, CT_ALL},
+    {0x00ABAC, 0x00ABB8, "ListSkip", ListSkip, CT_ALL},
+    {0x00ABB8, 0x00ABBE, "ListEnd", ListEnd, CT_ALL},
     {0x00B8D4, 0x00B90A, "CrackedAt", CrackedAt, CT_ALL},   /* rooms.c: the room changes' helpers */
     {0x00B90A, 0x00B912, "ResetContinuations", ResetContinuations, CT_ALL},
     {0x00B912, 0x00B946, "DoorFrame", DoorFrame, CT_ALL},

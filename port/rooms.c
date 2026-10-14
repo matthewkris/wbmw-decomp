@@ -6078,3 +6078,277 @@ ENTRY(Room23Flags, room23_flags)           /* $DAC8 */
 ENTRY(Room23Frame, room23_frame)           /* $DADA */
 void Room15Frame(Cpu *cpu)   { c = cpu; NEEDS_PASS(0xD766); cont_68k(room15_frame); }   /* $D766 */
 void ScriptMessage(Cpu *cpu) { c = cpu; NEEDS_PASS(0xDB0A); cont_68k(script_message); } /* $DB0A */
+
+/* ---- batch T32: the room's event list's commands ----
+ * A room's event list ($996C, run by $ABBE when it loads) has events (bytes under $C0) and
+ * commands ($E0-$FF, the table at $A490, called with a2 at their bytes): the zone's origin and
+ * size for the events, things to make, effects, blocks and pictures, flags to set, and jumps on
+ * flags, items, the player's form or place. A jump's two bytes are an offset from themselves. */
+
+/* the jump: a2 moved by the word at a2, from it ($ABAC, command $FE) */
+static void list_skip(void)
+{
+    move_b(0, next8(2));
+    c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 8, 16));
+    move_b(0, rd8(c->a[2]));
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 1, c->d[0]));
+    c->a[2] += sx(c->d[0]);
+}
+/* the offset after a flag's byte, kept in d2 */
+static void list_offset(void)
+{
+    move_b(2, next8(2));
+    c->d[2] = set_w(c->d[2], lsl_n(&c->ccr, c->d[2], 8, 16));
+    move_b(2, next8(2));
+}
+static void list_jump_d2(void) { c->a[2] = c->a[2] - 2 + sx(c->d[2]); }   /* lea -2(a2,d2.w),a2 */
+/* $E0 ($A9DA): the zone's origin: x from the byte's high nibble ($F00 on), y from its low ($1000 on, in 12s) */
+static void list_origin(void)
+{
+    move_b(1, next8(2));
+    c->d[1] = set_w(c->d[1], lsl_n(&c->ccr, c->d[1], 4, 16));
+    c->d[0] = 0; F_L(0);
+    move_b(0, (uint8_t)c->d[1]);
+    and_w(1, 0xF00);
+    c->d[1] = set_w(c->d[1], add_w(&c->ccr, 0xF00, c->d[1]));
+    put16m(ZONE_X, c->d[1]);
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 0x10, c->d[0]));
+    c->d[1] = set_w(c->d[1], c->d[0]); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[1], c->d[0]));
+    c->d[0] = set_w(c->d[0], asl_n(&c->ccr, c->d[0], 2, 16));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, 0x1000, c->d[0]));
+    put16m(ZONE_Y, c->d[0]);
+}
+/* $E2, $E3 ($AA04, $AA10): the zone's width, height (in 16s) */
+static void list_width(void) { c->d[0] = 0; F_L(0); move_b(0, next8(2)); c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 4, 16)); put16m(ZONE_W, c->d[0]); }
+static void list_height(void) { c->d[0] = 0; F_L(0); move_b(0, next8(2)); c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 4, 16)); put16m(ZONE_H, c->d[0]); }
+/* $E8 ($AA1C): a room object of kind 4 from 9 bytes (its look, animation, rate, flags, place);
+ * none free: skipped */
+static void list_object(void)
+{
+    c->a[7] -= 2; wr16(c->a[7], c->a[4]);
+    call(FIND_EFFECT);
+    if (c->ccr & CC_N) c->a[2] += 9;
+    else {
+        call(CLEAR_ENTITY);
+        put8(c->a[4] - 0x3D00, next8(2));
+        put8(c->a[4] - 0x3CFF, next8(2));
+        move_b(0, next8(2));
+        put8(c->a[4] - 0x3CFD, next8(2));
+        put8(c->a[4] - 0x3FFE, next8(2));
+        put8(c->a[4] - 0x3800, next8(2));
+        put8(c->a[4] - 0x37FF, next8(2));
+        put8(c->a[4] - 0x3700, next8(2));
+        put8(c->a[4] - 0x36FF, next8(2));
+        put16m(c->a[4] - 0x2BFE, 4);
+        call(SET_ANIM);
+        put8(c->a[4] - 0x4000, 0xC0);
+    }
+    c->a[4] = sx(rd16(c->a[7])); c->a[7] += 2;
+}
+/* $E9 ($AA66): the effects listed at the offset */
+static void list_effects(void)
+{
+    move_b(0, next8(2));
+    c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 8, 16));
+    move_b(0, next8(2));
+    c->a[0] = c->a[2] - 2 + sx(c->d[0]);
+    c->a[7] -= 4; wr32(c->a[7], c->a[2]); F_L(c->a[2]);
+    call(SPAWN_EFFECTS);
+    c->a[2] = pop32();
+}
+/* $EA ($AA7A): a thing ($11BF0): its kind, word, place (in 16s, $F00 on) and $A0E0 */
+static void list_thing(void)
+{
+    c->d[5] = 0; F_L(0);
+    move_b(5, next8(2));
+    move_b(4, next8(2));
+    c->d[4] = set_w(c->d[4], lsl_n(&c->ccr, c->d[4], 8, 16));
+    move_b(4, next8(2));
+    c->d[6] = 0; F_L(0);
+    move_b(6, next8(2));
+    c->d[6] = set_w(c->d[6], lsl_n(&c->ccr, c->d[6], 4, 16));
+    c->d[6] = set_w(c->d[6], add_w(&c->ccr, 0xF00, c->d[6]));
+    c->d[7] = 0; F_L(0);
+    move_b(7, next8(2));
+    c->d[7] = set_w(c->d[7], lsl_n(&c->ccr, c->d[7], 4, 16));
+    c->d[7] = set_w(c->d[7], add_w(&c->ccr, 0xF00, c->d[7]));
+    put8(0xFFFFA0E0u, next8(2));
+    c->a[7] -= 4; wr32(c->a[7], c->a[2]); F_L(c->a[2]);
+    call(0x11BF0);
+    c->a[2] = pop32();
+}
+/* the cell from two bytes: ($100 + x, ($100 + y) * $40) */
+static void list_cell(void)
+{
+    c->d[6] = set_w(c->d[6], 0x100); F_W(0x100);
+    c->d[7] = set_w(c->d[7], c->d[6]); F_W(c->d[6]);
+    move_b(6, next8(2));
+    move_b(7, next8(2));
+    c->d[7] = set_w(c->d[7], lsl_n(&c->ccr, c->d[7], 6, 16));
+}
+/* $EB ($AAA6): d0 x d1 blocks of the word d2 at the cell */
+static void list_blocks(void)
+{
+    list_cell();
+    c->d[0] = 0; F_L(0);
+    move_b(0, next8(2));
+    c->d[1] = 0; F_L(0);
+    move_b(1, next8(2));
+    move_b(2, next8(2));
+    c->d[2] = set_w(c->d[2], lsl_n(&c->ccr, c->d[2], 8, 16));
+    move_b(2, next8(2));
+    c->a[7] -= 4; wr32(c->a[7], c->a[2]); F_L(c->a[2]);
+    call(SET_MAP_BLOCKS);
+    c->a[2] = pop32();
+}
+/* $EC ($AACA): the picture at the offset put at the cell ($2856) */
+static void list_picture(void)
+{
+    list_cell();
+    move_b(0, next8(2));
+    c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 8, 16));
+    move_b(0, next8(2));
+    c->a[7] -= 4; wr32(c->a[7], c->a[2]); F_L(c->a[2]);
+    c->a[0] = c->a[2] - 2 + sx(c->d[0]);
+    call(0x2856);
+    c->a[2] = pop32();
+}
+/* $F6 ($AAEA): jump if the byte's low 3 bits equal the equipment byte its bits 3-4 pick ($95CE-$95D1) */
+static void list_if_equipped(void)
+{
+    static const uint16_t at[4] = { 0x95CE, 0x95CF, 0x95D0, 0x95D1 };   /* $AB04 */
+    move_b(0, next8(2));
+    c->d[1] = 0x18; F_L(0x18);
+    c->d[1] = set_w(c->d[1], c->d[1] & c->d[0]); F_W(c->d[1]);
+    c->d[1] = set_w(c->d[1], lsr_n(&c->ccr, c->d[1], 2, 16));
+    c->a[0] = sx(at[(c->d[1] & 0xFFFF) / 2]);
+    and_w(0, 7);
+    cmp_byte(rd8(c->a[0]), c->d[0]);
+    if ((c->d[0] & 0xFF) == rd8(c->a[0])) { list_skip(); return; }
+    c->a[2] += 2;
+}
+/* $F7 ($AB0C): jump if the player's form bit ($9EF1 bit 4) */
+static void list_if_form(void)
+{
+    f_bit(rd8(0xFFFF9EF1u) >> 4 & 1);
+    if (rd8(0xFFFF9EF1u) & 0x10) { list_skip(); return; }
+    c->a[2] += 2;
+}
+/* $F8 ($AB1A): jump if the room flag is set */
+static void list_if_room_flag(void)
+{
+    move_b(0, next8(2));
+    push32(0xAB20); room_flag_bit(); c->a[7] += 4;
+    list_offset();
+    f_bit(rd8(c->a[0] + sx(c->d[1])) >> (c->d[0] & 7) & 1);
+    if (rd8(c->a[0] + sx(c->d[1])) >> (c->d[0] & 7) & 1) list_jump_d2();
+}
+/* $F9 ($AB32): jump if the game flag is set */
+static void list_if_flag(void)
+{
+    move_b(0, next8(2));
+    list_offset();
+    push32(0xAB3E); flag_test(); c->a[7] += 4;
+    if (!(c->ccr & CC_Z)) list_jump_d2();
+}
+/* $FA, $FB ($AB46, $AB52): a room flag, a game flag set */
+static void list_room_flag(void)
+{
+    move_b(0, next8(2));
+    push32(0xAB4C); room_flag_bit(); c->a[7] += 4;
+    uint32_t a = c->a[0] + sx(c->d[1]); uint8_t v = rd8(a);
+    f_bit(v >> (c->d[0] & 7) & 1); wr8(a, (uint8_t)(v | 1 << (c->d[0] & 7)));
+}
+static void list_flag(void) { move_b(0, next8(2)); flag_set(); }
+/* $FC ($AB58): jump if the player has the item */
+static void list_if_owns(void)
+{
+    move_b(0, next8(2));
+    list_offset();
+    c->a[7] -= 8; wr32(c->a[7], c->d[2]); wr32(c->a[7] + 4, c->a[2]);
+    call(OWNS);
+    c->d[2] = rd32(c->a[7]); c->a[2] = rd32(c->a[7] + 4); c->a[7] += 8;
+    if (!(c->ccr & CC_Z)) list_jump_d2();
+}
+/* $FD ($AB74): the zone 16 x 16 at the byte; the player outside it: jump; inside: jump if the
+ * flag of the next bytes (0: a room flag, from 1: a game flag; negative: never) is set */
+static void list_if_zone(void)
+{
+    push32(0xAB78); in_zone(); c->a[7] += 4;
+    c->d[1] = set_b(c->d[1], c->ccr & CC_C ? 0xFF : 0);
+    c->d[0] = 0x10; F_L(0x10);
+    put16m(ZONE_W, c->d[0]);
+    put16m(ZONE_H, c->d[0]);
+    F_B(c->d[1]);
+    if (!(c->d[1] & 0xFF)) { c->a[2] += 3; list_skip(); return; }
+    c->a[2] += 1;
+    uint8_t kind = next8(2); F_B(kind);
+    if (!kind) {
+        move_b(0, next8(2));
+        push32(0xAB98); room_flag_bit(); c->a[7] += 4;
+        f_bit(rd8(c->a[0] + sx(c->d[1])) >> (c->d[0] & 7) & 1);
+    } else {
+        if (kind & 0x80) { c->a[2] += 2; return; }
+        move_b(0, next8(2));
+        push32(0xABA6); flag_test(); c->a[7] += 4;
+    }
+    if (!(c->ccr & CC_Z)) { list_skip(); return; }
+    c->a[2] += 2;
+}
+/* $FF ($ABB8): the list's end: the interpreter's loop left (its return address dropped) */
+static void list_end(void) { c->a[7] += 4; c->d[0] = 0; F_L(0); }
+
+/* $A990: whether the player (a4) stands at event d7's place: within 4 of its middle across and
+ * in its height (32, or 16 with byte 7) above its foot (d0 0, eq; else -1) */
+static void event_near(void)
+{
+    c->d[0] = set_w(c->d[0], c->d[7]); F_W(c->d[7]);
+    c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 4, 16));
+    c->a[0] = rd32(0x1CC08);
+    uint32_t r = c->a[0] + sx(c->d[0]);
+    c->d[3] = 0x20; F_L(0x20);
+    F_B(rd8(r + 7));
+    if (rd8(r + 7)) { c->d[3] = 0x10; F_L(0x10); }
+    c->d[1] = set_w(c->d[1], c->d[3]); F_W(c->d[3]);
+    c->d[1] = set_w(c->d[1], lsr_n(&c->ccr, c->d[1], 1, 16));
+    c->d[1] = set_b(c->d[1], add_b(&c->ccr, rd8(r + 4), c->d[1]));
+    c->d[1] = set_w(c->d[1], add_w(&c->ccr, rd16(r), c->d[1]));
+    c->d[1] = set_w(c->d[1], sub_w(&c->ccr, rd16(c->a[4] - 0x3800), c->d[1]));
+    if (c->ccr & CC_N) c->d[1] = set_w(c->d[1], neg_w(&c->ccr, c->d[1]));
+    c->d[1] = set_w(c->d[1], sub_w(&c->ccr, 4, c->d[1]));
+    if (!(c->ccr & CC_C)) goto no;
+    c->d[1] = 0; F_L(0);
+    move_b(1, rd8(r + 5));
+    c->d[1] = set_w(c->d[1], add_w(&c->ccr, rd16(r + 2), c->d[1]));
+    c->d[2] = set_w(c->d[2], rd16(c->a[4] - 0x3700)); F_W(c->d[2]);
+    c->d[2] = set_w(c->d[2], sub_w(&c->ccr, c->d[1], c->d[2]));
+    if (c->ccr & CC_C) goto no;
+    cmp_w(&c->ccr, c->d[3], c->d[2]);
+    if (!(c->ccr & CC_C)) goto no;
+    c->d[0] = 0; F_L(0);
+    return;
+no:
+    c->d[0] = 0xFFFFFFFFu; F_L(c->d[0]);
+}
+
+ENTRY(EventNear, event_near)               /* $A990 */
+ENTRY(ListOrigin, list_origin)             /* $A9DA */
+ENTRY(ListWidth, list_width)               /* $AA04 */
+ENTRY(ListHeight, list_height)             /* $AA10 */
+ENTRY(ListObject, list_object)             /* $AA1C */
+ENTRY(ListEffects, list_effects)           /* $AA66 */
+ENTRY(ListThing, list_thing)               /* $AA7A */
+ENTRY(ListBlocks, list_blocks)             /* $AAA6 */
+ENTRY(ListPicture, list_picture)           /* $AACA */
+ENTRY(ListIfEquipped, list_if_equipped)    /* $AAEA */
+ENTRY(ListIfForm, list_if_form)            /* $AB0C */
+ENTRY(ListIfRoomFlag, list_if_room_flag)   /* $AB1A */
+ENTRY(ListIfFlag, list_if_flag)            /* $AB32 */
+ENTRY(ListRoomFlag, list_room_flag)        /* $AB46 */
+ENTRY(ListFlag, list_flag)                 /* $AB52 */
+ENTRY(ListIfOwns, list_if_owns)            /* $AB58 */
+ENTRY(ListIfZone, list_if_zone)            /* $AB74 */
+ENTRY(ListSkip, list_skip)                 /* $ABAC */
+ENTRY(ListEnd, list_end)                   /* $ABB8 */
