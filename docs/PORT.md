@@ -2650,6 +2650,33 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 `$108B8` caught every case they ran, then ran away: a sabotaged return from the caller pops a
 wrong address. Replace mode: thirteen runs, no problems.
 
+#### The kernel, batch T42: the frame's work, the pads, the palettes, the screen reset (2026-10-14)
+
+From this batch on the port is written as plain C. A routine promises the stack pointer and what
+it writes; registers are left as the original leaves them where that is cheap, and flags only
+where a caller branches on them. The shadow runs watch every register and flag that differs and
+report any that a later instruction reads.
+
+* In the new `port/vblank.c`:
+  * `$5262`: the frame's work after the vertical blank (called from the wait at `$3B8`). The
+    scroll tables to VRAM and VSRAM (`$529E`, `$52DA`, `$5314`) and the VDP registers asked for
+    (`$5338`). The sprite table to VRAM `$D000` (`$557E`). Both pads (`$51C6`, `$5216`) and the
+    buttons newly pressed (`$5250`). Slow motion's pause, the palette to CRAM (`$5370`), and
+    register `$8A5C`.
+  * `$513C`: which pad plays, with the exact Z its callers test.
+  * The palettes: cleared (`$559E`) and copied for upload (`$55BA`); the fades reset (`$55DA`).
+  * The screen: reset (`$5170`), and a new screen with its two tasks and base graphics
+    (`$5188`). The entities cleared (`$5398`).
+  * `$5106` starts a task list. `$5124` and `$5132` are small helpers.
+  * The demo's input: `$501C`, `$505C`; its unreferenced recorder: `$4FEE`, `$5036`.
+* `$5330` is in `analysis/coverage_skip.txt`: the original tests d0 for both wraps, so its
+  `moveq #0,d1` never runs.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(46 runs, all complete; 1,189,765 checked calls). Play runs nearly all of the frame's work.
+690,000 fuzz cases from six states, 0 mismatches, every instruction covered. Self-test caught
+100 in 100 for all twenty-three. Replace mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

@@ -1414,6 +1414,29 @@ int hybrid_fuzz(const char *name, long count)
                 m68k_set_reg(M68K_REG_A4, slot); m68k_set_reg(M68K_REG_A2, pl);
             }
         }
+        /* batch T42 (vblank.c): a task in a5 (the demo's), its pointer at $44 into ROM or the
+         * recording's buffer, a real task list, the pads' ports */
+        if (!strcmp(name, "RecordStart") || !strcmp(name, "DemoStart") || !strcmp(name, "RecordStep") || !strcmp(name, "DemoStep")) {
+            uint32_t t = 0x80C8 + 0x80 * (rnd() % 4);
+            m68k_set_reg(M68K_REG_A5, 0xFF0000 | t);
+            uint32_t ptr = !strcmp(name, "RecordStep") ? 0xFF1400 + 2 * (rnd() % 0x100) : 0x1B000 + 2 * (rnd() % 0x800);
+            put_word(t + 0x44, ptr >> 16); put_word(t + 0x46, ptr & 0xFFFF);
+            m68k_set_reg(M68K_REG_A0, 0x1B000 + 2 * (rnd() % 0x800));
+            if (!strcmp(name, "RecordStep")) { ram[ptr & 0xFFFF] = (uint8_t)(rnd() % 3 ? rnd() : 0xFF); ram[(ptr & 0xFFFF) + 1] = (uint8_t)(rnd() % 2 ? ram[0x8A7A] : rnd()); }
+            if (!strcmp(name, "DemoStep")) ram[0x8A4E] = (uint8_t)(rnd() % 3 ? 1 : rnd());
+        }
+        if (!strcmp(name, "TasksStart")) m68k_set_reg(M68K_REG_A1, rnd() % 2 ? 0x4FC0 : 0x50CC);
+        if (!strcmp(name, "FrameWork") || !strcmp(name, "ScrollUpload") || !strcmp(name, "HScrollUpload") || !strcmp(name, "VdpRegs")
+                || !strcmp(name, "PaletteUpload") || !strcmp(name, "PadWhich")) {   /* the frame's requests, the scroll modes, the pads' Start */
+            ram[0x8006] = (uint8_t)rnd(); ram[0x8A5F] = (uint8_t)rnd(); ram[0x8C56] = (uint8_t)rnd();
+            ram[0x8A8B] = (uint8_t)(rnd() % 4 ? 0 : 1); ram[0x8A7D] = (uint8_t)(rnd() % 2 ? 0x80 | (rnd() & 1) : rnd() & 1);
+            ram[0x8A81] = (uint8_t)(ram[0x8A81] ^ (rnd() & 0x80)); ram[0x8A84] = (uint8_t)(ram[0x8A84] ^ (rnd() & 0x80));
+            ram[0x8A77] = (uint8_t)(rnd() % 2 ? ram[0x8A77] : rnd());
+        }
+        if (!strcmp(name, "ReadPad")) {
+            int two = rnd() % 2;
+            m68k_set_reg(M68K_REG_A0, two ? 0xA10005 : 0xA10003); m68k_set_reg(M68K_REG_A1, two ? 0xFF8A82 : 0xFF8A7F);
+        }
         if (!strcmp(name, "RoomPlayer") || !strncmp(name, "PlayerPlace", 11) || !strcmp(name, "PlayerMoved") || !strcmp(name, "PlayerReset")) {
             /* the arrivals the table has (0-20, even), the player's slot, a companion or none */
             ram[0x9678] = (uint8_t)(2 * (rnd() % 11));
