@@ -559,7 +559,8 @@ const PortRoutine port_routines[] = {
     {0x00BD0A, 0x00BD52, "DoorOpen", DoorOpen, CT_SP | CT_WAITS},   /* they wait for frames: checked by the task passes, not fuzzed */
     {0x00BD52, 0x00BD9A, "DoorClose", DoorClose, CT_SP | CT_WAITS},
     {0x00BD9A, 0x00BDB0, "RoomLeave", RoomLeave, CT_ALL},
-    {0x00BDDE, 0x00BE50, "SeqDoor", SeqDoor, CT_SP | CT_WAITS},   /* the sequences wait for frames: checked by the task passes, not fuzzed ($BDB0, $BDC0, $BE50 and $BF80 wait for a session that runs them) */
+    {0x00BDB0, 0x00BDC0, "SeqExit", SeqExit, CT_SP | CT_WAITS},   /* verified by the session7 recordings */
+    {0x00BDDE, 0x00BE50, "SeqDoor", SeqDoor, CT_SP | CT_WAITS},   /* the sequences wait for frames: checked by the task passes, not fuzzed ($BDC0, $BE50 and $BF80 wait for a session that runs them) */
     {0x00BE6C, 0x00BEF2, "SeqInside", SeqInside, CT_SP | CT_WAITS},
     {0x00BEF2, 0x00BF80, "SeqOutside", SeqOutside, CT_SP | CT_WAITS},
     {0x00C0C2, 0x00C128, "WalkInSetup", WalkInSetup, CT_ALL},
@@ -657,11 +658,12 @@ const PortRoutine port_routines[] = {
     {0x00DADA, 0x00DAE6, "Room23Frame", Room23Frame, CT_ALL},
     {0x00DB36, 0x00DB3C, "WalkStop", WalkStop, CT_ALL},
     {0x00C1E8, 0x00C27E, "SeqTalk", SeqTalk, CT_SP | CT_WAITS},  /* rooms.c: the sequences of a conversation, a thing received and a statue */
+    {0x00C27E, 0x00C2DE, "SeqReceive", SeqReceive, CT_SP | CT_WAITS},   /* verified by the session7 recordings */
     {0x00C2DE, 0x00C2E6, "ReceiveOwn", ReceiveOwn, CT_ALL},
     {0x00C2E6, 0x00C2E8, "ReceiveNone", ReceiveNone, CT_ALL},
     {0x00C2E8, 0x00C31A, "ReceiveHeart", ReceiveHeart, CT_SP | CT_A0 << 4},   /* as $8AA2 (Hearts), which it ends with */
     {0x00C376, 0x00C48C, "ReceiveStep", ReceiveStep, CT_ALL},
-    {0x00C48C, 0x00C572, "SeqStatue", SeqStatue, CT_SP | CT_WAITS},   /* $C27E and $C31A (a thing received) wait for a session that runs them */
+    {0x00C48C, 0x00C572, "SeqStatue", SeqStatue, CT_SP | CT_WAITS},   /* $C31A (a thing received) waits for a session that runs them */
     {0x01090C, 0x010910, "SpawnItem", SpawnItem},                 /* effects.c: every register as the original */
     {0x010910, 0x010A1E, "SpawnItemAt", SpawnItemAt},
     {0x010A1E, 0x011094, "RunItems", RunItems, CT_SP},
