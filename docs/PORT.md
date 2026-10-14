@@ -2703,6 +2703,31 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 (46 runs, all complete). 450,000 fuzz cases from six states, 0 mismatches, every instruction
 covered. Self-test caught 100 in 100 for all fifteen. Replace mode: thirteen runs, no problems.
 
+#### The kernel, batch T44: the planes cleared, layouts drawn, the animated tiles, the Sega screen (2026-10-14)
+
+* In `port/vblank.c`:
+  * The planes cleared: A and B (`$6910`, `$6916`), the window (`$693E`), the scroll tables
+    (`$696C`, `$699E`, which writes d0, not 0).
+  * `$6BA0` and `$6BAE` reset `$8E08` and the animated tiles' slots.
+  * `$69AE` draws a layout. It is a byte interpreter with positions, attributes, runs and
+    repeats of tiles, a line's length and blanks; tiles wrap at the plane's edges. `$5CA` gives
+    a cell's offset.
+  * `$69AE` keeps its state in a stack frame as the original does (`link`/`unlk`, the locals in
+    RAM), because a layout that sets no line length reads them uninitialised.
+* The kernel's two tasks (they wait, so the task passes check them):
+  * Mxcg (`$6EAC`): each frame the animated tiles' scripts copy their frames to VRAM. YieldIfLate
+    (`$40C`) yields there when the frame runs late; C reads the VDP's status and H/V counter as
+    it does and waits itself.
+  * Kseg (`$6F8A`): the Sega screen, with its two colour scripts and fades.
+* `analysis/coverage_skip.txt`: layout commands 5, 6, 8, 11 and 12, which none of the four
+  layouts uses.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(46 runs, all complete; 1,243,365 checked calls). Play runs 57 of the animated tiles' 69
+instructions; it never reaches their script jumps or the task's end. 330,000 fuzz cases from six
+states, 0 mismatches. Self-test caught 100 in 100 for the nine that are fuzzed. Replace mode:
+thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
