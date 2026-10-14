@@ -1373,6 +1373,47 @@ int hybrid_fuzz(const char *name, long count)
                 ram[0xCB03 + slot] = 0; ram[0xCB03 + t] = 0;
             }
         }
+        if (!strncmp(name, "Companion", 9)) {       /* kinds 2 and 6: states of their tables, a trail, enemies to shoot at */
+            char key[40]; snprintf(key, sizeof key, "|%s|", name + 9);
+            if (strstr("|Kind2|Kind6|Enter|Walk|Step|Run|Jump|Jumping|Sit|Edge|Dive|Wait|Hop|Place|ChanceSit|Spit|TrailStart|Trail|Fell|", key)) {
+                uint32_t slot = (uint32_t)ram[0x9F30] << 8 | ram[0x9F31], pl = (uint32_t)ram[0x9EEE] << 8 | ram[0x9EEF];
+                uint32_t kind = !strcmp(name, "CompanionKind6") ? 6 : !strcmp(name, "CompanionKind2") ? 2 : rnd() % 2 ? 2 : 6;
+                static const uint8_t st6[] = { 0, 2, 4, 6, 10 }, pst[] = { 0, 9, 0xD, 0xF, 1, 2 };
+                ram[0xC000 + slot] = (uint8_t)((rnd() % 8 ? 0x80 : 0) | (rnd() & 0x41));
+                put_word(0xD402 + slot, kind);
+                ram[0xD401 + slot] = (uint8_t)((kind == 6 ? st6[rnd() % 5] : 2 * (rnd() % 10)) | (rnd() & 0x80));
+                put_word(0xC300 + slot, rnd() % 2 ? 0x200 + kind : 0x1208);   /* its animation set, as the game gives it */
+                put_word(0x965A, rnd() % 2 ? rnd() & ~0x1Fu : rnd());   /* the every-32-frames chances */
+                if (rnd() % 2) {                            /* on the screen */
+                    put_word(0xC800 + slot, ((uint32_t)ram[0x9758] << 8 | ram[0x9759]) + rnd() % 0x140);
+                    put_word(0xC900 + slot, ((uint32_t)ram[0x975A] << 8 | ram[0x975B]) + rnd() % 0xE0);
+                }
+                put_word(0x9F74, 4 * (1 + rnd() % 15));
+                ram[0x9F76] = (uint8_t)(rnd() % 4 ? 0 : 0x80 | rnd());
+                ram[0x9F1C] = pst[rnd() % 6];
+                ram[0xCF00 + pl] = (uint8_t)(rnd() % 2 ? 2 : rnd());   /* the player on the ground, or not */
+                if (rnd() % 2) for (uint32_t k4 = 0; k4 < 16; k4++) {   /* a trail about the player's cell */
+                    put_word(0x9F34 + 4 * k4, ((uint32_t)ram[0x9F18] << 8 | ram[0x9F19]) + rnd() % 5 - 2);
+                    put_word(0x9F36 + 4 * k4, ((uint32_t)ram[0x9F1A] << 8 | ram[0x9F1B]) + 0x40 * (rnd() % 5) - 0x80);
+                }
+                ram[0xD801 + slot] = (uint8_t)(rnd() % 2 ? 0 : rnd());
+                ram[0xD800 + slot] = (uint8_t)(rnd() % 3 ? 1 + rnd() % 2 : rnd());
+                put_word(0xD802 + slot, rnd() % 3 ? 1 + rnd() % 2 : rnd());
+                uint32_t hop = rnd() % 0x40;                /* the thing the hop waits for */
+                put_word(0xD500 + slot, hop); ram[0xA15C + hop] = (uint8_t)((ram[0xA15C + hop] & ~0x10) | (rnd() & 0x10));
+                for (uint32_t k4 = 0; k4 < 16; k4++) if (rnd() % 4 == 0) {   /* enemies it can shoot at, one near */
+                    uint32_t e = 0x40 + 4 * k4;
+                    ram[0xC000 + e] |= 0xC1; ram[0xD402 + e] = 0; put_word(0xDA00 + e, 1 + rnd() % 0x100);
+                    if (rnd() % 2) {
+                        put_word(0xC800 + e, ((uint32_t)ram[0xC800 + slot] << 8 | ram[0xC801 + slot]) + rnd() % 0x60 - 0x30);
+                        put_word(0xC900 + e, ((uint32_t)ram[0xC900 + slot] << 8 | ram[0xC901 + slot]) + rnd() % 0x30 - 0x18);
+                    }
+                }
+                if (rnd() % 4 == 0)                         /* no room for a drop or a shot */
+                    for (uint32_t e = 0x80; e < 0xC0; e += 4) { ram[0xC000 + e] = 0x80; put_word(0xD402 + e, 0x20E); }
+                m68k_set_reg(M68K_REG_A4, slot); m68k_set_reg(M68K_REG_A2, pl);
+            }
+        }
         if (!strcmp(name, "RoomPlayer") || !strncmp(name, "PlayerPlace", 11) || !strcmp(name, "PlayerMoved") || !strcmp(name, "PlayerReset")) {
             /* the arrivals the table has (0-20, even), the player's slot, a companion or none */
             ram[0x9678] = (uint8_t)(2 * (rnd() % 11));

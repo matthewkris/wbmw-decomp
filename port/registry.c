@@ -102,6 +102,7 @@ void RoomPlayer(Cpu *), PlayerPlace(Cpu *), PlayerMoved(Cpu *), PlayerPlaceResta
 void CompanionRoom(Cpu *), CompanionGfx0(Cpu *), CompanionGfx6(Cpu *), CompanionGfx4(Cpu *), CompanionGfx(Cpu *), CompanionRoom2(Cpu *), CompanionAt(Cpu *), CompanionJoin(Cpu *), CompanionHide(Cpu *), CompanionPalette(Cpu *), CompanionAgain(Cpu *), CompanionMake(Cpu *), CompanionNewA(Cpu *), CompanionNewB(Cpu *);
 void CompanionFrame(Cpu *), CompanionKind4(Cpu *), CompanionShoot(Cpu *), CompanionAppear4(Cpu *), CompanionAppeared4(Cpu *), CompanionKind0(Cpu *), CompanionAppear0(Cpu *), CompanionRest(Cpu *), CompanionOverPlayer(Cpu *), CompanionShown(Cpu *), CompanionFollow(Cpu *), CompanionReturn(Cpu *), CompanionDrop(Cpu *), CompanionGrab(Cpu *), CompanionChase(Cpu *), CompanionRide(Cpu *), CompanionChanceAway(Cpu *), CompanionChanceEnemy(Cpu *), CompanionChanceArea(Cpu *), CompanionNear(Cpu *), CompanionGone(Cpu *);
 void PoseKeep(Cpu *), PoseFree(Cpu *), ExitRoom(Cpu *), ExitArrive(Cpu *), PlayerPickups(Cpu *);
+void CompanionKind6(Cpu *), CompanionKind2(Cpu *), CompanionEnter(Cpu *), CompanionWalk(Cpu *), CompanionStep(Cpu *), CompanionRun(Cpu *), CompanionJump(Cpu *), CompanionJumping(Cpu *), CompanionSit(Cpu *), CompanionEdge(Cpu *), CompanionDive(Cpu *), CompanionWait(Cpu *), CompanionHop(Cpu *), CompanionPlace(Cpu *), CompanionChanceSit(Cpu *), CompanionSpit(Cpu *), CompanionTrailStart(Cpu *), CompanionTrail(Cpu *), CompanionFell(Cpu *);
 void Looks(Cpu *), LooksExtra(Cpu *), LooksBlock(Cpu *), LooksBody(Cpu *), LooksSword(Cpu *), LooksShield(Cpu *), EquipChange(Cpu *);
 void HudPanel(Cpu *), GoldLabel(Cpu *), ThreeLabels(Cpu *), DigitsOut(Cpu *), ItemsChoose(Cpu *), MagicChoose(Cpu *), SlotChoose(Cpu *), ActionToSlot(Cpu *),
      ItemToSlot(Cpu *), WornBlink(Cpu *), StatusFadeIn(Cpu *), StatusFadeOut(Cpu *), StatusWait(Cpu *);
@@ -704,6 +705,25 @@ const PortRoutine port_routines[] = {
     {0x00FF96, 0x00FFC6, "CompanionChanceArea", CompanionChanceArea, CT_SP},
     {0x00FFC6, 0x00FFE6, "CompanionNear", CompanionNear, CT_SP},
     {0x0108A2, 0x0108B8, "CompanionGone", CompanionGone, CT_SP},   /* returns from its caller when it resets the state */
+    {0x00FFE6, 0x01000C, "CompanionKind6", CompanionKind6, CT_SP},   /* rooms.c: the companion each frame, kinds 2 and 6 ($1000C, $1005C: not traced code, the original's) */
+    {0x0100F2, 0x01011E, "CompanionKind2", CompanionKind2, CT_SP},
+    {0x01011E, 0x0101F2, "CompanionEnter", CompanionEnter, CT_SP},
+    {0x0101F2, 0x01021A, "CompanionWalk", CompanionWalk, CT_SP},
+    {0x01021A, 0x01023C, "CompanionStep", CompanionStep, CT_SP},
+    {0x01023C, 0x010296, "CompanionRun", CompanionRun, CT_SP},
+    {0x010296, 0x010328, "CompanionJump", CompanionJump, CT_SP},
+    {0x010328, 0x010366, "CompanionJumping", CompanionJumping, CT_SP},
+    {0x010366, 0x0103B8, "CompanionSit", CompanionSit, CT_SP},
+    {0x0103B8, 0x0103F6, "CompanionEdge", CompanionEdge, CT_SP},
+    {0x0103F6, 0x010424, "CompanionDive", CompanionDive, CT_SP},
+    {0x010424, 0x010444, "CompanionWait", CompanionWait, CT_SP},
+    {0x010444, 0x01051A, "CompanionHop", CompanionHop, CT_SP},
+    {0x01051A, 0x010550, "CompanionPlace", CompanionPlace, CT_SP},
+    {0x010550, 0x010572, "CompanionChanceSit", CompanionChanceSit, CT_SP},   /* these three return from their callers when they act */
+    {0x010572, 0x01061E, "CompanionSpit", CompanionSpit, CT_SP},
+    {0x0107FC, 0x010844, "CompanionTrailStart", CompanionTrailStart, CT_SP},
+    {0x010844, 0x0108A2, "CompanionTrail", CompanionTrail, CT_SP},
+    {0x0108B8, 0x0108DC, "CompanionFell", CompanionFell, CT_SP},
     {0x00DF80, 0x00DF90, "PoseKeep", PoseKeep, CT_SP},          /* rooms.c: the door poses (as SetAnim), the exits (they wait) */
     {0x00DF90, 0x00DFA0, "PoseFree", PoseFree, CT_SP},
     {0x00F76C, 0x00F7EA, "ExitRoom", ExitRoom, CT_SP | CT_WAITS},

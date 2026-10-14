@@ -7455,7 +7455,7 @@ ENTRY(CompanionNewB, companion_new_b)      /* $FA42 */
  * state in the rest) for its kind. Kinds 0 and 4 share resting on the player ($FC30), following
  * ($FC86) and catching up ($FCF4). Kind 4 also shoots at an enemy ($FAAE) and appears ($FB60);
  * kind 0 drops a thing ($FDAC), rides an enemy ($FDF4) and appears ($FC02). Kinds 2 and 6 are
- * still the original's ($100F2, $FFE6). In the states a4 is the companion, a2 the player. */
+ * batch T41's. In the states a4 is the companion, a2 the player. */
 
 static int mem_bset(uint32_t a, int bit) { uint8_t v = rd8(a); f_bit(v >> bit & 1); wr8(a, (uint8_t)(v | 1 << bit)); return v >> bit & 1; }
 static int begun(void) { return mem_bset(p4(-0x2BFF), 7); }   /* bset #7,-$2BFF(a4) */
@@ -7919,6 +7919,7 @@ static void companion_kind_0(void)
     default: call(c->a[0]); break;                  /* past the table: as the original jumps */
     }
 }
+static void companion_kind_2(void), companion_kind_6(void);
 /* $FA6C (each frame): the companion, if in use, by its kind (the table at $FA86) */
 static void companion_frame(void)
 {
@@ -7930,7 +7931,9 @@ static void companion_frame(void)
     switch (c->a[0]) {
     case 0xFBE2: companion_kind_0(); break;
     case 0xFA8E: companion_kind_4(); break;
-    default: call(c->a[0]); break;                  /* kinds 2 and 6: still the original's */
+    case 0x100F2: companion_kind_2(); break;
+    case 0xFFE6: companion_kind_6(); break;
+    default: call(c->a[0]); break;                  /* past the table: as the original jumps */
     }
 }
 
@@ -8060,3 +8063,534 @@ ENTRY(PoseFree, pose_free)                 /* $DF90 */
 /* these are jumped to and leave by port_continue_at */
 void ExitRoom(Cpu *cpu)   { c = cpu; NEEDS_PASS(0xF76C); exit_room(); }     /* $F76C */
 void ExitArrive(Cpu *cpu) { c = cpu; NEEDS_PASS(0xF7EA); exit_arrive(); }   /* $F7EA */
+
+/* ---- batch T41: the companion each frame, kinds 2 and 6 ----
+ * Kind 2 walks after the player along a trail of its cells ($9F34: up to 15 longs, $9F74 the
+ * bytes used; $9F76 negative while it is not kept). It walks ($101F2), runs ($1023C), jumps to
+ * the trail's next point ($10296), waits for a trail ($10424), sits and drops things ($10366),
+ * hops on the spot ($10444) and dives ($103F6). Kind 6 shares five of its states; its own two
+ * ($1000C, $1005C) are not traced code and stay the original's. $10550, $10572 and $108B8
+ * return from their callers when they act (addq #4,a7), as $108A2 does. The trail's path
+ * ($1061E) stays the original's. */
+
+#define TRAIL         0xFFFF9F34u   /* longs: cells (x, y) */
+#define TRAIL_LEN     0xFFFF9F74u   /* word: bytes used */
+#define TRAIL_OFF     0xFFFF9F76u   /* byte: negative while not kept */
+
+static int is_kind_2(void) { cmp_w(&c->ccr, 2, rd16(p4(-0x2BFE))); return rd16(p4(-0x2BFE)) == 2; }
+
+/* the player able to leave a trail: on the ground ($CF00 & $8A == 2) and not in states 9, 13, 15
+ * ($9F1C); else -1 (N set). Shared by $107FC and $10844 */
+static int trail_ok(void)
+{
+    c->a[2] = sx(rd16(0xFFFF9EEEu));
+    move_b(0, rd8(p2(-0x3100)));
+    and_b(0, 0x8A);
+    c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 2, c->d[0]));
+    if (c->d[0] & 0xFF) return 0;
+    static const uint8_t no[] = { 9, 0xD, 0xF };
+    for (int k = 0; k < 3; k++) {
+        cmp_byte(no[k], rd8(0xFFFF9F1Cu));
+        if (rd8(0xFFFF9F1Cu) == no[k]) return 0;
+    }
+    return 1;
+}
+/* $107FC: a trail started at the player's cell ($9F18), the rest filled with d0; kept */
+static void trail_start(void)
+{
+    if (!trail_ok()) { c->d[0] = 0xFFFFFFFFu; F_L(c->d[0]); return; }
+    c->a[0] = TRAIL;
+    put32m(c->a[0], rd32(0xFFFF9F18u)); c->a[0] += 4;
+    c->d[1] = 0xF; F_L(0xF);
+    do {
+        put32m(c->a[0], c->d[0]); c->a[0] += 4;
+        c->d[1] = set_w(c->d[1], sub_w(&c->ccr, 1, c->d[1]));
+    } while (c->d[1] & 0xFFFF);
+    put16m(TRAIL_LEN, 4);
+    put8(TRAIL_OFF, 0);
+}
+/* $10844 (each frame, kinds 2 and 6): while the trail is kept and the player can leave one, its
+ * cell goes after the same cell found in the trail (or at its end), up to 15 */
+static void trail_record(void)
+{
+    F_W(rd16(TRAIL_OFF));
+    if (rd16(TRAIL_OFF) & 0x8000) return;
+    if (!trail_ok()) return;
+    c->d[2] = rd32(0xFFFF9F18u); F_L(c->d[2]);
+    c->a[0] = TRAIL;
+    c->d[0] = set_w(c->d[0], rd16(TRAIL_LEN)); F_W(c->d[0]);
+    c->d[1] = 0; F_L(0);
+    for (;;) {
+        c->d[1] = set_w(c->d[1], add_w(&c->ccr, 4, c->d[1]));
+        cmp_w(&c->ccr, c->d[0], c->d[1]);
+        if ((c->d[1] & 0xFFFF) == (c->d[0] & 0xFFFF)) break;
+        uint32_t v = rd32(c->a[0] + sx(c->d[1]));
+        cmp_l(&c->ccr, v, c->d[2]);
+        if (v == c->d[2]) { c->d[0] = set_w(c->d[0], c->d[1]); F_W(c->d[0]); break; }
+    }
+    put32m(c->a[0] + sx(c->d[0]), c->d[2]);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, 4, c->d[0]));
+    cmp_w(&c->ccr, 0x3C, c->d[0]);
+    if ((c->d[0] & 0xFFFF) > 0x3C) { c->d[0] = 0x3C; F_L(0x3C); }
+    put16m(TRAIL_LEN, c->d[0]);
+}
+/* $10550: unless -$27FF is set, every 32 frames 1 in 128: sitting (state 8). 1: the caller
+ * returns */
+static int companion_chance_sit(void)
+{
+    F_B(rd8(p4(-0x27FF)));
+    if (rd8(p4(-0x27FF))) return 0;
+    c->d[0] = 0x1F; F_L(0x1F);
+    c->d[0] = set_w(c->d[0], c->d[0] & rd16(0xFFFF965Au)); F_W(c->d[0]);
+    if (c->d[0] & 0xFFFF) return 0;
+    call(0x5D8);
+    and_w(0, 0x7F);
+    if (c->d[0] & 0xFFFF) return 0;
+    put8(p4(-0x2BFF), 8);
+    return 1;
+}
+/* $10572: every 4 frames, the first enemy it can go for within $18 high and $30 wide: a shot
+ * (item $20E) 8 ahead, facing it, and state 8. 1: the caller returns */
+static int companion_spit(void)
+{
+    c->d[0] = 3; F_L(3);
+    c->d[0] = set_w(c->d[0], c->d[0] & rd16(0xFFFF965Au)); F_W(c->d[0]);
+    if (c->d[0] & 0xFFFF) return 0;
+    c->d[1] = set_w(c->d[1], rd16(p4(-0x3800))); F_W(c->d[1]);
+    c->d[2] = set_w(c->d[2], rd16(p4(-0x3700))); F_W(c->d[2]);
+    c->d[3] = 0xF; F_L(0xF);
+    c->a[2] = 0x40;
+    do {
+        move_b(0, rd8(p2(-0x4000)));
+        and_b(0, 0xC1);
+        cmp_byte(0xC1, c->d[0]);
+        if ((c->d[0] & 0xFF) != 0xC1) goto next;
+        F_B(rd8(p2(-0x2BFE)));
+        if (rd8(p2(-0x2BFE))) goto next;
+        F_W(rd16(p2(-0x2600)));
+        if (!rd16(p2(-0x2600))) goto next;
+        c->d[0] = set_w(c->d[0], rd16(p2(-0x3700))); F_W(c->d[0]);
+        c->d[0] = set_w(c->d[0], sub_w(&c->ccr, c->d[2], c->d[0]));
+        if (c->d[0] & 0x8000) c->d[0] = set_w(c->d[0], neg_w(&c->ccr, c->d[0]));
+        cmp_w(&c->ccr, 0x18, c->d[0]);
+        if ((c->d[0] & 0xFFFF) > 0x18) goto next;
+        c->d[4] = 0; F_L(0);
+        c->d[0] = set_w(c->d[0], rd16(p2(-0x3800))); F_W(c->d[0]);
+        c->d[0] = set_w(c->d[0], sub_w(&c->ccr, c->d[1], c->d[0]));
+        if (c->d[0] & 0x8000) {
+            c->d[0] = set_w(c->d[0], neg_w(&c->ccr, c->d[0]));
+            c->d[4] = 8; F_L(8);
+        }
+        put8(p4(-0x25FD), c->d[4]);
+        cmp_w(&c->ccr, 0x30, c->d[0]);
+        if ((c->d[0] & 0xFFFF) < 0x30) goto found;
+    next:
+        c->a[2] += 4;
+    } while (dbra(3));
+    return 0;
+found:
+    c->d[0] = set_w(c->d[0], 0x20E); F_W(0x20E);
+    c->d[1] = set_w(c->d[1], rd16(p4(-0x3800))); F_W(c->d[1]);
+    c->d[2] = set_w(c->d[2], rd16(p4(-0x3700))); F_W(c->d[2]);
+    c->d[2] = set_w(c->d[2], sub_w(&c->ccr, 2, c->d[2]));
+    call(0x1090C);
+    if (c->ccr & CC_N) return 0;
+    mem_and8(p4(-0x3FFE), 0xF7);
+    move_b(0, rd8(p4(-0x25FD)));
+    mem_or8(p4(-0x3FFE), (uint8_t)c->d[0]);
+    put8(p0(-0x3CFD), 6);
+    c->d[0] = 8; F_L(8);
+    f_bit(rd8(p4(-0x3FFE)) >> 3 & 1);
+    if (rd8(p4(-0x3FFE)) & 8) {
+        c->d[0] = set_w(c->d[0], neg_w(&c->ccr, c->d[0]));
+        mem_or8(p0(-0x3FFE), 8);
+    }
+    wr16(p0(-0x3800), (uint16_t)add_w(&c->ccr, c->d[0] & 0xFFFF, rd16(p0(-0x3800))));
+    put8(p4(-0x2BFF), 8);
+    put8(p4(-0x25FD), 0);
+    return 1;
+}
+/* $108B8: on the ground ($BC6: Z) and $E0 or more below the view's top: the state reset and the
+ * caller returns (1) */
+static int companion_fell(void)
+{
+    call(0xBC6);
+    if (!(c->ccr & CC_Z)) return 0;
+    c->d[0] = set_w(c->d[0], rd16(p4(-0x3700))); F_W(c->d[0]);
+    c->d[2] = 0; F_L(0);
+    move_b(2, rd8(p4(-0x34FD)));
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, rd16(0xFFFF975Au), c->d[0]));
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, c->d[2], c->d[0]));
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 0xE0, c->d[0]));
+    if (c->d[0] & 0x8000) return 0;
+    put8(p4(-0x2BFF), 0);
+    return 1;
+}
+/* the chances while walking or running: kind 2 sits, kind 6 shoots. 1: the state returns */
+static int companion_walk_chances(void)
+{
+    if (is_kind_2()) return companion_chance_sit();
+    return companion_spit();
+}
+/* the trail's next state ($1061E): if not negative and not this one, it is taken (1) */
+static int companion_path(void)
+{
+    call(0x1061E);
+    if (c->ccr & CC_N) return 0;
+    move_b(1, rd8(p4(-0x2BFF)));
+    and_b(1, 0x7F);
+    cmp_byte(c->d[0], c->d[1]);
+    if ((c->d[1] & 0xFF) == (c->d[0] & 0xFF)) return 0;
+    put8(p4(-0x2BFF), c->d[0]);
+    return 1;
+}
+/* $1011E (state 0): begun: once its animation is over, walking (state 2). Not begun: hidden,
+ * and if a trail can start, set up at its start facing as the player, its look $1208 */
+static void companion_enter(void)
+{
+    F_B(rd8(p4(-0x2BFF)));
+    if (rd8(p4(-0x2BFF)) & 0x80) {
+        F_B(rd8(p4(-0x3A00)));
+        if (rd8(p4(-0x3A00))) return;
+        companion_palette();
+        c->d[0] = 0; F_L(0);
+        call(SET_ANIM);
+        put8(p4(-0x2BFF), 2);
+        return;
+    }
+    mem_and8(p4(-0x4000), 0xBF);
+    trail_start();
+    if (c->ccr & CC_N) return;
+    move_b(0, rd8(p2(-0x2F00)));
+    and_b(0, 0x80);
+    or_b(0, 3);
+    put8(p4(-0x2F00), c->d[0]);
+    put32m(p4(-0x3600), 0);
+    put16m(p4(-0x3300), 0x400);
+    put16m(p4(-0x33FE), 0x40);
+    companion_palette();
+    c->d[0] = 0; F_L(0);
+    call(0x7FC);
+    c->d[0] = set_w(c->d[0], rd16(TRAIL)); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 4, 16));
+    put16m(p4(-0x3800), c->d[0]);
+    c->d[0] = set_w(c->d[0], rd16(TRAIL + 2)); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], lsr_n(&c->ccr, c->d[0], 2, 16));
+    c->d[1] = 0; F_L(0);
+    move_b(1, rd8(p4(-0x34FD)));
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, c->d[1], c->d[0]));
+    put16m(p4(-0x3700), c->d[0]);
+    mem_and8(p4(-0x3FFE), 0xF7);
+    f_bit(rd8(p2(-0x3FFE)) >> 3 & 1);
+    if (rd8(p2(-0x3FFE)) & 8) mem_or8(p4(-0x3FFE), 8);
+    put16m(p4(-0x3D00), 0x1208);
+    c->d[0] = set_w(c->d[0], rd16(p4(-0x2600))); F_W(c->d[0]);
+    cmp_w(&c->ccr, rd16(0xFFFF9668u), c->d[0]);
+    if ((c->d[0] & 0xFFFF) != rd16(0xFFFF9668u)) put8(p4(-0x27FF), c->d[0]);
+    c->d[0] = 0; F_L(0);
+    put8(p4(-0x2800), 0);
+    put8(p4(-0x3100), 0);
+    put8(p4(-0x2EFF), 0);
+    put16m(p4(-0x37FE), 0);
+    put16m(p4(-0x36FE), 0);
+    put32m(p4(-0x3600), 0);
+    put16m(p4(-0x2E00), rd16(p4(-0x3800)));
+    put16m(p4(-0x2DFE), rd16(p4(-0x3700)));
+    put8(p4(-0x3100), rd8(p2(-0x3100)));
+    mem_or8(p4(-0x4000), 0x40);
+    mem_or8(p4(-0x2BFF), 0x80);
+    call(SET_ANIM);
+}
+/* $1021A: the trail's next state, or on along it */
+static void companion_step(void)
+{
+    if (companion_path()) return;
+    call(0xB44);
+    call(0x2ED4);
+}
+/* $101F2 (state 2): walking */
+static void companion_walk(void)
+{
+    if (!begun()) {
+        put16m(p4(-0x3600), 0);
+        c->d[0] = 0; F_L(0);
+        call(SET_ANIM);
+    }
+    if (companion_gone()) return;
+    if (companion_walk_chances()) return;
+    companion_step();
+}
+/* $1023C (state 4): running at the player's speed less $40, the way it faces */
+static void companion_run(void)
+{
+    if (!begun()) { c->d[0] = 2; F_L(2); call(SET_ANIM); }
+    if (companion_gone()) return;
+    if (companion_walk_chances()) return;
+    c->d[0] = set_w(c->d[0], rd16(0xFFFF9EF6u)); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 0x40, c->d[0]));
+    f_bit(rd8(p4(-0x3FFE)) >> 3 & 1);
+    if (rd8(p4(-0x3FFE)) & 8) c->d[0] = set_w(c->d[0], neg_w(&c->ccr, c->d[0]));
+    put16m(p4(-0x3600), c->d[0]);
+    call(0xB44);
+    call(0x2ED4);
+    companion_path();
+}
+/* $10328: in the air toward the trail's point; once there ($D802 frames), standing on it */
+static void companion_jumping(void)
+{
+    if (companion_fell()) return;
+    call(0xB44);
+    if (mem_sub_w(p4(-0x27FE), 1)) { call(0xAB4); return; }
+    put16m(p4(-0x3800), rd16(p4(-0x2700)));
+    put16m(p4(-0x3700), rd16(p4(-0x26FE)));
+    put16m(p4(-0x37FE), 0);
+    put16m(p4(-0x36FE), 0);
+    put32m(p4(-0x3600), 0);
+    put8(p4(-0x3100), 2);
+    mem_or8(p4(-0x2F00), 3);
+    put8(p4(-0x2BFF), 2);
+}
+/* $10296 (state 6): a jump to the trail's first point (on its slope, if any: $403C), its speeds
+ * and frames from the angle maths ($12B6), animation 4 */
+static void companion_jump(void)
+{
+    if (begun()) { companion_jumping(); return; }
+    mem_and8(p4(-0x2F00), 0x80);
+    mem_and8(p4(-0x3100), 0x75);
+    put16m(p4(-0x37FE), 0);
+    put16m(p4(-0x36FE), 0);
+    c->d[0] = set_w(c->d[0], rd16(TRAIL)); F_W(c->d[0]);
+    c->d[6] = set_w(c->d[6], c->d[0]); F_W(c->d[6]);
+    c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 4, 16));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, 8, c->d[0]));
+    put16m(p4(-0x2700), c->d[0]);
+    c->d[1] = set_w(c->d[1], rd16(TRAIL + 2)); F_W(c->d[1]);
+    c->d[7] = set_w(c->d[7], c->d[1]); F_W(c->d[7]);
+    c->d[1] = set_w(c->d[1], lsr_n(&c->ccr, c->d[1], 2, 16));
+    c->d[1] = set_w(c->d[1], sub_w(&c->ccr, 8, c->d[1]));
+    put16m(p4(-0x26FE), c->d[1]);
+    c->a[3] = 0xFFFF9754u;
+    call(0x30DA);
+    and_w(2, 0xF0);
+    if (c->d[2] & 0xFFFF) {
+        c->a[0] = 0x403C;
+        c->a[0] += sx(c->d[2]);
+        c->d[0] = 0xF; F_L(0xF);
+        c->d[0] = set_w(c->d[0], c->d[0] & rd16(p4(-0x2700))); F_W(c->d[0]);
+        move_b(0, rd8(c->a[0] + sx(c->d[0])));
+        c->d[0] = ext_w(c->d[0]); F_W(c->d[0]);
+        wr16(p4(-0x26FE), (uint16_t)add_w(&c->ccr, c->d[0] & 0xFFFF, rd16(p4(-0x26FE))));
+    }
+    c->d[0] = set_w(c->d[0], rd16(p4(-0x2700))); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, rd16(p4(-0x3800)), c->d[0]));
+    c->d[1] = set_w(c->d[1], rd16(p4(-0x26FE))); F_W(c->d[1]);
+    c->d[1] = set_w(c->d[1], sub_w(&c->ccr, rd16(p4(-0x3700)), c->d[1]));
+    call(0x12B6);
+    put16m(p4(-0x3600), c->d[2]);
+    put16m(p4(-0x35FE), c->d[3]);
+    put16m(p4(-0x27FE), c->d[5]);
+    c->d[6] = lsl_n(&c->ccr, c->d[6], 8, 32);
+    put16m(p4(-0x36FE), c->d[6]);
+    c->d[6] = swap_l(c->d[6]);
+    c->d[6] = ext_w(c->d[6]); F_W(c->d[6]);
+    wr16(p4(-0x3700), (uint16_t)add_w(&c->ccr, c->d[6] & 0xFFFF, rd16(p4(-0x3700))));
+    c->d[0] = 4; F_L(4);
+    call(SET_ANIM);
+}
+/* $10366 (kind 2, state 8): sitting, 1-8 drops (thing 0, every 32 frames); then waiting for a
+ * trail (state 12), the trail not kept */
+static void companion_sit(void)
+{
+    if (!begun()) {
+        wr8(p4(-0x27FF), 0xFF);
+        call(0x5D8);
+        and_w(0, 7);
+        c->d[0] = set_b(c->d[0], add_b(&c->ccr, 1, c->d[0]));
+        put8(p4(-0x2800), c->d[0]);
+        put32m(p4(-0x3600), 0);
+        c->d[0] = 6; F_L(6);
+        call(SET_ANIM);
+        return;
+    }
+    if (companion_gone()) return;
+    c->d[0] = 0x1F; F_L(0x1F);
+    c->d[0] = set_w(c->d[0], c->d[0] & rd16(0xFFFF965Au)); F_W(c->d[0]);
+    if (c->d[0] & 0xFFFF) return;
+    c->d[0] = 0; F_L(0);
+    c->d[1] = set_w(c->d[1], rd16(p4(-0x3800))); F_W(c->d[1]);
+    c->d[2] = set_w(c->d[2], rd16(p4(-0x3700))); F_W(c->d[2]);
+    call(0x1090C);
+    if (c->ccr & CC_N) return;
+    if (mem_dec8(p4(-0x2800))) return;
+    put8(p4(-0x2BFF), 0xC);
+    wr8(TRAIL_OFF, 0xFF);
+}
+/* $103B8 (kind 2, state 10): animation 2; walking ($AB8) to the edge at $9A8C, the way it faces;
+ * there, diving (state 18) */
+static void companion_edge(void)
+{
+    if (!begun()) {
+        c->d[0] = 2; F_L(2);
+        cmp_byte(rd8(p4(-0x3CFE)), c->d[0]);
+        if (rd8(p4(-0x3CFE)) != 2) call(SET_ANIM);
+    }
+    c->d[0] = set_w(c->d[0], rd16(0xFFFF9A8Cu)); F_W(c->d[0]);
+    f_bit(rd8(p4(-0x3FFE)) >> 3 & 1);
+    cmp_w(&c->ccr, rd16(p4(-0x3800)), c->d[0]);
+    if (!(rd8(p4(-0x3FFE)) & 8) ? (c->d[0] & 0xFFFF) > rd16(p4(-0x3800)) : (c->d[0] & 0xFFFF) < rd16(p4(-0x3800))) {
+        call(0xAB8);
+        return;
+    }
+    put16m(p4(-0x3800), c->d[0]);
+    put8(p4(-0x2BFF), 0x12);
+}
+/* $103F6 (kind 2, state 18): animation 8; at its splash ($C002 bit 1) $2C4E; once its
+ * animation is over, waiting for a trail (state 12) */
+static void companion_dive(void)
+{
+    if (!begun()) {
+        mem_and8(p4(-0x3FFE), 0xFD);
+        c->d[0] = 8; F_L(8);
+        call(SET_ANIM);
+        return;
+    }
+    if (mem_bclr(p4(-0x3FFE), 1)) { call(0x2C4E); return; }
+    F_B(rd8(p4(-0x3A00)));
+    if (rd8(p4(-0x3A00))) return;
+    put8(p4(-0x2BFF), 0xC);
+}
+/* $10424 (state 12): waiting until a trail can start; then walking */
+static void companion_wait(void)
+{
+    if (!begun()) { c->d[0] = 0; F_L(0); call(SET_ANIM); }
+    if (companion_gone()) return;
+    trail_start();
+    if (c->ccr & CC_N) return;
+    put8(p4(-0x2BFF), 2);
+}
+/* $10444 (kind 2, state 14): hopping at ($1074, $1034), turning every 4 frames, until -$2B00's
+ * thing ($A15C bit 4) is set: then a trail from $104FA, walking */
+static void companion_hop(void)
+{
+    if (!begun()) {
+        put16m(p4(-0x2800), 0x8FF);
+        companion_palette();
+        put16m(p4(-0x3800), 0x1074);
+        put16m(p4(-0x3700), 0x1034);
+        put32m(p4(-0x3600), 0);
+        put32m(p4(-0x3400), 0x40);
+        put32m(p4(-0x3300), 0x2000400);
+        put8(p4(-0x2F00), 3);
+        put16m(p4(-0x2100), rd16(p4(-0x3800)));
+        c->d[0] = 0; F_L(0);
+        call(0x7FC);
+        c->d[0] = 2; F_L(2);
+        call(SET_ANIM);
+        mem_or8(p4(-0x4000), 0x40);
+    }
+    c->a[3] = sx(rd16(p4(-0x2B00)));
+    f_bit(rd8(c->a[3] - 0x5EA4) >> 4 & 1);
+    if (rd8(c->a[3] - 0x5EA4) & 0x10) {
+        put16m(TRAIL_LEN, 0x12);
+        c->d[0] = 4; F_L(4);
+        c->a[0] = TRAIL;
+        c->a[1] = 0x104FA;
+        do {
+            uint32_t v = rd32(c->a[1]); c->a[1] += 4;
+            put32m(c->a[0], v); c->a[0] += 4;
+        } while (dbra(0));
+        put8(TRAIL_OFF, c->d[0]);
+        put8(p4(-0x2BFF), 2);
+        return;
+    }
+    c->d[0] = 0; F_L(0);
+    move_b(0, rd8(p4(-0x27FF)));
+    c->d[0] = set_b(c->d[0], add_b(&c->ccr, 1, c->d[0]));
+    cmp_byte(0xC, c->d[0]);
+    if ((c->d[0] & 0xFF) >= 0xC) { c->d[0] = 0; F_L(0); }
+    put8(p4(-0x27FF), c->d[0]);
+    move_b(0, rd8(0x1050E + sx(c->d[0])));
+    c->d[0] = ext_w(c->d[0]); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(p4(-0x2100)), c->d[0]));
+    put16m(p4(-0x3800), c->d[0]);
+    if (mem_dec8(p4(-0x2800))) return;
+    put8(p4(-0x2800), 4);
+    { uint8_t v = rd8(p4(-0x3FFE)); f_bit(v >> 3 & 1); wr8(p4(-0x3FFE), (uint8_t)(v ^ 8)); }   /* bchg */
+}
+/* $1051A (kind 2, state 16): begun once: its palette, animation 0 at once, on its spot (-$2100,
+ * -$20FE), drawn */
+static void companion_place(void)
+{
+    if (begun()) return;
+    companion_palette();
+    c->d[0] = 0; F_L(0);
+    call(0x7FC);
+    put16m(p4(-0x3800), rd16(p4(-0x2100)));
+    c->d[0] = 0; F_L(0);
+    move_b(0, rd8(p4(-0x34FD)));
+    c->d[0] = set_w(c->d[0], neg_w(&c->ccr, c->d[0]));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(p4(-0x20FE)), c->d[0]));
+    put16m(p4(-0x3700), c->d[0]);
+    put8(p4(-0x2F00), 3);
+    mem_or8(p4(-0x4000), 0x40);
+}
+/* $100F2: kind 2: the trail kept, then its state (the table at $1010A) */
+static void companion_kind_2(void)
+{
+    trail_record();
+    c->a[2] = sx(rd16(0xFFFF9EEEu));
+    c->d[0] = 0x7F; F_L(0x7F);
+    c->d[0] = set_b(c->d[0], c->d[0] & rd8(p4(-0x2BFF))); F_B(c->d[0]);
+    c->a[0] = 0x1010A; c->a[0] += sx(rd16(c->a[0] + sx(c->d[0])));
+    switch (c->a[0]) {
+    case 0x1011E: companion_enter(); break;
+    case 0x101F2: companion_walk(); break;
+    case 0x1023C: companion_run(); break;
+    case 0x10296: companion_jump(); break;
+    case 0x10366: companion_sit(); break;
+    case 0x103B8: companion_edge(); break;
+    case 0x10424: companion_wait(); break;
+    case 0x10444: companion_hop(); break;
+    case 0x1051A: companion_place(); break;
+    case 0x103F6: companion_dive(); break;
+    default: call(c->a[0]); break;                  /* past the table: as the original jumps */
+    }
+}
+/* $FFE6: kind 6: the trail kept, then its state (the table at $FFFE) */
+static void companion_kind_6(void)
+{
+    trail_record();
+    c->a[2] = sx(rd16(0xFFFF9EEEu));
+    c->d[0] = 0x7F; F_L(0x7F);
+    c->d[0] = set_b(c->d[0], c->d[0] & rd8(p4(-0x2BFF))); F_B(c->d[0]);
+    c->a[0] = 0xFFFE; c->a[0] += sx(rd16(c->a[0] + sx(c->d[0])));
+    switch (c->a[0]) {
+    case 0x1011E: companion_enter(); break;
+    case 0x101F2: companion_walk(); break;
+    case 0x1023C: companion_run(); break;
+    case 0x10296: companion_jump(); break;
+    case 0x10424: companion_wait(); break;
+    default: call(c->a[0]); break;                  /* $1000C, $1005C: the original's */
+    }
+}
+
+ENTRY(CompanionKind2, companion_kind_2)            /* $100F2 */
+ENTRY(CompanionKind6, companion_kind_6)            /* $FFE6 */
+ENTRY(CompanionEnter, companion_enter)             /* $1011E */
+ENTRY(CompanionWalk, companion_walk)               /* $101F2 */
+ENTRY(CompanionStep, companion_step)               /* $1021A */
+ENTRY(CompanionRun, companion_run)                 /* $1023C */
+ENTRY(CompanionJump, companion_jump)               /* $10296 */
+ENTRY(CompanionJumping, companion_jumping)         /* $10328 */
+ENTRY(CompanionSit, companion_sit)                 /* $10366 */
+ENTRY(CompanionEdge, companion_edge)               /* $103B8 */
+ENTRY(CompanionDive, companion_dive)               /* $103F6 */
+ENTRY(CompanionWait, companion_wait)               /* $10424 */
+ENTRY(CompanionHop, companion_hop)                 /* $10444 */
+ENTRY(CompanionPlace, companion_place)             /* $1051A */
+ENTRY(CompanionTrailStart, trail_start)            /* $107FC */
+ENTRY(CompanionTrail, trail_record)                /* $10844 */
+/* these return from their callers when they act */
+void CompanionChanceSit(Cpu *cpu) { c = cpu; if (companion_chance_sit()) c->a[7] += 4; c->ret = 0; }   /* $10550 */
+void CompanionSpit(Cpu *cpu)      { c = cpu; if (companion_spit()) c->a[7] += 4; c->ret = 0; }         /* $10572 */
+void CompanionFell(Cpu *cpu)      { c = cpu; if (companion_fell()) c->a[7] += 4; c->ret = 0; }         /* $108B8 */

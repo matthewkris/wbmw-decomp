@@ -2619,6 +2619,37 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 states, 0 mismatches. Self-test caught 100 in 100 for the three that are fuzzed. Replace mode:
 thirteen runs, no problems.
 
+#### The player, batch T41: the companion each frame, kinds 2 and 6 (2026-10-14)
+
+* In `port/rooms.c`: kind 2 walks after the player along a trail of its cells.
+  * The trail (`$9F34`: up to 15 longs, `$9F74` the bytes used, `$9F76` negative while it is not
+    kept) is started by `$107FC` and kept each frame by `$10844`. Both work only while the player
+    is on the ground and not in states 9, 13 or 15.
+  * Kind 2's states:
+    * `$1011E`: comes in at the trail's start.
+    * `$101F2`, `$1023C`: walks and runs.
+    * `$10296`, `$10328`: jumps to the trail's next point, with the slope there (`$403C`) and the
+      angle maths (`$12B6`).
+    * `$10424`: waits for a trail.
+    * `$10366`: sits and drops 1-8 things.
+    * `$103B8`, `$103F6`: walks to an edge and dives.
+    * `$10444`, `$1051A`: hops on the spot until a thing is set, and stands on its spot.
+  * Kind 6 shares five of these states. Its own two (`$1000C`, `$1005C`) are not traced code and
+    stay the original's.
+  * `$10550` (a chance to sit), `$10572` (a shot, item `$20E`, at an enemy within `$18` by
+    `$30`) and `$108B8` (fallen below the view) return from their callers when they act, as
+    `$108A2` does. The trail's path (`$1061E`) stays the original's.
+  * `$FA6C` now runs kinds 2 and 6 in C. `$FFE6` and `$100F2` are no longer translator roots.
+* Fuzz set-ups: kinds 2 and 6 with their tables' states, a trail about the player's cell, the
+  player on the ground or not, the companion on the screen, the frame count's every-32 chances,
+  enemies near enough to shoot at, and the item slots full.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(46 runs, all complete). Play runs most of kind 2. 600,000 fuzz cases from six states,
+0 mismatches, every instruction covered. Self-test caught 100 in 100 for eighteen. `$10572` and
+`$108B8` caught every case they ran, then ran away: a sabotaged return from the caller pops a
+wrong address. Replace mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
