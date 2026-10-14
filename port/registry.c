@@ -100,6 +100,7 @@ void RoomObjects(Cpu *), RoomObjNone(Cpu *), RoomObjSparkle(Cpu *), RoomObjMover
 void StartEntry(Cpu *), GameRestart(Cpu *), RoomEnter(Cpu *), ArrivePlain(Cpu *), NextRoom(Cpu *), GameOver(Cpu *), RoomMessage(Cpu *);
 void RoomPlayer(Cpu *), PlayerPlace(Cpu *), PlayerMoved(Cpu *), PlayerPlaceRestart(Cpu *), PlayerPlaceStill(Cpu *), PlayerReset(Cpu *);
 void CompanionRoom(Cpu *), CompanionGfx0(Cpu *), CompanionGfx6(Cpu *), CompanionGfx4(Cpu *), CompanionGfx(Cpu *), CompanionRoom2(Cpu *), CompanionAt(Cpu *), CompanionJoin(Cpu *), CompanionHide(Cpu *), CompanionPalette(Cpu *), CompanionAgain(Cpu *), CompanionMake(Cpu *), CompanionNewA(Cpu *), CompanionNewB(Cpu *);
+void CompanionFrame(Cpu *), CompanionKind4(Cpu *), CompanionShoot(Cpu *), CompanionAppear4(Cpu *), CompanionAppeared4(Cpu *), CompanionKind0(Cpu *), CompanionAppear0(Cpu *), CompanionRest(Cpu *), CompanionOverPlayer(Cpu *), CompanionShown(Cpu *), CompanionFollow(Cpu *), CompanionReturn(Cpu *), CompanionDrop(Cpu *), CompanionGrab(Cpu *), CompanionChase(Cpu *), CompanionRide(Cpu *), CompanionChanceAway(Cpu *), CompanionChanceEnemy(Cpu *), CompanionChanceArea(Cpu *), CompanionNear(Cpu *), CompanionGone(Cpu *);
 void Looks(Cpu *), LooksExtra(Cpu *), LooksBlock(Cpu *), LooksBody(Cpu *), LooksSword(Cpu *), LooksShield(Cpu *), EquipChange(Cpu *);
 void HudPanel(Cpu *), GoldLabel(Cpu *), ThreeLabels(Cpu *), DigitsOut(Cpu *), ItemsChoose(Cpu *), MagicChoose(Cpu *), SlotChoose(Cpu *), ActionToSlot(Cpu *),
      ItemToSlot(Cpu *), WornBlink(Cpu *), StatusFadeIn(Cpu *), StatusFadeOut(Cpu *), StatusWait(Cpu *);
@@ -681,6 +682,27 @@ const PortRoutine port_routines[] = {
     {0x00F9C8, 0x00FA20, "CompanionMake", CompanionMake, CT_ALL},
     {0x00FA20, 0x00FA42, "CompanionNewA", CompanionNewA, CT_ALL},
     {0x00FA42, 0x00FA6C, "CompanionNewB", CompanionNewB, CT_ALL},
+    {0x00FA6C, 0x00FA8E, "CompanionFrame", CompanionFrame, CT_SP},   /* rooms.c: the companion each frame, kinds 0 and 4; as the routines they call */
+    {0x00FA8E, 0x00FAAE, "CompanionKind4", CompanionKind4, CT_SP},
+    {0x00FAAE, 0x00FB60, "CompanionShoot", CompanionShoot, CT_SP},
+    {0x00FB60, 0x00FBC8, "CompanionAppear4", CompanionAppear4, CT_SP},
+    {0x00FBC8, 0x00FBE2, "CompanionAppeared4", CompanionAppeared4, CT_SP},
+    {0x00FBE2, 0x00FC02, "CompanionKind0", CompanionKind0, CT_SP},
+    {0x00FC02, 0x00FC30, "CompanionAppear0", CompanionAppear0, CT_SP},
+    {0x00FC30, 0x00FC52, "CompanionRest", CompanionRest, CT_SP},
+    {0x00FC52, 0x00FC6A, "CompanionOverPlayer", CompanionOverPlayer, CT_SP},
+    {0x00FC6A, 0x00FC86, "CompanionShown", CompanionShown, CT_SP},
+    {0x00FC86, 0x00FCF4, "CompanionFollow", CompanionFollow, CT_SP},
+    {0x00FCF4, 0x00FDAC, "CompanionReturn", CompanionReturn, CT_SP},
+    {0x00FDAC, 0x00FDF4, "CompanionDrop", CompanionDrop, CT_SP},
+    {0x00FDF4, 0x00FE2A, "CompanionGrab", CompanionGrab, CT_SP},
+    {0x00FE2A, 0x00FED0, "CompanionChase", CompanionChase, CT_SP},
+    {0x00FED0, 0x00FF32, "CompanionRide", CompanionRide, CT_SP},
+    {0x00FF32, 0x00FF56, "CompanionChanceAway", CompanionChanceAway, CT_SP},
+    {0x00FF56, 0x00FF96, "CompanionChanceEnemy", CompanionChanceEnemy, CT_SP},
+    {0x00FF96, 0x00FFC6, "CompanionChanceArea", CompanionChanceArea, CT_SP},
+    {0x00FFC6, 0x00FFE6, "CompanionNear", CompanionNear, CT_SP},
+    {0x0108A2, 0x0108B8, "CompanionGone", CompanionGone, CT_SP},   /* returns from its caller when it resets the state */
     {0x00F5FC, 0x00F668, "Looks", Looks, CT_SP},                /* as the graphics routines they end with */
     {0x00F668, 0x00F670, "LooksExtra", LooksExtra, CT_SP},
     {0x00F670, 0x00F698, "LooksBlock", LooksBlock, CT_SP},

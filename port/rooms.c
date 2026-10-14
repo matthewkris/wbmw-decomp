@@ -7449,3 +7449,509 @@ ENTRY(CompanionAgain, companion_again)     /* $F9C0 */
 ENTRY(CompanionMake, companion_make)       /* $F9C8 */
 ENTRY(CompanionNewA, companion_new_a)      /* $FA20 */
 ENTRY(CompanionNewB, companion_new_b)      /* $FA42 */
+
+/* ---- batch T39: the companion each frame (kinds 0 and 4) ----
+ * Each frame ($9068) $FA6C runs the companion's state ($D401: bit 7 set once it has begun; the
+ * state in the rest) for its kind. Kinds 0 and 4 share resting on the player ($FC30), following
+ * ($FC86) and catching up ($FCF4). Kind 4 also shoots at an enemy ($FAAE) and appears ($FB60);
+ * kind 0 drops a thing ($FDAC), rides an enemy ($FDF4) and appears ($FC02). Kinds 2 and 6 are
+ * still the original's ($100F2, $FFE6). In the states a4 is the companion, a2 the player. */
+
+static int mem_bset(uint32_t a, int bit) { uint8_t v = rd8(a); f_bit(v >> bit & 1); wr8(a, (uint8_t)(v | 1 << bit)); return v >> bit & 1; }
+static int begun(void) { return mem_bset(p4(-0x2BFF), 7); }   /* bset #7,-$2BFF(a4) */
+static int cc_ls(void) { return (c->ccr & (CC_C | CC_Z)) != 0; }
+
+/* $108A2: every 8 frames, if far off the screen ($BEE: negative), the companion's state is reset
+ * and its caller returns at once (addq #4,a7: the caller's frame dropped). Returns 1 if so. */
+static int companion_gone(void)
+{
+    c->d[0] = 7; F_L(7);
+    c->d[0] = set_w(c->d[0], c->d[0] & rd16(0xFFFF965Au)); F_W(c->d[0]);
+    if (c->d[0] & 0xFFFF) return 0;
+    call(0xBEE);
+    if (!(c->ccr & CC_N)) return 0;
+    put8(p4(-0x2BFF), 0);
+    return 1;
+}
+
+/* -$3600 and -$35FE (the speeds) lose a sixteenth, by register r */
+static void companion_drag(int r)
+{
+    c->d[r] = set_w(c->d[r], rd16(p4(-0x3600))); F_W(c->d[r]);
+    c->d[r] = set_w(c->d[r], asr_n(&c->ccr, c->d[r], 4, 16));
+    wr16(p4(-0x3600), (uint16_t)sub_w(&c->ccr, c->d[r] & 0xFFFF, rd16(p4(-0x3600))));
+    c->d[r] = set_w(c->d[r], rd16(p4(-0x35FE))); F_W(c->d[r]);
+    c->d[r] = set_w(c->d[r], asr_n(&c->ccr, c->d[r], 4, 16));
+    wr16(p4(-0x35FE), (uint16_t)sub_w(&c->ccr, c->d[r] & 0xFFFF, rd16(p4(-0x35FE))));
+}
+/* $FFC6: is the player (a2, $18 up) within reach ($108DC: higher if not) */
+static void companion_near(void)
+{
+    c->d[0] = set_w(c->d[0], rd16(p2(-0x3800))); F_W(c->d[0]);
+    c->d[1] = 0; F_L(0);
+    move_b(1, rd8(p2(-0x34FE)));
+    c->d[1] = set_w(c->d[1], add_w(&c->ccr, 0x10, c->d[1]));
+    c->d[2] = set_w(c->d[2], rd16(p2(-0x3700))); F_W(c->d[2]);
+    c->d[2] = set_w(c->d[2], sub_w(&c->ccr, 0x18, c->d[2]));
+    c->d[3] = 0; F_L(0);
+    move_b(3, rd8(p4(-0x34FD)));
+    call(0x108DC);
+}
+/* $FF96: on screen and 8 or more columns from its area ($A148): 1 in 32 to go there (state 6) */
+static void companion_chance_area(void)
+{
+    f_bit(rd8(p4(-0x4000)) & 1);
+    if (!(rd8(p4(-0x4000)) & 1)) return;
+    c->d[0] = set_w(c->d[0], rd16(0xFFFFA148u)); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, rd16(p4(-0x2600)), c->d[0]));
+    if (c->d[0] & 0x8000) c->d[0] = set_w(c->d[0], neg_w(&c->ccr, c->d[0]));
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 8, c->d[0]));
+    if (c->d[0] & 0x8000) return;
+    call(0x5D8);
+    and_w(0, 0x1F);
+    if (c->d[0] & 0xFFFF) return;
+    put16m(p4(-0x2600), rd16(0xFFFFA148u));
+    put8(p4(-0x2BFF), 6);
+}
+/* $FF56: every 16 frames, 1 in 4, one of the 16 enemies at random: if in use, drawn, on screen
+ * and free, the companion goes for it (state 8) */
+static void companion_chance_enemy(void)
+{
+    c->d[0] = 0xF; F_L(0xF);
+    c->d[0] = set_w(c->d[0], c->d[0] & rd16(0xFFFF965Au)); F_W(c->d[0]);
+    if (c->d[0] & 0xFFFF) return;
+    call(0x5D8);
+    c->d[1] = set_w(c->d[1], c->d[0]); F_W(c->d[1]);
+    and_b(1, 0x30);
+    if (c->d[1] & 0xFF) return;
+    and_w(0, 0xF);
+    c->d[0] = set_w(c->d[0], asl_n(&c->ccr, c->d[0], 2, 16));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(0xFFFFA11Au), c->d[0]));
+    c->a[0] = sx(c->d[0]);
+    move_b(1, rd8(p0(-0x4000)));
+    and_b(1, 0xC1);
+    cmp_byte(0xC1, c->d[1]);
+    if ((c->d[1] & 0xFF) != 0xC1) return;
+    F_B(rd8(p0(-0x2BFE)));
+    if (rd8(p0(-0x2BFE))) return;
+    put16m(p4(-0x27FE), c->d[0]);
+    put8(p4(-0x2BFF), 8);
+}
+/* $FF32: every 8 frames, 1 in 128, if $11B4A finds a target: state 6 */
+static void companion_chance_away(void)
+{
+    c->d[0] = 7; F_L(7);
+    c->d[0] = set_w(c->d[0], c->d[0] & rd16(0xFFFF965Au)); F_W(c->d[0]);
+    if (c->d[0] & 0xFFFF) return;
+    call(0x5D8);
+    and_w(0, 0x7F);
+    if (c->d[0] & 0xFFFF) return;
+    c->a[7] -= 2; wr16(c->a[7], (uint16_t)c->a[2]);
+    call(0x11B4A);
+    c->a[2] = sx(rd16(c->a[7])); c->a[7] += 2;
+    if (c->ccr & CC_N) return;
+    put8(p4(-0x2BFF), 6);
+}
+/* the chances while following: with a kind ($D402) $FF32, else $FF56 and $FF96 */
+static void companion_chances(void)
+{
+    F_W(rd16(p4(-0x2BFE)));
+    if (rd16(p4(-0x2BFE))) companion_chance_away();
+    else { companion_chance_enemy(); companion_chance_area(); }
+}
+/* $FC6A: once its animation is over: following (state 2), its palette, animation 0 */
+static void companion_shown(void)
+{
+    F_B(rd8(p4(-0x3A00)));
+    if (rd8(p4(-0x3A00))) return;
+    put8(p4(-0x2BFF), 2);
+    put16m(p4(-0x3DFE), 0);
+    companion_palette();
+    c->d[0] = 0; F_L(0);
+    call(SET_ANIM);
+}
+/* $FC52: on the player's head; then as $FC6A */
+static void companion_over_player(void)
+{
+    put16m(p4(-0x3800), rd16(p2(-0x3800)));
+    c->d[0] = 0; F_L(0);
+    move_b(0, rd8(p2(-0x34FD)));
+    c->d[0] = set_w(c->d[0], neg_w(&c->ccr, c->d[0]));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(p2(-0x3700)), c->d[0]));
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 4, c->d[0]));
+    put16m(p4(-0x3700), c->d[0]);
+    companion_shown();
+}
+/* $FC30 (state 0): begun, still, its look $1208, drawn on the player's head */
+static void companion_rest(void)
+{
+    if (begun()) { companion_shown(); return; }
+    put32m(p4(-0x3600), 0);
+    put32m(p4(-0x3400), 0);
+    put16m(p4(-0x3D00), 0x1208);
+    c->d[0] = 0; F_L(0);
+    call(0x7FC);
+    mem_or8(p4(-0x4000), 0x40);
+    companion_over_player();
+}
+/* $FC02 (kind 0, state 10): begun, sound $43, the look $402's ($4910), drawn on the player's head */
+static void companion_appear_0(void)
+{
+    if (begun()) { companion_shown(); return; }
+    c->d[0] = 0x43; F_L(0x43);
+    call(QUEUE_SOUND);
+    c->d[1] = set_w(c->d[1], 0x402); F_W(0x402);
+    call(0x4910);
+    put16m(p4(-0x3DFE), rd16(c->a[0]));
+    put16m(p4(-0x3D00), 0x1002);
+    c->d[0] = 4; F_L(4);
+    call(0x7FC);
+    mem_or8(p4(-0x4000), 0x40);
+    companion_over_player();
+}
+/* $FC86 (state 2): following the player, $18 above it; out of reach: catching up (state 4) */
+static void companion_follow(void)
+{
+    if (!begun()) {
+        companion_palette();
+        put16m(p4(-0x32FE), 0x40);
+        c->d[0] = 0; F_L(0);
+        call(SET_ANIM);
+        put8(p4(-0x2F00), 3);
+    }
+    companion_chances();
+    put16m(p4(-0x3300), rd16(p2(-0x3300)));
+    c->d[0] = 7; F_L(7);
+    c->d[0] = set_w(c->d[0], c->d[0] & rd16(0xFFFF965Au)); F_W(c->d[0]);
+    if (!(c->d[0] & 0xFFFF)) call(0x44DA);
+    c->d[0] = set_w(c->d[0], rd16(p2(-0x3700))); F_W(c->d[0]);
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 0x18, c->d[0]));
+    c->d[1] = 2; F_L(2);
+    c->d[2] = 0x40; F_L(0x40);
+    call(0x4274);
+    call(0xB44);
+    companion_near();
+    if (!cc_ls()) put8(p4(-0x2BFF), 4);
+    c->d[0] = 0x20; F_L(0x20);
+    call(0xB92);
+    call(0xAB4);
+}
+/* $FCF4 (state 4): flying to the player, aimed every other frame; within reach, following */
+static void companion_return(void)
+{
+    if (!begun()) {
+        c->d[0] = 0; F_L(0);
+        call(SET_ANIM);
+        put16m(p4(-0x3300), rd16(p2(-0x3300)));
+        put16m(p4(-0x32FE), 0x200);
+        put8(p4(-0x2800), 8);
+        put8(p4(-0x27FF), 4);
+        mem_and8(p4(-0x2F00), 0xFC);
+    }
+    put32m(p4(-0x3400), 0);
+    call(0x44DA);
+    if (!mem_dec8(p4(-0x2800))) {
+        put8(p4(-0x2800), 1);
+        companion_near();
+        if (cc_ls()) { put8(p4(-0x2BFF), 2); return; }
+    }
+    if (companion_gone()) return;
+    companion_chances();
+    if (!mem_dec8(p4(-0x27FF))) {
+        put8(p4(-0x27FF), 2);
+        c->d[0] = set_w(c->d[0], rd16(p2(-0x3800))); F_W(c->d[0]);
+        c->d[0] = set_w(c->d[0], sub_w(&c->ccr, rd16(p4(-0x3800)), c->d[0]));
+        c->d[1] = 0; F_L(0);
+        c->d[1] = set_w(c->d[1], rd16(p2(-0x3700))); F_W(c->d[1]);
+        c->d[1] = set_w(c->d[1], sub_w(&c->ccr, 0x18, c->d[1]));
+        c->d[1] = set_w(c->d[1], sub_w(&c->ccr, rd16(p4(-0x3700)), c->d[1]));
+        call(0x109C);
+        c->d[4] = 0x40; F_L(0x40);
+        call(0xFC0);
+        put16m(p4(-0x3400), c->d[0]);
+        put16m(p4(-0x33FE), c->d[5]);
+    }
+    companion_drag(0);
+    call(0xB42);
+    call(0xAB4);
+}
+/* $FAAE (kind 4, states 6 and 8): begun, 2-5 shots; every 8 frames on screen, at an enemy
+ * ($11B0E) a shot (item $214) aimed at it, animation 2; it hovers at its height meanwhile, and
+ * after the last shot catches up (state 4) */
+static void companion_shoot(void)
+{
+    if (!begun()) {
+        put16m(p4(-0x20FE), rd16(p4(-0x3700)));
+        put16m(p4(-0x32FE), 0x40);
+        put8(p4(-0x2F00), 3);
+        put8(p4(-0x2800), 0x1E);
+        call(0x5D8);
+        and_b(0, 3);
+        c->d[0] = set_b(c->d[0], add_b(&c->ccr, 2, c->d[0]));
+        put8(p4(-0x27FF), c->d[0]);
+        put16m(p4(-0x3600), 0);
+        put8(p4(-0x25FD), 0);
+    }
+    F_B(rd8(p4(-0x2800)));
+    if (rd8(p4(-0x2800)) && !mem_dec8(p4(-0x2800))) {
+        f_bit(rd8(p4(-0x4000)) & 1);
+        if (!(rd8(p4(-0x4000)) & 1)) goto done;
+        call(0x11B0E);
+        if (c->ccr & CC_N) goto done;
+        c->a[7] -= 2; wr16(c->a[7], (uint16_t)c->d[2]);
+        c->d[0] = set_w(c->d[0], 0x214); F_W(0x214);
+        c->d[1] = set_w(c->d[1], rd16(p4(-0x3800))); F_W(c->d[1]);
+        c->d[2] = set_w(c->d[2], rd16(p4(-0x3700))); F_W(c->d[2]);
+        call(0x1090C);
+        if (!(c->ccr & CC_N)) {
+            c->d[2] = set_w(c->d[2], rd16(c->a[7])); c->a[7] += 2; F_W(c->d[2]);
+            put16m(p0(-0x2CFE), c->d[2]);
+            c->a[2] = sx(c->d[2]);
+            call(0x44DA);
+            c->d[0] = 2; F_L(2);
+            call(SET_ANIM);
+        } else { c->a[7] += 2; goto done; }
+    }
+    c->d[0] = set_w(c->d[0], rd16(p4(-0x20FE))); F_W(c->d[0]);
+    c->d[1] = 8; F_L(8);
+    c->d[2] = 0x10; F_L(0x10);
+    call(0x4274);
+    call(0xB44);
+    call(0xAD6);
+    F_B(rd8(p4(-0x25FD)));
+    if (!(rd8(p4(-0x25FD)) & 0x80)) return;
+    c->d[0] = 0; F_L(0);
+    call(SET_ANIM);
+    put8(p4(-0x2800), 8);
+    put8(p4(-0x25FD), 0);
+    if (mem_dec8(p4(-0x27FF))) return;
+done:
+    put8(p4(-0x2BFF), 4);
+}
+/* $FBC8: once its animation is over, following (state 2) */
+static void companion_appeared_4(void)
+{
+    F_B(rd8(p4(-0x3A00)));
+    if (rd8(p4(-0x3A00))) return;
+    put16m(p4(-0x3DFE), 0);
+    put8(p4(-0x2BFF), 2);
+    companion_palette();
+    c->d[0] = 0; F_L(0);
+    call(SET_ANIM);
+}
+/* $FB60 (kind 4, state 10): begun, the look $462's ($4910), facing as the player, beside it */
+static void companion_appear_4(void)
+{
+    if (begun()) { companion_appeared_4(); return; }
+    c->d[1] = set_w(c->d[1], 0x462); F_W(0x462);
+    call(0x4910);
+    put16m(p4(-0x3DFE), rd16(c->a[0]));
+    put16m(p4(-0x3D00), 0x1616);
+    c->d[0] = 0; F_L(0);
+    call(0x7FC);
+    c->a[2] = sx(rd16(0xFFFF9EEEu));
+    mem_or8(p4(-0x3FFE), 8);
+    c->d[0] = 0; F_L(0);
+    move_b(0, rd8(p4(-0x34FE)));
+    f_bit(rd8(p2(-0x3FFE)) >> 3 & 1);
+    if (rd8(p2(-0x3FFE)) & 8) {
+        c->d[0] = set_w(c->d[0], neg_w(&c->ccr, c->d[0]));
+        mem_and8(p4(-0x3FFE), 0xF7);
+    }
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(p2(-0x3800)), c->d[0]));
+    put16m(p4(-0x3800), c->d[0]);
+    c->d[0] = 0; F_L(0);
+    move_b(0, rd8(p2(-0x34FD)));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(p2(-0x3700)), c->d[0]));
+    c->d[1] = 0; F_L(0);
+    move_b(1, rd8(p4(-0x34FD)));
+    c->d[1] = set_w(c->d[1], neg_w(&c->ccr, c->d[1]));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[1], c->d[0]));
+    put16m(p4(-0x3700), c->d[0]);
+    mem_or8(p4(-0x4000), 0x40);
+}
+/* $FDAC (kind 0, state 6): begun, sound $49, animation 2 at once; turning; once its animation is
+ * over, following, and thing $18 dropped $C in front ($10910) */
+static void companion_drop(void)
+{
+    if (!begun()) {
+        c->d[0] = 0x49; F_L(0x49);
+        call(QUEUE_SOUND);
+        c->d[0] = 2; F_L(2);
+        call(0x7FC);
+    }
+    c->d[0] = 0x10; F_L(0x10);
+    call(0xB92);
+    c->d[0] = 0x10; F_L(0x10);
+    call(0xBAC);
+    F_B(rd8(p4(-0x3A00)));
+    if (rd8(p4(-0x3A00))) return;
+    put8(p4(-0x2BFF), 2);
+    c->d[1] = 0xC; F_L(0xC);
+    f_bit(rd8(p4(-0x3FFE)) >> 3 & 1);
+    if (rd8(p4(-0x3FFE)) & 8) c->d[1] = set_w(c->d[1], neg_w(&c->ccr, c->d[1]));
+    c->d[1] = set_w(c->d[1], add_w(&c->ccr, rd16(p4(-0x3800)), c->d[1]));
+    c->d[2] = set_w(c->d[2], rd16(p4(-0x3700))); F_W(c->d[2]);
+    c->d[0] = 0x18; F_L(0x18);
+    call(0x10910);
+}
+/* $FE2A: flying to the enemy (a2), aimed every 4 frames; once there, riding it */
+static void companion_chase(void)
+{
+    if (!mem_bset(p4(-0x31FF), 7)) put8(p4(-0x27FF), 4);
+    F_B(rd8(p2(-0x4000)));
+    if (!(rd8(p2(-0x4000)) & 0x80)) { put8(p4(-0x2BFF), 4); return; }
+    call(0x44DA);
+    c->d[0] = set_w(c->d[0], rd16(p2(-0x3800))); F_W(c->d[0]);
+    c->d[1] = 0; F_L(0);
+    move_b(1, rd8(p2(-0x34FE)));
+    c->d[1] = set_w(c->d[1], lsr_n(&c->ccr, c->d[1], 1, 16));
+    c->d[3] = 6; F_L(6);
+    c->d[2] = 0; F_L(0);
+    move_b(2, rd8(p2(-0x34FD)));
+    c->d[2] = set_b(c->d[2], add_b(&c->ccr, rd8(p4(-0x34FD)), c->d[2]));
+    c->d[2] = set_w(c->d[2], neg_w(&c->ccr, c->d[2]));
+    c->d[2] = set_w(c->d[2], add_w(&c->ccr, rd16(p2(-0x3700)), c->d[2]));
+    call(0x108DC);
+    if (cc_ls()) { put8(p4(-0x31FF), 2); return; }
+    if (!mem_dec8(p4(-0x27FF))) {
+        put8(p4(-0x27FF), 4);
+        c->d[0] = set_w(c->d[0], rd16(p2(-0x3800))); F_W(c->d[0]);
+        c->d[0] = set_w(c->d[0], sub_w(&c->ccr, rd16(p4(-0x3800)), c->d[0]));
+        c->d[1] = 0; F_L(0);
+        move_b(1, rd8(p2(-0x34FD)));
+        c->d[1] = set_b(c->d[1], add_b(&c->ccr, rd8(p4(-0x34FD)), c->d[1]));
+        c->d[1] = set_w(c->d[1], neg_w(&c->ccr, c->d[1]));
+        c->d[1] = set_w(c->d[1], add_w(&c->ccr, rd16(p2(-0x3700)), c->d[1]));
+        c->d[1] = set_w(c->d[1], sub_w(&c->ccr, rd16(p4(-0x3700)), c->d[1]));
+        call(0x109C);
+        c->d[4] = set_w(c->d[4], 0x80); F_W(0x80);
+        call(0xFC0);
+        put16m(p4(-0x3400), c->d[0]);
+        put16m(p4(-0x33FE), c->d[5]);
+        call(0xB42);
+    }
+    companion_drag(1);
+    call(0xAB4);
+}
+/* $FED0: riding the enemy (a2) for 180 frames while it is in use, free and alive; then catching
+ * up (state 4) */
+static void companion_ride(void)
+{
+    if (!mem_bset(p4(-0x31FF), 7)) {
+        c->d[0] = 0; F_L(0);
+        put32m(p4(-0x3400), 0);
+        put32m(p4(-0x3600), 0);
+        put16m(p4(-0x32FE), 0x40);
+        put8(p4(-0x2800), 0xB4);
+        c->d[0] = 4; F_L(4);
+        call(SET_ANIM);
+    }
+    F_B(rd8(p2(-0x4000)));
+    if (rd8(p2(-0x4000)) & 0x80) {
+        F_B(rd8(p2(-0x2BFE)));
+        if (!rd8(p2(-0x2BFE))) {
+            F_W(rd16(p2(-0x2600)));
+            if (rd16(p2(-0x2600))) {
+                call(0x44DA);
+                put16m(p4(-0x3800), rd16(p2(-0x3800)));
+                c->d[0] = 0; F_L(0);
+                move_b(0, rd8(p2(-0x34FD)));
+                c->d[0] = set_b(c->d[0], add_b(&c->ccr, rd8(p4(-0x34FD)), c->d[0]));
+                c->d[0] = set_w(c->d[0], neg_w(&c->ccr, c->d[0]));
+                c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(p2(-0x3700)), c->d[0]));
+                put16m(p4(-0x3700), c->d[0]);
+                if (mem_dec8(p4(-0x2800))) return;
+            }
+        }
+    }
+    put8(p4(-0x2BFF), 4);
+}
+/* $FDF4 (kind 0, state 8): begun, step 0, fast; the enemy it goes for (-$27FE) in a2: flying to
+ * it ($FE2A) or riding it ($FED0) */
+static void companion_grab(void)
+{
+    if (!begun()) {
+        put8(p4(-0x31FF), 0);
+        put16m(p4(-0x3300), 0x300);
+        put16m(p4(-0x32FE), 0x300);
+    }
+    if (companion_gone()) return;
+    c->a[2] = sx(rd16(p4(-0x27FE)));
+    c->d[0] = 0; F_L(0);
+    c->d[0] = 0x7F; F_L(0x7F);
+    c->d[0] = set_b(c->d[0], c->d[0] & rd8(p4(-0x31FF))); F_B(c->d[0]);
+    c->a[0] = 0xFE26; c->a[0] += sx(rd16(c->a[0] + sx(c->d[0])));
+    if (c->a[0] == 0xFE2A) companion_chase();
+    else if (c->a[0] == 0xFED0) companion_ride();
+    else call(c->a[0]);                             /* past the table: as the original jumps */
+}
+/* $FA8E: kind 4's state (the table at $FAA2) */
+static void companion_kind_4(void)
+{
+    c->a[2] = sx(rd16(0xFFFF9EEEu));
+    c->d[0] = 0x7F; F_L(0x7F);
+    c->d[0] = set_b(c->d[0], c->d[0] & rd8(p4(-0x2BFF))); F_B(c->d[0]);
+    c->a[0] = 0xFAA2; c->a[0] += sx(rd16(c->a[0] + sx(c->d[0])));
+    switch (c->a[0]) {
+    case 0xFC30: companion_rest(); break;
+    case 0xFC86: companion_follow(); break;
+    case 0xFCF4: companion_return(); break;
+    case 0xFAAE: companion_shoot(); break;
+    case 0xFB60: companion_appear_4(); break;
+    default: call(c->a[0]); break;                  /* past the table: as the original jumps */
+    }
+}
+/* $FBE2: kind 0's state (the table at $FBF6) */
+static void companion_kind_0(void)
+{
+    c->a[2] = sx(rd16(0xFFFF9EEEu));
+    c->d[0] = 0x7F; F_L(0x7F);
+    c->d[0] = set_b(c->d[0], c->d[0] & rd8(p4(-0x2BFF))); F_B(c->d[0]);
+    c->a[0] = 0xFBF6; c->a[0] += sx(rd16(c->a[0] + sx(c->d[0])));
+    switch (c->a[0]) {
+    case 0xFC30: companion_rest(); break;
+    case 0xFC86: companion_follow(); break;
+    case 0xFCF4: companion_return(); break;
+    case 0xFDAC: companion_drop(); break;
+    case 0xFDF4: companion_grab(); break;
+    case 0xFC02: companion_appear_0(); break;
+    default: call(c->a[0]); break;                  /* past the table: as the original jumps */
+    }
+}
+/* $FA6C (each frame): the companion, if in use, by its kind (the table at $FA86) */
+static void companion_frame(void)
+{
+    c->a[4] = sx(rd16(COMPANION));
+    F_B(rd8(p4(-0x4000)));
+    if (!(rd8(p4(-0x4000)) & 0x80)) return;
+    c->d[0] = set_w(c->d[0], rd16(p4(-0x2BFE))); F_W(c->d[0]);
+    c->a[0] = 0xFA86; c->a[0] += sx(rd16(c->a[0] + sx(c->d[0])));
+    switch (c->a[0]) {
+    case 0xFBE2: companion_kind_0(); break;
+    case 0xFA8E: companion_kind_4(); break;
+    default: call(c->a[0]); break;                  /* kinds 2 and 6: still the original's */
+    }
+}
+
+ENTRY(CompanionFrame, companion_frame)             /* $FA6C */
+ENTRY(CompanionKind4, companion_kind_4)            /* $FA8E */
+ENTRY(CompanionShoot, companion_shoot)             /* $FAAE */
+ENTRY(CompanionAppear4, companion_appear_4)        /* $FB60 */
+ENTRY(CompanionAppeared4, companion_appeared_4)    /* $FBC8 */
+ENTRY(CompanionKind0, companion_kind_0)            /* $FBE2 */
+ENTRY(CompanionAppear0, companion_appear_0)        /* $FC02 */
+ENTRY(CompanionRest, companion_rest)               /* $FC30 */
+ENTRY(CompanionOverPlayer, companion_over_player)  /* $FC52 */
+ENTRY(CompanionShown, companion_shown)             /* $FC6A */
+ENTRY(CompanionFollow, companion_follow)           /* $FC86 */
+ENTRY(CompanionReturn, companion_return)           /* $FCF4 */
+ENTRY(CompanionDrop, companion_drop)               /* $FDAC */
+ENTRY(CompanionGrab, companion_grab)               /* $FDF4 */
+ENTRY(CompanionChase, companion_chase)             /* $FE2A */
+ENTRY(CompanionRide, companion_ride)               /* $FED0 */
+ENTRY(CompanionChanceAway, companion_chance_away)  /* $FF32 */
+ENTRY(CompanionChanceEnemy, companion_chance_enemy)   /* $FF56 */
+ENTRY(CompanionChanceArea, companion_chance_area)  /* $FF96 */
+ENTRY(CompanionNear, companion_near)               /* $FFC6 */
+void CompanionGone(Cpu *cpu) { c = cpu; if (companion_gone()) c->a[7] += 4; c->ret = 0; }   /* $108A2: returning from its caller */

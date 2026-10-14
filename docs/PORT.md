@@ -2568,6 +2568,36 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 companion's routines. 600,000 fuzz cases from six states, 0 mismatches, every instruction
 covered. Self-test caught 100 in 100 for all twenty. Replace mode: thirteen runs, no problems.
 
+#### The player, batch T39: the companion each frame, kinds 0 and 4 (2026-10-14)
+
+* In `port/rooms.c`:
+  * Each frame (`$9068`) `$FA6C` runs the companion's state by its kind. In `$D401`, bit 7 is
+    set once the state has begun; the rest is the state.
+  * Kinds 0 and 4 share three states: resting on the player (`$FC30`), following it `$18`
+    above (`$FC86`), and flying back once out of reach (`$FCF4`, aimed every other frame by the
+    angle maths).
+  * While following, chances every 8 or 16 frames (`$FF32`, `$FF56`, `$FF96`) send it off.
+  * Kind 4 shoots 2-5 shots (item `$214`) at the nearest enemy (`$FAAE`) and appears beside the
+    player (`$FB60`).
+  * Kind 0 drops thing `$18` (`$FDAC`), flies to an enemy and rides it for 180 frames (`$FDF4`,
+    `$FE2A`, `$FED0`), and appears on the player's head (`$FC02`).
+  * Kinds 2 and 6 are still the original's (`$100F2`, `$FFE6`); both are now translator roots,
+    since only C reads the table.
+  * `$108A2` resets the state and returns from its caller (`addq #4,a7`) when the companion has
+    been far off the screen. In C its callers return when it fires; its entry pops the extra
+    return address.
+  * All promise SP only, as the routines they call.
+* Fuzz set-ups: kinds 0 and 4 with the states of their tables and the animation sets the game
+  gives them. `$402` and `$462` are in the loaded looks' table (`$4910` waits forever for a
+  look that is not there). Enemies it can go for, the companion within reach, and the item
+  slots full of shots.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(46 runs, all complete). Play runs nearly all of kind 0. 630,000 fuzz cases from six states,
+0 mismatches, every instruction covered. Self-test caught 100 in 100 for twenty. `$108A2`
+caught its first case, then ran away: a sabotaged return from the caller pops a wrong address.
+Replace mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
