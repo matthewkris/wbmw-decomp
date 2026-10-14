@@ -85,6 +85,8 @@ void RoomObjFall(Cpu *), FallCell(Cpu *), RoomObjLift(Cpu *), RoomObjDrift(Cpu *
 void DropThing(Cpu *), RoomScriptSetup(Cpu *), ScriptNone(Cpu *), ScriptFrameNone(Cpu *), Drops(Cpu *), Room0Setup(Cpu *), Room0Frame(Cpu *),
      Room0Release(Cpu *), Room1Setup(Cpu *), Room1Frame(Cpu *), Room1Flip(Cpu *), Room1Flash(Cpu *), Room1Colour(Cpu *);
 void Room2Setup(Cpu *), Room3Setup(Cpu *), Room4Setup(Cpu *), LiftFrame(Cpu *), LiftSetup(Cpu *), LiftSwitch(Cpu *);
+void Room5Setup(Cpu *), Room5Frame(Cpu *), Room6Setup(Cpu *), Room6Frame(Cpu *), RubbleTwo(Cpu *), RubbleOne(Cpu *), Room7Frame(Cpu *),
+     Room8Frame(Cpu *), Room9Setup(Cpu *), Room9Frame(Cpu *), Room9Timer(Cpu *), Room10Setup(Cpu *);
 void NumText(Cpu *), CharAt(Cpu *), ScrollWindow(Cpu *), WindowFrame(Cpu *), WindowRow(Cpu *), TileUnder(Cpu *), WindowRestore(Cpu *), NewLine(Cpu *), MoreBlink(Cpu *), MoreHide(Cpu *), MoreShow(Cpu *), ChoiceBlink(Cpu *), ChoiceHide(Cpu *), ChoiceShow(Cpu *), PriceOf(Cpu *), NameOf(Cpu *), NameText(Cpu *), FoundThing(Cpu *), FoundGold(Cpu *), BoxText(Cpu *), BoxRows(Cpu *), BoxRow(Cpu *), ShowFoundGold(Cpu *), ShowFound(Cpu *), WindowGeometry(Cpu *), Cheaper(Cpu *), Owns(Cpu *), Give(Cpu *), Take(Cpu *), ItemCell(Cpu *), FlagCell(Cpu *), MessageData(Cpu *), OpenWindow(Cpu *), WindowAt(Cpu *), MsgStep(Cpu *), CharIn(Cpu *), NoteIn(Cpu *), OcarinaTune(Cpu *);   /* message.c */
 #define CT_ALL 0x3FFFF                /* every register and flag compared */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
@@ -551,6 +553,18 @@ const PortRoutine port_routines[] = {
     {0x00CB8C, 0x00CC1C, "LiftFrame", LiftFrame, CT_ALL},
     {0x00CC1C, 0x00CC8E, "LiftSetup", LiftSetup, CT_ALL},
     {0x00CC8E, 0x00CCF2, "LiftSwitch", LiftSwitch, CT_ALL},
+    {0x00CCF2, 0x00CD34, "Room5Setup", Room5Setup, CT_ALL},       /* rooms.c: the rooms' scripts 5-10 */
+    {0x00CD34, 0x00CDDE, "Room5Frame", Room5Frame, CT_ALL},
+    {0x00CDDE, 0x00CE00, "Room6Setup", Room6Setup, CT_ALL},
+    {0x00CE00, 0x00CE24, "Room6Frame", Room6Frame, CT_ALL},
+    {0x00CE24, 0x00CE28, "RubbleTwo", RubbleTwo, CT_ALL},
+    {0x00CE28, 0x00CE30, "RubbleOne", RubbleOne, CT_ALL},
+    {0x00CE30, 0x00CEC0, "Room7Frame", Room7Frame, CT_ALL},
+    {0x00CEC0, 0x00CF48, "Room8Frame", Room8Frame, CT_ALL},
+    {0x00CF48, 0x00CF5A, "Room9Setup", Room9Setup, CT_ALL},
+    {0x00CF5A, 0x00CFD6, "Room9Frame", Room9Frame, CT_ALL},
+    {0x00CFD6, 0x00CFE8, "Room9Timer", Room9Timer, CT_ALL},
+    {0x00CFE8, 0x00D00C, "Room10Setup", Room10Setup, CT_ALL},
     {0x01090C, 0x010910, "SpawnItem", SpawnItem},                 /* effects.c: every register as the original */
     {0x010910, 0x010A1E, "SpawnItemAt", SpawnItemAt},
     {0x010A1E, 0x011094, "RunItems", RunItems, CT_SP},

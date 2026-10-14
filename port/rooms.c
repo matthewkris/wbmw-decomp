@@ -4695,3 +4695,238 @@ ENTRY(Room4Setup, room4_setup)             /* $CB7C */
 ENTRY(LiftFrame, lift_frame)               /* $CB8C */
 ENTRY(LiftSetup, lift_setup)               /* $CC1C */
 ENTRY(LiftSwitch, lift_switch)             /* $CC8E */
+
+/* ---- batch T26: the rooms' scripts 5-10 ----
+ * Index 5 (area 7's room 6): four switches to hit in order; index 6 (area 11's room 0): a wall
+ * that crumbles once room flag 0 is set; 7 and 8 (area 11's rooms 1 and 2): effects let out by
+ * $9995; 9 (area 16's rooms 0-2): a picture struck at random above the back layer; 10 (area 1's
+ * room 4): four lifts. The effects' lists go to $27FA. */
+
+#define SPAWN_EFFECTS 0x27FAu       /* the effects listed at a0 */
+
+/* index 5. $CCF2 as it loads: the switches' effects, once room flag 15 is set */
+static void room5_setup(void)
+{
+    c->d[0] = 0xF; F_L(0xF);
+    push32(0xCCF8); room_flag_bit(); c->a[7] += 4;
+    f_bit(rd8(c->a[0] + sx(c->d[1])) >> (c->d[0] & 7) & 1);
+    if (!(rd8(c->a[0] + sx(c->d[1])) >> (c->d[0] & 7) & 1)) return;
+    c->a[0] = 0xCD08;
+    call(SPAWN_EFFECTS);
+}
+/* $CD34, each frame: the switch hit ($9994 bits 0-3) the next in the order 1, 2, 0, 3 turns
+ * ($216); a wrong one lets the effects at $CDC4 out (once, $9994 bit 4). The fourth sets room
+ * flag 15 and breaks three blocks */
+static void room5_frame(void)
+{
+    static const uint8_t order[4] = { 1, 2, 0, 3 };              /* $CDC0 */
+    static const uint16_t xs[4] = { 0x107, 0x10D, 0x113, 0x119 };  /* $CDC4: the switches, at $4080 */
+    c->d[0] = 0xF; F_L(0xF);
+    push32(0xCD3A); room_flag_bit(); c->a[7] += 4;
+    f_bit(rd8(c->a[0] + sx(c->d[1])) >> (c->d[0] & 7) & 1);
+    if (rd8(c->a[0] + sx(c->d[1])) >> (c->d[0] & 7) & 1) goto done;
+    c->d[0] = set_w(c->d[0], rd16(0xFFFF9994u)); F_W(c->d[0]);
+    f_bit(c->d[0] >> 4 & 1);
+    if (c->d[0] & 0x10) goto done;
+    c->d[1] = 0; F_L(0);
+    move_b(1, rd8(SCRIPT_VARS));
+    move_b(1, order[c->d[1]]);
+    { uint32_t b = 1u << (c->d[1] & 31); f_bit((c->d[0] & b) != 0); int was = (c->d[0] & b) != 0; c->d[0] &= ~b;
+      if (!was) {                                    /* not the next: a wrong one? */
+          and_w(0, 0xF);
+          if (!(c->d[0] & 0xFFFF)) goto done;
+          c->a[0] = 0xCDC4;
+          call(SPAWN_EFFECTS);
+          { uint16_t v = (uint16_t)(rd16(0xFFFF9994u) | 0x10); wr16(0xFFFF9994u, v); F_W(v); }
+          goto done;
+      } }
+    wr8(SCRIPT_VARS, (uint8_t)add_b(&c->ccr, 1, rd8(SCRIPT_VARS)));
+    c->d[0] = set_w(c->d[0], c->d[1]); F_W(c->d[1]);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[1], c->d[0]));
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+    c->d[6] = set_w(c->d[6], xs[c->d[1] & 0xFFFF]); F_W(c->d[6]);
+    c->d[7] = set_w(c->d[7], 0x4080); F_W(0x4080);
+    c->d[0] = set_w(c->d[0], 0x216); F_W(0x216);
+    push32(0xCD8C); cell_set_a(); c->a[7] += 4;
+    cmp_byte(4, rd8(SCRIPT_VARS));
+    if (rd8(SCRIPT_VARS) < 4) goto done;
+    c->d[0] = 0xF; F_L(0xF);                            /* all four: the way opens */
+    push32(0xCD9A); room_flag_bit(); c->a[7] += 4;
+    { uint32_t a = c->a[0] + sx(c->d[1]); uint8_t v = rd8(a); f_bit(v >> (c->d[0] & 7) & 1); wr8(a, (uint8_t)(v | 1 << (c->d[0] & 7))); }
+    c->d[5] = 0; F_L(0);
+    c->d[6] = set_w(c->d[6], 0x11B); F_W(0x11B);
+    c->d[7] = set_w(c->d[7], 0x4200); F_W(0x4200);
+    push32(0xCDAC); break_spawn(); c->a[7] += 4;
+    c->d[6] = set_w(c->d[6], add_w(&c->ccr, 1, c->d[6]));
+    push32(0xCDB2); break_spawn(); c->a[7] += 4;
+    c->d[6] = set_w(c->d[6], add_w(&c->ccr, 1, c->d[6]));
+    push32(0xCDB8); break_spawn(); c->a[7] += 4;
+done:
+    { uint16_t v = (uint16_t)(rd16(0xFFFF9994u) & 0xFFF0); wr16(0xFFFF9994u, v); F_W(v); }
+}
+
+/* index 6. $CDDE as it loads: with room flag 0 ($9993 bit 0) set, the wall at ($114, $4200)
+ * already gone (4 x 1 empty blocks) */
+static void room6_setup(void)
+{
+    f_bit(rd8(0xFFFF9993u) & 1);
+    if (!(rd8(0xFFFF9993u) & 1)) return;
+    mem_or8(SCRIPT_VARS, 1);
+    c->d[0] = 4; F_L(4);
+    c->d[1] = 1; F_L(1);
+    c->d[2] = 0; F_L(0);
+    c->d[6] = set_w(c->d[6], 0x114); F_W(0x114);
+    c->d[7] = set_w(c->d[7], 0x4200); F_W(0x4200);
+    call(SET_MAP_BLOCKS);
+}
+/* $CE28, $CE24: one block (two) crumbled at d6 with look d5, d6 moving on */
+static void rubble_one(void)
+{
+    push32(0xCE2C); break_spawn(); c->a[7] += 4;
+    c->d[6] = set_w(c->d[6], add_w(&c->ccr, 1, c->d[6]));
+}
+static void rubble_two(void) { push32(0xCE28); rubble_one(); c->a[7] += 4; rubble_one(); }
+/* $CE00, each frame: once the flag is set, the wall crumbles, four blocks (look 3) */
+static void room6_frame(void)
+{
+    f_bit(rd8(SCRIPT_VARS) & 1);
+    if (rd8(SCRIPT_VARS) & 1) return;
+    f_bit(rd8(0xFFFF9993u) & 1);
+    if (!(rd8(0xFFFF9993u) & 1)) return;
+    mem_or8(SCRIPT_VARS, 1);
+    c->d[5] = 3; F_L(3);
+    c->d[6] = set_w(c->d[6], 0x114); F_W(0x114);
+    c->d[7] = set_w(c->d[7], 0x4200); F_W(0x4200);
+    push32(0xCE24); rubble_two(); c->a[7] += 4;          /* bsr to the next instruction: twice */
+    rubble_two();
+}
+
+/* index 7. $CE30, each frame: $9995 bit 0 lets the effects at $CE68 out, once; bit 1 those at
+ * $CE94, every frame it is set (the original never marks them done) */
+static void room7_frame(void)
+{
+    f_bit(rd8(SCRIPT_VARS) & 1);
+    if (!(rd8(SCRIPT_VARS) & 1)) {
+        f_bit(rd8(0xFFFF9995u) & 1);
+        if (rd8(0xFFFF9995u) & 1) {
+            mem_or8(SCRIPT_VARS, 1);
+            c->a[0] = 0xCE68;
+            call(SPAWN_EFFECTS);
+        }
+    }
+    f_bit(rd8(SCRIPT_VARS) >> 1 & 1);
+    if (rd8(SCRIPT_VARS) & 2) return;
+    f_bit(rd8(0xFFFF9995u) >> 1 & 1);
+    if (!(rd8(0xFFFF9995u) & 2)) return;
+    c->a[0] = 0xCE94;
+    call(SPAWN_EFFECTS);
+}
+/* index 8. $CEC0, each frame: $9995 bit 0 lets the effects at $CEE0 out, once */
+static void room8_frame(void)
+{
+    f_bit(rd8(SCRIPT_VARS) & 1);
+    if (rd8(SCRIPT_VARS) & 1) return;
+    f_bit(rd8(0xFFFF9995u) & 1);
+    if (!(rd8(0xFFFF9995u) & 1)) return;
+    mem_or8(SCRIPT_VARS, 1);
+    c->a[0] = 0xCEE0;
+    call(SPAWN_EFFECTS);
+}
+
+/* index 9. $CFD6: the next strike in 16 to 143 frames ($99DE) */
+static void room9_timer(void)
+{
+    call(RANDOM);
+    and_w(0, 0x7F);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, 0x10, c->d[0]));
+    put16m(SCRIPT_VARS, c->d[0]);
+}
+/* $CF48 as it loads: the picture's list ($CF0C, 60 bytes) copied to $9A0A, the first strike timed */
+static void room9_setup(void)
+{
+    c->a[0] = 0xCF0C;
+    c->a[1] = 0xFFFF9A0Au;
+    c->d[0] = 0x3B; F_L(0x3B);
+    do { put8(c->a[1], rd8(c->a[0])); c->a[0]++; c->a[1]++; } while (dbra(0));
+    room9_timer();
+}
+/* $CF5A, each frame: when the time comes, the picture put at a random place (in 32 pixels)
+ * across the back layer's view, row $4180: the cells it covers first read into its list's
+ * second half ($9A29: a cell, then its place; to a negative word), sound 64 */
+static void room9_frame(void)
+{
+    if (mem_sub_w(SCRIPT_VARS, 1)) return;
+    put8(SCRIPT_VARS, 0);
+    call(RANDOM);
+    and_w(0, 0xE0);
+    c->a[3] = LAYER_B;
+    c->d[6] = 0xFFFFFFE0u; F_L(c->d[6]);
+    c->d[6] = set_w(c->d[6], c->d[6] & rd16(c->a[3] + 4)); F_W(c->d[6]);
+    c->d[6] = set_w(c->d[6], add_w(&c->ccr, c->d[0], c->d[6]));
+    c->d[6] = set_w(c->d[6], lsr_n(&c->ccr, c->d[6], 4, 16));
+    c->d[7] = set_w(c->d[7], 0x4180); F_W(0x4180);
+    put16m(0xFFFF99E0u, c->d[6]);
+    put16m(0xFFFF99E2u, c->d[7]);
+    c->a[0] = 0xFFFF9A29u;
+    c->a[3] = LAYER_B;
+    for (;;) {
+        move_b(0, next8(0));
+        c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 8, 16));
+        move_b(0, next8(0));
+        F_W(c->d[0]);
+        if (c->d[0] & 0x8000) break;
+        move_b(6, next8(0));
+        c->d[6] = set_w(c->d[6], (uint32_t)(int32_t)(int8_t)(c->d[6] & 0xFF)); F_W(c->d[6]);
+        c->d[6] = set_w(c->d[6], add_w(&c->ccr, rd16(0xFFFF99E0u), c->d[6]));
+        move_b(7, next8(0));
+        c->d[7] = set_w(c->d[7], (uint32_t)(int32_t)(int8_t)(c->d[7] & 0xFF)); F_W(c->d[7]);
+        c->d[7] = set_w(c->d[7], lsl_n(&c->ccr, c->d[7], 6, 16));
+        c->d[7] = set_w(c->d[7], add_w(&c->ccr, rd16(0xFFFF99E2u), c->d[7]));
+        c->a[7] -= 2; wr16(c->a[7], c->a[0]);
+        call(0x2542);                                   /* the cell at (d6, d7) of layer a3 */
+        c->a[0] = sx(rd16(c->a[7])); c->a[7] += 2;
+        put8(c->a[0] - 3, c->d[0]);
+        c->d[0] = set_w(c->d[0], lsr_n(&c->ccr, c->d[0], 8, 16));
+        put8(c->a[0] - 4, c->d[0]);
+    }
+    c->d[6] = set_w(c->d[6], rd16(0xFFFF99E0u)); F_W(c->d[6]);
+    c->d[7] = set_w(c->d[7], rd16(0xFFFF99E2u)); F_W(c->d[7]);
+    c->a[0] = 0xFFFF9A0Au;
+    call(0x2974);                                       /* the picture's list at a0 drawn at (d6, d7) */
+    c->d[0] = 0x40; F_L(0x40);
+    call(QUEUE_SOUND);
+    room9_timer();
+}
+
+/* index 10. $CFE8 as it loads: four lifts (room objects of kind 8 at places 6, 4, 2, 0), each
+ * linked to the one before ($D302) */
+static void room10_setup(void)
+{
+    c->d[1] = 8; F_L(8);
+    c->d[2] = 0xFFFFFF80u; F_L(c->d[2]);
+    c->d[3] = 0; F_L(0);
+    c->d[4] = 6; F_L(6);
+    do {
+        call(FIND_EFFECT);
+        put8(c->a[4] - 0x4000, c->d[2]);
+        put16m(c->a[4] - 0x2D00, c->d[4]);
+        put16m(c->a[4] - 0x2CFE, c->d[3]);
+        put16m(c->a[4] - 0x2BFE, c->d[1]);
+        c->d[3] = set_w(c->d[3], c->a[4]); F_W(c->a[4]);
+        c->d[4] = set_w(c->d[4], sub_w(&c->ccr, 2, c->d[4]));
+    } while (!(c->ccr & CC_N));
+}
+
+ENTRY(Room5Setup, room5_setup)             /* $CCF2 */
+ENTRY(Room5Frame, room5_frame)             /* $CD34 */
+ENTRY(Room6Setup, room6_setup)             /* $CDDE */
+ENTRY(Room6Frame, room6_frame)             /* $CE00 */
+ENTRY(RubbleTwo, rubble_two)               /* $CE24 */
+ENTRY(RubbleOne, rubble_one)               /* $CE28 */
+ENTRY(Room7Frame, room7_frame)             /* $CE30 */
+ENTRY(Room8Frame, room8_frame)             /* $CEC0 */
+ENTRY(Room9Setup, room9_setup)             /* $CF48 */
+ENTRY(Room9Frame, room9_frame)             /* $CF5A */
+ENTRY(Room9Timer, room9_timer)             /* $CFD6 */
+ENTRY(Room10Setup, room10_setup)           /* $CFE8 */

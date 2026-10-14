@@ -2210,6 +2210,35 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 mismatches, every instruction covered. Self-test caught 100 in 100 for each. Replace mode:
 thirteen runs, no problems.
 
+#### The room changes, batch T26: the rooms' scripts 5-10 (2026-10-13)
+
+In `port/rooms.c`, with every register and flag in the contract:
+
+* Index 5 (area 7's room 6): four switches to hit in the order 1, 2, 0, 3 (`$CD34`, from
+  `$9994` bits 0-3). Each one hit in turn changes to cell `$216`. A wrong one lets the effects
+  at `$CDC4` out, once (`$9994` bit 4). The fourth sets room flag 15 and breaks three blocks.
+  Once the flag is set, the setup (`$CCF2`) lets the effects at `$CD08` out.
+* Index 6 (area 11's room 0): a wall that crumbles, four blocks (`$CE00`, `$CE24`, `$CE28`),
+  once room flag 0 (`$9993` bit 0) is set. With the flag already set, the setup (`$CDDE`)
+  empties it. `$CE00` calls `$CE24`, which is its next instruction, so `$CE24` runs twice.
+* Indexes 7 and 8 (area 11's rooms 1 and 2): effects let out by `$9995` bits 0 and 1 (`$CE30`,
+  `$CEC0`). Index 7's second list goes out every frame its bit is set: the original never marks
+  it done.
+* Index 9 (area 16's rooms 0-2): every 16 to 143 frames, a picture is put at a random place
+  across the back layer's view at row `$4180`, with sound 64 (`$CF5A`). The cells it covers
+  are first read into its list (`$CF48` copies it to `$9A0A`; `$CFD6` times it).
+* Index 10 (area 1's room 4): four lifts, room objects of kind 8 at places 6, 4, 2 and 0, each
+  linked to the one before (`$CFE8`).
+
+The fuzz runs these with the scripts' variables part-way: switches hit, room flags 0 and 15
+set or not, `$9995` and `$9994` at random, the strike's timer near its end and slots free or
+not.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(39 runs, all complete; 637,567 checked calls); the sessions run all of index 10's setup.
+360,000 fuzz cases from six states, 0 mismatches, every instruction covered. Self-test caught
+100 in 100 for each. Replace mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
