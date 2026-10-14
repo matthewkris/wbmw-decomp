@@ -1202,6 +1202,23 @@ int hybrid_fuzz(const char *name, long count)
                 if (rnd() % 2) put_word(0x965A, rnd() % 2 ? 0 : rnd());
                 put_word(0xC800 + p, xs[i] + small(0x18)); put_word(0xC900 + p, y - 0x16 + small(4)); put_word(0xD202 + p, y - 0x16 + small(0x20));
             }
+            if (!strcmp(name, "RoomObjSparkle")) put_word(0xC300 + e, 0x1604);
+            if (!strcmp(name, "RoomObjMover")) { put_word(0xDA00 + e, 1 + rnd() % 3); put_word(0xC300 + e, 0x1604); }
+            if (!strcmp(name, "RoomObjBlock") || !strcmp(name, "BlockPlace")) {   /* one of $C9B4's 22 looks, falling from its column's top */
+                uint32_t lk = 3 * (rnd() % 22), top = 0x1000 + 16 * bus_read8(0xAFC9 + lk), floor = top + 16 * bus_read8(0xAFCA + lk);
+                ram[0xDA02 + e] = (uint8_t)lk; ram[0xD401 + e] = (uint8_t)(rnd() % 2); put_word(0xC300 + e, 0x604);
+                put_word(0xC900 + e, top + rnd() % (floor - top + 24)); put_word(0xCA02 + e, rnd() % 0x800);
+            }
+            if (!strcmp(name, "RoomObjChest") || !strcmp(name, "ChestOpened")) {   /* a chest: dropping, shut or open, the player at it or not */
+                uint32_t x = 0x1010 + rnd() % 0x300, y = 0x1010 + rnd() % 0x200;
+                ram[0xCE00 + e] = (uint8_t)(rnd() % 3 == 0 ? 0x80 : 0); ram[0xC302 + e] = (uint8_t)(rnd() % 2 ? 0 : 0x80 | rnd());
+                put_word(0xC300 + e, 0x120A); ram[0xD800 + e] = (uint8_t)(rnd() % 3); ram[0xD801 + e] = (uint8_t)(rnd() % 36);
+                put_word(0xCE02 + e, rnd() % 3 ? rnd() % 0x100 : 0x8000 | rnd() % 0x100);
+                put_word(0xC800 + e, x); put_word(0xC900 + e, y); put_word(0xDF02 + e, y + small(0x18));
+                ram[0x9A00] = (uint8_t)(rnd() % 4 ? 0 : 0x80);
+                if (rnd() % 2) { put_word(0xC800 + p, x + small(10)); put_word(0xC900 + p, (uint32_t)(y + 0x10 - ram[(p - 0x34FD) & 0xFFFF] + (rnd() % 3 ? 0 : small(2)))); }
+                put_word(0x9982, e);
+            }
             if (!strcmp(name, "RoomObjDrift")) {
                 put_word(0xC300 + e, 0x1622); put_word(0xC800 + e, 0x1000 + rnd() % 0x60);
                 ram[0xD800 + e] = (uint8_t)(2 * (rnd() % 4)); ram[0xD801 + e] = (uint8_t)(1 + rnd() % 2);
@@ -1387,6 +1404,9 @@ int hybrid_fuzz(const char *name, long count)
             put_word(0x9978, 0x1000 + 0x10 * (rnd() % 0x20)); put_word(0x997A, 0x1000 + 0x10 * (rnd() % 0x20));
             for (uint32_t sl = 0xE0; sl < 0x100; sl += 4) ram[0xC000 + sl] = (uint8_t)(rnd() % 3 ? 0 : 0x80);
             if (rnd() % 2) for (uint32_t k4 = 0; k4 < 32; k4++) { ram[0x99BE + k4] = (uint8_t)rnd(); ram[0x9992 + k4] = (uint8_t)rnd(); }
+        }
+        if (!strcmp(name, "RoomObjects")) {          /* the eight room objects of the simple kinds (nothing, a sparkle), in use or not */
+            for (uint32_t sl = 0xE0; sl < 0x100; sl += 4) { ram[0xC000 + sl] = (uint8_t)(rnd() % 2 ? 0x80 | (rnd() % 2 ? 0x40 : 0) : 0); put_word(0xD402 + sl, rnd() % 2 ? 4 : 6); ram[0xC600 + sl] = (uint8_t)(rnd() % 2 ? 0 : rnd()); }
         }
         if (!strcmp(name, "CrumbleAdd")) {          /* some walls' records taken */
             for (uint32_t k4 = 0; k4 < 4; k4++) ram[0x9B96 + 8 * k4] = (uint8_t)(rnd() % 3 ? 0x80 | rnd() % 4 : 0);

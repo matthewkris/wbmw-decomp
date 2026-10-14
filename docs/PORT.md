@@ -2441,6 +2441,31 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 150,000 fuzz cases from six states, 0 mismatches, every instruction covered. Self-test caught 100
 in 100 for each. Replace mode: thirteen runs, no problems.
 
+#### The rooms, batch T34: the room objects' runner and kinds 0, 6, 10 and 16 (2026-10-14)
+
+`$AEA2` runs the eight room objects (`$E0`-`$FC`) each frame by kind, from the table at
+`$AECC`. In `port/rooms.c`:
+
+* Kind 0 (`$AF16`, its place from `$AFA0`): a block that empties its cell and falls to its
+  floor, where it becomes a cell (`$300`) again. These are `$C9B4`'s 22 blocks; their column,
+  top and floor are 3 bytes each at `$AFC8`.
+* Kind 6 (`$AEF2`): a sparkle, gone when its animation ends.
+* Kind 10 (`$AF06`): a mover, gone when its timer (`$DA00`) runs out.
+* Kind 16 (`$ACFA`): a chest. Dropped, it falls to its place and lands (`$2EDE`, `$4362`).
+  Shut, the player standing at it opens it through `$998A` (`$ADAC`): its flag is set, it
+  drops its list (`$A666`) and shows its open look. Open, after its time it becomes kind 6.
+  Its contract is SP only, as `$2EDE`'s (MoveOnSlopes), which it calls.
+* Kind 4 is nothing (`$AEF0`). Kinds 2, 8 and 14 are T23's. Kind 12 (`$1A1C6`) is still the
+  original's; it is in `analysis/translate.json`'s `seen`, since only the C reads the table now.
+
+Each kind's fuzz puts a room object of that kind in one of the slots, as the game sets it up:
+the blocks with `$C9B4`'s looks; a chest dropping, shut or open, with the player at it or not.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(39 runs, all complete; 637,567 checked calls); the sessions run all of `$AEA2`. 240,000 fuzz
+cases from six states, 0 mismatches, every instruction covered. Self-test caught 100 in 100 for
+each. Replace mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
