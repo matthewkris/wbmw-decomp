@@ -2496,6 +2496,27 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 `$9144`, 34 of `$8EE6`'s 35 instructions, and all of `$9100` but the restart's case. The fuzz,
 for the routines that return: 0 mismatches. Replace mode: thirteen runs, no problems.
 
+#### The gameplay loop, batch T36: the HUD's panel, the status screen's labels and parts (2026-10-14)
+
+* In `port/rooms.c`, with exact registers where their callees allow:
+  * `$7544`: the HUD's panel drawn whole (from `$97F0` as a room starts). The slots' looks are
+    unset, then the frame (`$7F54`), the boss bar cleared (`$89B6`), the hearts (`$8AA2`), the
+    HUD (`$76C4`), palette step 8 and the gold's label.
+  * `$8596`: the gold's label, then the gold (`$85A8`).
+  * `$84C4`: three labels.
+  * `$850C`: digits written to the VDP's data port.
+  * `$7544` and `$8596` promise SP only, as `$8AA2` and `$85A8` do.
+* In `port/status.c`: the status screen's parts that wait (`$7882`, `$78DC`, `$799E`, `$79EE`,
+  `$7A44`, `$7E12`, `$7E8C`, `$7EBA`, `$805A`) were written with T1-T4. The screen's C calls
+  them itself, and nothing in the original calls them any more; they now have entries too. An
+  entry takes its return address, as the original's routine does, and goes on where that
+  routine's `jmp (a0)` from its cell would.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(39 runs, all complete; 637,585 checked calls). The sessions run all of the four, and 21 to 28
+of each of the screen's parts. 390,000 fuzz cases from six states, 0 mismatches. Self-test
+caught 100 in 100 for the four. Replace mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
