@@ -43,3 +43,5 @@
 00C26A
 00C26E
 00C272
+00AE0A  # $ADEC, event 12 with a game flag (its first byte's bit 0): the nine event 12s in the rooms' lists all start with $00
+00AE0E
