@@ -107,6 +107,7 @@ void RecordStart(Cpu *), DemoStart(Cpu *), RecordStep(Cpu *), DemoStep(Cpu *), T
 void ColourFrame(Cpu *), ColorScriptStart(Cpu *), ColorEnd(Cpu *), ColorScripts(Cpu *), CycleStart(Cpu *), CyclesRun(Cpu *), FadeIn(Cpu *), FadeOut(Cpu *), FadeOutSlow(Cpu *), FadeOwner(Cpu *), FadeInStep(Cpu *), FadeOutStep(Cpu *), FadeApply(Cpu *), ColorAdjust(Cpu *), PaletteWhite(Cpu *);
 void CellVram(Cpu *), PlaneAClear(Cpu *), PlaneBClear(Cpu *), WindowClear(Cpu *), ScrollClear(Cpu *), ScrollClearPair(Cpu *), DrawLayout(Cpu *), GfxTablesReset(Cpu *), TileAnimsClear(Cpu *), TileAnimsTask(Cpu *), SegaTask(Cpu *);
 void MakePartner(Cpu *), CopyToA2(Cpu *), MaybeBubble(Cpu *), BubbleInWater(Cpu *), Bubble(Cpu *), SwimMove(Cpu *), SwimLimit(Cpu *), BobToward(Cpu *), RandomState(Cpu *), GroundedWait(Cpu *), ContactAndMove(Cpu *), ShieldAndMove(Cpu *), PuffA(Cpu *), PuffB(Cpu *), SpawnDebris(Cpu *), RandomSpread(Cpu *), SlowOnGround(Cpu *), TouchedState(Cpu *), BackOff(Cpu *), TakeHit(Cpu *), HitAction(Cpu *), RandomTimer(Cpu *), RandomTimer32(Cpu *), RandomDelay(Cpu *), Range40(Cpu *), Range80(Cpu *), WallTurnReturn(Cpu *), TurnAtWall(Cpu *), BumpAwayReturn(Cpu *), BumpAway(Cpu *), FaceAway(Cpu *), BumpTurnReturn(Cpu *), BumpTurn(Cpu *), Turn(Cpu *), WalkForward(Cpu *), SetVelXFacing(Cpu *), FaceVelocity(Cpu *), VelocityToward(Cpu *), FaceAndWalk(Cpu *), FacePlayer(Cpu *), FaceEntity(Cpu *), FaceX(Cpu *), Jump(Cpu *), Hop(Cpu *), SetVelY(Cpu *), StartBlinkFrozen(Cpu *), StartBlink(Cpu *), ThrownBack(Cpu *), KnockBackAt(Cpu *), KnockBack(Cpu *), DistXToPlayer(Cpu *), DistXToEntity(Cpu *), DistYToTarget(Cpu *), DistY(Cpu *), DistYAbsTarget(Cpu *), DistYAbs(Cpu *), WallClimbAction(Cpu *), RoomAbove(Cpu *), RangeTurnReturn(Cpu *), RangeTurn(Cpu *), PastRange80(Cpu *), PastRange(Cpu *);
+void TargetFromHome(Cpu *), EdgeTurnReturn(Cpu *), EdgeTurn(Cpu *), EdgeAhead(Cpu *), GroundAhead(Cpu *), FlyFacing(Cpu *), AccelFacing(Cpu *), FallAndMove(Cpu *), EnemyMove(Cpu *), ShieldContact(Cpu *), PlayerAhead(Cpu *), ShieldHit(Cpu *), PlayerTouch(Cpu *), PlayerContactAll(Cpu *), PlayerContactShield(Cpu *), FreezeEnemies(Cpu *), Despawn(Cpu *), EnemyDefeated(Cpu *), OffscreenDespawn(Cpu *), RoomKind(Cpu *), MaxHealth(Cpu *), HealthOf(Cpu *), DamageShown(Cpu *), ScaleDamage(Cpu *), DamageEnemy(Cpu *);
 void Looks(Cpu *), LooksExtra(Cpu *), LooksBlock(Cpu *), LooksBody(Cpu *), LooksSword(Cpu *), LooksShield(Cpu *), EquipChange(Cpu *);
 void HudPanel(Cpu *), GoldLabel(Cpu *), ThreeLabels(Cpu *), DigitsOut(Cpu *), ItemsChoose(Cpu *), MagicChoose(Cpu *), SlotChoose(Cpu *), ActionToSlot(Cpu *),
      ItemToSlot(Cpu *), WornBlink(Cpu *), StatusFadeIn(Cpu *), StatusFadeOut(Cpu *), StatusWait(Cpu *);
@@ -203,6 +204,31 @@ const PortRoutine port_routines[] = {
     {0x0045E8, 0x0045F0, "RangeTurn", RangeTurn, CT_SP},
     {0x0045F0, 0x0045F4, "PastRange80", PastRange80, CT_SP | CT_NZVC | CT_D0 << 1 | CT_D0 << 2},
     {0x0045F4, 0x004616, "PastRange", PastRange, CT_SP | CT_NZVC | CT_D0 << 1 | CT_D0 << 2},
+    {0x004616, 0x00462A, "TargetFromHome", TargetFromHome, CT_SP | CT_NZVC | CT_D0 << 1},   /* enemylib.c: ranges and edges, the player's touch, defeat and despawning, damage */
+    {0x00462A, 0x00463A, "EdgeTurnReturn", EdgeTurnReturn, CT_SP},
+    {0x00463A, 0x004646, "EdgeTurn", EdgeTurn, CT_SP},
+    {0x004646, 0x004686, "EdgeAhead", EdgeAhead, CT_SP | CT_NZVC | CT_D0},
+    {0x004686, 0x0046BE, "GroundAhead", GroundAhead, CT_SP | CT_NZVC},
+    {0x0046BE, 0x0046C6, "FlyFacing", FlyFacing, CT_SP},
+    {0x0046C6, 0x0046D6, "AccelFacing", AccelFacing, CT_SP},
+    {0x0046D6, 0x0046DA, "FallAndMove", FallAndMove, CT_SP},
+    {0x0046DA, 0x0046F4, "EnemyMove", EnemyMove, CT_SP},
+    {0x0046F4, 0x00472A, "ShieldContact", ShieldContact, CT_SP},
+    {0x00472A, 0x004742, "PlayerAhead", PlayerAhead, CT_SP | CT_NZVC},
+    {0x004742, 0x004778, "ShieldHit", ShieldHit, CT_SP},
+    {0x004778, 0x004792, "PlayerTouch", PlayerTouch, CT_SP},
+    {0x004792, 0x0047AE, "PlayerContactAll", PlayerContactAll, CT_SP},
+    {0x0047AE, 0x0047D2, "PlayerContactShield", PlayerContactShield, CT_SP},
+    {0x0047D2, 0x004814, "FreezeEnemies", FreezeEnemies, CT_SP},
+    {0x004814, 0x00482C, "Despawn", Despawn, CT_SP},
+    {0x00482C, 0x0048C4, "EnemyDefeated", EnemyDefeated, CT_SP},
+    {0x0048C4, 0x004910, "OffscreenDespawn", OffscreenDespawn, CT_SP},
+    {0x004910, 0x004928, "RoomKind", RoomKind, CT_SP | CT_A0},
+    {0x004928, 0x00492E, "MaxHealth", MaxHealth, CT_SP | CT_D0},
+    {0x00492E, 0x004948, "HealthOf", HealthOf, CT_SP | CT_D0},
+    {0x004948, 0x004964, "DamageShown", DamageShown, CT_SP},
+    {0x004964, 0x004986, "ScaleDamage", ScaleDamage, CT_SP | CT_D0},
+    {0x004986, 0x0049F8, "DamageEnemy", DamageEnemy, CT_SP | CT_NZVC},
     {0x004362, 0x00436C, "CheckGrounded", CheckGrounded},
     {0x000EE2, 0x000EE6, "Cosine", Cosine},
     {0x000EE6, 0x000FA8, "Sine", Sine},

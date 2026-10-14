@@ -1447,6 +1447,22 @@ int hybrid_fuzz(const char *name, long count)
                 if (rnd() % 2) put_word(0xCA00 + sl, (uint32_t)(int32_t)(rnd() % 0x81 - 0x40));
                 ram[0xD801 + sl] = (uint8_t)(rnd() % 3);
             }
+            if (strstr("|GroundAhead|EdgeTurn|EdgeTurnReturn|EdgeAhead|", key) || strstr("|ShieldContact|PlayerTouch|PlayerContactAll|PlayerContactShield|DamageEnemy|OffscreenDespawn|", key)) {
+                uint32_t sl = (uint32_t)m68k_get_reg(NULL, M68K_REG_A4) & 0xFC;
+                if (rnd() % 4 == 0) put_word(0xCA00 + sl, 0);                       /* still */
+                ram[0x9F03] = (uint8_t)rnd(); put_word(0x9F16, rnd() % 2 ? rnd() % 0x800 : 0);   /* the shield, a doubled hit */
+                if (rnd() % 2) {                                                     /* on the screen */
+                    put_word(0xC800 + sl, ((uint32_t)ram[0x9758] << 8 | ram[0x9759]) + rnd() % 0x140);
+                    put_word(0xC900 + sl, ((uint32_t)ram[0x975A] << 8 | ram[0x975B]) + rnd() % 0xE0);
+                }
+            }
+            if (!strcmp(name, "TargetFromHome")) m68k_set_reg(M68K_REG_D2, (rnd() << 16) | rnd() % 0x100);
+            if (!strcmp(name, "RoomKind")) {            /* a kind in the room's list ($4910 waits for ever without) */
+                uint32_t n = ram[0xA143] ? ram[0xA143] : 1, k = rnd() % n;
+                if (n > 8) n = 8, k = rnd() % n;
+                ram[0xA143] = (uint8_t)n;
+                m68k_set_reg(M68K_REG_D1, (rnd() << 16) | ((uint32_t)ram[0xA122 + 4 * k] << 8 | ram[0xA123 + 4 * k]));
+            }
             if (!strcmp(name, "MaybeBubble") || !strcmp(name, "BubbleInWater")) {
                 put_word(0x965A, rnd() % 2 ? rnd() & ~0x3Fu : rnd()); ram[0x966B] = (uint8_t)(rnd() & 1);
             }

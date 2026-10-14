@@ -82,3 +82,4 @@
 006B30
 006B32
 006B36
+004922  # $4910, a kind not in the room's list: the original loops for ever there; the game never asks for one
