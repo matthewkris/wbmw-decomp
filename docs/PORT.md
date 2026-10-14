@@ -2728,6 +2728,35 @@ instructions; it never reaches their script jumps or the task's end. 330,000 fuz
 states, 0 mismatches. Self-test caught 100 in 100 for the nine that are fuzzed. Replace mode:
 thirteen runs, no problems.
 
+#### The enemy library, batch T45: the enemies' small shared routines (2026-10-14)
+
+* In the new `port/enemylib.c`, sixty-two entries from `$41A2` to `$4616`:
+  * a partner and a copy (`$41A2`, `$41AA`);
+  * bubbles in water (`$41F0`-`$4218`);
+  * drag and the speed limit (`$4254`, `$425C`); bobbing toward a height (`$4274`);
+  * a random state from a table (`$428C`);
+  * debris and puffs about it (`$42D4`-`$4340`);
+  * slowing on the ground (`$4356`); backing off when touched (`$437E`); being hit (`$439E`);
+  * the random timers and ranges (`$43CC`-`$4414`);
+  * turning, facing and walking (`$4428`-`$44DE`);
+  * jumping, hopping and blinking (`$44F4`-`$451A`);
+  * being knocked back (`$452E`-`$4558`);
+  * the distances to the player or another entity (`$455E`-`$4588`);
+  * room to jump up a wall (`$45AC`) and the range from home (`$45DC`-`$45F4`).
+* The contracts name the flags and registers the C actions' notes say they use, for example
+  `$439E`'s mi, `$4562`'s d0 and d1, `$45F4`'s cs, `$45AC`'s nz and `$4356`'s z. `$4356` does
+  `FrictionX`'s work itself, because `$42AA` branches on its flags.
+* Eight routines return from their caller when they act (`addq #4,a7`): `$42AA`, `$436C`,
+  `$43BC`, `$4428`, `$4444`, `$4474`, `$4592` and `$45DC`. Their entries pop that frame too,
+  and `$43BC` and `$4592` then go on to the action at `$1357E` or `$13542`. Five entries are
+  unreferenced code.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(46 runs, all complete; 1,243,365 checked calls). 1,860,000 fuzz cases from six states,
+0 mismatches, every instruction covered. Self-test caught 100 in 100 for fifty-six. The six
+entries that pop their caller's frame caught every case they ran, then ran away: a sabotaged
+return pops a wrong address. Replace mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
