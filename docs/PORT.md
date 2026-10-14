@@ -2382,6 +2382,33 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 100 in 100 for each. Replace mode: thirteen runs, no problems. (Fuzzing `$DB0A`, which waits,
 leaves the original unfinished; that is not a mismatch, and it is not registered.)
 
+#### The rooms, batch T32: the room's event list's commands (2026-10-14)
+
+A room's event list (`$996C`) has events (bytes under `$C0`) and commands (`$E0`-`$FF`, the
+table at `$A490`), which are called with a2 at their bytes. In `port/rooms.c`, with every
+register and flag in the contract:
+
+* The zone's origin, width and height (`$E0`, `$E2`, `$E3`).
+* A room object of kind 4 from 9 bytes (`$E8`). Effects (`$E9`) and a picture (`$EC`) at an
+  offset. A thing (`$EA`, `$11BF0`). Blocks (`$EB`, `$2812`).
+* A room flag or a game flag set (`$FA`, `$FB`).
+* Jumps: on an equipment byte (`$F6`), the player's form (`$F7`), a room flag (`$F8`), a game
+  flag (`$F9`), an item owned (`$FC`), or the player's place in a 16 x 16 zone with a flag
+  (`$FD`); and always (`$FE`). A jump's two bytes are an offset from themselves.
+* The end (`$FF`): it drops the interpreter's return address, so the list's caller goes on.
+* `$A990`: whether the player stands at an event's place (the directory's table 2).
+
+The fuzz gives each command its bytes at `$FF4E00`. The jumps get small offsets. `$E9` and `$EC`
+point at real lists (`$CE68`, `$D92A`), `$E8` gets a real look, `$EA` a real thing (room
+command 7's) with the room's own animation set (`$A0E0`), and `$EB` up to 8 x 8 blocks. For
+`$FD` and `$A990`, the player stands in or near the zone or the event's place. `$FF` cannot be
+called on its own; the sessions run it.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(39 runs, all complete; 637,567 checked calls); the sessions run most of the commands. 540,000
+fuzz cases from six states, 0 mismatches, every instruction covered. Self-test caught 100 in 100
+for each. Replace mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

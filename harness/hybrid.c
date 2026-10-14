@@ -1317,6 +1317,39 @@ int hybrid_fuzz(const char *name, long count)
             m68k_set_reg(M68K_REG_D1, (rnd() << 16) | (rnd() % 2 ? 0x454 : 0x400 + 2 * (rnd() % 0x40)));
             for (uint32_t sl = 0xE0; sl < 0x100; sl += 4) ram[0xC000 + sl] = (uint8_t)(rnd() % 3 ? 0 : 0x80);
         }
+        if (!strncmp(name, "List", 4) || !strcmp(name, "EventNear")) {
+            /* a command's bytes at $FF4E00: random, the jumps' offsets small, real effects ($CE68) and a picture ($D92A) at $4E10 */
+            for (uint32_t k4 = 0; k4 < 16; k4++) ram[0x4E00 + k4] = (uint8_t)rnd();
+            int at = !strcmp(name, "ListSkip") || !strcmp(name, "ListIfForm") ? 0 : !strcmp(name, "ListIfZone") ? 3 : 1;
+            if (strcmp(name, "ListEffects") && strcmp(name, "ListPicture")) { ram[0x4E00 + at] = 0; ram[0x4E01 + at] = (uint8_t)(2 + rnd() % 20); }
+            if (!strcmp(name, "ListIfZone")) ram[0x4E01] = (uint8_t)(rnd() % 3 == 0 ? 0 : rnd() % 3 == 0 ? 0x80 | rnd() : 1 + rnd() % 0x7F);
+            if (!strcmp(name, "ListEffects")) { ram[0x4E00] = 0; ram[0x4E01] = 0x10; }
+            if (!strcmp(name, "ListPicture")) { ram[0x4E02] = 0; ram[0x4E03] = 0x0E; }
+            for (uint32_t k4 = 0; k4 < 46; k4++) ram[0x4E10 + k4] = bus_read8((!strcmp(name, "ListPicture") ? 0xD92A : 0xCE68) + k4);
+            if (!strcmp(name, "ListObject")) { ram[0x4E00] = 0x16; ram[0x4E01] = 0x22; ram[0x4E02] = (uint8_t)(rnd() % 2); }   /* a real look ($1622) */
+            if (!strcmp(name, "ListThing")) {        /* a real thing's kind and word (room command 7's) */
+                static const uint16_t things[][2] = { {36, 20}, {24, 4}, {2, 512}, {46, 770}, {46, 33538}, {46, 2560}, {46, 256}, {44, 6166}, {42, 5142}, {40, 36120}, {4, 526}, {36, 532} };
+                uint32_t t = rnd() % 12;
+                ram[0x4E00] = (uint8_t)things[t][0]; ram[0x4E01] = (uint8_t)(things[t][1] >> 8); ram[0x4E02] = (uint8_t)things[t][1];
+                ram[0x4E05] = ram[0xA0E0];           /* the things' animation set ($600 | $A0E0), as the room has it */
+            }
+            if (!strcmp(name, "ListBlocks")) { ram[0x4E00] = (uint8_t)(rnd() % 0x40); ram[0x4E01] = (uint8_t)(rnd() % 0x20); ram[0x4E02] = (uint8_t)(1 + rnd() % 8); ram[0x4E03] = (uint8_t)(1 + rnd() % 8); }
+            if (!strcmp(name, "ListIfZone") || !strcmp(name, "EventNear")) {   /* the player (a4) in or near the zone, or the event's place */
+                uint32_t e = 4 * (rnd() % 64), z = ram[0x4E00];
+                m68k_set_reg(M68K_REG_A4, e);
+                put_word(0x9974, 16); put_word(0x9976, 16);
+                uint32_t x = (uint32_t)get_sword(0x9978) + (z & 15) * 16, y = (uint32_t)get_sword(0x997A) + (z & 0xF0);
+                if (!strcmp(name, "EventNear")) {
+                    uint32_t t = bus_read16(0x1CC08) << 16 | bus_read16(0x1CC0A), ev = rnd() % 32, r = t + 16 * ev;
+                    m68k_set_reg(M68K_REG_D7, (rnd() << 16) | ev);
+                    x = bus_read16(r) + bus_read8(r + 4) + (bus_read8(r + 7) ? 8 : 16); y = bus_read16(r + 2) + bus_read8(r + 5);
+                }
+                put_word(0xC800 + e, x + (uint32_t)small(rnd() % 2 ? 6 : 24)); put_word(0xC900 + e, y + (uint32_t)(rnd() % 40) - 4);
+            } else m68k_set_reg(M68K_REG_D7, (rnd() << 16) | rnd() % 32);
+            m68k_set_reg(M68K_REG_A2, 0xFFFF4E00);
+            for (uint32_t sl = 0xE0; sl < 0x100; sl += 4) ram[0xC000 + sl] = (uint8_t)(rnd() % 3 ? 0 : 0x80);
+            if (rnd() % 2) for (uint32_t k4 = 0; k4 < 32; k4++) { ram[0x99BE + k4] = (uint8_t)rnd(); ram[0x9992 + k4] = (uint8_t)rnd(); }
+        }
         if (!strcmp(name, "CrumbleAdd")) {          /* some walls' records taken */
             for (uint32_t k4 = 0; k4 < 4; k4++) ram[0x9B96 + 8 * k4] = (uint8_t)(rnd() % 3 ? 0x80 | rnd() % 4 : 0);
             m68k_set_reg(M68K_REG_D6, (rnd() << 16) | (0xF0 + rnd() % 0x100)); m68k_set_reg(M68K_REG_D7, (rnd() << 16) | ((0x4000 + rnd() % 0x1500) & ~0x3Fu));
