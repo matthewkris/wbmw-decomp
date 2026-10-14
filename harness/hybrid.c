@@ -1426,6 +1426,46 @@ int hybrid_fuzz(const char *name, long count)
             if (!strcmp(name, "DemoStep")) ram[0x8A4E] = (uint8_t)(rnd() % 3 ? 1 : rnd());
         }
         if (!strcmp(name, "TasksStart")) m68k_set_reg(M68K_REG_A1, rnd() % 2 ? 0x4FC0 : 0x50CC);
+        if (!strncmp(name, "Colo", 4) || !strncmp(name, "Cycle", 5) || !strncmp(name, "Fade", 4) || !strcmp(name, "PaletteWhite")) {
+            /* batch T43, the colour task: a real script ($643C) at its start, near its wait's end; a cycle with a level of 0 to
+             * -14 and a small step; the fade's counters near their ends; ColorAdjust on the palettes with small levels */
+            uint32_t sc = bus_read16(0x643C + 4 * (rnd() % 8) + 2);
+            ram[0x8C58] = (uint8_t)(rnd() % 4 ? 0x80 : 0); ram[0x8C59] = (uint8_t)(rnd() % 3 ? 1 : rnd());
+            uint32_t off = 0, walk = rnd() % 40;            /* a frame boundary some way in */
+            for (uint32_t k3 = 0; k3 < walk; k3++) {
+                uint32_t op = bus_read8(sc + off), sz;
+                if (op & 0x80) break;
+                if (op) sz = 2 + 4 * bus_read8(sc + off + 1);
+                else { uint32_t cmd = bus_read8(sc + off + 1); sz = cmd == 1 ? 2 : cmd == 3 ? 6 : 4; }
+                if (!op && (bus_read8(sc + off + 1) == 1 || bus_read8(sc + off + 1) == 2)) break;   /* not past a loop's end or a jump */
+                off += sz;
+            }
+            put_word(0x8C5A, 0); put_word(0x8C5C, sc); put_word(0x8C5E, off); ram[0x8C60] = (uint8_t)(1 + rnd() % 3);
+            if (!strcmp(name, "ColorScriptStart")) { ram[0x8C58] = (uint8_t)(rnd() % 8 ? 0 : 0x80); m68k_set_reg(M68K_REG_D0, (rnd() << 16) | 4 * (rnd() % 8)); }
+            ram[0x8C68] = (uint8_t)((rnd() % 4 ? 0x80 : 0) | (rnd() & 0x27)); ram[0x8C69] = (uint8_t)(1 + rnd() % 4);
+            ram[0x8C6A] = (uint8_t)(rnd() % 3 ? 1 : rnd()); ram[0x8C6B] = (uint8_t)-(int)(rnd() % 15);
+            ram[0x8C6C] = (uint8_t)(rnd() % 8); ram[0x8C6D] = (uint8_t)(rnd() % 64);
+            ram[0x8C56] = (uint8_t)rnd(); ram[0x8C57] = (uint8_t)(rnd() % 2);
+            ram[0x8C6E] = (uint8_t)(rnd() % 3 ? 1 : rnd()); ram[0x8C6F] = (uint8_t)(1 + rnd() % 3);
+            ram[0x8C70] = (uint8_t)(rnd() % 2 ? -(int)(rnd() % 17) : rnd()); ram[0x8C74] = (uint8_t)(1 + rnd() % 3);
+            for (int k3 = 1; k3 < 4; k3++) ram[0x8C70 + k3] = (uint8_t)-(int)(rnd() % 17);
+            ram[0x8A5D] = (uint8_t)(ram[0x8A5D] ^ (rnd() & 0x40));
+            if (rnd() % 4 == 0)                         /* the colour task not running (the slots $8248 on, as $47A looks) */
+                for (uint32_t k3 = 0; k3 < 16; k3++) {
+                    uint32_t t = 0x8248 + 0x80 * k3;
+                    if (ram[t + 4] == 'K' && ram[t + 5] == 'c' && ram[t + 6] == 'o' && ram[t + 7] == 'l') ram[t] = 0;
+                }
+            if (!strcmp(name, "ColourFrame") && ram[0x8C6E] == 1
+                    && (int8_t)(ram[0x8C70] - ram[0x8C74]) < -14) ram[0x8C6E] = 2;   /* not the fade out's end: the original runs that frame */
+            if (!strcmp(name, "CycleStart")) m68k_set_reg(M68K_REG_A2, 0x1B000 + rnd() % 0x1000);
+            if (!strcmp(name, "ColorAdjust")) {
+                uint32_t k3 = 2 * (rnd() % 64);
+                m68k_set_reg(M68K_REG_A0, 0xFF8B56 + k3); m68k_set_reg(M68K_REG_A1, 0xFF8BD6 + k3);
+                m68k_set_reg(M68K_REG_D1, (uint32_t)(int32_t)(int16_t)(rnd() % 33 - 16));
+                m68k_set_reg(M68K_REG_D2, (uint32_t)(int32_t)(int16_t)((rnd() % 33 - 16) * 16));
+                m68k_set_reg(M68K_REG_D3, (uint32_t)(int32_t)(int16_t)((rnd() % 33 - 16) * 256));
+            }
+        }
         if (!strcmp(name, "FrameWork") || !strcmp(name, "ScrollUpload") || !strcmp(name, "HScrollUpload") || !strcmp(name, "VdpRegs")
                 || !strcmp(name, "PaletteUpload") || !strcmp(name, "PadWhich")) {   /* the frame's requests, the scroll modes, the pads' Start */
             ram[0x8006] = (uint8_t)rnd(); ram[0x8A5F] = (uint8_t)rnd(); ram[0x8C56] = (uint8_t)rnd();

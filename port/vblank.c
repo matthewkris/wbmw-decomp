@@ -339,3 +339,292 @@ ENTRY(SpritesUpload, sprites_upload)       /* $557E */
 ENTRY(PaletteClear, palette_clear)         /* $559E */
 ENTRY(PaletteCopy, palette_copy)           /* $55BA */
 ENTRY(FadeReset, fade_reset)               /* $55DA */
+
+/* ---- batch T43: the colour task ($5608, "Kcol") ----
+ * Each frame (unless held, $8C56 bit 2) it runs the colour script ($8C58: one slot), a fade
+ * ($8C56 bit 5: in, bit 3 out; $8C70 the level, $8C74 the step every $8C6F frames), copies the
+ * built palette for upload when anything changed, and runs the colour cycle ($8C68: one slot).
+ * A colour is $0BGR, three bits a component; $594A adds a level to each component, clamped. */
+
+#define FADE_LEVEL    0xFFFF8C70u   /* bytes: $8C70 the fade; $8C71-$8C73 red, green, blue */
+
+static uint32_t sx8(uint32_t b) { return (uint32_t)(int32_t)(int8_t)b; }
+
+/* $594A: one colour from a0 to a1, each component plus d1 (red), d2 (green, <<4), d3 (blue, <<8),
+ * clamped to 0-$E; a negative green or blue is left out */
+static void color_adjust(void)
+{
+    uint16_t col = rd16(c->a[0]); c->a[0] += 2;
+    c->d[4] = set_w(c->d[4], col);
+    int16_t r = (int16_t)((col & 0xE) + (uint16_t)c->d[1]);
+    uint16_t out = r < 0 ? 0 : (uint16_t)r >= 0xE ? 0xE : (uint16_t)r;
+    int16_t g = (int16_t)((col & 0xE0) + (uint16_t)c->d[2]);
+    if (g >= 0) out |= (uint16_t)g >= 0xE0 ? 0xE0 : (uint16_t)g;
+    int16_t b = (int16_t)((col & 0xE00) + (uint16_t)c->d[3]);
+    if (b >= 0) out |= (uint16_t)b >= 0xE00 ? 0xE00 : (uint16_t)b;
+    c->d[7] = 0xE00;
+    c->d[5] = set_w(c->d[5], out);
+    wr16(c->a[1], out); c->a[1] += 2;
+}
+/* $5916: the whole palette faded by $8C71-$8C73 into the upload copy */
+static void fade_apply(void)
+{
+    c->a[0] = PALETTE; c->a[1] = PALETTE_OUT;
+    c->d[1] = set_w(c->d[1], sx8(rd8(FADE_LEVEL + 1)));
+    c->d[2] = set_w(c->d[2], sx8(rd8(FADE_LEVEL + 2)) << 4);
+    c->d[3] = set_w(c->d[3], sx8(rd8(FADE_LEVEL + 3)) << 8);
+    for (int k = 0; k < 64; k++) color_adjust();
+    c->d[0] = 0xFFFF;
+    wr8(PAL_FLAGS, (uint8_t)((rd8(PAL_FLAGS) & 0x3F) | 0x81));
+}
+static void fade_level_all(uint8_t v) { for (int k = 0; k < 4; k++) wr8(FADE_LEVEL + k, v); }
+/* $5892: a fade in's step, every $8C6F frames (the sound driver nudged, $618, unless $8A5D bit
+ * 6): the level up by the step; at 0 the fade ends ($8C56: done, bits 1, 4, 6) */
+static void fade_in_step(void)
+{
+    uint8_t n = (uint8_t)(rd8(0xFFFF8C6Eu) - 1);
+    wr8(0xFFFF8C6Eu, n);
+    if (n) return;
+    if (!(rd8(0xFFFF8A5Du) & 0x40)) call(0x618);
+    wr8(0xFFFF8C6Eu, rd8(0xFFFF8C6Fu));
+    uint8_t v = (uint8_t)(rd8(FADE_LEVEL) + rd8(0xFFFF8C74u));
+    c->d[0] = set_b(c->d[0], v);
+    if (v & 0x80) { fade_level_all(v); return; }
+    wr8(PAL_FLAGS, (uint8_t)((rd8(PAL_FLAGS) & 0xC7) | 0x52));
+}
+/* $58D6: a fade out's step: the level down by the step; below -14 the fade ends (bit 4) and the
+ * display is blanked ($62A, which waits for the frame in place: the original runs it). Returns 1
+ * if it went on there */
+static int fade_out_step(void)
+{
+    uint8_t n = (uint8_t)(rd8(0xFFFF8C6Eu) - 1);
+    wr8(0xFFFF8C6Eu, n);
+    if (n) return 0;
+    wr8(0xFFFF8C6Eu, rd8(0xFFFF8C6Fu));
+    uint8_t v = (uint8_t)(rd8(FADE_LEVEL) - rd8(0xFFFF8C74u));
+    c->d[0] = set_b(c->d[0], v);
+    if ((int8_t)v >= -14) { fade_level_all(v); return 0; }
+    wr8(PAL_FLAGS, (uint8_t)((rd8(PAL_FLAGS) & 0xC7) | 0x10));
+    port_continue_at(c, 0x62A, 0x5902);             /* jsr $62A: the display blanked, then the frame waited for in place */
+    return 1;
+}
+/* $587E: unless the colour task is running ($47A finds it: d0), the fades reset */
+static void fade_owner(void)
+{
+    c->a[1] = 0x5608;
+    call(0x47A);
+    if (!(c->d[0] & 0xFF)) fade_reset();
+}
+/* $581A: a fade in from black: level -16, a step of 2 a frame */
+static void fade_in(void)
+{
+    fade_owner();
+    wr8(PAL_FLAGS, (uint8_t)((rd8(PAL_FLAGS) & 0xC7) | 0x20));
+    wr8(FADE_LEVEL, 0xF0); wr8(0xFFFF8C6Eu, 1); wr8(0xFFFF8C6Fu, 1); wr8(0xFFFF8C74u, 2);
+}
+/* $5842: a fade out to black: level 0, a step of 2 a frame */
+static void fade_out(void)
+{
+    fade_owner();
+    wr8(PAL_FLAGS, (uint8_t)((rd8(PAL_FLAGS) & 0xC7) | 0x28));
+    wr8(FADE_LEVEL, 0); wr8(0xFFFF8C6Eu, 1); wr8(0xFFFF8C6Fu, 1); wr8(0xFFFF8C74u, 2);
+}
+/* $5868 (unreferenced): a slow fade out: a step of 1 every 2 frames */
+static void fade_out_slow(void)
+{
+    fade_out();
+    wr8(0xFFFF8C6Eu, 2); wr8(0xFFFF8C6Fu, 2); wr8(0xFFFF8C74u, 1);
+}
+/* $5986: the upload copy all white, uploaded and held */
+static void palette_white(void)
+{
+    c->d[0] = 0xFFFFFFFFu;
+    for (int k = 0; k < 32; k++) wr32(PALETTE_OUT + 4 * k, 0xFFFFFFFFu);
+    c->a[0] = PALETTE_OUT + 128; c->d[1] = 0xFFFF;
+    wr8(PAL_FLAGS, rd8(PAL_FLAGS) | 0x84);
+}
+/* $5766: a colour cycle from the 4 bytes at a2 (its kind, step, speed, colour), if its slot is
+ * free */
+static void cycle_start(void)
+{
+    c->a[3] = 0xFFFF8C68u;
+    c->d[2] = 0;
+    if (rd8(c->a[3]) & 0x80) { c->d[2] = 0xFFFF; return; }
+    wr8(0xFFFF8C57u, (uint8_t)(rd8(0xFFFF8C57u) + 1));
+    wr8(c->a[3] + 2, 1);
+    wr8(c->a[3] + 3, 0);
+    wr8(c->a[3], rd8(c->a[2])); c->a[2]++;
+    wr8(c->a[3] + 4, rd8(c->a[2])); c->a[2]++;
+    wr8(c->a[3] + 1, rd8(c->a[2])); c->a[2]++;
+    wr8(c->a[3] + 5, rd8(c->a[2])); c->a[2]++;
+    wr8(c->a[3], rd8(c->a[3]) | 0xA0);
+}
+/* $579A: the colour cycle's frame: every (speed) frames its level swings between 0 and -14 by
+ * its step; its colour gets the level on the components its kind does not leave out */
+static void cycles_run(void)
+{
+    c->a[2] = 0xFFFF8C68u;
+    c->d[0] = 0;
+    uint8_t kind = rd8(c->a[2]);
+    c->d[4] = set_b(c->d[4], kind);
+    if (kind & 0x80) {
+        uint8_t lv = rd8(c->a[2] + 3);
+        uint8_t n = (uint8_t)(rd8(c->a[2] + 2) - 1);
+        wr8(c->a[2] + 2, n);
+        if (!n) {
+            wr8(c->a[2] + 2, rd8(c->a[2] + 1));
+            for (;;) {
+                if (!(rd8(c->a[2]) & 0x20)) { lv = (uint8_t)(lv + rd8(c->a[2] + 4)); if (lv & 0x80) break; }
+                else { lv = (uint8_t)(lv - rd8(c->a[2] + 4)); if ((int8_t)lv >= -14) break; }
+                wr8(c->a[2], rd8(c->a[2]) ^ 0x20);
+            }
+        }
+        c->d[5] = set_b(c->d[5], lv);
+        wr8(c->a[2] + 3, lv);
+        c->d[1] = (kind & 1) ? 0 : set_w(0, sx8(lv));
+        c->d[2] = (kind & 2) ? 0 : set_w(0, sx8(lv) << 4);
+        c->d[3] = (kind & 4) ? 0 : set_w(0, sx8(lv) << 8);
+        c->d[4] = (uint32_t)rd8(c->a[2] + 5) * 2;
+        c->a[0] = PALETTE_OUT + c->d[4];
+        c->a[1] = c->a[0];
+        color_adjust();
+    }
+    c->a[2] += 6;
+    c->d[0] = 0xFFFF;
+}
+/* $56BE: the colour script's frame. When its wait runs out, its commands run: a byte with bit 7
+ * ends it; 0 then n is command n (from $5756); else a wait, then a count of (offset, colour)
+ * words written into the built palette (marked changed, $8C56 bit 6) */
+static void color_scripts(void)
+{
+    c->d[0] = 0;
+    c->a[0] = 0xFFFF8C58u;
+    if (!(rd8(c->a[0]) & 0x80)) goto next;
+    {
+        uint8_t n = (uint8_t)(rd8(c->a[0] + 1) - 1);
+        wr8(c->a[0] + 1, n);
+        if (n) goto next;
+    }
+    c->a[1] = rd32(c->a[0] + 2);
+    c->d[1] = set_w(c->d[1], rd16(c->a[0] + 6));
+    for (;;) {
+        uint8_t op = rd8(c->a[1] + sx16(c->d[1]));
+        c->d[2] = set_b(c->d[2], op);
+        if (op & 0x80) { wr16(c->a[0], 0); goto next; }
+        if (op) break;
+        c->d[2] = (uint32_t)rd8(c->a[1] + sx16(c->d[1]) + 1) << 2;
+        c->d[1] = set_w(c->d[1], c->d[1] + 2);
+        c->a[2] = rd32(0x5756 + c->d[2]);
+        switch (c->a[2]) {
+        case 0x5734:                                /* the loop's start here, its count */
+            c->a[1] += sx16(c->d[1]);
+            wr16(c->a[0] + 8, rd16(c->a[1])); c->a[1] += 2;
+            c->d[1] = 0;
+            break;
+        case 0x573E: {                              /* the loop's end: back to its start until done */
+            uint8_t k = (uint8_t)(rd8(c->a[0] + 8) - 1);
+            wr8(c->a[0] + 8, k);
+            if (!k) c->d[1] = 0;
+            break;
+        }
+        case 0x5746:                                /* a jump by the word here */
+            c->a[1] += sx16(c->d[1]);
+            c->a[1] += sx16(rd16(c->a[1]));
+            c->d[1] = 0;
+            break;
+        case 0x574E:                                /* a colour cycle from the 4 bytes here */
+            c->a[2] = c->a[1] + sx16(c->d[1]);
+            c->d[1] = set_w(c->d[1], c->d[1] + 4);
+            cycle_start();
+            break;
+        default: call(c->a[2]); break;              /* past the table: as the original jumps */
+        }
+    }
+    wr8(c->a[0] + 1, (uint8_t)c->d[2]);
+    c->d[2] = set_b(c->d[2], rd8(c->a[1] + sx16(c->d[1]) + 1));
+    c->d[1] = set_w(c->d[1], c->d[1] + 2);
+    c->a[2] = PALETTE;
+    do {
+        c->d[3] = set_w(c->d[3], rd16(c->a[1] + sx16(c->d[1])));
+        c->d[1] = set_w(c->d[1], c->d[1] + 2);
+        wr16(c->a[2] + sx16(c->d[3]), rd16(c->a[1] + sx16(c->d[1])));
+        c->d[1] = set_w(c->d[1], c->d[1] + 2);
+        c->d[2] = set_b(c->d[2], c->d[2] - 1);
+    } while (c->d[2] & 0xFF);
+    wr32(c->a[0] + 2, c->a[1]);
+    wr16(c->a[0] + 6, (uint16_t)c->d[1]);
+    wr8(PAL_FLAGS, rd8(PAL_FLAGS) | 0x40);
+next:
+    c->a[0] += 16;
+    c->d[0] = 0xFFFF;
+}
+/* $5658: colour script d0 (the table at $643C) started, the colour task told to free it ($569C)
+ * when it ends; with its slot busy, the game stops ($4CB4, 3). 1: it left elsewhere */
+static int color_script_start(void)
+{
+    c->a[2] = 0xFFFF8C58u;
+    c->d[1] = 0;
+    if (rd8(c->a[2]) & 0x80) {
+        c->a[2] += 16; c->d[1] = 0xFFFF;
+        c->d[0] = 3;
+        port_continue_at(c, 0x4CB4, 0);
+        return 1;
+    }
+    wr32(c->a[2] + 2, rd32(0x643C + sx16(c->d[0])));
+    c->a[1] = 0x5608;
+    call(0x47A);
+    wr32(c->a[0] + 8, 0x569C);
+    wr16(c->a[2] + 6, 0);
+    wr16(c->a[2], 0x8001);
+    return 0;
+}
+/* $569C (the colour task's end): its script and cycle slots freed */
+static void color_end(void)
+{
+    wr8(0xFFFF8C58u, 0);
+    wr8(0xFFFF8C68u, 0);
+    c->a[0] = 0xFFFF8C68u + 6; c->d[0] = 0xFFFF;
+}
+/* $560C (the colour task, each frame) */
+static void colour_frame(void)
+{
+    if (rd8(PAL_FLAGS) & 4) return;
+    color_scripts();
+    if (rd8(PAL_FLAGS) & 0x20) {
+        if (rd8(PAL_FLAGS) & 8) fade_out_step(); else fade_in_step();
+        if (!bclr8(PAL_FLAGS, 1)) fade_apply();
+    }
+    if (rd8(0xFFFF8C57u) || (rd8(PAL_FLAGS) & 0x41) != 1) palette_copy();
+    cycles_run();
+}
+
+/* the fade out ends this frame: its end blanks the display and waits for the frame in place ($62A
+ * to $3B8), which C cannot do; the original runs that frame */
+static int fade_out_ends(void)
+{
+    return rd8(0xFFFF8C6Eu) == 1 && (int8_t)(rd8(FADE_LEVEL) - rd8(0xFFFF8C74u)) < -14;
+}
+void ColourFrame(Cpu *cpu)                 /* $560C */
+{
+    c = cpu;
+    if ((rd8(PAL_FLAGS) & 0x2C) == 0x28 && fade_out_ends()) { port_leave_to_68k(c, 0x560C); return; }
+    colour_frame(); c->ret = 0;
+}
+void FadeOutStep(Cpu *cpu)                 /* $58D6 */
+{
+    c = cpu;
+    if (!fade_out_step()) c->ret = 0;
+}
+void ColorScriptStart(Cpu *cpu) { c = cpu; if (!color_script_start()) c->ret = 0; }   /* $5658 */
+ENTRY(ColorEnd, color_end)                 /* $569C */
+ENTRY(ColorScripts, color_scripts)         /* $56BE */
+ENTRY(CycleStart, cycle_start)             /* $5766 */
+ENTRY(CyclesRun, cycles_run)               /* $579A */
+ENTRY(FadeIn, fade_in)                     /* $581A */
+ENTRY(FadeOut, fade_out)                   /* $5842 */
+ENTRY(FadeOutSlow, fade_out_slow)          /* $5868 */
+ENTRY(FadeOwner, fade_owner)               /* $587E */
+ENTRY(FadeInStep, fade_in_step)            /* $5892 */
+ENTRY(FadeApply, fade_apply)               /* $5916 */
+ENTRY(ColorAdjust, color_adjust)           /* $594A */
+ENTRY(PaletteWhite, palette_white)         /* $5986 */

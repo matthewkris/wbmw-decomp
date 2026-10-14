@@ -104,6 +104,7 @@ void CompanionFrame(Cpu *), CompanionKind4(Cpu *), CompanionShoot(Cpu *), Compan
 void PoseKeep(Cpu *), PoseFree(Cpu *), ExitRoom(Cpu *), ExitArrive(Cpu *), PlayerPickups(Cpu *);
 void CompanionKind6(Cpu *), CompanionKind2(Cpu *), CompanionEnter(Cpu *), CompanionWalk(Cpu *), CompanionStep(Cpu *), CompanionRun(Cpu *), CompanionJump(Cpu *), CompanionJumping(Cpu *), CompanionSit(Cpu *), CompanionEdge(Cpu *), CompanionDive(Cpu *), CompanionWait(Cpu *), CompanionHop(Cpu *), CompanionPlace(Cpu *), CompanionChanceSit(Cpu *), CompanionSpit(Cpu *), CompanionTrailStart(Cpu *), CompanionTrail(Cpu *), CompanionFell(Cpu *);
 void RecordStart(Cpu *), DemoStart(Cpu *), RecordStep(Cpu *), DemoStep(Cpu *), TasksStart(Cpu *), Clear9996(Cpu *), SoundStop25(Cpu *), PadWhich(Cpu *), ScreenReset(Cpu *), ScreenNew(Cpu *), ReadPads(Cpu *), ReadPad(Cpu *), Presses(Cpu *), FrameWork(Cpu *), ScrollUpload(Cpu *), HScrollUpload(Cpu *), VdpRegs(Cpu *), PaletteUpload(Cpu *), ClearEntities(Cpu *), SpritesUpload(Cpu *), PaletteClear(Cpu *), PaletteCopy(Cpu *), FadeReset(Cpu *);
+void ColourFrame(Cpu *), ColorScriptStart(Cpu *), ColorEnd(Cpu *), ColorScripts(Cpu *), CycleStart(Cpu *), CyclesRun(Cpu *), FadeIn(Cpu *), FadeOut(Cpu *), FadeOutSlow(Cpu *), FadeOwner(Cpu *), FadeInStep(Cpu *), FadeOutStep(Cpu *), FadeApply(Cpu *), ColorAdjust(Cpu *), PaletteWhite(Cpu *);
 void Looks(Cpu *), LooksExtra(Cpu *), LooksBlock(Cpu *), LooksBody(Cpu *), LooksSword(Cpu *), LooksShield(Cpu *), EquipChange(Cpu *);
 void HudPanel(Cpu *), GoldLabel(Cpu *), ThreeLabels(Cpu *), DigitsOut(Cpu *), ItemsChoose(Cpu *), MagicChoose(Cpu *), SlotChoose(Cpu *), ActionToSlot(Cpu *),
      ItemToSlot(Cpu *), WornBlink(Cpu *), StatusFadeIn(Cpu *), StatusFadeOut(Cpu *), StatusWait(Cpu *);
@@ -191,6 +192,21 @@ const PortRoutine port_routines[] = {
     {0x00559E, 0x0055BA, "PaletteClear", PaletteClear, CT_SP},
     {0x0055BA, 0x0055DA, "PaletteCopy", PaletteCopy, CT_SP},
     {0x0055DA, 0x005608, "FadeReset", FadeReset, CT_SP},
+    {0x00560C, 0x005658, "ColourFrame", ColourFrame, CT_SP},   /* vblank.c: the colour task: its script, fades and cycle */
+    {0x005658, 0x00569C, "ColorScriptStart", ColorScriptStart, CT_SP},
+    {0x00569C, 0x0056BE, "ColorEnd", ColorEnd, CT_SP},
+    {0x0056BE, 0x005766, "ColorScripts", ColorScripts, CT_SP},
+    {0x005766, 0x00579A, "CycleStart", CycleStart, CT_SP},
+    {0x00579A, 0x00581A, "CyclesRun", CyclesRun, CT_SP},
+    {0x00581A, 0x005842, "FadeIn", FadeIn, CT_SP},
+    {0x005842, 0x005868, "FadeOut", FadeOut, CT_SP},
+    {0x005868, 0x00587E, "FadeOutSlow", FadeOutSlow, CT_SP},
+    {0x00587E, 0x005892, "FadeOwner", FadeOwner, CT_SP},
+    {0x005892, 0x0058D6, "FadeInStep", FadeInStep, CT_SP},
+    {0x0058D6, 0x005916, "FadeOutStep", FadeOutStep, CT_SP},
+    {0x005916, 0x00594A, "FadeApply", FadeApply, CT_SP},
+    {0x00594A, 0x005986, "ColorAdjust", ColorAdjust, CT_SP},
+    {0x005986, 0x00599C, "PaletteWhite", PaletteWhite, CT_SP},
     {0x0053AA, 0x0054C4, "BuildSprites", BuildSprites},
     {0x0054C4, 0x00557E, "AddEntitySprites", AddEntitySprites},
     {0x000C36, 0x000C3E, "HitboxOverlapSwap", HitboxOverlapSwap},
