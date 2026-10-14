@@ -2319,6 +2319,30 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 mismatches, every instruction covered. Self-test caught 100 in 100 for each. Replace mode:
 thirteen runs, no problems.
 
+#### The room changes, batch T30: the room script 13's ride, 14's and 15's setups (2026-10-14)
+
+In `port/rooms.c`:
+
+* Index 13, each frame (`$D44C`): when the player stands on the first platform (its bit 0, set
+  by the platform) outside a conversation, the ride runs once (`$D48C`) and room flag `$10` is
+  set. The ride: the two figures carry the platforms down and back up, with waits of 30 frames
+  (`$DAE6`). The screen fades (`$D61E`: the palette at `$8B98` by `$99E6` / 4, through `$594A`).
+  The room's graphics and palette change by area. Figures rain down, by the counts and gaps at
+  `$D702` (`$D64E` makes one; `$D6C4` moves them and removes those below `$10B0`). Then the
+  room's music and palette come back, and the figures return.
+* Index 14 (area 16's room 3), setup `$D71A`: a lift, from `$D722`, through T25's `$CC1C`.
+* Index 15 (area 14's room 6), setup `$D72A`. Before game flag `$43`, if the player has item
+  `$3A`, its speed is raised to at least `$100` and `$9F05` set to 8; otherwise `$99DE` is set.
+  After the flag, `$99DE` is set and the effects at `$D886` are let out.
+
+`$D44C`, `$D48C` and `$DAE6` wait for frames. They are written but not registered: no session
+reaches the room.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(39 runs, all complete; 637,567 checked calls). 240,000 fuzz cases from six states, 0
+mismatches, every instruction covered. Self-test caught 100 in 100 for each. Replace mode:
+thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

@@ -91,6 +91,7 @@ void SeqTalk(Cpu *), SeqReceive(Cpu *), SeqStatue(Cpu *), ReceivePalettes(Cpu *)
      ReceiveNone(Cpu *);
 void Room11Setup(Cpu *), Room11Frame(Cpu *), Room11Looks(Cpu *), Room12Setup(Cpu *), Room12Blocks(Cpu *);
 void Room12Frame(Cpu *), Room12Walk(Cpu *), FindKind(Cpu *), FindKindD1(Cpu *), Room13Setup(Cpu *), Room13Platform(Cpu *), Room13Figure(Cpu *);
+void Room13Frame(Cpu *), Room13Ride(Cpu *), ScriptWait(Cpu *), Room13Fade(Cpu *), Room13Drop(Cpu *), Room13Drops(Cpu *), Room14Setup(Cpu *), Room15Setup(Cpu *);
 void NumText(Cpu *), CharAt(Cpu *), ScrollWindow(Cpu *), WindowFrame(Cpu *), WindowRow(Cpu *), TileUnder(Cpu *), WindowRestore(Cpu *), NewLine(Cpu *), MoreBlink(Cpu *), MoreHide(Cpu *), MoreShow(Cpu *), ChoiceBlink(Cpu *), ChoiceHide(Cpu *), ChoiceShow(Cpu *), PriceOf(Cpu *), NameOf(Cpu *), NameText(Cpu *), FoundThing(Cpu *), FoundGold(Cpu *), BoxText(Cpu *), BoxRows(Cpu *), BoxRow(Cpu *), ShowFoundGold(Cpu *), ShowFound(Cpu *), WindowGeometry(Cpu *), Cheaper(Cpu *), Owns(Cpu *), Give(Cpu *), Take(Cpu *), ItemCell(Cpu *), FlagCell(Cpu *), MessageData(Cpu *), OpenWindow(Cpu *), WindowAt(Cpu *), MsgStep(Cpu *), CharIn(Cpu *), NoteIn(Cpu *), OcarinaTune(Cpu *);   /* message.c */
 #define CT_ALL 0x3FFFF                /* every register and flag compared */
 void ClearEntityAnim(Cpu *), ClearEntity(Cpu *), FreezeEntities(Cpu *), UnfreezeEntities(Cpu *),   /* entity.c */
@@ -579,6 +580,11 @@ const PortRoutine port_routines[] = {
     {0x00D388, 0x00D3C8, "Room13Setup", Room13Setup, CT_ALL},
     {0x00D3C8, 0x00D3F2, "Room13Platform", Room13Platform, CT_ALL},
     {0x00D3F2, 0x00D44C, "Room13Figure", Room13Figure, CT_ALL},
+    {0x00D61E, 0x00D64E, "Room13Fade", Room13Fade, CT_ALL},       /* rooms.c: the room script 13's ride ($D44C, $D48C, $DAE6 wait for a session), 14's and 15's setups */
+    {0x00D64E, 0x00D6C4, "Room13Drop", Room13Drop, CT_ALL},
+    {0x00D6C4, 0x00D71A, "Room13Drops", Room13Drops, CT_ALL},
+    {0x00D71A, 0x00D72A, "Room14Setup", Room14Setup, CT_ALL},
+    {0x00D72A, 0x00D766, "Room15Setup", Room15Setup, CT_ALL},
     {0x00C1E8, 0x00C27E, "SeqTalk", SeqTalk, CT_SP | CT_WAITS},  /* rooms.c: the sequences of a conversation, a thing received and a statue */
     {0x00C2DE, 0x00C2E6, "ReceiveOwn", ReceiveOwn, CT_ALL},
     {0x00C2E6, 0x00C2E8, "ReceiveNone", ReceiveNone, CT_ALL},
