@@ -2949,6 +2949,29 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 routines and T55's handlers again), 0 mismatches, every instruction covered. Self-test caught 100
 in 100 for all 33. Replace mode: thirteen runs, no problems.
 
+#### Items and magic, batches T58-T59: the magic's entities, the companion's route (2026-10-15)
+
+* T58, `port/magic.c`: the magic's entities, already C inside the spells' frames, are entries of
+  their own: the spirits' frame (`$11822`), the entities run (`$11832`), a spark, a rock, the
+  bolt and a spirit with its steps (`$11868`-`$11AE0`). The helpers that the player's code calls
+  for their registers and flags are plain C exact in them: the player's hurt boxes by form
+  (`$11568`), a rock dropped on an enemy (`$11682`), the quake's shake (`$11708`), the next enemy
+  on the ground, the nearest enemy and the first one magic can hit (`$11AE0`-`$11B76`).
+* T59, `port/enemygfx.c`: the companion's route along its trail (`$1061E`: the lift, the trail's
+  points dropped as they are reached, the probes of the way ahead, `$1070A`-`$107E2`), the box
+  tests (`$108DC`-`$108EE`, flags exact) and the 16 slots from `$80` cleared (`$108FA`,
+  `$1115E`).
+* Left in the area: `$11590`, the quake's start, which waits for frames (it stays the original's
+  until a recording casts the quake).
+* Fuzz: the magic's bias now covers every entity entry (their looks by type), with a slot of the
+  routine's type in a4; the companion near the player with a trail of 1-16 points, some where it
+  stands, sometimes on the lift.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(47 runs, all complete; 1,311,282 checked calls). 750,000 fuzz cases from six states,
+0 mismatches, every instruction covered. Self-test caught 100 in 100 for all 25. Replace mode:
+thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

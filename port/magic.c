@@ -780,3 +780,144 @@ void QuakeRocks(Cpu *c)      { cpu = c; quake_rocks(c); }
 void QuakeSettling(Cpu *c)   { cpu = c; quake_settling(c); }
 void QuakeEnding(Cpu *c)     { cpu = c; quake_ending(c); }
 void ThunderFlashes(Cpu *c)  { cpu = c; thunder_flashes(c); }
+
+/* ---- batch T58: the magic's entities and helpers as entries ----
+ * The entities ($11822-$11AE0) are the C above, each an entry of its own (memory as the
+ * original's); the helpers that the player's code calls for their registers and flags ($11568,
+ * $11682, $11708, $11AE0-$11B76) are plain C exact in those. */
+static void f_set(uint32_t v, uint32_t sign) { cpu->ccr = (uint16_t)((cpu->ccr & CC_X) | (v & sign ? CC_N : 0) | ((v & (sign * 2 - 1)) ? 0 : CC_Z)); }
+static int target_regs(Cpu *c, uint32_t a2, int max_type)   /* the tests at $11AE0-$11B92, d0 as they leave it */
+{
+    c->d[0] = set_b(c->d[0], rd8(a2 - 0x4000) & 0xC1);
+    if ((c->d[0] & 0xFF) != 0xC1) return 0;
+    if (rd8(a2 - 0x2BFE) > max_type) return 0;
+    return rd16(a2 - 0x2600) != 0;
+}
+/* $11568: the player's hurt boxes by form (the shield's, $11584, or form 2's, $1158A) */
+static void hurt_boxes(Cpu *c)
+{
+    wr32(c->a[4] - 0x2900, rd8(FORM) == 2 ? 0x1158A : 0x11584);
+}
+/* $11682: a rock onto enemy a2 (see drop_rock); mi (d0 -1) if no slot is free */
+static void drop_rock_regs(Cpu *c)
+{
+    c->a[0] = SLOTS;
+    c->d[0] = 8;
+    while (rd8(c->a[0] - 0x4000) & 0x80) {
+        c->a[0] += 4;
+        c->d[0] = set_b(c->d[0], c->d[0] - 1);
+        if (!(c->d[0] & 0xFF)) { c->d[0] = 0xFFFFFFFFu; f_set(c->d[0], 0x80000000u); return; }
+    }
+    wr8(ROCKS, (uint8_t)(rd8(ROCKS) + 1));
+    { uint32_t t = c->a[0]; c->a[0] = c->a[4]; c->a[4] = t; }
+    call_68k(c, 0xA36);
+    { uint32_t t = c->a[0]; c->a[0] = c->a[4]; c->a[4] = t; }
+    wr8(c->a[0] - 0x2BFF, (uint8_t)c->d[0]);
+    wr8(c->a[0] - 0x4000, 0x80);
+    wr16(c->a[0] - 0x2BFE, ROCK);
+    wr16(c->a[0] - 0x3D00, 0x1406);
+    wr16(c->a[0] - 0x3DFE, 0x6E0);
+    wr16(c->a[0] - 0x3800, rd16(c->a[2] - 0x3800));
+    c->d[0] = rd8(c->a[2] - 0x34FD);
+    c->d[0] = set_w(c->d[0], c->d[0] + rd16(c->a[2] - 0x3700));
+    wr16(c->a[0] - 0x3700, (uint16_t)c->d[0]);
+    if (rd8(c->a[2] - 0x3FFE) & 8) wr8(c->a[2] - 0x21FF, rd8(c->a[2] - 0x21FF) | 1);
+    wr8(c->a[2] - 0x21FF, rd8(c->a[2] - 0x21FF) | 0x80);
+    c->d[0] = 0;
+    c->d[1] = 0xC & rd16(c->a[2] - 0x2300);
+    if ((c->d[1] & 0xFFFF) != 0xC) {
+        c->d[0] = set_w(c->d[0], rd16(MAX_HEALTH) >> 2);
+        c->d[1] = set_w(c->d[1], (uint16_t)c->d[1] >> 1);
+        c->d[0] = set_w(c->d[0], (c->d[1] & 63) >= 16 ? 0 : (uint16_t)c->d[0] >> (c->d[1] & 63));
+    }
+    wr16(c->a[2] - 0x21FE, (uint16_t)c->d[0]);
+    c->d[0] = 0; f_set(0, 0x80000000u);
+}
+/* $11708: as shake(), in the registers */
+static void shake_regs(Cpu *c)
+{
+    c->d[0] = set_w(c->d[0], 2);
+    c->d[1] = set_w(c->d[1], rd16(SCROLL_HOME));
+    c->d[2] = set_w(c->d[2], rd16(SCROLL_Y));
+    if (!(rd8(ACTIVE) & 1)) {
+        c->d[2] = set_w(c->d[2], c->d[2] + c->d[0]);
+        c->d[1] = set_w(c->d[1], c->d[1] + 4);
+        if ((int16_t)c->d[2] < (int16_t)c->d[1]) goto store;
+    } else {
+        c->d[2] = set_w(c->d[2], c->d[2] - c->d[0]);
+        c->d[1] = set_w(c->d[1], c->d[1] - 4);
+        if ((int16_t)c->d[2] >= (int16_t)c->d[1]) goto store;
+    }
+    c->d[2] = set_w(c->d[2], c->d[1]);
+    wr8(ACTIVE, rd8(ACTIVE) ^ 1);
+store:
+    wr16(SCROLL_Y, (uint16_t)c->d[2]);
+    call_68k(c, 0x9CD2);
+}
+/* $11AE0: from enemy a2, d1 of them: the next one magic can hit that is on the ground (eq, d0 0),
+ * or mi (d0 -1) */
+static void next_on_ground_regs(Cpu *c)
+{
+    for (;;) {
+        if (target_regs(c, c->a[2], 0)) {
+            c->d[0] = (0xA & rd8(c->a[2] - 0x3100));
+            c->d[0] = set_b(c->d[0], c->d[0] - 2);
+            if (!(c->d[0] & 0xFF)) { f_set(0, 0x80u); return; }
+        }
+        c->a[2] += 4;
+        c->d[1] = set_b(c->d[1], c->d[1] - 1);
+        if (!(c->d[1] & 0xFF)) break;
+    }
+    c->d[0] = 0xFFFFFFFFu; f_set(c->d[0], 0x80000000u);
+}
+/* $11B0E: d2 the nearest enemy magic can hit ($1252 from a4), d3 how far; mi if none */
+static void nearest_enemy_regs(Cpu *c)
+{
+    c->a[2] = 0x40;
+    c->d[4] = 0x10;
+    c->d[2] = 0xFFFFFFFFu;
+    do {
+        if (target_regs(c, c->a[2], 0)) {
+            call_68k(c, 0x1252);
+            if ((c->d[2] & 0x8000) || (uint16_t)c->d[0] < (uint16_t)c->d[3]) {
+                c->d[3] = set_w(c->d[3], c->d[0]);
+                c->d[2] = set_w(c->d[2], c->a[2]);
+            }
+        }
+        c->a[2] += 4;
+        c->d[4] = set_w(c->d[4], c->d[4] - 1);
+    } while (c->d[4] & 0xFFFF);
+    f_set(c->d[2], 0x8000u);
+}
+/* $11B4A (types 0) and $11B76 (types up to 2): a2 the first enemy magic can hit, with its
+ * health's flags; mi (d0 -1) if none */
+static void first_enemy_regs(Cpu *c, int max_type)
+{
+    c->a[2] = 0x40;
+    c->d[1] = 0xF;
+    for (;;) {
+        if (target_regs(c, c->a[2], max_type)) { f_set(rd16(c->a[2] - 0x2600), 0x8000u); return; }
+        c->a[2] += 4;
+        c->d[1] = set_w(c->d[1], c->d[1] - 1);
+        if ((c->d[1] & 0xFFFF) == 0xFFFF) break;
+    }
+    c->d[0] = 0xFFFFFFFFu; f_set(c->d[0], 0x80000000u);
+}
+
+static Ent ent_a4(Cpu *c) { return (Ent)(int32_t)(int16_t)c->a[4]; }
+void SpiritsFrame(Cpu *c)   { cpu = c; run_entities(); if (rd8(COUNT_A) >= rd8(COUNT_B)) end_spell(); c->ret = 0; }   /* $11822 */
+void RunMagicEnts(Cpu *c)   { cpu = c; run_entities(); c->ret = 0; }          /* $11832 */
+void MagicSpark(Cpu *c)     { cpu = c; spark(ent_a4(c)); c->ret = 0; }        /* $11868 */
+void MagicRock(Cpu *c)      { cpu = c; rock(ent_a4(c)); c->ret = 0; }         /* $118BE */
+void MagicBolt(Cpu *c)      { cpu = c; bolt(ent_a4(c)); c->ret = 0; }         /* $118F0 */
+void MagicSpirit(Cpu *c)    { cpu = c; spirit(ent_a4(c)); c->ret = 0; }       /* $1194C */
+void SpiritTouch(Cpu *c)    { cpu = c; spirit_touch(ent_a4(c)); c->ret = 0; } /* $11A5A */
+void SpiritMove(Cpu *c)     { cpu = c; spirit_move(ent_a4(c)); c->ret = 0; }  /* $11AA4 */
+void SpiritBurst(Cpu *c)    { cpu = c; spirit_burst(ent_a4(c)); c->ret = 0; } /* $11AC2 */
+void HurtBoxes(Cpu *c)      { cpu = c; hurt_boxes(c); c->ret = 0; }           /* $11568 */
+void DropRock(Cpu *c)       { cpu = c; drop_rock_regs(c); c->ret = 0; }       /* $11682 */
+void QuakeShake(Cpu *c)     { cpu = c; shake_regs(c); c->ret = 0; }           /* $11708 */
+void NextOnGround(Cpu *c)   { cpu = c; next_on_ground_regs(c); c->ret = 0; }  /* $11AE0 */
+void NearestEnemy(Cpu *c)   { cpu = c; nearest_enemy_regs(c); c->ret = 0; }   /* $11B0E */
+void EnemyForSpirits(Cpu *c) { cpu = c; first_enemy_regs(c, 0); c->ret = 0; } /* $11B4A */
+void EnemyForThunder(Cpu *c) { cpu = c; first_enemy_regs(c, 2); c->ret = 0; } /* $11B76 */
