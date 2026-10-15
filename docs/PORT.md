@@ -2841,6 +2841,30 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 0 mismatches, every instruction covered. Self-test caught 100 in 100 for all fifteen. Replace
 mode: thirteen runs, no problems.
 
+#### The object region, batch T50: room script 18, room script 17's setup and frame (2026-10-15)
+
+* In `port/objhelp.c`:
+  * Room script 18 (`$1898C`, `$18994`). Once triggered, it flashes a palette entry 128 times
+    by reading CRAM, masking a component and writing it back (`$189EA`), then starts colour
+    script `$C`.
+  * The riders' helpers: the partner's animation, its fall with this one beside it, both
+    blinking, the touch and hit, and the partner's ground and wall tests (`$18A24`-`$18AD2`).
+  * Room script 17, the boss's room:
+    * the setup (`$19612`: its tiles, six parts and the body from `$1967C`, the head);
+    * the frame (`$19710`);
+    * the tiles' wobble (`$1979C`), an extra enemy (`$1985A`);
+    * the effects (`$19878`): the shudder, a white flash, and the head's tint through `$182AA`.
+  * The frame still calls the original for the boss's states, parts, beaten check and head;
+    those are T51's.
+* `$182AA` keeps its buffer at the stack pointer plus an offset, in live memory above SP. The
+  frame pushes the return address before the effects, as the original's `bsr` does, so the
+  buffer lands where the original's does. The fuzz caught this.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(47 runs, all complete; 1,311,282 checked calls). 510,000 fuzz cases from six states,
+0 mismatches, every instruction covered. Self-test caught 100 in 100 for all seventeen. Replace
+mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

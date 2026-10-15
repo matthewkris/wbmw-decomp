@@ -621,3 +621,308 @@ ENTRY(MountTouch, mount_touch)             /* $1839C */
 ENTRY(PartnerGrounded, partner_grounded)   /* $183BA */
 ENTRY(PartnerAtWall, partner_at_wall)      /* $183C8 */
 ENTRY(Shake, shake)                        /* $183D4 */
+
+/* ---- batch T50: room script 18 (a flash), room script 17's setup and frame ---- */
+
+/* $189EA: palette entry d0>>1 (CRAM $3A..., word d0 & $3E) keeps only the component(s) d0's low
+ * two bits leave (the mask $FFF0 rotated), read and written back */
+static void flash_colour(void)
+{
+    c->d[1] = 0x10000;
+    c->d[1] = set_b(c->d[1], c->d[0]);
+    c->d[1] = set_b(c->d[1], (c->d[1] & 0xFF) >> 1);
+    c->d[1] = set_w(c->d[1], (c->d[1] & 0x3E) + 0x1D00);
+    c->d[1] = c->d[1] << 16 | c->d[1] >> 16;
+    c->a[0] = 0xC00000;
+    wr32(0xC00004, c->d[1]);
+    c->d[2] = set_w(c->d[2], rd16(0xC00000));
+    c->d[3] = 0xFFFFFFF0u;
+    uint16_t m = (uint16_t)c->d[3];
+    int b0 = c->d[0] & 1; c->d[0] = set_w(c->d[0], (uint16_t)c->d[0] >> 1);
+    if (!b0) m = (uint16_t)(m << 4 | m >> 12);
+    int b1 = c->d[0] & 1; c->d[0] = set_w(c->d[0], (uint16_t)c->d[0] >> 1);
+    if (!b1) m = (uint16_t)(m << 8 | m >> 8);
+    c->d[3] = set_w(c->d[3], m);
+    c->d[2] = set_w(c->d[2], c->d[2] & m);
+    c->d[1] |= 0x40000000;
+    wr32(0xC00004, c->d[1]);
+    wr16(0xC00000, (uint16_t)c->d[2]);
+}
+/* $1898C: room script 18's setup: armed */
+static void room18_setup(void) { put8(0xFFFF99DEu, 1); }
+/* $18994: room script 18's frame. Armed and triggered (bit 0): $80 flashes of 2 frames from
+ * colour $14 on (each $25 on), the graphics slots $8E36/$8EB6 freed; at the end colour script $C */
+static void room18_frame(void)
+{
+    if (!(rd8(0xFFFF99DEu) & 2)) {
+        if (!(rd8(0xFFFF99DEu) & 1)) return;
+        wr32(0xFFFF99DEu, 0x02808014);
+        c->d[0] = 0xFFFFFFFFu;
+        wr16(0xFFFF8E36u, 0xFFFF);
+        wr16(0xFFFF8EB6u, 0xFFFF);
+        return;
+    }
+    uint8_t n = (uint8_t)(rd8(0xFFFF99DFu) - 1);
+    wr8(0xFFFF99DFu, n);
+    if (n) return;
+    wr8(0xFFFF99DFu, 2);
+    c->d[0] = set_b(c->d[0], rd8(0xFFFF99E1u));
+    c->d[1] = set_b(c->d[1], c->d[0] + 0x25);
+    wr8(0xFFFF99E1u, (uint8_t)c->d[1]);
+    c->d[0] = set_b(c->d[0], c->d[0] ^ 0x15);
+    flash_colour();
+    n = (uint8_t)(rd8(0xFFFF99E0u) - 1);
+    wr8(0xFFFF99E0u, n);
+    if (n) return;
+    put8(0xFFFF99DEu, 0);
+    c->d[0] = 0xC;
+    port_continue_at(c, 0x5658, 0);
+}
+/* $18A3E: placed beside the partner (2 ahead), facing as it, at its own height (-$36FD) above it,
+ * its collision as the partner's */
+static void beside_partner(void)
+{
+    c->a[0] = sx(rd16(e(-0x2CFE)));
+    c->d[2] = set_b(c->d[2], rd8(c->a[0] - 0x3FFE));
+    put8(e(-0x3FFE), c->d[2]);
+    c->d[0] = set_w(c->d[0], rd16(c->a[0] - 0x3800));
+    c->d[1] = 2;
+    if (c->d[2] & 8) c->d[1] = set_w(c->d[1], (uint16_t)-2);
+    c->d[0] = set_w(c->d[0], c->d[0] + c->d[1]);
+    put16(e(-0x3800), c->d[0]);
+    c->d[0] = set_w(c->d[0], (uint16_t)((int8_t)rd8(e(-0x36FD)) + rd16(c->a[0] - 0x3700)));
+    put16(e(-0x3700), c->d[0]);
+    put8(e(-0x3100), rd8(c->a[0] - 0x3100));
+}
+/* $18A32: the partner falls and moves ($46D6); this one beside it */
+static void partner_fall_beside(void) { partner(); call(0x46D6); partner(); beside_partner(); }
+/* $18A74: both blink ($451A) */
+static void both_blink(void) { partner(); call(0x451A); partner(); call(0x451A); }
+/* $18A96: the partner takes its health; the player against it, and its sword's touch unless the
+ * other is in state 2 */
+static void rider_touch(void)
+{
+    c->d[0] = set_w(c->d[0], rd16(e(-0x2600)));
+    partner();
+    put16(e(-0x2600), c->d[0]);
+    c->a[2] = sx(rd16(0xFFFF9EEEu));
+    call(0xE64);
+    c->a[0] = sx(rd16(e(-0x2CFE)));
+    c->d[0] = 0x7F & rd8(c->a[0] - 0x2BFF);
+    c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 2, c->d[0]));
+    if (c->d[0] & 0xFF) call(0xC3E);
+    partner();
+}
+
+/* room script 17: the boss's room ($99F8 its body, $99E8 its head, $99EE-$99F6 the parts) */
+/* $196D6: entity a4 made from the 12 bytes at a2: its look, sprite flags, animation (at once),
+ * home and place, graphics ($99FC), kind, animation rate; in use and drawn */
+static void part_make(void)
+{
+    call(0xA36);
+    wr16(e(-0x3D00), rd16(c->a[2])); c->a[2] += 2;
+    wr8(e(-0x3FFE), rd8(c->a[2])); c->a[2]++;
+    c->d[0] = set_b(c->d[0], rd8(c->a[2])); c->a[2]++;
+    call(0x7FC);
+    c->d[0] = rd32(c->a[2]); c->a[2] += 4;
+    wr32(e(-0x2100), c->d[0]);
+    wr16(e(-0x3700), (uint16_t)c->d[0]);
+    c->d[0] = c->d[0] << 16 | c->d[0] >> 16;
+    wr16(e(-0x3800), (uint16_t)c->d[0]);
+    wr16(e(-0x3DFE), rd16(0xFFFF99FCu));
+    wr16(e(-0x2BFE), rd16(c->a[2])); c->a[2] += 2;
+    wr8(e(-0x3CFD), rd8(c->a[2])); c->a[2] += 2;
+    put8(e(-0x4000), 0xC0);
+}
+/* $19612: room script 17's setup: its tiles, kind $6E's graphics, six parts (effects) and the
+ * body (an enemy) from $1967C, the head, and the boss's spawn ($12650) */
+static void room17_setup(void)
+{
+    c->d[0] = set_w(c->d[0], 0x5380);
+    c->d[1] = set_w(c->d[1], 0x207C);
+    c->d[2] = 8;
+    call(0x22A8);
+    wr16(0xFFFF9EDAu, 0);
+    wr8(0xFFFFA38Eu, 0);
+    wr8(0xFFFFA390u, 0);
+    c->d[1] = 0x6E;
+    call(0x4910);
+    wr16(0xFFFF99FCu, rd16(c->a[0]));
+    c->a[2] = 0x1967C;
+    c->a[3] = 0xFFFF99EEu;
+    for (c->d[7] = 5;; ) {
+        call(0x27E6);
+        wr16(c->a[3], (uint16_t)c->a[4]); c->a[3] += 2;
+        part_make();
+        c->d[7] = set_w(c->d[7], c->d[7] - 1);
+        if ((c->d[7] & 0xFFFF) == 0xFFFF) break;
+    }
+    c->a[4] = c->a[2];
+    call(0x12812);
+    { uint32_t t = c->a[2]; c->a[2] = c->a[4]; c->a[4] = t; }
+    wr16(c->a[3], (uint16_t)c->a[4]); c->a[3] += 2;
+    part_make();
+    wr32(e(-0x2900), 0x196D0);
+    call(0x12812);
+    wr16(0xFFFF99E8u, (uint16_t)c->a[2]);
+    c->d[0] = 0xFFFFFFFFu;
+    c->d[1] = set_w(c->d[1], 0x6E);
+    c->d[6] = set_w(c->d[6], 0x10A0);
+    c->d[7] = set_w(c->d[7], 0x1048);
+    port_continue_at(c, 0x12650, 0);
+}
+/* $1979C: the tiles' wobble: $A391 swings ($A38E's sign, every $C0 frames) between -$40 and $40;
+ * $A390 its phase; $9EDA the step; the tiles' frame by the phase ($19800) */
+static void wobble(void)
+{
+    int8_t dir = (int8_t)rd8(0xFFFFA38Eu);
+    if (!dir) return;
+    int8_t sp = (int8_t)rd8(0xFFFFA391u);
+    if (dir < 0) { if (sp > (int8_t)0xC0) wr8(0xFFFFA391u, (uint8_t)(sp - 4)); }
+    else { if (sp < 0x40) wr8(0xFFFFA391u, (uint8_t)(sp + 4)); }
+    c->d[0] = set_b(c->d[0], rd8(0xFFFFA391u));
+    c->d[1] = set_b(c->d[1], rd8(0xFFFFA390u));
+    c->d[0] = set_b(c->d[0], c->d[0] + c->d[1]);
+    wr8(0xFFFFA390u, (uint8_t)c->d[0]);
+    c->d[0] = set_w(c->d[0], c->d[0] & 0xE0);
+    c->d[2] = set_w(c->d[2], c->d[0]);
+    c->d[1] = set_b(c->d[1], c->d[1] & 0xE0);
+    c->d[0] = set_b(c->d[0], (uint8_t)((int8_t)(uint8_t)(c->d[0] - c->d[1]) >> 5));
+    wr8(0xFFFF9EDAu, (uint8_t)c->d[0]);
+    uint8_t n = (uint8_t)(rd8(0xFFFFA38Fu) - 1);
+    wr8(0xFFFFA38Fu, n);
+    if (!n) { wr8(0xFFFFA38Fu, 0xC0); wr8(0xFFFFA38Eu, (uint8_t)-(int8_t)rd8(0xFFFFA38Eu)); }
+    c->d[2] = set_w(c->d[2], (uint16_t)c->d[2] >> 4);
+    c->d[1] = set_w(c->d[1], rd16(0x19800 + (c->d[2] & 0xFFFF)));
+    c->d[0] = set_w(c->d[0], 0x5380);
+    c->d[2] = 8;
+    call(0x22A8);
+}
+/* $1985A: a free enemy slot ($12812) made kind $80C at ($1000, $1080) ($12650); kept in $A392 */
+static void room17_extra(void)
+{
+    call(0x12812);
+    if (c->ccr & CC_N) return;
+    wr16(0xFFFFA392u, (uint16_t)c->a[2]);
+    c->d[0] = 0xFFFFFFFFu;
+    c->d[1] = set_w(c->d[1], 0x80C);
+    c->d[6] = set_w(c->d[6], 0x1000);
+    c->d[7] = set_w(c->d[7], 0x1080);
+    port_continue_at(c, 0x12650, 0);
+}
+/* $19878: the boss's effects: a shudder of $99F6 ($99DE bit 4, $99EA frames), a white flash of
+ * colours $8C2A ($99DE bit 5, $99EB frames), a tint of the head ($99DE bit 3, by $182AA) */
+static void room17_effects(void)
+{
+    if (rd8(0xFFFF99DEu) & 0x10) {
+        c->a[4] = sx(rd16(0xFFFF99F6u));
+        uint8_t n = (uint8_t)(rd8(0xFFFF99EAu) - 1);
+        wr8(0xFFFF99EAu, n);
+        if (!n) {
+            wr8(0xFFFF99DEu, rd8(0xFFFF99DEu) & 0xEF);
+            wr16(e(-0x3800), rd16(e(-0x2100)));
+            put16(e(-0x3700), rd16(e(-0x20FE)));
+        } else {
+            c->d[0] = 2;
+            if (n & 1) c->d[0] = set_w(c->d[0], (uint16_t)-2);
+            c->d[0] = set_w(c->d[0], c->d[0] + rd16(e(-0x2100)));
+            put16(e(-0x3800), c->d[0]);
+        }
+    }
+    if (rd8(0xFFFF99DEu) & 0x20) {
+        c->a[0] = 0xFFFF8C2Au;
+        c->d[1] = 4;
+        uint8_t n = (uint8_t)(rd8(0xFFFF99EBu) - 1);
+        wr8(0xFFFF99EBu, n);
+        int white = 0;
+        if (!n) wr8(0xFFFF99DEu, rd8(0xFFFF99DEu) & 0xDF);
+        else white = n & 1;
+        if (white) {
+            c->d[0] = set_w(c->d[0], 0xEEE);
+            for (int k = 0; k < 5; k++) { wr16(c->a[0], 0xEEE); c->a[0] += 2; }
+        } else {
+            c->a[1] = 0xFFFF8BAAu;
+            for (int k = 0; k < 5; k++) { wr16(c->a[0], rd16(c->a[1])); c->a[0] += 2; c->a[1] += 2; }
+        }
+        c->d[1] = 0xFFFF;
+        wr8(0xFFFF8C56u, (uint8_t)((rd8(0xFFFF8C56u) & 0x3F) | 0x81));
+    }
+    if (!(rd8(0xFFFF99DEu) & 8)) return;
+    uint8_t n = (uint8_t)(rd8(0xFFFF99EBu) - 1);
+    wr8(0xFFFF99EBu, n);
+    if (!n) { wr8(0xFFFF99DEu, rd8(0xFFFF99DEu) & 0xF7); return; }
+    if (!(n & 1)) return;
+    c->a[4] = sx(rd16(0xFFFF99E8u));
+    c->d[0] = set_b(c->d[0], rd8(0xFFFF99ECu));
+    c->d[1] = c->d[0] & 0xFF;
+    c->d[0] = set_b(c->d[0], (c->d[0] + 0x25) & 0x3F);
+    wr8(0xFFFF99ECu, (uint8_t)c->d[0]);
+    c->d[1] = set_b(c->d[1], c->d[1] ^ 0x15);
+    c->d[2] = 3;
+    wr16(e(-0x3DFE), (uint16_t)(rd16(e(-0x3DFE)) + 0x20));
+    call(0x182AA);
+    wr16(e(-0x3DFE), (uint16_t)(rd16(e(-0x3DFE)) - 0x20));
+}
+/* $19710: room script 17's frame: the wobble, its head ($99FA, $19B96), the parts ($19AC0); when
+ * the boss is beaten ($19B4E) the body falls beside the player and the player is held ($9F05);
+ * its states ($19946), the effects; then, the room left (bit 0 of $99E6), the next scene */
+static void room17_frame(void)
+{
+    wobble();
+    c->d[0] = set_w(c->d[0], rd16(0xFFFF99FAu));
+    if (!(c->d[0] & 0x8000)) { c->a[4] = sx(c->d[0]); call(0x19B96); }
+    call(0x19AC0);
+    call(0x19B4E);
+    if (!(c->ccr & CC_Z)) {
+        wr8(0xFFFF99DEu, rd8(0xFFFF99DEu) | 3);
+        c->a[4] = sx(rd16(0xFFFF99F8u));
+        wr16(e(-0x3DFE), 0);
+        c->d[0] = 0x18;
+        c->a[0] = sx(rd16(0xFFFF9EEEu));
+        if (rd16(c->a[0] - 0x3800) >= 0x1050) { wr8(e(-0x3FFE), 0); c->d[0] = set_w(c->d[0], (uint16_t)-0x18); }
+        c->d[0] = set_w(c->d[0], c->d[0] + rd16(c->a[0] - 0x3800));
+        put16(e(-0x3800), c->d[0]);
+        put16(e(-0x35FE), 0x2000);
+        put8(e(-0x2800), 5);
+        put8(e(-0x31FF), 0);
+        put8(0xFFFF9F05u, 8);
+    }
+    call(0x19946);
+    c->a[7] -= 4; wr32(c->a[7], 0x19772);           /* bsr: $182AA's buffer is placed by the stack */
+    room17_effects();
+    c->a[7] += 4;
+    if (rd8(0xFFFF99E6u)) {
+        if (rd8(0xFFFF8C56u) & 0x10) wr8(0xFFFF965Fu, rd8(0xFFFF965Fu) | 8);
+    } else if (rd8(0xFFFF965Fu) & 4) {
+        wr8(0xFFFF99E6u, 0xFF);
+        call(0x5842);
+    }
+}
+
+ENTRY(Room18Setup, room18_setup)           /* $1898C */
+void Room18Frame(Cpu *cpu) { c = cpu; c->ret = 0; room18_frame(); if (c->ret != 0x5658) c->ret = 0; }   /* $18994 */
+ENTRY(FlashColour, flash_colour)           /* $189EA */
+ENTRY(PartnerAnim2, partner_anim)          /* $18A24 */
+ENTRY(PartnerFallBeside, partner_fall_beside)   /* $18A32 */
+ENTRY(BesidePartner, beside_partner)       /* $18A3E */
+ENTRY(BothBlink, both_blink)               /* $18A74 */
+/* $18A84: touching the player and the sword; hit: state 2 (the caller's frame dropped); else as
+ * $18A96 */
+void RiderHit(Cpu *cpu)
+{
+    c = cpu;
+    call(0x4792);
+    call(0x439E);
+    if (c->ccr & CC_N) { leave_to_state(2); return; }
+    rider_touch();
+    c->ret = 0;
+}
+ENTRY(RiderTouch, rider_touch)             /* $18A96 */
+ENTRY(PartnerGrounded2, partner_grounded)  /* $18AC2 */
+ENTRY(PartnerAtWall2, partner_at_wall)     /* $18AD2 */
+void Room17Setup(Cpu *cpu) { c = cpu; room17_setup(); }   /* $19612: goes on at $12650 */
+ENTRY(PartMake, part_make)                 /* $196D6 */
+ENTRY(Room17Frame, room17_frame)           /* $19710 */
+ENTRY(Wobble, wobble)                      /* $1979C */
+void Room17Extra(Cpu *cpu) { c = cpu; room17_extra(); if (c->ret != 0x12650) c->ret = 0; }   /* $1985A */
+ENTRY(Room17Effects, room17_effects)       /* $19878 */
