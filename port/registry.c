@@ -111,6 +111,7 @@ void TargetFromHome(Cpu *), EdgeTurnReturn(Cpu *), EdgeTurn(Cpu *), EdgeAhead(Cp
 void TileAtA(Cpu *), SlopeAtFeet(Cpu *), DirOffset(Cpu *), ProbeBelowA(Cpu *), SceneSega(Cpu *), SceneTitle(Cpu *), SceneTitleShown(Cpu *), SceneTitleAfter(Cpu *), SceneMenu(Cpu *), SceneDemo(Cpu *), SceneGame(Cpu *);
 void SwingY(Cpu *), SwingX(Cpu *), HopperStart(Cpu *), ChainLink(Cpu *), CopyFields(Cpu *), SlowOf(Cpu *), Bounce(Cpu *), AimLevel(Cpu *), SoundStopUnless12(Cpu *), Sound13Unless12(Cpu *), TouchedBack(Cpu *), PairAnim(Cpu *), PairHit(Cpu *), PairTouch(Cpu *), PairHover(Cpu *), PairOnBody(Cpu *), PairAlignX(Cpu *);
 void Room16Setup(Cpu *), FloorScroll(Cpu *), Room16Frame(Cpu *), Room16Exit(Cpu *), SpawnAtOffset(Cpu *), GfxSlotsFree(Cpu *), TintTiles(Cpu *), PartnerAnim(Cpu *), PartnerMove(Cpu *), OnPartner(Cpu *), MountHit(Cpu *), MountTouch(Cpu *), PartnerGrounded(Cpu *), PartnerAtWall(Cpu *), Shake(Cpu *);
+void Room18Setup(Cpu *), Room18Frame(Cpu *), FlashColour(Cpu *), PartnerAnim2(Cpu *), PartnerFallBeside(Cpu *), BesidePartner(Cpu *), BothBlink(Cpu *), RiderHit(Cpu *), RiderTouch(Cpu *), PartnerGrounded2(Cpu *), PartnerAtWall2(Cpu *), Room17Setup(Cpu *), PartMake(Cpu *), Room17Frame(Cpu *), Wobble(Cpu *), Room17Extra(Cpu *), Room17Effects(Cpu *);
 void Looks(Cpu *), LooksExtra(Cpu *), LooksBlock(Cpu *), LooksBody(Cpu *), LooksSword(Cpu *), LooksShield(Cpu *), EquipChange(Cpu *);
 void HudPanel(Cpu *), GoldLabel(Cpu *), ThreeLabels(Cpu *), DigitsOut(Cpu *), ItemsChoose(Cpu *), MagicChoose(Cpu *), SlotChoose(Cpu *), ActionToSlot(Cpu *),
      ItemToSlot(Cpu *), WornBlink(Cpu *), StatusFadeIn(Cpu *), StatusFadeOut(Cpu *), StatusWait(Cpu *);
@@ -1054,6 +1055,23 @@ const PortRoutine port_routines[] = {
     {0x0183BA, 0x0183C8, "PartnerGrounded", PartnerGrounded, CT_SP | CT_NZVC},
     {0x0183C8, 0x0183D4, "PartnerAtWall", PartnerAtWall, CT_SP | CT_NZVC},
     {0x0183D4, 0x0183E0, "Shake", Shake, CT_SP},
+    {0x01898C, 0x018994, "Room18Setup", Room18Setup, CT_SP},   /* objhelp.c: room script 18 and its riders' helpers, room script 17's setup, frame and effects */
+    {0x018994, 0x0189EA, "Room18Frame", Room18Frame, CT_SP},
+    {0x0189EA, 0x018A24, "FlashColour", FlashColour, CT_SP},
+    {0x018A24, 0x018A32, "PartnerAnim2", PartnerAnim2, CT_SP},
+    {0x018A32, 0x018A3E, "PartnerFallBeside", PartnerFallBeside, CT_SP},
+    {0x018A3E, 0x018A74, "BesidePartner", BesidePartner, CT_SP},
+    {0x018A74, 0x018A84, "BothBlink", BothBlink, CT_SP},
+    {0x018A84, 0x018A96, "RiderHit", RiderHit, CT_SP},
+    {0x018A96, 0x018AC2, "RiderTouch", RiderTouch, CT_SP},
+    {0x018AC2, 0x018AD2, "PartnerGrounded2", PartnerGrounded2, CT_SP | CT_NZVC},
+    {0x018AD2, 0x018ADE, "PartnerAtWall2", PartnerAtWall2, CT_SP | CT_NZVC},
+    {0x019612, 0x0196D6, "Room17Setup", Room17Setup, CT_SP},
+    {0x0196D6, 0x019710, "PartMake", PartMake, CT_SP},
+    {0x019710, 0x01979C, "Room17Frame", Room17Frame, CT_SP},
+    {0x01979C, 0x019810, "Wobble", Wobble, CT_SP},
+    {0x01985A, 0x019878, "Room17Extra", Room17Extra, CT_SP},
+    {0x019878, 0x019946, "Room17Effects", Room17Effects, CT_SP},
     {0x017014, 0x0170EE, "Act17014", Act17014, CT_SP},           /* the hopper and the chain (batch 17); $170EE-$17131 are called */
     {0x01729A, 0x017302, "Act1729A", Act1729A, CT_SP},           /* $17302-$1730F (COPY_FIELDS) is called */
     {0x017310, 0x017362, "Act17310", Act17310, CT_SP},           /* $17132 (the link) is C */

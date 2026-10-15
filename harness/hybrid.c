@@ -1260,6 +1260,36 @@ int hybrid_fuzz(const char *name, long count)
             for (uint32_t k4 = 0; k4 < 2; k4++) if (rnd() % 2) ram[0x99BE] ^= (uint8_t)(1 << k4);
             ram[0x99DF] = (uint8_t)rnd(); put_word(0x99E4, 2 * (rnd() % 4));
         }
+        if (!strncmp(name, "Room18", 6)) {          /* batch T50: room script 18 armed, triggered or flashing */
+            ram[0x99DE] = (uint8_t)(rnd() % 4); ram[0x99DF] = (uint8_t)(1 + rnd() % 2); ram[0x99E0] = (uint8_t)(1 + rnd() % 2);
+            ram[0x99E1] = (uint8_t)rnd();
+        }
+        if (!strncmp(name, "Room17", 6) || !strcmp(name, "Wobble") || !strcmp(name, "PartMake")) {   /* room script 17's parts and states */
+            for (uint32_t k3 = 0; k3 < 6; k3++) put_word(0x99EE + 2 * k3, 4 * (1 + rnd() % 60));
+            put_word(0x99FA, rnd() % 2 ? 0xFFFF : 4 * (1 + rnd() % 60));
+            put_word(0x99E8, 4 * (1 + rnd() % 60));
+            uint32_t body = (uint32_t)ram[0x99F8] << 8 | ram[0x99F9];
+            ram[0xCE01 + body] = (uint8_t)(2 * (rnd() % 11));
+            ram[0x99DE] = (uint8_t)rnd(); ram[0x99EA] = (uint8_t)(1 + rnd() % 3); ram[0x99EB] = (uint8_t)(1 + rnd() % 3);
+            ram[0xA38E] = (uint8_t)(rnd() % 3 == 0 ? 0 : rnd() % 2 ? 1 : 0xFF); ram[0xA38F] = (uint8_t)(1 + rnd() % 3);
+            ram[0x99E6] = (uint8_t)(rnd() % 2 ? 0 : 0xFF); ram[0x99ED] = (uint8_t)(rnd() % 4);
+            if (ram[0xA143] == 0) ram[0xA143] = 1;
+            put_word(0xA122, 0x6E);
+            if (!strcmp(name, "PartMake")) m68k_set_reg(M68K_REG_A2, 0x1967C + 12 * (rnd() % 7));
+            ram[0x965F] = (uint8_t)rnd();
+            if (!strcmp(name, "Room17Extra") && rnd() % 3 == 0) {             /* no free enemy slot */
+                uint32_t base = (uint32_t)ram[0xA11A] << 8 | ram[0xA11B];
+                for (uint32_t k3 = 0; k3 < 16; k3++) ram[0xC000 + ((base + 4 * k3) & 0xFC)] |= 0x80;
+            }
+            if (rnd() % 2) {                                                   /* the boss beaten: the player weak, only its own kinds about */
+                uint32_t pl = (uint32_t)ram[0x9EEE] << 8 | ram[0x9EEF], base = (uint32_t)ram[0xA11A] << 8 | ram[0xA11B];
+                ram[0x99DE] &= 0xFE; ram[0x99ED] = (uint8_t)(2 + rnd() % 2); put_word(0xDA00 + pl, rnd() % 0x101);
+                for (uint32_t k3 = 0; k3 < 16; k3++) {
+                    uint32_t sl = (base + 4 * k3) & 0xFC;
+                    if (rnd() % 2) ram[0xC000 + sl] &= 0x7F; else put_word(0xD402 + sl, rnd() % 2 ? 0x70 : 0x6E);
+                }
+            }
+        }
         if (!strncmp(name, "Room16", 6) || !strcmp(name, "FloorScroll")) {          /* batch T49: room script 16's floor: moving or slowing, its speed and place, its platforms */
             ram[0x99DE] = (uint8_t)(rnd() & 7);
             put_long(0x99EA, rnd() % 3 ? rnd() % 0x20000 : 0x18000 - 0x800 * (rnd() % 3));
@@ -1472,7 +1502,8 @@ int hybrid_fuzz(const char *name, long count)
                 m68k_set_reg(M68K_REG_D0, (rnd() << 16) | 2 * (rnd() % 5));
             }
             if (!strcmp(name, "CopyFields")) { m68k_set_reg(M68K_REG_A0, 0x172CE); m68k_set_reg(M68K_REG_A2, other); }
-            if (!strncmp(name, "Partner", 7) || !strncmp(name, "Mount", 5) || !strcmp(name, "OnPartner")) {
+            if (!strncmp(name, "Partner", 7) || !strncmp(name, "Mount", 5) || !strcmp(name, "OnPartner") || !strncmp(name, "Rider", 5)
+                    || !strcmp(name, "BesidePartner") || !strcmp(name, "BothBlink")) {
                 put_word(0xD302 + me, other); put_word(0xD302 + other, me);
                 ram[0xC302 + other] = (uint8_t)(rnd() % 6);
             }
