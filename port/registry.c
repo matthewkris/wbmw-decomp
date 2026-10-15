@@ -112,6 +112,7 @@ void TileAtA(Cpu *), SlopeAtFeet(Cpu *), DirOffset(Cpu *), ProbeBelowA(Cpu *), S
 void SwingY(Cpu *), SwingX(Cpu *), HopperStart(Cpu *), ChainLink(Cpu *), CopyFields(Cpu *), SlowOf(Cpu *), Bounce(Cpu *), AimLevel(Cpu *), SoundStopUnless12(Cpu *), Sound13Unless12(Cpu *), TouchedBack(Cpu *), PairAnim(Cpu *), PairHit(Cpu *), PairTouch(Cpu *), PairHover(Cpu *), PairOnBody(Cpu *), PairAlignX(Cpu *);
 void Room16Setup(Cpu *), FloorScroll(Cpu *), Room16Frame(Cpu *), Room16Exit(Cpu *), SpawnAtOffset(Cpu *), GfxSlotsFree(Cpu *), TintTiles(Cpu *), PartnerAnim(Cpu *), PartnerMove(Cpu *), OnPartner(Cpu *), MountHit(Cpu *), MountTouch(Cpu *), PartnerGrounded(Cpu *), PartnerAtWall(Cpu *), Shake(Cpu *);
 void Room18Setup(Cpu *), Room18Frame(Cpu *), FlashColour(Cpu *), PartnerAnim2(Cpu *), PartnerFallBeside(Cpu *), BesidePartner(Cpu *), BothBlink(Cpu *), RiderHit(Cpu *), RiderTouch(Cpu *), PartnerGrounded2(Cpu *), PartnerAtWall2(Cpu *), Room17Setup(Cpu *), PartMake(Cpu *), Room17Frame(Cpu *), Wobble(Cpu *), Room17Extra(Cpu *), Room17Effects(Cpu *);
+void Room17States(Cpu *), Room17Hold(Cpu *), Room17Parts(Cpu *), Room17Beaten(Cpu *), Room17Head(Cpu *), Room17Debris(Cpu *), TouchAhead(Cpu *), DirAnim(Cpu *), AtTarget(Cpu *), StepByDir(Cpu *), TurnToward(Cpu *), Lifter(Cpu *), SpawnFromA394(Cpu *);
 void Looks(Cpu *), LooksExtra(Cpu *), LooksBlock(Cpu *), LooksBody(Cpu *), LooksSword(Cpu *), LooksShield(Cpu *), EquipChange(Cpu *);
 void HudPanel(Cpu *), GoldLabel(Cpu *), ThreeLabels(Cpu *), DigitsOut(Cpu *), ItemsChoose(Cpu *), MagicChoose(Cpu *), SlotChoose(Cpu *), ActionToSlot(Cpu *),
      ItemToSlot(Cpu *), WornBlink(Cpu *), StatusFadeIn(Cpu *), StatusFadeOut(Cpu *), StatusWait(Cpu *);
@@ -1072,6 +1073,19 @@ const PortRoutine port_routines[] = {
     {0x01979C, 0x019810, "Wobble", Wobble, CT_SP},
     {0x01985A, 0x019878, "Room17Extra", Room17Extra, CT_SP},
     {0x019878, 0x019946, "Room17Effects", Room17Effects, CT_SP},
+    {0x019946, 0x019AB8, "Room17States", Room17States, CT_SP},   /* objhelp.c: room script 17's states, parts, head; direction helpers, a lifter, spawning from $A394 */
+    {0x019AB8, 0x019AC0, "Room17Hold", Room17Hold, CT_SP},
+    {0x019AC0, 0x019B4E, "Room17Parts", Room17Parts, CT_SP},
+    {0x019B4E, 0x019B96, "Room17Beaten", Room17Beaten, CT_SP | CT_NZVC | CT_D0},
+    {0x019B96, 0x019C34, "Room17Head", Room17Head, CT_SP},
+    {0x019C34, 0x019C86, "Room17Debris", Room17Debris, CT_SP},
+    {0x019DD2, 0x019E2C, "TouchAhead", TouchAhead, CT_SP},
+    {0x019E2C, 0x019E44, "DirAnim", DirAnim, CT_SP},
+    {0x019E44, 0x019E64, "AtTarget", AtTarget, CT_SP | CT_NZVC},
+    {0x019E64, 0x019E88, "StepByDir", StepByDir, CT_SP},
+    {0x019E88, 0x019EAE, "TurnToward", TurnToward, CT_SP | CT_NZVC},
+    {0x01A1C6, 0x01A218, "Lifter", Lifter, CT_SP},
+    {0x01A438, 0x01A464, "SpawnFromA394", SpawnFromA394, CT_SP | CT_NZVC},
     {0x017014, 0x0170EE, "Act17014", Act17014, CT_SP},           /* the hopper and the chain (batch 17); $170EE-$17131 are called */
     {0x01729A, 0x017302, "Act1729A", Act1729A, CT_SP},           /* $17302-$1730F (COPY_FIELDS) is called */
     {0x017310, 0x017362, "Act17310", Act17310, CT_SP},           /* $17132 (the link) is C */

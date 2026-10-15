@@ -926,3 +926,347 @@ ENTRY(Room17Frame, room17_frame)           /* $19710 */
 ENTRY(Wobble, wobble)                      /* $1979C */
 void Room17Extra(Cpu *cpu) { c = cpu; room17_extra(); if (c->ret != 0x12650) c->ret = 0; }   /* $1985A */
 ENTRY(Room17Effects, room17_effects)       /* $19878 */
+
+/* ---- batch T51: room script 17's states, parts, head and debris ---- */
+
+static int count8(uint32_t a) { uint8_t n = (uint8_t)(rd8(a) - 1); wr8(a, n); return n; }   /* subq.b #1: nonzero */
+static void next_step(void) { wr8(e(-0x31FF), (uint8_t)(rd8(e(-0x31FF)) + 2)); }
+static void anim(uint32_t n) { c->d[0] = n; F_L(n); call(SET_ANIM); }
+
+/* $19946: once the boss is beaten ($99DE bit 1), the body ($99F8) by its step (-$31FF, the table
+ * at $19964): it falls, the player is held, the room's door scene ($9C16 $70) plays, the body
+ * walks to x $1090, jumps, lands, a second scene ($71), a sound, then it blinks away and the
+ * parts come back ($A117) */
+static void room17_states(void)
+{
+    if (!(rd8(0xFFFF99DEu) & 2)) return;
+    c->a[4] = sx(rd16(0xFFFF99F8u));
+    c->d[0] = rd8(e(-0x31FF));
+    c->a[0] = 0x19964 + sx(rd16(0x19964 + c->d[0]));
+    switch (c->a[0]) {
+    case 0x1997A:
+        call(0xAD6);
+        if (count8(e(-0x2800))) return;
+        next_step(); put8(e(-0x2800), 3); anim(2);
+        return;
+    case 0x19994:
+        if (count8(e(-0x2800))) return;
+        next_step(); put8(0xFFFF9F05u, 6); wr32(0xFFFF9F22u, 0x19AB8); anim(0);
+        return;
+    case 0x199B2:
+        next_step(); put8(e(-0x2800), 0x1E); put8(0xFFFF9F05u, 8);
+        return;
+    case 0x199C4:
+    case 0x19A54:
+        if (count8(e(-0x2800))) return;
+        next_step(); wr16(0xFFFF9C16u, c->a[0] == 0x199C4 ? 0x70 : 0x71); put16(0xFFFF9962u, 8);
+        return;
+    case 0x199DC:
+        next_step(); wr8(e(-0x3FFE), rd8(e(-0x3FFE)) & 0xF7); put16(e(-0x3600), 0x200); anim(6);
+        return;
+    case 0x199F2:
+        call(0xAB8);
+        if (rd16(e(-0x3800)) < 0x1090) return;
+        next_step();
+        wr8(0xFFFF99DEu, rd8(0xFFFF99DEu) | 4);
+        wr32(e(-0x3600), 0xFE00FC00u);
+        put8(e(-0x2F00), 3);
+        put16(e(-0x32FE), 0x400);
+        put16(e(-0x33FE), 0x40);
+        anim(8);
+        return;
+    case 0x19A28:
+        call(0x46D6);
+        call(0x4362);
+        if (!(c->ccr & CC_Z)) return;
+        next_step(); put8(e(-0x2800), 0x10);
+        return;
+    case 0x19A3E:
+        if (count8(e(-0x2800))) return;
+        next_step(); put8(e(-0x2800), 0x1E); anim(0xA);
+        return;
+    case 0x19A6C:
+        next_step();
+        c->d[0] = 0x52; call(0x366);
+        wr8(e(-0x3FFD), rd8(e(-0x3FFD)) | 0x40);
+        put16(e(-0x3900), 0x6001);
+        put16(e(-0x2800), 0x710);
+        return;
+    case 0x19A8A:
+        if (count8(e(-0x27FF))) return;
+        if (count8(e(-0x2800))) {
+            c->d[0] = 0x10;
+            wr8(e(-0x27FF), 0x10);
+            wr8(e(-0x3900), (uint8_t)(rd8(e(-0x3900)) - 0x10));
+            return;
+        }
+        wr8(0xFFFF99DEu, rd8(0xFFFF99DEu) & 0xFD);
+        wr8(0xFFFFA117u, 0x3C);
+        wr8(e(-0x4000), 0);
+        put8(0xFFFF9F05u, 0);
+        return;
+    default: call(c->a[0]); return;                 /* past the table: as the original jumps */
+    }
+}
+/* $19AB8 (put at $9F22 by step 2): $9F0B 8 */
+static void room17_hold(void) { put8(0xFFFF9F0Bu, 8); }
+/* $19AC0: the two part timers ($A117, $A118): when one runs out, a free part of the four ($99EE
+ * by the random) not busy, whose place ($19DBA) is free ($A112), gets an enemy of kind $70
+ * ($12684) at that place; else the timer waits 16 more */
+static void room17_parts(void)
+{
+    for (c->d[7] = 0; (uint16_t)c->d[7] < 2; c->d[7] = set_w(c->d[7], c->d[7] + 1)) {
+        c->a[0] = sx(c->d[7]);
+        uint32_t timer = c->a[0] - 0x5EE9;
+        if (!rd8(timer) || count8(timer)) continue;
+        call(0x12812);
+        if (c->ccr & CC_N) goto wait16;
+        call(0x5D8);
+        c->d[0] = set_w(c->d[0], c->d[0] & 6);
+        c->a[0] = sx(c->d[0]);
+        c->a[4] = sx(rd16(c->a[0] - 0x6612));
+        if (rd8(e(-0x31FF))) goto wait16;
+        c->d[1] = set_w(c->d[1], c->d[0] * 3);
+        c->a[0] = 0x19DBA + sx(c->d[1]);
+        c->d[1] = rd8(c->a[0]);
+        c->a[1] = sx(c->d[1]);
+        if (rd8(c->a[1] - 0x5EEE)) goto wait16;
+        wr8(e(-0x31FF), (uint8_t)(rd8(e(-0x31FF)) + 1));
+        wr8(c->a[1] - 0x5EEE, 0xFF);
+        c->a[7] -= 2; wr16(c->a[7], (uint16_t)c->d[7]);
+        c->a[7] -= 4; wr32(c->a[7], c->a[0]);
+        { uint32_t t = c->a[2]; c->a[2] = c->a[4]; c->a[4] = t; }
+        c->d[1] = set_w(c->d[1], 0x70);
+        wr8(e(-0x2B00), 0xFF);
+        wr16(e(-0x2BFE), 0x70);
+        call(0x12684);
+        c->a[0] = rd32(c->a[7]); c->a[7] += 4;
+        c->d[7] = set_w(c->d[7], rd16(c->a[7])); c->a[7] += 2;
+        put8(o(-0x36FD), rd8(c->a[0])); c->a[0]++;
+        put8(o(-0x25FE), rd8(c->a[0])); c->a[0]++;
+        put16(o(-0x3800), rd16(c->a[0])); c->a[0] += 2;
+        put16(o(-0x3700), rd16(c->a[0]));
+        put8(o(-0x25FD), c->d[7]);
+        continue;
+    wait16:
+        c->a[0] = sx(c->d[7]);
+        wr8(c->a[0] - 0x5EE9, 0x10);
+    }
+}
+/* $19B4E: -1 (nz) when the boss is beaten: not yet marked ($99DE bit 0), $99ED at 2 or more, the
+ * player's health $100 or less, and no enemy but kinds $70 and $6E (or none) about */
+static void room17_beaten(void)
+{
+    c->d[0] = 0; F_L(0);
+    if (rd8(0xFFFF99DEu) & 1) return;
+    if (rd8(0xFFFF99EDu) < 2) return;
+    c->a[0] = sx(rd16(0xFFFF9EEEu));
+    if (rd16(c->a[0] - 0x2600) > 0x100) return;
+    c->a[0] = sx(rd16(0xFFFFA11Au));
+    for (int k = 0; k < 16; k++, c->a[0] += 4) {
+        if (!(rd8(c->a[0] - 0x4000) & 0x80)) continue;
+        uint16_t kind = rd16(c->a[0] - 0x2BFE);
+        c->d[1] = set_w(c->d[1], kind);
+        if ((kind & 0x8000) || kind == 0x70 || kind == 0x6E) continue;
+        c->d[0] = 0; F_L(0);
+        return;
+    }
+    c->d[0] = 0xFFFFFFFFu; F_L(c->d[0]);
+}
+/* $19C34: a piece of debris (a free slot, $12812) within d4 across and d5 down of this one, with
+ * the boss's graphics, set up ($19D60), drawn; sound $3F */
+static void room17_debris(void)
+{
+    call(0x12812);
+    if (c->ccr & CC_N) return;
+    { uint32_t t = c->a[2]; c->a[2] = c->a[4]; c->a[4] = t; }
+    call(0xA36);
+    call(0x5D8);
+    c->d[1] = c->d[0];
+    c->d[0] = set_w(c->d[0], c->d[0] & c->d[4]);
+    if (c->d[0] & 0x10000) c->d[0] = set_w(c->d[0], (uint16_t)-c->d[0]);
+    c->d[0] = set_w(c->d[0], c->d[0] + rd16(o(-0x3800)));
+    put16(e(-0x3800), c->d[0]);
+    c->d[1] >>= 8;
+    c->d[1] = set_w(c->d[1], c->d[1] & c->d[5]);
+    if (c->d[1] & 0x10000) c->d[1] = set_w(c->d[1], (uint16_t)-c->d[1]);
+    c->d[1] = set_w(c->d[1], c->d[1] + rd16(o(-0x3700)));
+    put16(e(-0x3700), c->d[1]);
+    wr16(e(-0x3DFE), rd16(0xFFFF99FCu));
+    call(0x19D60);
+    put8(e(-0x4000), 0xC0);
+    c->d[0] = 0x3F; call(0x366);
+    { uint32_t t = c->a[2]; c->a[2] = c->a[4]; c->a[4] = t; }
+}
+/* $19B96: the head ($99FA). Once the body lands ($99DE bit 2) it blinks away, $A frames of debris;
+ * before, not yet beaten: it hurts the player ($E64, $C3E), and every $5A frames ($F after a
+ * first) spits a fireball (kind $222 at $19C32, $18256) partnered with it */
+static void room17_head(void)
+{
+    if (rd8(0xFFFF99DEu) & 4) {
+        wr8(0xFFFF99DEu, rd8(0xFFFF99DEu) & 0xFB);
+        wr8(e(-0x31FF), (uint8_t)(rd8(e(-0x31FF)) + 1));
+        put8(e(-0x2800), 0xA);
+        wr8(e(-0x3FFD), rd8(e(-0x3FFD)) | 0x40);
+        put16(e(-0x3900), 1);
+    } else if (rd8(e(-0x31FF))) {
+        if (count8(e(-0x27FF))) return;
+    } else {
+        if (rd8(0xFFFF99DEu) & 2) return;
+        c->a[2] = sx(rd16(0xFFFF9EEEu));
+        put16(e(-0x2700), 0x2000);
+        call(0xE64);
+        call(0xC3E);
+        wr8(e(-0x2800), (uint8_t)(rd8(e(-0x2800)) + 1));
+        c->d[0] = rd8(e(-0x27FF)) ? 0xF : 0x5A;
+        if ((uint8_t)c->d[0] >= rd8(e(-0x2800))) return;
+        put8(e(-0x2800), 0);
+        c->d[0] = set_w(c->d[0], 0x222);
+        c->a[0] = 0x19C32;
+        call(0x18256);
+        if (c->ccr & CC_N) return;
+        wr16(e(-0x2CFE), (uint16_t)c->a[2]);
+        put16(o(-0x2CFE), c->a[4]);
+        return;
+    }
+    c->d[0] = set_b(c->d[0], rd8(e(-0x2800)));
+    if (!(c->d[0] & 0xFF)) {
+        put8(e(-0x4000), 0);
+        wr8(0xFFFF99FAu, 0xFF);
+        return;
+    }
+    c->d[0] = 6;
+    if (!count8(e(-0x2800))) c->d[0] = 0x10;
+    put8(e(-0x27FF), c->d[0]);
+    c->d[4] = 0xF;
+    c->d[5] = 7;
+    c->a[7] -= 4; wr32(c->a[7], 0x19C30);
+    room17_debris();
+    c->a[7] += 4;
+}
+
+ENTRY(Room17States, room17_states)         /* $19946 */
+ENTRY(Room17Hold, room17_hold)             /* $19AB8 */
+ENTRY(Room17Parts, room17_parts)           /* $19AC0 */
+ENTRY(Room17Beaten, room17_beaten)         /* $19B4E */
+ENTRY(Room17Head, room17_head)             /* $19B96 */
+ENTRY(Room17Debris, room17_debris)         /* $19C34 */
+
+/* $19DD2: the touch tests at a point ahead by its direction (-$27FE, the table at $19E1C): the
+ * player's touch and sword ($4792; $4778 alone in state 2), then hit ($439E) */
+static void touch_ahead(void)
+{
+    c->d[0] = 0x10;
+    c->d[0] = set_b(c->d[0], (c->d[0] + rd8(e(-0x27FE))) & 0xE0);
+    c->d[0] = set_w(c->d[0], (uint16_t)c->d[0] >> 4);
+    c->d[1] = set_w(c->d[1], (uint16_t)(int8_t)rd8(0x19E1C + c->d[0]));
+    c->a[7] -= 2; wr16(c->a[7], rd16(e(-0x3800)));
+    c->a[7] -= 2; wr16(c->a[7], rd16(e(-0x3700)));
+    wr16(e(-0x3800), (uint16_t)(rd16(e(-0x3800)) + (uint16_t)c->d[1]));
+    c->d[1] = set_w(c->d[1], (uint16_t)(int8_t)rd8(0x19E1D + c->d[0]));
+    wr16(e(-0x3700), (uint16_t)(rd16(e(-0x3700)) + (uint16_t)c->d[1]));
+    c->a[0] = 0x4792;
+    c->d[0] = set_b(c->d[0], rd8(e(-0x2BFF)));
+    c->d[0] = set_b(c->d[0], c->d[0] * 2);
+    if ((c->d[0] & 0xFF) == 4) c->a[0] = 0x4778;
+    call(c->a[0]);
+    wr16(e(-0x3700), rd16(c->a[7])); c->a[7] += 2;
+    wr16(e(-0x3800), rd16(c->a[7])); c->a[7] += 2;
+    call(0x439E);
+}
+/* $19E2C: the animation for its direction (-$27FE / 16 + 1, even), unless it has it */
+static void dir_anim(void)
+{
+    c->d[0] = set_b(c->d[0], ((rd8(e(-0x27FE)) >> 4) + 1) & 0xE);
+    if ((c->d[0] & 0xFF) == rd8(e(-0x3CFE))) { c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z); return; }
+    call(SET_ANIM);
+}
+/* $19E44: z when at its target point (-$36FD into the table at $19DA6) */
+static void at_target(void)
+{
+    c->d[0] = (uint32_t)rd8(e(-0x36FD)) << 2;
+    c->a[0] = 0x19DA6;
+    c->d[1] = set_w(c->d[1], rd16(e(-0x3800)));
+    cmp_w(&c->ccr, rd16(c->a[0] + c->d[0]), c->d[1]);
+    if ((c->d[1] & 0xFFFF) != rd16(c->a[0] + c->d[0])) return;
+    c->d[1] = set_w(c->d[1], rd16(e(-0x3700)));
+    cmp_w(&c->ccr, rd16(c->a[0] + c->d[0] + 2), c->d[1]);
+}
+/* $19E64: a pixel by its way (-$25FE: 0 right, 1 down, 2 left, else up) */
+static void step_by_dir(void)
+{
+    c->d[0] = set_b(c->d[0], rd8(e(-0x25FE)));
+    uint8_t w = (uint8_t)c->d[0];
+    if (!w) { wr16(e(-0x3800), (uint16_t)(rd16(e(-0x3800)) + 1)); return; }
+    c->d[0] = set_b(c->d[0], w - 2);
+    if (w < 2) { wr16(e(-0x3700), (uint16_t)(rd16(e(-0x3700)) + 1)); return; }
+    if (w == 2) { wr16(e(-0x3800), (uint16_t)(rd16(e(-0x3800)) - 1)); return; }
+    wr16(e(-0x3700), (uint16_t)(rd16(e(-0x3700)) - 1));
+}
+/* $19E88: the direction (-$27FE) 4 nearer the wanted one (-$27FD), its animation; z when there */
+static void turn_toward(void)
+{
+    c->d[2] = 4;
+    c->d[0] = set_b(c->d[0], rd8(e(-0x27FE)));
+    c->d[1] = set_b(c->d[1], rd8(e(-0x27FD)));
+    cmp_b(&c->ccr, c->d[0], c->d[1]);
+    if ((c->d[0] & 0xFF) == (c->d[1] & 0xFF)) return;
+    if (c->ccr & CC_N) c->d[2] = set_b(c->d[2], (uint8_t)-4);
+    c->d[0] = set_b(c->d[0], c->d[0] + c->d[2]);
+    wr8(e(-0x27FE), (uint8_t)c->d[0]);
+    dir_anim();
+    c->d[0] = set_b(c->d[0], rd8(e(-0x27FE)));
+    cmp_b(&c->ccr, rd8(e(-0x27FD)), c->d[0]);
+}
+/* $1A1C6: a room object that rises 32 and sinks back (-$31FF its step, the table at $1A1D8):
+ * up 2 a frame for 16, a pause of $30, down 2 a frame for 16, then idle */
+static void lifter(void)
+{
+    c->d[0] = (uint32_t)rd8(e(-0x31FF)) * 2;
+    c->a[0] = 0x1A1D8 + sx(rd16(0x1A1D8 + c->d[0]));
+    switch (c->a[0]) {
+    case 0x1A1E0:
+        wr16(e(-0x3700), (uint16_t)(rd16(e(-0x3700)) - 2));
+        wr8(e(-0x2800), (uint8_t)(rd8(e(-0x2800)) + 1));
+        if (rd8(e(-0x2800)) < 0x10) return;
+        wr8(e(-0x31FF), (uint8_t)(rd8(e(-0x31FF)) + 1));
+        put8(e(-0x27FF), 0x30);
+        return;
+    case 0x1A1FC:
+        if (count8(e(-0x27FF))) return;
+        wr8(e(-0x31FF), (uint8_t)(rd8(e(-0x31FF)) + 1));
+        return;
+    case 0x1A208:
+        wr16(e(-0x3700), (uint16_t)(rd16(e(-0x3700)) + 2));
+        if (count8(e(-0x2800))) return;
+        put8(e(-0x31FF), 0);
+        return;
+    case 0x1A216: return;
+    default: call(c->a[0]); return;                 /* past the table: as the original jumps */
+    }
+}
+/* $1A438: an enemy in a free slot ($12812, a2) from the record at $A394 (kind, x, y, graphics),
+ * no spawn point, set up ($12684); mi if no slot */
+static void spawn_from_a394(void)
+{
+    call(0x12812);
+    if (c->ccr & CC_N) return;
+    { uint32_t t = c->a[2]; c->a[2] = c->a[4]; c->a[4] = t; }
+    c->a[0] = 0xFFFFA394u;
+    c->d[1] = set_w(c->d[1], rd16(c->a[0])); c->a[0] += 2;
+    wr16(e(-0x2BFE), (uint16_t)c->d[1]);
+    wr16(e(-0x3800), rd16(c->a[0])); c->a[0] += 2;
+    wr16(e(-0x3700), rd16(c->a[0])); c->a[0] += 2;
+    wr16(e(-0x3DFE), rd16(c->a[0])); c->a[0] += 2;
+    wr8(e(-0x2B00), 0xFF);
+    wr8(e(-0x2F00), 0);
+    call(0x12684);
+}
+
+ENTRY(TouchAhead, touch_ahead)             /* $19DD2 */
+ENTRY(DirAnim, dir_anim)                   /* $19E2C */
+ENTRY(AtTarget, at_target)                 /* $19E44 */
+ENTRY(StepByDir, step_by_dir)              /* $19E64 */
+ENTRY(TurnToward, turn_toward)             /* $19E88 */
+ENTRY(Lifter, lifter)                      /* $1A1C6 */
+ENTRY(SpawnFromA394, spawn_from_a394)      /* $1A438 */
