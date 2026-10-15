@@ -114,6 +114,8 @@ void Room16Setup(Cpu *), FloorScroll(Cpu *), Room16Frame(Cpu *), Room16Exit(Cpu 
 void Room18Setup(Cpu *), Room18Frame(Cpu *), FlashColour(Cpu *), PartnerAnim2(Cpu *), PartnerFallBeside(Cpu *), BesidePartner(Cpu *), BothBlink(Cpu *), RiderHit(Cpu *), RiderTouch(Cpu *), PartnerGrounded2(Cpu *), PartnerAtWall2(Cpu *), Room17Setup(Cpu *), PartMake(Cpu *), Room17Frame(Cpu *), Wobble(Cpu *), Room17Extra(Cpu *), Room17Effects(Cpu *);
 void Room17States(Cpu *), Room17Hold(Cpu *), Room17Parts(Cpu *), Room17Beaten(Cpu *), Room17Head(Cpu *), Room17Debris(Cpu *), TouchAhead(Cpu *), DirAnim(Cpu *), AtTarget(Cpu *), StepByDir(Cpu *), TurnToward(Cpu *), Lifter(Cpu *), SpawnFromA394(Cpu *);
 void EndingStars(Cpu *), EndingSprite(Cpu *), EndingStarsSetup(Cpu *), EndRand255(Cpu *), EndRand6(Cpu *), EndingTextRow(Cpu *), TextDown(Cpu *), TextUp(Cpu *), EndingTextNext(Cpu *), EndingCreditsStep(Cpu *), EndingCreditLine(Cpu *), VdpRowWindow(Cpu *), VdpRowB(Cpu *), VdpRowAt(Cpu *), StrLen(Cpu *);
+void KindRecord(Cpu *), LoadKindGfx(Cpu *), GfxSlotAt(Cpu *), LoadGfxList(Cpu *), SpawnAt(Cpu *), EnemyInit(Cpu *), KindLook(Cpu *), KindMovement(Cpu *), KindFighting(Cpu *), EntityReset(Cpu *), SpawnFlags(Cpu *), FindFreeA0E2(Cpu *), FindFreeEnemy(Cpu *), FindFreeSpawn(Cpu *), SpawnList(Cpu *);
+void ThingSwingX(Cpu *), ThingSwingY(Cpu *), ThingLiftUp(Cpu *), ThingBlock(Cpu *), ThingOut(Cpu *), ThingStep(Cpu *), ThingShaker(Cpu *), ThingSpring(Cpu *), ThingWeight(Cpu *), ThingMarker(Cpu *), ThingShuttleX(Cpu *), ThingShuttleY(Cpu *), ThingPath(Cpu *), EnemiesLeave(Cpu *), BossSpawnsClear(Cpu *), SpawnsAllClear(Cpu *), SpawnTablesClear(Cpu *), RoomSpawns(Cpu *);
 void Looks(Cpu *), LooksExtra(Cpu *), LooksBlock(Cpu *), LooksBody(Cpu *), LooksSword(Cpu *), LooksShield(Cpu *), EquipChange(Cpu *);
 void HudPanel(Cpu *), GoldLabel(Cpu *), ThreeLabels(Cpu *), DigitsOut(Cpu *), ItemsChoose(Cpu *), MagicChoose(Cpu *), SlotChoose(Cpu *), ActionToSlot(Cpu *),
      ItemToSlot(Cpu *), WornBlink(Cpu *), StatusFadeIn(Cpu *), StatusFadeOut(Cpu *), StatusWait(Cpu *);
@@ -903,7 +905,40 @@ const PortRoutine port_routines[] = {
     {0x01090C, 0x010910, "SpawnItem", SpawnItem},                 /* effects.c: every register as the original */
     {0x010910, 0x010A1E, "SpawnItemAt", SpawnItemAt},
     {0x010A1E, 0x011094, "RunItems", RunItems, CT_SP},
+    {0x011F80, 0x011F86, "ThingSwingX", ThingSwingX, CT_SP | CT_A0 << 4},   /* enemygfx.c: the room things' kinds (from $11CCA; on to $11CFC or back) */
+    {0x011F86, 0x011FD2, "ThingSwingY", ThingSwingY, CT_SP | CT_A0 << 4},
+    {0x011FD2, 0x012058, "ThingLiftUp", ThingLiftUp, CT_SP | CT_A0 << 4},
+    {0x012058, 0x01211E, "ThingBlock", ThingBlock, CT_SP | CT_A0 << 4},
+    {0x01211E, 0x012160, "ThingOut", ThingOut, CT_SP | 0x7FFF},
+    {0x012160, 0x01221C, "ThingStep", ThingStep, CT_SP | CT_A0 << 4},
+    {0x01221C, 0x012298, "ThingShaker", ThingShaker, CT_SP | CT_A0 << 4},
+    {0x012298, 0x01234C, "ThingSpring", ThingSpring, CT_SP | CT_A0 << 4},
+    {0x01234C, 0x0123BC, "ThingWeight", ThingWeight, CT_SP | CT_A0 << 4},
+    {0x0123BC, 0x0123D4, "ThingMarker", ThingMarker, CT_SP | CT_A0 << 4},
+    {0x0123D4, 0x0123DA, "ThingShuttleX", ThingShuttleX, CT_SP | CT_A0 << 4},
+    {0x0123DA, 0x01242E, "ThingShuttleY", ThingShuttleY, CT_SP | CT_A0 << 4},
+    {0x01242E, 0x01250A, "ThingPath", ThingPath, CT_SP | CT_A0 << 4},
+    {0x0125A6, 0x0125C4, "KindRecord", KindRecord, CT_SP | 0x7FFF},   /* enemygfx.c: a kind's graphics loaded, an enemy set up, the free slots (every register as the original) */
+    {0x0125C4, 0x012632, "LoadKindGfx", LoadKindGfx, CT_SP | 0x7FFF},
+    {0x012632, 0x012640, "GfxSlotAt", GfxSlotAt, CT_SP | 0x7FFF},
+    {0x012640, 0x012650, "LoadGfxList", LoadGfxList, CT_SP | 0x7FFF},
+    {0x012650, 0x012684, "SpawnAt", SpawnAt, CT_SP | 0x7FFF},   /* a kind missing from the room's list: the original's loop at $1267C */
+    {0x012684, 0x0126AA, "EnemyInit", EnemyInit, CT_SP | 0x7FFF},
+    {0x0126AA, 0x0126D4, "KindLook", KindLook, CT_SP | 0x7FFF},
+    {0x0126D4, 0x01274A, "KindMovement", KindMovement, CT_SP | 0x7FFF},
+    {0x01274A, 0x0127A0, "KindFighting", KindFighting, CT_SP | 0x7FFF},
+    {0x0127A0, 0x0127DC, "EntityReset", EntityReset, CT_SP | 0x7FFF},
+    {0x0127DC, 0x0127FE, "SpawnFlags", SpawnFlags, CT_SP | 0x7FFF | CT_NZVC},
+    {0x0127FE, 0x012812, "FindFreeA0E2", FindFreeA0E2, CT_SP | 0x7FFF | CT_NZVC},
+    {0x012812, 0x012826, "FindFreeEnemy", FindFreeEnemy, CT_SP | 0x7FFF | CT_NZVC},
+    {0x012826, 0x012848, "FindFreeSpawn", FindFreeSpawn, CT_SP | 0x7FFF | CT_NZVC},
+    {0x012848, 0x012A70, "SpawnList", SpawnList, CT_SP | 0x7FFF},   /* the room's spawn list: its commands and spawn points' kinds */
     {0x012A70, 0x0133B2, "RunSpawnPoints", RunSpawnPoints, CT_SP}, /* spawns.c: with its kinds and helpers */
+    {0x0136A6, 0x013748, "EnemiesLeave", EnemiesLeave, CT_SP | 0x7FFF},   /* enemygfx.c: the enemies and spawn points with the room */
+    {0x013748, 0x013786, "BossSpawnsClear", BossSpawnsClear, CT_SP | 0x7FFF},
+    {0x013786, 0x0137A8, "SpawnsAllClear", SpawnsAllClear, CT_SP | 0x7FFF},
+    {0x0137A8, 0x0137C8, "SpawnTablesClear", SpawnTablesClear, CT_SP | 0x7FFF},
+    {0x0137C8, 0x01381C, "RoomSpawns", RoomSpawns, CT_SP | 0x7FFF},
     {0x0133B2, 0x013418, "RunEnemies", RunEnemies, CT_SP},       /* enemies.c: every enemy, each frame */
     {0x013582, 0x0135AE, "EnemyDispatch", EnemyDispatch},         /* the monsters' state machine: carries on at the action */
     {0x01357E, 0x013582, "EnemySetState", EnemySetState},

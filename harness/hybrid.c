@@ -1623,6 +1623,116 @@ int hybrid_fuzz(const char *name, long count)
             m68k_set_reg(M68K_REG_A2, layouts[rnd() % 4]); ram[0x8C76] = planes[rnd() % 5];
             m68k_set_reg(M68K_REG_A1, 0xC00000);
         }
+        char key53[40]; snprintf(key53, sizeof key53, "|%s|", name);
+        if (strstr("|KindRecord|LoadKindGfx|GfxSlotAt|LoadGfxList|SpawnAt|EnemyInit|KindLook|KindMovement|KindFighting|EntityReset|SpawnFlags|", key53)) {
+            /* batch T53: kinds from the room's list (at most 7 of them, so one more fits), enemy
+             * slots from $A11A, spawn points 0-$3C */
+            uint32_t n = ram[0xA143], k;
+            if (!n) put_word(0xA122, 0x402);
+            if (!n || n > 7) n = n ? 7 : 1;
+            ram[0xA142] = 0; ram[0xA143] = (uint8_t)n;
+            k = rnd() % n;
+            uint32_t kind = (uint32_t)ram[0xA122 + 4 * k] << 8 | ram[0xA123 + 4 * k];
+            if (!strcmp(name, "LoadKindGfx") && rnd() % 2) ram[0xA143] = (uint8_t)k;     /* not loaded yet */
+            if (!strcmp(name, "LoadKindGfx") || !strcmp(name, "KindRecord") || !strcmp(name, "KindLook"))
+                m68k_set_reg(M68K_REG_D5, (rnd() << 16) | kind);
+            else m68k_set_reg(M68K_REG_D1, (rnd() << 16) | kind);
+            if (!strcmp(name, "GfxSlotAt")) m68k_set_reg(M68K_REG_D1, (rnd() << 16) | rnd() % 0x31);
+            if (!strcmp(name, "LoadGfxList")) {
+                uint32_t l = (uint32_t)get_sword(0xA11E) << 16 | (uint16_t)get_sword(0xA120);
+                if (!l || rnd() % 2) {      /* none in this room ($A11E 0): one made up at $FF2400 */
+                    uint32_t q = 0x2400;
+                    for (uint32_t j = rnd() % 4; j; j--) { uint32_t i = rnd() % n; ram[q++] = ram[0xA122 + 4 * i]; ram[q++] = ram[0xA123 + 4 * i]; }
+                    ram[q++] = 0xFF; ram[q++] = 0xFF;
+                    l = 0xFF2400;
+                }
+                m68k_set_reg(M68K_REG_A0, l);
+            }
+            {
+                uint32_t slot = (uint32_t)(int32_t)get_sword(0xA11A) + 4 * (rnd() % 16);
+                if (!strcmp(name, "SpawnAt") || !strcmp(name, "SpawnFlags")) m68k_set_reg(M68K_REG_A2, slot);
+                else m68k_set_reg(M68K_REG_A4, slot);
+                if (!strcmp(name, "SpawnFlags")) m68k_set_reg(M68K_REG_A3, 4 * (rnd() % 16));
+            }
+        }
+        if (!strcmp(name, "SpawnList")) {
+            /* batch T54: a spawn list made up at $FF2400 (the room's own reaches few of the kinds):
+             * the room's kinds (not in a boss's room), then spawn points of every kind and the
+             * commands, jumps landing on the next one; some spawn points freed */
+            uint32_t n = ram[0xA143], p = 0x2400, nr = 1 + rnd() % 12;
+            if (!n) put_word(0xA122, 0x402);
+            if (!n || n > 7) n = n ? 7 : 1;
+            ram[0xA142] = 0; ram[0xA143] = (uint8_t)n;
+            if (rnd() % 4) ram[0x9659] &= 0xEF; else ram[0x9659] |= 0x10;
+            if (!(ram[0x9659] & 0x10)) {
+                for (uint32_t k = rnd() % 3; k; k--) { uint32_t i = rnd() % n; ram[p++] = ram[0xA122 + 4 * i]; ram[p++] = ram[0xA123 + 4 * i]; }
+                ram[p++] = 0xFF; ram[p++] = 0xFF;
+            }
+            for (uint32_t r = 0; r < nr; r++) {
+                uint32_t k = rnd() % 23, len, i;
+                if (k >= 16) k = 0xF8 + (k - 16);
+                ram[p++] = (uint8_t)k;
+                switch (k) {
+                case 0: case 7: case 8: case 9: case 12: len = 8; break;   /* with the kind's byte */
+                case 1: case 2: case 4: case 5: len = 10; break;
+                case 3: len = 12; break;
+                case 11: case 15: len = 14; break;
+                case 6: len = 2 + 6 * (rnd() % 4); break;
+                case 13: len = 10 + 2 * (rnd() % 4); break;
+                case 10: len = 4; break;
+                case 14: len = 6; break;
+                case 0xFA: case 0xFB: case 0xFD: len = 2; break;
+                default: len = 4; break;            /* the jumps: a byte and the offset */
+                }
+                for (i = 1; i < len; i++) ram[p + i - 1] = (uint8_t)rnd();
+                if (k == 6) ram[p] = (uint8_t)((len - 2) / 6);
+                if (k == 13) ram[p + 1] = (uint8_t)((len - 10) / 2);
+                if (k == 10) ram[p] = (uint8_t)(rnd() % 4);
+                if (k == 3 && !ram[p + 4]) ram[p + 4] = 1;
+                if (k == 5 && rnd() % 2) { ram[p + 1] = 0; ram[p + 2] = 0; }
+                if (k == 0xFC) ram[p] = (uint8_t)(rnd() % 0x40);
+                if (k >= 0xF8 && len == 4) { ram[p + 1] = 0; ram[p + 2] = 2; }
+                p += len - 1;
+            }
+            ram[p++] = 0xFF;
+            put_long(0xA11E, 0xFF2400);
+            for (uint32_t q = 0; q < 0x40; q += 4) if (rnd() % 2) ram[0xA15C + q] &= 0x7F;
+        }
+        if (!strncmp(name, "Thing", 5)) {
+            /* batch T55: a room thing's slot ($10-$3C), its link to a rider's entry ($9F8E: 6 of
+             * them) or none, another slot for a weight's top, a path of steps at $FF2400 */
+            uint32_t sl = 0x10 + 4 * (rnd() % 12), i;
+            m68k_set_reg(M68K_REG_A4, sl);
+            if (rnd() % 4) {
+                uint32_t r = 4 * (rnd() % 6);
+                put_word(0xD300 + sl, r);
+                ram[0x9F8E + r] = (uint8_t)((ram[0x9F8E + r] & 0xFE) | (rnd() % 2));
+            } else put_word(0xD300 + sl, 0xFF00 | rnd());
+            put_word(0xD302 + sl, 4 * (rnd() % 16));
+            ram[0xCE00 + sl] = (uint8_t)rnd();
+            if (rnd() % 2) ram[0xD401 + sl] = (uint8_t)(rnd() % 3);
+            if (rnd() % 2) ram[0xCE02 + sl] = (uint8_t)(1 + rnd() % 3);
+            if (rnd() % 2) ram[0xCE03 + sl] = (uint8_t)(1 + rnd() % 3);
+            if (rnd() % 2) ram[0xD800 + sl] = (uint8_t)(rnd() % 3);
+            for (i = 0; i < 8; i++) ram[0x2400 + i] = (uint8_t)rnd();
+            if (rnd() % 3 == 0) ram[0x2400 + rnd() % 8] = 0xFF;
+            put_long(0xD600 + sl, rnd() % 3 ? 0xFF2400 + rnd() % 4 : 0);
+            if (rnd() % 2) {   /* by the player, or about the floor and the room's edges */
+                uint32_t pl = (uint32_t)(int32_t)(int16_t)(ram[0x9EEE] << 8 | ram[0x9EEF]);
+                put_word(0xC800 + sl, get_sword(0xC800 + pl) + rnd() % 16 - 8);
+                put_word(0xC900 + sl, rnd() % 2 ? get_sword(0xD802 + sl) + rnd() % 32 - 8 : get_sword(0xC900 + pl));
+            }
+        }
+        if (strstr("|EnemiesLeave|BossSpawnsClear|SpawnsAllClear|RoomSpawns|", key53)) {
+            /* batch T56: the enemies' spawn points one of the 20 or none, their groups 0-8; the
+             * frame counter (the kinds' count, after $137C8) small */
+            uint32_t base = (uint32_t)get_sword(0xA11A) & 0xFFFF;
+            for (uint32_t q = 0; q < 0x40; q += 4) {
+                put_word(0xD500 + base + q, rnd() % 4 ? 4 * (rnd() % 20) : 0xFFFF);
+                ram[0xD402 + base + q] = (uint8_t)(2 * (rnd() % 5));
+            }
+            if (!strcmp(name, "RoomSpawns")) put_word(0x965A, rnd() % 4 ? 0 : rnd() % 4);
+        }
         if (!strcmp(name, "ScrollClearPair")) {
             m68k_set_reg(M68K_REG_A0, 0xFF2400); m68k_set_reg(M68K_REG_A1, 0xFF2600);
             m68k_set_reg(M68K_REG_D1, (rnd() << 16) | rnd() % 0x80);
