@@ -2932,6 +2932,23 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 0 mismatches, every instruction covered. Self-test caught 100 in 100 for all 34 routines.
 Replace mode: thirteen runs, no problems.
 
+#### Items and magic, batch T57: the room's things run, made and set up (2026-10-15)
+
+* In `port/enemygfx.c`, with the things' kinds of T55:
+  * the things run each frame (`$11C9E`), each kind's handler then their riders' entries
+    (`$11CFC`: taken when something stands on the thing, let go when not, kept up to date with
+    its box and how far it moved; the handlers now call it as C);
+  * a thing made (`$11BF0`): a free slot, its look and place by size (`$1250A`), then its
+    kind's set-up (`$11D9C`-`$11F28`: swings, the lift, steps, the block, the shaker, the
+    spring, the weight with its top made as a second thing, shuttles and a path);
+  * the free slots of the things and the riders, the riders' and the magic's slots cleared
+    (`$11BA4`-`$11BE2`, `$11CE8`).
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(47 runs, all complete; 1,311,282 checked calls). 990,000 fuzz cases from six states (the new
+routines and T55's handlers again), 0 mismatches, every instruction covered. Self-test caught 100
+in 100 for all 33. Replace mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
