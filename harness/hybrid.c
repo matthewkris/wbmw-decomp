@@ -1747,6 +1747,38 @@ int hybrid_fuzz(const char *name, long count)
             }
             if (!strcmp(name, "RoomSpawns")) put_word(0x965A, rnd() % 4 ? 0 : rnd() % 4);
         }
+        if (strstr("|CompanionRoute|TrailShift|RouteProbe|RouteByte|BoxNear|BoxNearX|BoxNearY|", key53)) {
+            /* batch T59: an entity near the player, on the ground or not; its trail ($9F34, $9F74
+             * bytes) of 1-16 points, the first ones where it stands; probes about the player */
+            uint32_t pl = (uint32_t)(int32_t)get_sword(0x9EEE) & 0xFC, me = 4 * (rnd() % 64);
+            int32_t px = get_sword(0xC800 + pl), py = get_sword(0xC900 + pl);
+            uint32_t n = 1 + rnd() % 16, i;
+            m68k_set_reg(M68K_REG_A4, me);
+            put_word(0xC800 + me, px + rnd() % 64 - 32);
+            put_word(0xC900 + me, py + rnd() % 32 - 16);
+            ram[0xCF00 + me] = (uint8_t)(rnd() % 4 ? 2 : rnd());
+            if (rnd() % 2) put_word(0xD402 + me, 2);
+            {
+                uint32_t x = (uint32_t)get_sword(0xC800 + me) & 0xFFFF, y = ((uint32_t)get_sword(0xC900 + me) + ram[0xCB03 + me]) & 0xFFFF;
+                uint32_t here = (x >> 4) << 16 | (((y & 0xFFF0) << 2) & 0xFFFF);
+                for (i = 0; i < n; i++) {
+                    uint32_t pt = (((x >> 4) + rnd() % 8 - 4) & 0xFFFF) << 16 | ((((y & 0xFFF0) << 2) + 0x40 * (rnd() % 5) - 0x80) & 0xFFFF);
+                    put_long(0x9F34 + 4 * i, i < (uint32_t)(rnd() % 3) ? here : pt);
+                }
+                put_word(0x9F74, 4 * n);
+                if (rnd() % 4 == 0) {   /* on the lift */
+                    ram[0x9A8A] = 1; put_word(0x9A8E, y); put_word(0x9A90, x - rnd() % 32); put_word(0x9A92, x + rnd() % 32);
+                    put_word(0x9A8C, x + rnd() % 32 - 16);
+                }
+            }
+            if (!strcmp(name, "TrailShift")) m68k_set_reg(M68K_REG_A1, 0xFFFF9F34);
+            if (!strcmp(name, "RouteProbe")) m68k_set_reg(M68K_REG_D0, (rnd() << 8) | rnd() % 8);
+            if (!strcmp(name, "RouteProbe") || !strcmp(name, "RouteByte")) {
+                m68k_set_reg(M68K_REG_D1, (rnd() << 16) | rnd() % 2);
+                m68k_set_reg(M68K_REG_D6, (rnd() << 16) | ((px + rnd() % 64 - 32) & 0xFFFF));
+                m68k_set_reg(M68K_REG_D7, (rnd() << 16) | ((py + rnd() % 64 - 32) & 0xFFFF));
+            }
+        }
         if (!strcmp(name, "ScrollClearPair")) {
             m68k_set_reg(M68K_REG_A0, 0xFF2400); m68k_set_reg(M68K_REG_A1, 0xFF2600);
             m68k_set_reg(M68K_REG_D1, (rnd() << 16) | rnd() % 0x80);
@@ -2124,7 +2156,8 @@ int hybrid_fuzz(const char *name, long count)
                 ram[0xD101 + e] |= (uint8_t)(rnd() % 2 ? 0x20 : 0);  /* PREV_COLL: on it */
             }
         }
-        if (!strncmp(name, "Magic", 5)) {
+        char key58[64]; snprintf(key58, sizeof key58, "|%s|", name);
+        if (!strncmp(name, "Magic", 5) || strstr("|SpiritsFrame|RunMagicEnts|MagicSpark|MagicRock|MagicBolt|MagicSpirit|SpiritTouch|SpiritMove|SpiritBurst|DropRock|NextOnGround|NearestEnemy|HurtBoxes|QuakeShake|EnemyForSpirits|EnemyForThunder|", key58)) {
             /* magic (port/magic.c): a kind and its state, enemies round the player, the magic's
              * own entities part-way through; where the original resets the stack to the task's
              * base ($FF9662) and yields, that base is this case's return address */
@@ -2178,6 +2211,27 @@ int hybrid_fuzz(const char *name, long count)
                 put_word(0xCA00 + s, rnd()); put_word(0xCA02 + s, rnd());
                 ram[0xCB00 + s] = (uint8_t)(rnd() % 16); ram[0xCB01 + s] = (uint8_t)(rnd() % 16);
             }
+        }
+        if (strstr("|SpiritsFrame|RunMagicEnts|MagicSpark|MagicRock|MagicBolt|MagicSpirit|SpiritTouch|SpiritMove|SpiritBurst|DropRock|NextOnGround|NearestEnemy|HurtBoxes|QuakeShake|EnemyForSpirits|EnemyForThunder|", key58)) {
+            /* batch T58: the magic's entities as above; a4 a slot of the routine's type (made one,
+             * with its look, if none is), an enemy in a2 for the helpers */
+            static const char *type_of[] = { "MagicSpirit", "MagicRock", "MagicSpark", "MagicBolt" };
+            static const uint16_t sets[4] = {0x1400, 0x1406, 0x1402, 0x1408};
+            int want = !strncmp(name, "Spirit", 6) ? 0 : -1;
+            for (int i = 0; i < 4; i++) if (!strcmp(name, type_of[i])) want = i;
+            uint32_t me = 0xC0 + 4 * (rnd() % 8);
+            if (want >= 0) {
+                put_word(0xD402 + me, 2 * want);
+                put_word(0xC300 + me, want == 2 && ram[0x9F04] == 2 ? 0x1404 : sets[want]);
+                ram[0xC302 + me] = (uint8_t)(want == 2 ? (rnd() % 8) * 2 : (rnd() % 2) * 2);
+                if (want == 3) ram[0xD800 + me] = (uint8_t)(rnd() % 4);
+                ram[0xC000 + me] |= 0x80;
+            }
+            if (!strcmp(name, "HurtBoxes") || (!strcmp(name, "NearestEnemy") && rnd() % 2))
+                m68k_set_reg(M68K_REG_A4, (uint32_t)(int32_t)(int16_t)(ram[0x9EEE] << 8 | ram[0x9EEF]));
+            else m68k_set_reg(M68K_REG_A4, me);
+            m68k_set_reg(M68K_REG_A2, 0x40 + 4 * (rnd() % 16));
+            if (!strcmp(name, "NextOnGround")) m68k_set_reg(M68K_REG_D1, (rnd() << 8) | (1 + rnd() % 16));
         }
         if (!strcmp(name, "PlayerSwordTip")) {      /* a list of the sword's points, as the game passes */
             uint32_t sword = rnd() % 8, list = 0xF2FC + (uint32_t)(int32_t)(int16_t)bus_read16(0xF2FC + 2 * sword);

@@ -1358,3 +1358,159 @@ SETUP(ThingSetSpring, 0x11E64)
 SETUP(ThingSetWeight, 0x11E76)
 SETUP(ThingSetShuttle, 0x11F10)
 SETUP(ThingSetPath, 0x11F28)
+
+/* ---- batch T59: the companion's route and small helpers ($1061E-$1115E) ---- */
+/* $107E2: d0 the route table's byte ($418C) for the tile under (d6, d7) ($30DA) and side d1 */
+static void route_byte(void)
+{
+    c->a[7] -= 2; wr16(c->a[7], (uint16_t)c->d[1]);
+    call(0x30DA);
+    c->d[1] = set_w(c->d[1], rd16(c->a[7])); c->a[7] += 2;
+    c->d[2] = set_w(c->d[2], c->d[2] & 0xF0);
+    c->d[2] = set_w(c->d[2], (uint16_t)c->d[2] >> 3);
+    c->a[0] = 0x418C;
+    c->d[2] = set_w(c->d[2], c->d[2] + c->d[1]);
+    c->d[0] = set_b(c->d[0], rd8(c->a[0] + sx(c->d[2])));
+}
+/* $1070A: the trail's first point dropped ($9F34, $9F74 its length in bytes); mi if it was the
+ * last */
+static void trail_shift(void)
+{
+    c->a[0] = c->a[1];
+    c->d[0] = set_w(c->d[0], rd16(0xFFFF9F74u));
+    c->d[0] = set_w(c->d[0], c->d[0] - 4);
+    if (!(c->d[0] & 0xFFFF)) { c->d[0] = 0xFFFFFFFFu; F_L(c->d[0]); return; }
+    c->d[1] = set_w(c->d[1], c->d[0]);
+    c->d[0] = set_w(c->d[0], (uint16_t)c->d[0] >> 2);
+    do {
+        wr32(c->a[0], rd32(c->a[0] + 4)); c->a[0] += 4;
+        c->d[0] = set_w(c->d[0], c->d[0] - 1);
+    } while (c->d[0] & 0xFFFF);
+    F_W(0);
+}
+/* $10726: from (d6, d7), the probes of route d0 ($107A2: a count, then (dx, dy, wanted) each):
+ * eq when one finds its wanted byte in table d1 ($418C), mi when none does or a wall (tile $F) */
+static void route_probe(void)
+{
+    uint16_t x = (uint16_t)c->d[6], y = (uint16_t)c->d[7], tab = (uint16_t)c->d[1];
+    uint8_t want;
+    c->d[0] = set_w(c->d[0], c->d[0] & 0xFF);
+    c->d[0] = set_w(c->d[0], c->d[0] * 2);
+    c->a[0] = 0x107A2 + sx(rd16(0x107A2 + (c->d[0] & 0xFFFF)));
+    int8_t n = (int8_t)rd8(c->a[0]); c->a[0]++;
+    uint32_t at = c->a[0];
+    for (;;) {
+        c->a[0] = at;
+        c->d[6] = set_w(c->d[6], (uint16_t)(int8_t)rd8(c->a[0]) + x); c->a[0]++;
+        c->d[7] = set_w(c->d[7], (uint16_t)(int8_t)rd8(c->a[0]) + y); c->a[0]++;
+        want = rd8(c->a[0]); c->a[0]++;
+        at = c->a[0];
+        call(0x30DA);
+        if (c->d[2] & 8) {
+            c->d[0] = set_w(c->d[0], c->d[2] & 0xF0);
+            c->d[0] = set_w(c->d[0], (uint16_t)c->d[0] >> 3);
+            c->d[0] = set_w(c->d[0], c->d[0] + 0x418C);
+            c->a[0] = sx(tab);
+            c->d[0] = set_b(c->d[0], rd8(c->a[0] + sx(c->d[0])));
+            if ((uint8_t)c->d[0] == want) { F_B(0); return; }
+        }
+        n--;
+        if (n < 0) { c->ccr = (uint16_t)(CC_N | CC_C | CC_X); return; }
+        c->d[2] = set_b(c->d[2], c->d[2] & 0xF);
+        if ((c->d[2] & 0xFF) == 0xF) break;
+    }
+    c->d[0] = 0xFFFFFFFFu; F_L(c->d[0]);
+}
+/* $1061E: the companion's next state on its trail: -1 off the ground; $A on the lift ($9A8A:
+ * facing and moving off it); else following the trail's points ($9F34; reached ones dropped,
+ * 2 when none is left): 4 when the way to the next is clear, 6 (on the ground) or 2 when not */
+static void companion_route(void)
+{
+    c->d[0] = set_b(c->d[0], rd8(e(-0x3100)) & 0xA);
+    c->d[0] = set_b(c->d[0], c->d[0] - 2);
+    if (c->d[0] & 0xFF) { c->d[0] = 0xFFFFFFFFu; F_L(c->d[0]); return; }
+    c->d[6] = set_w(c->d[6], rd16(e(-0x3800)));
+    c->d[7] = rd8(e(-0x34FD));
+    c->d[7] = set_w(c->d[7], c->d[7] + rd16(e(-0x3700)));
+    if (rd16(e(-0x2BFE)) == 2 && rd8(0xFFFF9A8Au) && (uint16_t)c->d[7] == rd16(0xFFFF9A8Eu)
+        && (uint16_t)c->d[6] >= rd16(0xFFFF9A90u) && (uint16_t)c->d[6] <= rd16(0xFFFF9A92u)) {
+        c->d[0] = 0;
+        c->d[1] = set_w(c->d[1], rd16(0xFFFF9EF6u) - 0x40);
+        if ((uint16_t)c->d[6] >= rd16(0xFFFF9A8Cu)) { c->d[0] = 8; c->d[1] = set_w(c->d[1], -c->d[1]); }
+        wr8(e(-0x3FFE), (uint8_t)((rd8(e(-0x3FFE)) & 0xF7) | (uint8_t)c->d[0]));
+        wr16(e(-0x3600), (uint16_t)c->d[1]);
+        c->d[0] = 0xA; F_L(c->d[0]);
+        return;
+    }
+    c->d[6] = set_w(c->d[6], (uint16_t)c->d[6] >> 4);
+    c->d[7] = set_w(c->d[7], c->d[7] & 0xFFF0);
+    c->d[7] = set_w(c->d[7], c->d[7] << 2);
+    c->d[5] = set_w(c->d[5], c->d[6]);
+    c->d[5] = c->d[5] << 16 | c->d[5] >> 16;
+    c->d[5] = set_w(c->d[5], c->d[7]);
+    c->a[3] = 0xFFFF9754u;
+    c->a[1] = 0xFFFF9F34u;
+    while (rd32(c->a[1]) == c->d[5]) {
+        trail_shift();
+        if (c->ccr & CC_N) { c->d[0] = 2; F_L(2); return; }
+        wr16(0xFFFF9F74u, (uint16_t)c->d[1]);
+    }
+    c->d[0] = 0;
+    if ((uint16_t)c->d[6] != rd16(c->a[1])) {
+        if ((uint16_t)c->d[6] >= rd16(c->a[1])) c->d[0] = 8;
+        wr8(e(-0x3FFE), (uint8_t)((rd8(e(-0x3FFE)) & 0xF7) | (uint8_t)c->d[0]));
+    }
+    c->d[0] = set_w(c->d[0], c->d[7] - rd16(c->a[1] + 2));
+    if (c->d[0] & 0x8000) c->d[0] = set_w(c->d[0], -c->d[0]);
+    if (((uint16_t)c->d[6] == rd16(c->a[1]) && (int16_t)c->d[0] >= 0x40) || (int16_t)c->d[0] >= 0x80) goto blocked;
+    c->d[1] = (rd8(e(-0x3FFE)) & 8) ? 0 : 1;
+    route_byte();
+    c->d[1] = set_w(c->d[1], c->d[1] ^ 1);
+    route_probe();
+    if (c->ccr & CC_N) goto blocked;
+    c->d[0] = 4; F_L(4);
+    return;
+blocked:
+    c->d[0] = 0xA & rd8(e(-0x3100));
+    c->d[0] = set_b(c->d[0], c->d[0] - 2);
+    if (c->d[0] & 0xFF) { c->d[0] = 2; F_L(2); return; }
+    c->d[0] = 6; F_L(6);
+}
+/* $108EE: ls when the y distance (d2, from the entity) is at most d3 */
+static void near_y(void)
+{
+    c->d[2] = set_w(c->d[2], c->d[2] - rd16(e(-0x3700)));
+    if (c->d[2] & 0x8000) c->d[2] = set_w(c->d[2], -c->d[2]);
+    c->d[2] = set_w(c->d[2], sub_w(&c->ccr, c->d[3], c->d[2]));
+}
+/* $108E2: the same for x (d0, d1) */
+static void near_x(void)
+{
+    c->d[0] = set_w(c->d[0], c->d[0] - rd16(e(-0x3800)));
+    if (c->d[0] & 0x8000) c->d[0] = set_w(c->d[0], -c->d[0]);
+    c->d[0] = set_w(c->d[0], sub_w(&c->ccr, c->d[1], c->d[0]));
+}
+/* $108DC: ls when (d0, d2) is within (d1, d3) of the entity */
+static void near_box(void)
+{
+    near_x();
+    if (!(c->ccr & (CC_C | CC_Z))) return;
+    near_y();
+}
+/* $108FA and $1115E: the 16 slots from $80 cleared */
+static void slots80_clear(void)
+{
+    c->a[0] = 0x80;
+    c->d[0] = 0xF;
+    for (int k = 0; k < 16; k++) { wr16(c->a[0] - 0x4000, 0); c->a[0] += 4; }
+    c->d[0] = 0xFFFF;
+}
+ENTRY(CompanionRoute, companion_route)     /* $1061E */
+ENTRY(TrailShift, trail_shift)             /* $1070A */
+ENTRY(RouteProbe, route_probe)             /* $10726 */
+ENTRY(RouteByte, route_byte)               /* $107E2 */
+ENTRY(BoxNear, near_box)                   /* $108DC */
+ENTRY(BoxNearX, near_x)                       /* $108E2 */
+ENTRY(BoxNearY, near_y)                       /* $108EE */
+ENTRY(Slots80Clear, slots80_clear)         /* $108FA */
+ENTRY(Slots80Clear2, slots80_clear)        /* $1115E */

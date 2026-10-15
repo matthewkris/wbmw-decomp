@@ -117,6 +117,8 @@ void EndingStars(Cpu *), EndingSprite(Cpu *), EndingStarsSetup(Cpu *), EndRand25
 void KindRecord(Cpu *), LoadKindGfx(Cpu *), GfxSlotAt(Cpu *), LoadGfxList(Cpu *), SpawnAt(Cpu *), EnemyInit(Cpu *), KindLook(Cpu *), KindMovement(Cpu *), KindFighting(Cpu *), EntityReset(Cpu *), SpawnFlags(Cpu *), FindFreeA0E2(Cpu *), FindFreeEnemy(Cpu *), FindFreeSpawn(Cpu *), SpawnList(Cpu *);
 void ThingSwingX(Cpu *), ThingSwingY(Cpu *), ThingLiftUp(Cpu *), ThingBlock(Cpu *), ThingOut(Cpu *), ThingStep(Cpu *), ThingShaker(Cpu *), ThingSpring(Cpu *), ThingWeight(Cpu *), ThingMarker(Cpu *), ThingShuttleX(Cpu *), ThingShuttleY(Cpu *), ThingPath(Cpu *), EnemiesLeave(Cpu *), BossSpawnsClear(Cpu *), SpawnsAllClear(Cpu *), SpawnTablesClear(Cpu *), RoomSpawns(Cpu *);
 void MagicSlotsClear(Cpu *), RidersClear(Cpu *), FindFreeThing(Cpu *), ThingWas(Cpu *), ThingMake(Cpu *), ThingsRun(Cpu *), FindFreeRider(Cpu *), ThingRiders(Cpu *), SwingSetup(Cpu *), WeightLook(Cpu *), ThingSetSwingX(Cpu *), ThingSetSwingY(Cpu *), ThingSetFloor(Cpu *), ThingSetLift(Cpu *), ThingSetStep(Cpu *), ThingSetBlock(Cpu *), ThingSetShaker(Cpu *), ThingSetSpring(Cpu *), ThingSetWeight(Cpu *), ThingSetShuttle(Cpu *), ThingSetPath(Cpu *);
+void SpiritsFrame(Cpu *), RunMagicEnts(Cpu *), MagicSpark(Cpu *), MagicRock(Cpu *), MagicBolt(Cpu *), MagicSpirit(Cpu *), SpiritTouch(Cpu *), SpiritMove(Cpu *), SpiritBurst(Cpu *), HurtBoxes(Cpu *), DropRock(Cpu *), QuakeShake(Cpu *), NextOnGround(Cpu *), NearestEnemy(Cpu *), EnemyForSpirits(Cpu *), EnemyForThunder(Cpu *);
+void CompanionRoute(Cpu *), TrailShift(Cpu *), RouteProbe(Cpu *), RouteByte(Cpu *), BoxNear(Cpu *), BoxNearX(Cpu *), BoxNearY(Cpu *), Slots80Clear(Cpu *), Slots80Clear2(Cpu *);
 void Looks(Cpu *), LooksExtra(Cpu *), LooksBlock(Cpu *), LooksBody(Cpu *), LooksSword(Cpu *), LooksShield(Cpu *), EquipChange(Cpu *);
 void HudPanel(Cpu *), GoldLabel(Cpu *), ThreeLabels(Cpu *), DigitsOut(Cpu *), ItemsChoose(Cpu *), MagicChoose(Cpu *), SlotChoose(Cpu *), ActionToSlot(Cpu *),
      ItemToSlot(Cpu *), WornBlink(Cpu *), StatusFadeIn(Cpu *), StatusFadeOut(Cpu *), StatusWait(Cpu *);
@@ -906,6 +908,31 @@ const PortRoutine port_routines[] = {
     {0x01090C, 0x010910, "SpawnItem", SpawnItem},                 /* effects.c: every register as the original */
     {0x010910, 0x010A1E, "SpawnItemAt", SpawnItemAt},
     {0x010A1E, 0x011094, "RunItems", RunItems, CT_SP},
+    {0x01061E, 0x01070A, "CompanionRoute", CompanionRoute, CT_SP | 0x7FFF | CT_NZVC},   /* enemygfx.c: the companion's route, the box tests, slots cleared */
+    {0x01070A, 0x010726, "TrailShift", TrailShift, CT_SP | 0x7FFF},
+    {0x010726, 0x0107E2, "RouteProbe", RouteProbe, CT_SP | 0x7FFF},
+    {0x0107E2, 0x0107FC, "RouteByte", RouteByte, CT_SP | 0x7FFF},
+    {0x0108DC, 0x0108E2, "BoxNear", BoxNear, CT_SP | 0x7FFF | CT_NZVC},
+    {0x0108E2, 0x0108EE, "BoxNearX", BoxNearX, CT_SP | 0x7FFF | CT_NZVC},
+    {0x0108EE, 0x0108FA, "BoxNearY", BoxNearY, CT_SP | 0x7FFF | CT_NZVC},
+    {0x0108FA, 0x01090C, "Slots80Clear", Slots80Clear, CT_SP | 0x7FFF},
+    {0x01115E, 0x011170, "Slots80Clear2", Slots80Clear2, CT_SP | 0x7FFF},
+    {0x011568, 0x011590, "HurtBoxes", HurtBoxes, CT_SP | 0x7FFF},   /* magic.c: the magic entities (memory) and the helpers the player calls (exact) */
+    {0x011682, 0x011708, "DropRock", DropRock, CT_SP | 0x7FFF | CT_NZVC},
+    {0x011708, 0x011740, "QuakeShake", QuakeShake, CT_SP | 0x7FFF},
+    {0x011822, 0x011832, "SpiritsFrame", SpiritsFrame, CT_SP},
+    {0x011832, 0x011868, "RunMagicEnts", RunMagicEnts, CT_SP},
+    {0x011868, 0x0118BE, "MagicSpark", MagicSpark, CT_SP},
+    {0x0118BE, 0x0118F0, "MagicRock", MagicRock, CT_SP},
+    {0x0118F0, 0x01194C, "MagicBolt", MagicBolt, CT_SP},
+    {0x01194C, 0x011A5A, "MagicSpirit", MagicSpirit, CT_SP},
+    {0x011A5A, 0x011AA4, "SpiritTouch", SpiritTouch, CT_SP},
+    {0x011AA4, 0x011AC2, "SpiritMove", SpiritMove, CT_SP},
+    {0x011AC2, 0x011AE0, "SpiritBurst", SpiritBurst, CT_SP},
+    {0x011AE0, 0x011B0E, "NextOnGround", NextOnGround, CT_SP | 0x7FFF | CT_NZVC},
+    {0x011B0E, 0x011B4A, "NearestEnemy", NearestEnemy, CT_SP | 0x7FFF | CT_NZVC},
+    {0x011B4A, 0x011B76, "EnemyForSpirits", EnemyForSpirits, CT_SP | 0x7FFF | CT_NZVC},
+    {0x011B76, 0x011BA4, "EnemyForThunder", EnemyForThunder, CT_SP | 0x7FFF | CT_NZVC},
     {0x011BA4, 0x011BBC, "MagicSlotsClear", MagicSlotsClear, CT_SP | 0x7FFF},   /* enemygfx.c: the room things run, made and set up */
     {0x011BBC, 0x011BCE, "RidersClear", RidersClear, CT_SP | 0x7FFF},
     {0x011BCE, 0x011BE2, "FindFreeThing", FindFreeThing, CT_SP | 0x7FFF | CT_NZVC},
