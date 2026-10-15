@@ -505,11 +505,10 @@ ENTRY(SpawnList, spawn_list)               /* $12848 */
 /* ---- batch T55: the room's things ----
  * The things ($11C9E runs slots $10-$3C) by kind (-$31FF, table $11CCA): platforms that swing,
  * rise or shuttle, switches, springs and so on. Each is entered with a4 its slot and goes on to
- * $11CFC (what stands on it: its link -$2D00, an index into the riders' table $9F8E, bit 0 set
- * while something stands there), or returns. */
-#define THING_TAIL 0x11CFCu
-static int continued;
-static void thing_tail(void) { port_continue_at(c, THING_TAIL, 0); continued = 1; }
+ * $11CFC (thing_riders: what stands on it, its link -$2D00 an index into the riders' table
+ * $9F8E, bit 0 set while something stands there), or returns. */
+static void thing_riders(void);
+static void thing_tail(void) { thing_riders(); }          /* bra $11CFC */
 /* the link: d0 its word; when it is one, a0 the rider's entry and its bit 0 */
 static int ridden(void)
 {
@@ -909,7 +908,7 @@ static void thing_path(void)
     wr16(e(-0x3900), 1);
 }
 
-#define ENTRY_TAIL(name, fn) void name(Cpu *cpu) { c = cpu; continued = 0; fn(); if (!continued) c->ret = 0; }
+#define ENTRY_TAIL ENTRY
 ENTRY_TAIL(ThingSwingX, thing_swing_x)     /* $11F80 */
 ENTRY_TAIL(ThingSwingY, thing_swing_y)     /* $11F86 */
 ENTRY_TAIL(ThingLiftUp, thing_lift_up)     /* $11FD2 */
@@ -1033,3 +1032,329 @@ ENTRY(BossSpawnsClear, boss_spawns_clear)  /* $13748 */
 ENTRY(SpawnsAllClear, spawns_all_clear)    /* $13786 */
 ENTRY(SpawnTablesClear, spawn_tables_clear)   /* $137A8 */
 ENTRY(RoomSpawns, room_spawns)             /* $137C8 */
+
+/* ---- batch T57: the room's things run, made and set up ---- */
+/* $11BA4: the magic's eight slots ($C0 on) and $9F7A cleared */
+static void magic_slots_clear(void)
+{
+    c->d[0] = 0;
+    wr16(0xFFFF9F7Au, 0);
+    c->a[0] = 0xC0;
+    for (int k = 0; k < 8; k++) { wr16(c->a[0] - 0x4000, 0); c->a[0] += 4; }
+    c->d[1] = 0xFFFF;
+}
+/* $11BBC: the riders' six entries ($9F8E) cleared */
+static void riders_clear(void)
+{
+    c->d[0] = 0;
+    c->a[0] = 0;
+    for (int k = 0; k < 6; k++) { wr8(c->a[0] - 0x6072, 0); c->a[0] += 4; }
+    c->d[1] = 0xFFFF;
+}
+/* $11BCE: a4 a free thing's slot ($10-$3C); mi if none */
+static void find_free_thing(void)
+{
+    c->a[4] = 0x10;
+    c->d[0] = 0xB;
+    for (;;) {
+        uint8_t v = rd8(c->a[4] - 0x4000);
+        F_B(v);
+        if (!(v & 0x80)) return;
+        c->d[0] = set_w(c->d[0], c->d[0] - 1);
+        if ((c->d[0] & 0xFFFF) == 0xFFFF) return;
+        c->a[4] += 4;
+    }
+}
+/* $11BE2: where the thing was, for its riders */
+static void thing_was(void) { wr16(e(-0x2E00), rd16(e(-0x3800))); wr16(e(-0x2DFE), rd16(e(-0x3700))); }
+/* $11EEC: a weight's look and height by its gap (-$2400) */
+static void weight_look(void)
+{
+    c->d[0] = set_w(c->d[0], rd16(e(-0x2400)));
+    c->d[1] = set_w(c->d[1], c->d[0]);
+    c->d[1] = set_w(c->d[1], (uint16_t)c->d[1] >> 1);
+    c->d[1] = set_w(c->d[1], c->d[1] + 0xC);
+    wr8(e(-0x34FD), (uint8_t)c->d[1]);
+    c->d[0] = set_w(c->d[0], c->d[0] + 7);
+    c->d[0] = set_w(c->d[0], (uint16_t)c->d[0] >> 3);
+    c->d[0] = set_w(c->d[0], c->d[0] * 2);
+    c->d[0] = set_b(c->d[0], c->d[0] + 2);
+    if ((uint8_t)c->d[0] != rd8(e(-0x3CFE))) call(0x7E8);
+}
+/* $11DB4: a swing's speed (2, by -$31FE bit 7), its run (-$31FE * 8) and coasting ((* 4 + 4) & $F8);
+ * d1 the offset to start from (the speed * $80 / $10000) */
+static void swing_setup(void)
+{
+    c->d[1] = set_b(c->d[1], rd8(e(-0x31FE)));
+    c->d[2] = set_b(c->d[2], c->d[1]);
+    c->d[0] = set_w(c->d[0], 0x200);
+    c->d[2] = set_b(c->d[2], c->d[2] & 0x80);
+    if (c->d[2] & 0xFF) c->d[0] = set_w(c->d[0], -c->d[0]);
+    wr8(e(-0x3200), (uint8_t)c->d[2]);
+    c->d[1] = set_w(c->d[1], c->d[1] << 2);
+    c->d[2] = set_b(c->d[2], c->d[1]);
+    c->d[1] = set_b(c->d[1], c->d[1] * 2);
+    wr8(e(-0x31FE), (uint8_t)c->d[1]);
+    c->d[2] = set_w(c->d[2], c->d[2] + 4);
+    c->d[2] = set_w(c->d[2], c->d[2] & 0xF8);
+    wr8(e(-0x31FD), (uint8_t)c->d[2]);
+    c->d[1] = set_w(c->d[1], c->d[0]);
+    c->d[1] = (uint32_t)(int32_t)(int16_t)c->d[1];
+    c->d[1] <<= 7;
+    c->d[1] = c->d[1] << 16 | c->d[1] >> 16;
+}
+/* the kinds' set-ups ($11C82) */
+static void thing_setup(uint32_t at)
+{
+    switch (at) {
+    case 0x11D9C:                                   /* 0, 1: swings */
+        swing_setup();
+        wr16(e(-0x3600), (uint16_t)c->d[0]);
+        wr16(e(-0x3800), (uint16_t)(rd16(e(-0x3800)) + c->d[1]));
+        return;
+    case 0x11DA8:
+        swing_setup();
+        wr16(e(-0x35FE), (uint16_t)c->d[0]);
+        wr16(e(-0x3700), (uint16_t)(rd16(e(-0x3700)) + c->d[1]));
+        return;
+    case 0x11DEA:                                   /* 2, 4 (the steps): its floor */
+        wr16(e(-0x27FE), rd16(e(-0x3700)));
+        return;
+    case 0x11DF2:                                   /* 3 (the lift): its run and speed */
+        c->d[0] = 0;
+        wr8(e(-0x3200), 0);
+        c->d[0] = set_b(c->d[0], rd8(e(-0x31FE)));
+        c->d[1] = set_w(c->d[1], 0x200);
+        {
+            int up = c->d[0] & 0x80;
+            c->d[0] = set_b(c->d[0], c->d[0] * 2);
+            if (up) c->d[1] = set_w(c->d[1], -c->d[1]);
+        }
+        c->d[0] = set_w(c->d[0], c->d[0] << 2);
+        wr16(e(-0x31FE), (uint16_t)c->d[0]);
+        wr16(e(-0x27FE), (uint16_t)c->d[1]);
+        return;
+    case 0x11E12:                                   /* 4: down already once game flag 2 is set */
+        wr8(e(-0x3200), 4);
+        wr16(e(-0x27FE), rd16(e(-0x3700)));
+        c->d[0] = 2;
+        call(0x274C);
+        if (!(c->ccr & CC_Z)) { wr16(e(-0x3700), (uint16_t)(rd16(e(-0x3700)) + 0x10)); inc8(-0x3200); }
+        return;
+    case 0x11E32:                                   /* 5 (the block) */
+        wr8(e(-0x3200), 0);
+        wr8(e(-0x2F00), 0x3E);
+        wr16(e(-0x33FE), 0x40);
+        wr16(e(-0x32FE), 0x800);
+        return;
+    case 0x11E4A:                                   /* 6 (the shaker): moved already when its flag is set */
+        c->d[0] = set_b(c->d[0], rd8(e(-0x31FE)));
+        flag_at();
+        if (rd8(c->a[0] + sx(c->d[1])) >> (c->d[0] & 7) & 1) {
+            wr8(e(-0x2BFF), 2);
+            wr16(e(-0x3700), (uint16_t)(rd16(e(-0x3700)) - 0x38));
+        }
+        /* fall through */
+    case 0x11E64:                                   /* 7 (the spring): where it rests */
+        wr16(e(-0x23FE), rd16(e(-0x3800)));
+        wr16(e(-0x2600), rd16(e(-0x3700)));
+        wr16(e(-0x2300), 0);
+        return;
+    case 0x11E76:                                   /* 8 (the weight): its top, another thing, made too */
+        c->a[3] = sx(c->a[4]);
+        find_free_thing();
+        if (c->ccr & CC_N) {
+            uint32_t t = c->a[3]; c->a[3] = c->a[4]; c->a[4] = t;
+            wr8(e(-0x4000), 0);
+            return;
+        }
+        call(0xA36);
+        wr16(e(-0x2CFE), (uint16_t)c->a[3]);
+        wr8(e(-0x31FF), 0x12);
+        wr16(e(-0x2BFE), 0x22);
+        wr16(e(-0x3800), rd16(c->a[3] - 0x3800));
+        wr16(e(-0x3700), rd16(c->a[3] - 0x3700));
+        thing_was();
+        wr8(e(-0x31FE), rd8(c->a[3] - 0x31FE));
+        wr8(e(-0x2F00), 2);
+        wr16(e(-0x33FE), 0x20);
+        wr16(e(-0x32FE), 0x400);
+        wr16(e(-0x2400), 0);
+        wr8(e(-0x3CFE), 0xFF);
+        wr8(e(-0x2D00), 0xFF);
+        wr8(c->a[3] - 0x3CFD, 0x1A);
+        wr8(e(-0x3CFD), 0x1C);
+        wr16(e(-0x3D00), rd16(c->a[3] - 0x3D00));
+        weight_look();
+        wr8(e(-0x4000), 0xC0);
+        { uint32_t t = c->a[3]; c->a[3] = c->a[4]; c->a[4] = t; }
+        return;
+    case 0x11CE6: return;                           /* 9, 10 */
+    case 0x11F10:                                   /* 11, 12 (shuttles): the way (bit 7) and run */
+        c->d[0] = set_b(c->d[0], rd8(e(-0x31FE)));
+        {
+            int back = c->d[0] & 0x80;
+            c->d[0] = set_b(c->d[0], c->d[0] & 0x7F);
+            wr8(e(-0x3200), back ? 0xFF : 0);
+        }
+        c->d[0] = set_b(c->d[0], c->d[0] << 3);
+        wr8(e(-0x31FE), (uint8_t)c->d[0]);
+        wr8(e(-0x31FD), (uint8_t)c->d[0]);
+        return;
+    case 0x11F28:                                   /* 13: its path ($11F48) */
+        c->d[0] = rd8(e(-0x31FE));
+        wr32(e(-0x2A00), rd32(0x11F48 + c->d[0]));
+        wr16(e(-0x32FE), 0x600);
+        wr8(e(-0x2F00), 3);
+        wr16(e(-0x33FE), 4);
+        return;
+    default: call(at); return;
+    }
+}
+/* $11BF0: a thing of kind d4 (low byte; the high its setting -$31FE) and size d5 ($1250A) at
+ * (d6, d7), in a free slot (none: mi): its look (palette $A0E0), placed by its size's offset, then
+ * set up by kind */
+static void thing_make(void)
+{
+    find_free_thing();
+    if (c->ccr & CC_N) return;
+    wr16(e(-0x4000), 0x8000);
+    call(0xA36);
+    wr16(e(-0x3800), (uint16_t)c->d[6]);
+    wr16(e(-0x3700), (uint16_t)c->d[7]);
+    c->d[0] = set_w(c->d[0], 0x600);
+    c->d[0] = set_b(c->d[0], rd8(0xFFFFA0E0u));
+    wr16(e(-0x3D00), (uint16_t)c->d[0]);
+    wr8(e(-0x3CFD), 0x14);
+    wr8(e(-0x2D00), 0xFF);
+    wr8(e(-0x31FF), (uint8_t)c->d[4]);
+    c->d[4] = set_w(c->d[4], (uint16_t)c->d[4] >> 8);
+    wr8(e(-0x31FE), (uint8_t)c->d[4]);
+    c->a[0] = 0x1250A;
+    c->d[4] = set_b(c->d[4], c->d[5]);
+    wr16(e(-0x2BFE), (uint16_t)c->d[4]);
+    c->d[5] = set_w(c->d[5], c->d[4]);
+    c->d[5] = set_w(c->d[5], c->d[5] * 2);
+    c->d[4] = set_w(c->d[4], c->d[4] + c->d[5]);
+    c->a[0] += sx(c->d[4]);
+    c->d[0] = set_b(c->d[0], rd8(c->a[0]));
+    call(0x7FC);
+    wr8(e(-0x4000), rd8(e(-0x4000)) | 0x40);
+    c->d[0] = 0;
+    wr8(e(-0x2BFF), 0);
+    c->d[0] = set_b(c->d[0], rd8(e(-0x34FE)));
+    c->d[0] = set_w(c->d[0], c->d[0] + rd16(e(-0x3800)));
+    wr16(e(-0x3800), (uint16_t)c->d[0]); wr16(e(-0x2100), (uint16_t)c->d[0]);
+    c->d[0] = 0;
+    c->d[0] = set_b(c->d[0], rd8(e(-0x34FD)));
+    c->d[0] = set_w(c->d[0], c->d[0] + rd16(e(-0x3700)));
+    wr16(e(-0x3700), (uint16_t)c->d[0]); wr16(e(-0x20FE), (uint16_t)c->d[0]);
+    thing_was();
+    c->d[0] = rd8(e(-0x31FF));
+    c->a[0] = 0x11C82 + sx(rd16(0x11C82 + c->d[0]));
+    thing_setup(c->a[0]);
+}
+/* $11C9E: each thing in use run by kind ($11CCA); $A0DE (the thing stood on) cleared first */
+static void things_run(void)
+{
+    wr8(0xFFFFA0DEu, 0xFF);
+    c->a[4] = 0x10;
+    c->d[7] = 0xB;
+    for (;;) {
+        if (rd8(e(-0x4000)) & 0x80) {
+            c->a[7] -= 2; wr16(c->a[7], (uint16_t)c->d[7]);
+            c->d[0] = rd8(e(-0x31FF));
+            c->a[0] = 0x11CCA + sx(rd16(0x11CCA + c->d[0]));
+            if (c->a[0] != 0x11CE6) call(c->a[0]);      /* kinds 9 and 10: an rts */
+            c->d[7] = set_w(c->d[7], rd16(c->a[7])); c->a[7] += 2;
+        }
+        c->a[4] += 4;
+        c->d[7] = set_w(c->d[7], c->d[7] - 1);
+        if ((c->d[7] & 0xFFFF) == 0xFFFF) break;
+    }
+}
+/* $11CE8: a1 a free rider's entry ($9F8E, six); mi if none */
+static void find_free_rider(void)
+{
+    c->a[1] = 0;
+    c->d[1] = 5;
+    for (;;) {
+        uint8_t v = rd8(c->a[1] - 0x6072);
+        F_B(v);
+        if (!(v & 0x80)) return;
+        c->d[1] = set_w(c->d[1], c->d[1] - 1);
+        if ((c->d[1] & 0xFFFF) == 0xFFFF) return;
+        c->a[1] += 4;
+    }
+}
+/* $11CFC: the thing's riders' entry: taken when something is on it ($BEE), let go when not; kept
+ * up to date: the thing, its box by size ($1250B), its place and how far it moved */
+static void thing_riders(void)
+{
+    c->d[0] = set_w(c->d[0], rd16(e(-0x2D00)));
+    if (c->d[0] & 0x8000) {
+        call(0xBEE);
+        if (!(c->ccr & CC_Z)) return;
+        find_free_rider();
+        if (c->ccr & CC_N) return;
+        wr16(e(-0x2D00), (uint16_t)c->a[1]);
+    } else {
+        c->a[1] = sx(c->d[0]);
+        c->d[0] = 0xF & rd8(c->a[1] - 0x6072);
+        if (!(c->d[0] & 0xFF)) {
+            call(0xBEE);
+            if (!(c->ccr & CC_Z)) { wr8(c->a[1] - 0x6072, 0); wr8(e(-0x2D00), 0xFF); return; }
+        }
+    }
+    wr16(c->a[1] - 0x6070, (uint16_t)c->a[4]);
+    c->d[0] = set_w(c->d[0], rd16(e(-0x2BFE)));
+    c->d[0] = set_w(c->d[0], c->d[0] * 2);
+    c->d[0] = set_w(c->d[0], c->d[0] + rd16(e(-0x2BFE)));
+    c->a[0] = 0x1250B + sx(c->d[0]);
+    wr8(c->a[1] - 0x6071, rd8(c->a[0])); c->a[0]++;
+    c->d[2] = set_b(c->d[2], rd8(c->a[0])); c->a[0]++;
+    c->d[2] = set_w(c->d[2], (uint16_t)(int8_t)c->d[2]);
+    c->d[0] = set_w(c->d[0], rd16(e(-0x3800)));
+    c->d[1] = set_w(c->d[1], c->d[0]);
+    c->d[1] = set_w(c->d[1], c->d[1] - rd16(e(-0x2E00)));
+    wr16(c->a[1] - 0x5FCA, (uint16_t)c->d[1]);
+    c->d[0] = set_w(c->d[0], c->d[0] + c->d[2]);
+    wr16(c->a[1] - 0x601E, (uint16_t)c->d[0]);
+    c->d[2] = set_b(c->d[2], rd8(c->a[0])); c->a[0]++;
+    c->d[2] = set_w(c->d[2], (uint16_t)(int8_t)c->d[2]);
+    c->d[0] = set_w(c->d[0], rd16(e(-0x3700)));
+    c->d[1] = set_w(c->d[1], c->d[0]);
+    c->d[1] = set_w(c->d[1], c->d[1] - rd16(e(-0x2DFE)));
+    wr16(c->a[1] - 0x5FC8, (uint16_t)c->d[1]);
+    c->d[0] = set_w(c->d[0], c->d[0] + c->d[2]);
+    wr16(c->a[1] - 0x601C, (uint16_t)c->d[0]);
+    c->d[0] = rd8(c->a[0]); c->a[0]++;
+    wr16(c->a[1] - 0x5F76, (uint16_t)c->d[0]);
+    c->d[0] = set_b(c->d[0], rd8(c->a[0])); c->a[0]++;
+    if (rd8(c->a[1] - 0x6071) == 5) { wr8(c->a[1] - 0x6071, 3); c->d[0] = set_b(c->d[0], rd8(e(-0x34FD))); }
+    wr16(c->a[1] - 0x5F74, (uint16_t)c->d[0]);
+    wr8(c->a[1] - 0x6072, 0x80);
+}
+ENTRY(MagicSlotsClear, magic_slots_clear)  /* $11BA4 */
+ENTRY(RidersClear, riders_clear)           /* $11BBC */
+ENTRY(FindFreeThing, find_free_thing)      /* $11BCE */
+ENTRY(ThingWas, thing_was)                 /* $11BE2 */
+ENTRY(ThingMake, thing_make)               /* $11BF0 */
+ENTRY(ThingsRun, things_run)               /* $11C9E */
+ENTRY(FindFreeRider, find_free_rider)      /* $11CE8 */
+ENTRY(ThingRiders, thing_riders)           /* $11CFC */
+ENTRY(SwingSetup, swing_setup)             /* $11DB4 */
+ENTRY(WeightLook, weight_look)             /* $11EEC */
+/* the kinds' set-ups, each entered by the jump at $11C80 */
+#define SETUP(name, at) void name(Cpu *cpu) { c = cpu; thing_setup(at); c->ret = 0; }
+SETUP(ThingSetSwingX, 0x11D9C)
+SETUP(ThingSetSwingY, 0x11DA8)
+SETUP(ThingSetFloor, 0x11DEA)
+SETUP(ThingSetLift, 0x11DF2)
+SETUP(ThingSetStep, 0x11E12)
+SETUP(ThingSetBlock, 0x11E32)
+SETUP(ThingSetShaker, 0x11E4A)
+SETUP(ThingSetSpring, 0x11E64)
+SETUP(ThingSetWeight, 0x11E76)
+SETUP(ThingSetShuttle, 0x11F10)
+SETUP(ThingSetPath, 0x11F28)

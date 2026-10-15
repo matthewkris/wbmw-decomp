@@ -116,6 +116,7 @@ void Room17States(Cpu *), Room17Hold(Cpu *), Room17Parts(Cpu *), Room17Beaten(Cp
 void EndingStars(Cpu *), EndingSprite(Cpu *), EndingStarsSetup(Cpu *), EndRand255(Cpu *), EndRand6(Cpu *), EndingTextRow(Cpu *), TextDown(Cpu *), TextUp(Cpu *), EndingTextNext(Cpu *), EndingCreditsStep(Cpu *), EndingCreditLine(Cpu *), VdpRowWindow(Cpu *), VdpRowB(Cpu *), VdpRowAt(Cpu *), StrLen(Cpu *);
 void KindRecord(Cpu *), LoadKindGfx(Cpu *), GfxSlotAt(Cpu *), LoadGfxList(Cpu *), SpawnAt(Cpu *), EnemyInit(Cpu *), KindLook(Cpu *), KindMovement(Cpu *), KindFighting(Cpu *), EntityReset(Cpu *), SpawnFlags(Cpu *), FindFreeA0E2(Cpu *), FindFreeEnemy(Cpu *), FindFreeSpawn(Cpu *), SpawnList(Cpu *);
 void ThingSwingX(Cpu *), ThingSwingY(Cpu *), ThingLiftUp(Cpu *), ThingBlock(Cpu *), ThingOut(Cpu *), ThingStep(Cpu *), ThingShaker(Cpu *), ThingSpring(Cpu *), ThingWeight(Cpu *), ThingMarker(Cpu *), ThingShuttleX(Cpu *), ThingShuttleY(Cpu *), ThingPath(Cpu *), EnemiesLeave(Cpu *), BossSpawnsClear(Cpu *), SpawnsAllClear(Cpu *), SpawnTablesClear(Cpu *), RoomSpawns(Cpu *);
+void MagicSlotsClear(Cpu *), RidersClear(Cpu *), FindFreeThing(Cpu *), ThingWas(Cpu *), ThingMake(Cpu *), ThingsRun(Cpu *), FindFreeRider(Cpu *), ThingRiders(Cpu *), SwingSetup(Cpu *), WeightLook(Cpu *), ThingSetSwingX(Cpu *), ThingSetSwingY(Cpu *), ThingSetFloor(Cpu *), ThingSetLift(Cpu *), ThingSetStep(Cpu *), ThingSetBlock(Cpu *), ThingSetShaker(Cpu *), ThingSetSpring(Cpu *), ThingSetWeight(Cpu *), ThingSetShuttle(Cpu *), ThingSetPath(Cpu *);
 void Looks(Cpu *), LooksExtra(Cpu *), LooksBlock(Cpu *), LooksBody(Cpu *), LooksSword(Cpu *), LooksShield(Cpu *), EquipChange(Cpu *);
 void HudPanel(Cpu *), GoldLabel(Cpu *), ThreeLabels(Cpu *), DigitsOut(Cpu *), ItemsChoose(Cpu *), MagicChoose(Cpu *), SlotChoose(Cpu *), ActionToSlot(Cpu *),
      ItemToSlot(Cpu *), WornBlink(Cpu *), StatusFadeIn(Cpu *), StatusFadeOut(Cpu *), StatusWait(Cpu *);
@@ -905,6 +906,27 @@ const PortRoutine port_routines[] = {
     {0x01090C, 0x010910, "SpawnItem", SpawnItem},                 /* effects.c: every register as the original */
     {0x010910, 0x010A1E, "SpawnItemAt", SpawnItemAt},
     {0x010A1E, 0x011094, "RunItems", RunItems, CT_SP},
+    {0x011BA4, 0x011BBC, "MagicSlotsClear", MagicSlotsClear, CT_SP | 0x7FFF},   /* enemygfx.c: the room things run, made and set up */
+    {0x011BBC, 0x011BCE, "RidersClear", RidersClear, CT_SP | 0x7FFF},
+    {0x011BCE, 0x011BE2, "FindFreeThing", FindFreeThing, CT_SP | 0x7FFF | CT_NZVC},
+    {0x011BE2, 0x011BF0, "ThingWas", ThingWas, CT_SP | 0x7FFF},
+    {0x011BF0, 0x011C9E, "ThingMake", ThingMake, CT_SP | 0x7FFF},
+    {0x011C9E, 0x011CE8, "ThingsRun", ThingsRun, CT_SP},
+    {0x011CE8, 0x011CFC, "FindFreeRider", FindFreeRider, CT_SP | 0x7FFF | CT_NZVC},
+    {0x011CFC, 0x011D9C, "ThingRiders", ThingRiders, CT_SP | CT_A0 << 4},
+    {0x011D9C, 0x011DA8, "ThingSetSwingX", ThingSetSwingX, CT_SP | 0x7FFF},
+    {0x011DA8, 0x011DB4, "ThingSetSwingY", ThingSetSwingY, CT_SP | 0x7FFF},
+    {0x011DB4, 0x011DEA, "SwingSetup", SwingSetup, CT_SP | 0x7FFF},
+    {0x011DEA, 0x011DF2, "ThingSetFloor", ThingSetFloor, CT_SP | 0x7FFF},
+    {0x011DF2, 0x011E12, "ThingSetLift", ThingSetLift, CT_SP | 0x7FFF},
+    {0x011E12, 0x011E32, "ThingSetStep", ThingSetStep, CT_SP | 0x7FFF},
+    {0x011E32, 0x011E4A, "ThingSetBlock", ThingSetBlock, CT_SP | 0x7FFF},
+    {0x011E4A, 0x011E64, "ThingSetShaker", ThingSetShaker, CT_SP | 0x7FFF},
+    {0x011E64, 0x011E76, "ThingSetSpring", ThingSetSpring, CT_SP | 0x7FFF},
+    {0x011E76, 0x011EEC, "ThingSetWeight", ThingSetWeight, CT_SP | 0x7FFF},
+    {0x011EEC, 0x011F10, "WeightLook", WeightLook, CT_SP | 0x7FFF},
+    {0x011F10, 0x011F28, "ThingSetShuttle", ThingSetShuttle, CT_SP | 0x7FFF},
+    {0x011F28, 0x011F48, "ThingSetPath", ThingSetPath, CT_SP | 0x7FFF},
     {0x011F80, 0x011F86, "ThingSwingX", ThingSwingX, CT_SP | CT_A0 << 4},   /* enemygfx.c: the room things' kinds (from $11CCA; on to $11CFC or back) */
     {0x011F86, 0x011FD2, "ThingSwingY", ThingSwingY, CT_SP | CT_A0 << 4},
     {0x011FD2, 0x012058, "ThingLiftUp", ThingLiftUp, CT_SP | CT_A0 << 4},

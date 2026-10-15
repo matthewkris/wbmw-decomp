@@ -1698,7 +1698,7 @@ int hybrid_fuzz(const char *name, long count)
             put_long(0xA11E, 0xFF2400);
             for (uint32_t q = 0; q < 0x40; q += 4) if (rnd() % 2) ram[0xA15C + q] &= 0x7F;
         }
-        if (!strncmp(name, "Thing", 5)) {
+        if (!strncmp(name, "Thing", 5) || strstr("|SwingSetup|WeightLook|", key53)) {
             /* batch T55: a room thing's slot ($10-$3C), its link to a rider's entry ($9F8E: 6 of
              * them) or none, another slot for a weight's top, a path of steps at $FF2400 */
             uint32_t sl = 0x10 + 4 * (rnd() % 12), i;
@@ -1717,6 +1717,20 @@ int hybrid_fuzz(const char *name, long count)
             for (i = 0; i < 8; i++) ram[0x2400 + i] = (uint8_t)rnd();
             if (rnd() % 3 == 0) ram[0x2400 + rnd() % 8] = 0xFF;
             put_long(0xD600 + sl, rnd() % 3 ? 0xFF2400 + rnd() % 4 : 0);
+            if (!strcmp(name, "ThingMake")) {   /* batch T57: a kind (0-13) with its setting, a size */
+                uint32_t k = rnd() % 14;
+                m68k_set_reg(M68K_REG_D4, (rnd() << 16) | (k == 13 ? 4 * (rnd() % 4) : rnd() % 0x100) << 8 | 2 * k);
+                m68k_set_reg(M68K_REG_D5, (rnd() << 16) | rnd() % 16);
+            }
+            if (!strcmp(name, "ThingsRun") || !strcmp(name, "ThingRiders"))   /* batch T57: kinds and sizes as made */
+                for (uint32_t q = 0x10; q < 0x40; q += 4) {
+                    static const uint8_t ks[] = { 0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 0x12 };
+                    ram[0xCE01 + q] = ks[rnd() % 15];
+                    put_word(0xD402 + q, rnd() % 16);
+                    if (q != sl && rnd() % 2) put_word(0xD300 + q, rnd() % 4 ? 4 * (rnd() % 6) : 0xFFFF);
+                    put_word(0xD302 + q, 4 * (rnd() % 16));
+                    put_long(0xD600 + q, rnd() % 3 ? 0xFF2400 + rnd() % 4 : 0);
+                }
             if (rnd() % 2) {   /* by the player, or about the floor and the room's edges */
                 uint32_t pl = (uint32_t)(int32_t)(int16_t)(ram[0x9EEE] << 8 | ram[0x9EEF]);
                 put_word(0xC800 + sl, get_sword(0xC800 + pl) + rnd() % 16 - 8);
