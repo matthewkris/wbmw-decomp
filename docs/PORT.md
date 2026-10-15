@@ -2908,6 +2908,30 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 in, found by walking their formats). Self-test caught 100 in 100 for all fifteen. Replace mode:
 thirteen runs, no problems.
 
+#### Enemy graphics and spawning, batches T53-T56 (2026-10-15)
+
+* In `port/enemygfx.c` (new), plain C:
+  * T53: a kind's graphics loaded into VRAM for the room, the same blocks reused where they are
+    already loaded (`$125A6`-`$12640`); an enemy made of a kind at its spawn point and set up from
+    its kind's look, movement and fighting records (`$12650`-`$127DC`; a kind missing from the
+    room's list still stops the game at `$1267C`, as the original does); the free slots of the
+    enemies, the spawn points and `$A0E2` (`$127FE`-`$12826`).
+  * T54: the room's spawn list (`$12848`): its kinds' graphics, then its spawn points of the 16
+    kinds, with the commands that test the game's flags or an item and jump, and set timers.
+  * T55: the room's things by kind (from `$11CCA`, `$11F80`-`$1250A`): swinging and shuttling
+    platforms, a lift, a pushed block, sinking steps, a shaker, a spring, a weight, a marker and
+    a platform on a path. Each goes on to `$11CFC` (still the original's) or returns.
+  * T56: the enemies and spawn points cleared when leaving the room (`$136A6`), for a boss
+    (`$13748`) or all of them (`$13786`), and the room's enemies set up (`$137C8`).
+* Fuzz: kinds from the room's list (at most 7 of them so one more fits), a spawn list made up at
+  `$FF2400` with every kind and command (the rooms' own lists reach few), the things with links
+  to riders' entries and paths of steps.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(47 runs, all complete; 1,311,282 checked calls). 1,015,000 fuzz cases from six states,
+0 mismatches, every instruction covered. Self-test caught 100 in 100 for all 34 routines.
+Replace mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
