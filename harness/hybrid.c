@@ -1276,6 +1276,20 @@ int hybrid_fuzz(const char *name, long count)
             if (ram[0xA143] == 0) ram[0xA143] = 1;
             put_word(0xA122, 0x6E);
             if (!strcmp(name, "PartMake")) m68k_set_reg(M68K_REG_A2, 0x1967C + 12 * (rnd() % 7));
+            ram[0xA117] = (uint8_t)(rnd() % 3); ram[0xA118] = (uint8_t)(rnd() % 3);             /* the part timers */
+            for (uint32_t k3 = 0; k3 < 5; k3++) ram[0xA112 + k3] = (uint8_t)(rnd() % 2 ? 0 : 0xFF);   /* the places taken (before the timers at $A117) */
+            for (uint32_t k3 = 0; k3 < 4; k3++) ram[0xCE01 + ((ram[0x99EE + 2 * k3] << 8 | ram[0x99EF + 2 * k3]) & 0xFC)] = (uint8_t)(rnd() % 2);
+            if (!strcmp(name, "Room17Head") || !strcmp(name, "Room17Debris"))   /* debris starts an animation in any free slot: groups as the game leaves them */
+                for (uint32_t s4 = 0; s4 < 0x100; s4 += 4) ram[0xC301 + s4] = 0;
+            {   /* the body's step timers near their ends */
+                uint32_t body = (uint32_t)ram[0x99F8] << 8 | ram[0x99F9];
+                ram[0xD800 + body] = (uint8_t)(rnd() % 2 ? 1 : 1 + rnd() % 3); ram[0xD801 + body] = (uint8_t)(1 + rnd() % 2);
+            }
+            if (!strcmp(name, "Room17Head")) {
+                uint32_t me = (uint32_t)m68k_get_reg(NULL, M68K_REG_A4) & 0xFC;
+                ram[0xCE01 + me] = (uint8_t)(rnd() % 2); ram[0xD800 + me] = (uint8_t)(rnd() % 3 ? rnd() % 3 : rnd());
+                ram[0xD801 + me] = (uint8_t)(rnd() % 3 ? 1 + rnd() % 2 : 0);
+            }
             ram[0x965F] = (uint8_t)rnd();
             if (!strcmp(name, "Room17Extra") && rnd() % 3 == 0) {             /* no free enemy slot */
                 uint32_t base = (uint32_t)ram[0xA11A] << 8 | ram[0xA11B];
@@ -1502,6 +1516,20 @@ int hybrid_fuzz(const char *name, long count)
                 m68k_set_reg(M68K_REG_D0, (rnd() << 16) | 2 * (rnd() % 5));
             }
             if (!strcmp(name, "CopyFields")) { m68k_set_reg(M68K_REG_A0, 0x172CE); m68k_set_reg(M68K_REG_A2, other); }
+            if (!strcmp(name, "Lifter")) { ram[0xCE01 + me] = (uint8_t)(rnd() % 4); ram[0xD800 + me] = (uint8_t)(rnd() % 2 ? 0xF + rnd() % 2 : 1); ram[0xD801 + me] = (uint8_t)(1 + rnd() % 2); }
+            if (!strcmp(name, "AtTarget") && rnd() % 2) {                     /* at its target's x (and sometimes y) */
+                uint32_t i = ram[0xC903 + me] & 7, t = 0x19DA6 + 4 * i;
+                ram[0xC903 + me] = (uint8_t)i;
+                put_word(0xC800 + me, bus_read16(t)); if (rnd() % 2) put_word(0xC900 + me, bus_read16(t + 2));
+            }
+            if (!strcmp(name, "SpawnFromA394") && rnd() % 3 == 0) {           /* no free enemy slot */
+                uint32_t base = (uint32_t)ram[0xA11A] << 8 | ram[0xA11B];
+                for (uint32_t k3 = 0; k3 < 16; k3++) ram[0xC000 + ((base + 4 * k3) & 0xFC)] |= 0x80;
+            }
+            if (!strcmp(name, "SpawnFromA394")) {                              /* a kind of the room's list */
+                uint32_t n = ram[0xA143] ? (ram[0xA143] > 8 ? 8 : ram[0xA143]) : 1, k = rnd() % n;
+                ram[0xA394] = ram[0xA122 + 4 * k]; ram[0xA395] = ram[0xA123 + 4 * k];
+            }
             if (!strncmp(name, "Partner", 7) || !strncmp(name, "Mount", 5) || !strcmp(name, "OnPartner") || !strncmp(name, "Rider", 5)
                     || !strcmp(name, "BesidePartner") || !strcmp(name, "BothBlink")) {
                 put_word(0xD302 + me, other); put_word(0xD302 + other, me);

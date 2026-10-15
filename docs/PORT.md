@@ -2865,6 +2865,29 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 0 mismatches, every instruction covered. Self-test caught 100 in 100 for all seventeen. Replace
 mode: thirteen runs, no problems.
 
+#### The object region, batch T51: room script 17's states, parts and head; small helpers (2026-10-15)
+
+* In `port/objhelp.c`, the rest of room script 17:
+  * The boss's eleven steps once beaten (`$19946`, the table at `$19964`). The body falls, the
+    player is held, two scenes play (`$9C16` `$70` and `$71`), the body walks, jumps and lands,
+    then blinks away.
+  * The parts' timers and spawns (`$19AC0`) and the beaten check (`$19B4E`, nz).
+  * The head (`$19B96`) with its fireballs, and the debris (`$19C34`).
+* Small helpers:
+  * the touch at a point ahead (`$19DD2`);
+  * the direction's animation and steps (`$19E2C`, `$19E64`, `$19E88`);
+  * at the target point (`$19E44`, z);
+  * a room object that rises and sinks (`$1A1C6`, a kind of `$AECC`'s table);
+  * an enemy from the record at `$A394` (`$1A438`).
+* Fuzz set-ups: the boss's parts, timers and places, and the animation groups the game leaves
+  in free slots. `$19D60` starts an animation in a fresh slot, and a random group makes its
+  script loop.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(47 runs, all complete; 1,311,282 checked calls). 390,000 fuzz cases from six states,
+0 mismatches, every instruction covered. Self-test caught 100 in 100 for all thirteen. Replace
+mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
