@@ -2888,6 +2888,26 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 0 mismatches, every instruction covered. Self-test caught 100 in 100 for all thirteen. Replace
 mode: thirteen runs, no problems.
 
+#### The object region, batch T52: the ending's helpers (2026-10-15)
+
+* In `port/objhelp.c`, the ending's routines that do not wait:
+  * the starfield: 60 stars from a fixed seed, moved and wrapped (`$1ADD2`, `$1AD62`);
+  * a picture's sprite (`$1AD98`);
+  * the story's text: a row of runs up plane B (`$1AE58`), its row stepping (`$1AEC2`,
+    `$1AEC6`, `$1AEF6`);
+  * the credits: centred lines, white or yellow headings, with their pauses (`$1AF0C`,
+    `$1AF5A`);
+  * the VDP set to a row of plane A, B or the window (`$1AFDC`-`$1AFEA`), and a string's
+    length (`$1B004`).
+* The ending's task itself (`$1AA3C`, `$1AAEC`) waits for frames and is reached only from the
+  ending. It stays the original's until a session reaches it, as the ending's scene tasks do.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(47 runs, all complete; 1,311,282 checked calls). 450,000 fuzz cases from six states,
+0 mismatches, every instruction covered (the text and credits from records and lines some way
+in, found by walking their formats). Self-test caught 100 in 100 for all fifteen. Replace mode:
+thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

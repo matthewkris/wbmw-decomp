@@ -1516,6 +1516,37 @@ int hybrid_fuzz(const char *name, long count)
                 m68k_set_reg(M68K_REG_D0, (rnd() << 16) | 2 * (rnd() % 5));
             }
             if (!strcmp(name, "CopyFields")) { m68k_set_reg(M68K_REG_A0, 0x172CE); m68k_set_reg(M68K_REG_A2, other); }
+            if (!strncmp(name, "Ending", 6) || !strncmp(name, "Text", 4) || !strncmp(name, "VdpRow", 6) || !strcmp(name, "StrLen")) {
+                /* batch T52, the ending: its text and credits from their starts, the counters about their steps */
+                ram[0xA39C] = (uint8_t)(rnd() % 2 ? 0 : 0x80);
+                {   /* the text and the credits from a record or a line some way in */
+                    uint32_t t = 0x1B96C, n = rnd() % 200;
+                    for (uint32_t k3 = 0; k3 < n && bus_read8(t) != 0xFF; k3++) {
+                        uint32_t kind = bus_read8(t) & 0xF; t += 2;
+                        if (kind == 2) t += 2; else if (kind && kind != 9) t += 1;
+                    }
+                    put_long(0xA3BA, t);
+                    uint32_t q = 0x1ABD2; n = rnd() % 40;
+                    for (uint32_t k3 = 0; k3 < n; k3++) {
+                        while (bus_read8(q)) q++;
+                        q++;
+                        if (bus_read8(q) == 0x99) break;
+                        if (bus_read8(q) & 0x80) q++;
+                    }
+                    put_long(0xA3B6, q);
+                }
+                if (!strcmp(name, "EndingStars")) for (uint32_t s4 = 0; s4 < 0xF0; s4 += 4) if (rnd() % 4 == 0) put_word(0xC900 + s4, rnd() % 2 ? 0xE0 : 0xFFF0);
+                ram[0xA3AB] = (uint8_t)(rnd() % 2 ? 8 * (rnd() % 2) : rnd()); ram[0xA3A9] = (uint8_t)(rnd() % 2 ? 8 * (rnd() % 2) : rnd());
+                ram[0xA39D] = (uint8_t)(rnd() % 0x22); ram[0xA39E] = (uint8_t)(rnd() % 0x22); ram[0xA39F] = (uint8_t)(rnd() % 3);
+                ram[0xA3A0] = (uint8_t)(rnd() % 3 == 0 ? 0xFF : rnd() % 2);
+                put_word(0xA3AA, rnd() % 2 ? 0xF80 + rnd() % 0x80 : rnd() % 0xF80);
+                if (!strcmp(name, "EndingSprite")) {
+                    static const uint32_t recs[] = { 0x1AACE, 0x1AAD8, 0x1AAE2 };
+                    m68k_set_reg(M68K_REG_A0, recs[rnd() % 3]); m68k_set_reg(M68K_REG_D0, (rnd() << 16) | (rnd() % 2 ? 0xF0 : 0xF4));
+                    m68k_set_reg(M68K_REG_D1, rnd() % 8); m68k_set_reg(M68K_REG_D2, 2 * (rnd() % 4));
+                }
+                if (!strcmp(name, "StrLen")) m68k_set_reg(M68K_REG_A1, 0x1ABD2 + rnd() % 0x100);
+            }
             if (!strcmp(name, "Lifter")) { ram[0xCE01 + me] = (uint8_t)(rnd() % 4); ram[0xD800 + me] = (uint8_t)(rnd() % 2 ? 0xF + rnd() % 2 : 1); ram[0xD801 + me] = (uint8_t)(1 + rnd() % 2); }
             if (!strcmp(name, "AtTarget") && rnd() % 2) {                     /* at its target's x (and sometimes y) */
                 uint32_t i = ram[0xC903 + me] & 7, t = 0x19DA6 + 4 * i;
