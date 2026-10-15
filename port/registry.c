@@ -113,6 +113,7 @@ void SwingY(Cpu *), SwingX(Cpu *), HopperStart(Cpu *), ChainLink(Cpu *), CopyFie
 void Room16Setup(Cpu *), FloorScroll(Cpu *), Room16Frame(Cpu *), Room16Exit(Cpu *), SpawnAtOffset(Cpu *), GfxSlotsFree(Cpu *), TintTiles(Cpu *), PartnerAnim(Cpu *), PartnerMove(Cpu *), OnPartner(Cpu *), MountHit(Cpu *), MountTouch(Cpu *), PartnerGrounded(Cpu *), PartnerAtWall(Cpu *), Shake(Cpu *);
 void Room18Setup(Cpu *), Room18Frame(Cpu *), FlashColour(Cpu *), PartnerAnim2(Cpu *), PartnerFallBeside(Cpu *), BesidePartner(Cpu *), BothBlink(Cpu *), RiderHit(Cpu *), RiderTouch(Cpu *), PartnerGrounded2(Cpu *), PartnerAtWall2(Cpu *), Room17Setup(Cpu *), PartMake(Cpu *), Room17Frame(Cpu *), Wobble(Cpu *), Room17Extra(Cpu *), Room17Effects(Cpu *);
 void Room17States(Cpu *), Room17Hold(Cpu *), Room17Parts(Cpu *), Room17Beaten(Cpu *), Room17Head(Cpu *), Room17Debris(Cpu *), TouchAhead(Cpu *), DirAnim(Cpu *), AtTarget(Cpu *), StepByDir(Cpu *), TurnToward(Cpu *), Lifter(Cpu *), SpawnFromA394(Cpu *);
+void EndingStars(Cpu *), EndingSprite(Cpu *), EndingStarsSetup(Cpu *), EndRand255(Cpu *), EndRand6(Cpu *), EndingTextRow(Cpu *), TextDown(Cpu *), TextUp(Cpu *), EndingTextNext(Cpu *), EndingCreditsStep(Cpu *), EndingCreditLine(Cpu *), VdpRowWindow(Cpu *), VdpRowB(Cpu *), VdpRowAt(Cpu *), StrLen(Cpu *);
 void Looks(Cpu *), LooksExtra(Cpu *), LooksBlock(Cpu *), LooksBody(Cpu *), LooksSword(Cpu *), LooksShield(Cpu *), EquipChange(Cpu *);
 void HudPanel(Cpu *), GoldLabel(Cpu *), ThreeLabels(Cpu *), DigitsOut(Cpu *), ItemsChoose(Cpu *), MagicChoose(Cpu *), SlotChoose(Cpu *), ActionToSlot(Cpu *),
      ItemToSlot(Cpu *), WornBlink(Cpu *), StatusFadeIn(Cpu *), StatusFadeOut(Cpu *), StatusWait(Cpu *);
@@ -1086,6 +1087,21 @@ const PortRoutine port_routines[] = {
     {0x019E88, 0x019EAE, "TurnToward", TurnToward, CT_SP | CT_NZVC},
     {0x01A1C6, 0x01A218, "Lifter", Lifter, CT_SP},
     {0x01A438, 0x01A464, "SpawnFromA394", SpawnFromA394, CT_SP | CT_NZVC},
+    {0x01AD62, 0x01AD98, "EndingStars", EndingStars, CT_SP},   /* objhelp.c: the ending's helpers (its task at $1AA3C waits for a session that reaches it) */
+    {0x01AD98, 0x01ADD2, "EndingSprite", EndingSprite, CT_SP},
+    {0x01ADD2, 0x01AE48, "EndingStarsSetup", EndingStarsSetup, CT_SP},
+    {0x01AE48, 0x01AE4E, "EndRand255", EndRand255, CT_SP},
+    {0x01AE4E, 0x01AE58, "EndRand6", EndRand6, CT_SP},
+    {0x01AE58, 0x01AEC2, "EndingTextRow", EndingTextRow, CT_SP},
+    {0x01AEC2, 0x01AEC6, "TextDown", TextDown, CT_SP},
+    {0x01AEC6, 0x01AEF6, "TextUp", TextUp, CT_SP},
+    {0x01AEF6, 0x01AF0C, "EndingTextNext", EndingTextNext, CT_SP},
+    {0x01AF0C, 0x01AF5A, "EndingCreditsStep", EndingCreditsStep, CT_SP},
+    {0x01AF5A, 0x01AFDC, "EndingCreditLine", EndingCreditLine, CT_SP},
+    {0x01AFDC, 0x01AFE8, "VdpRowWindow", VdpRowWindow, CT_SP},
+    {0x01AFE8, 0x01AFEA, "VdpRowB", VdpRowB, CT_SP},
+    {0x01AFEA, 0x01B004, "VdpRowAt", VdpRowAt, CT_SP},
+    {0x01B004, 0x01B016, "StrLen", StrLen, CT_SP},
     {0x017014, 0x0170EE, "Act17014", Act17014, CT_SP},           /* the hopper and the chain (batch 17); $170EE-$17131 are called */
     {0x01729A, 0x017302, "Act1729A", Act1729A, CT_SP},           /* $17302-$1730F (COPY_FIELDS) is called */
     {0x017310, 0x017362, "Act17310", Act17310, CT_SP},           /* $17132 (the link) is C */

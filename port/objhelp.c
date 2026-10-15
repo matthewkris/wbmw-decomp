@@ -1270,3 +1270,200 @@ ENTRY(StepByDir, step_by_dir)              /* $19E64 */
 ENTRY(TurnToward, turn_toward)             /* $19E88 */
 ENTRY(Lifter, lifter)                      /* $1A1C6 */
 ENTRY(SpawnFromA394, spawn_from_a394)      /* $1A438 */
+
+/* ---- batch T52: the ending's helpers ----
+ * The ending (its task at $1AA3C, which waits, stays the original's until a session reaches it)
+ * scrolls a starfield ($A39C: the way), its pictures, the story's text up plane B ($A3BA, $A3AA)
+ * and the credits' lines on plane A ($A3B6, $A39D-$A3A0). */
+
+/* $1AD62: the stars (slots 0-$EC) moved down or up ($AD6), wrapping at the screen's edge */
+static void ending_stars(void)
+{
+    for (c->a[4] = 0; c->a[4] != 0xF0; c->a[4] += 4) {
+        if (rd8(0xFFFFA39Cu) & 0x80) { if (rd16(e(-0x3700)) == 0xE0) wr16(e(-0x3700), 0xFFF0); }
+        else if (rd16(e(-0x3700)) == 0xFFF0) wr16(e(-0x3700), 0x110);
+        call(0xAD6);
+    }
+}
+/* $1AD98: slot d0 made from the five words at a0 (x, y, look, speeds), palette d1, held ($4),
+ * animation d2, drawn; its graphics streamed ($22F0) */
+static void ending_sprite(void)
+{
+    c->a[4] = sx(c->d[0]);
+    call(0xA36);
+    static const int16_t f[] = { -0x3800, -0x3700, -0x3D00, -0x3600, -0x35FE };
+    for (int k = 0; k < 5; k++) { wr16(e(f[k]), rd16(c->a[0])); c->a[0] += 2; }
+    put8(e(-0x3FFE), 0x80);
+    put8(e(-0x3CFD), c->d[1]);
+    put16(e(-0x3E00), 4);
+    c->d[0] = set_b(c->d[0], c->d[2]);
+    call(SET_ANIM);
+    put8(e(-0x4000), 0xC0);
+    call(0x22F0);
+}
+/* $1AE48 and $1AE4E: the random by $FF or by 6 */
+static void end_rand_255(void) { c->d[4] = set_w(c->d[4], 0xFF); call(0x5D8); c->d[0] = set_w(c->d[0], c->d[0] & c->d[4]); F_W(c->d[0]); }
+static void end_rand_6(void) { c->d[4] = 6; call(0x5D8); c->d[0] = set_w(c->d[0], c->d[0] & c->d[4]); F_W(c->d[0]); }
+/* $1ADD2: 60 stars at random places (a fixed seed), palettes $A-$1E, speeds by kind and way */
+static void ending_stars_setup(void)
+{
+    wr32(0xFFFF8A52u, 0xA082E6C8u);
+    c->d[2] = 0xA;
+    c->d[0] = 0;
+    for (c->a[4] = 0; c->a[4] < 0xF0; c->a[4] += 4) {
+        call(0xA36);
+        end_rand_255(); put16(e(-0x3800), c->d[0]);
+        end_rand_255(); put16(e(-0x3700), c->d[0]);
+        put16(e(-0x3D00), 0x162A);
+        put8(e(-0x3CFD), c->d[2]);
+        put16(e(-0x3E00), 4);
+        end_rand_6();
+        if ((uint16_t)c->d[0] >= 6) c->d[0] = 4;
+        wr16(e(-0x35FE), rd16(((rd8(0xFFFFA39Cu) & 0x80) ? 0x1AE42 : 0x1AE3C) + (c->d[0] & 0xFFFF)));
+        call(SET_ANIM);
+        put8(e(-0x4000), 0xC0);
+        c->d[2] = set_w(c->d[2], c->d[2] + 2);
+        if ((uint16_t)c->d[2] >= 0x20) c->d[2] = 0xA;
+    }
+}
+/* $1AFF6 and its entries: the VDP to write at d0 (a cell of a row of plane A, B or the window) */
+static void vdp_at(void) { c->d[0] = c->d[0] << 16 | c->d[0] >> 16; c->d[0] = set_w(c->d[0], 3); wr32(0xC00004, c->d[0]); }
+static void vdp_row_window(void) { c->d[0] = set_w(c->d[0], ((c->d[0] & 0x1F) << 7) | 0x6000); vdp_at(); }   /* $1AFDC */
+static void vdp_row_at(void) { c->d[0] = set_w(c->d[0], (((c->d[0] & 0x1F) << 7) + c->d[1]) | 0x4000); vdp_at(); }   /* $1AFEA */
+static void vdp_row_b(void) { c->d[1] = 0xC; vdp_row_at(); }                                                 /* $1AFE8 */
+/* $1AE58: one row (64 cells) of the story's text from $A3BA: (kind, count, ...) runs: 0 blanks,
+ * 2 a tile and its successors, 9 empty, else a tile once more; $FF the end ($A3A2) */
+static void ending_text_row(void)
+{
+    c->a[0] = rd32(0xFFFFA3BAu);
+    c->a[1] = 0xC00000;
+    c->d[0] = 0;
+    for (;;) {
+        c->d[1] = set_b(c->d[1], rd8(c->a[0])); c->a[0]++;
+        if ((c->d[1] & 0xFF) == 0xFF) { put8(0xFFFFA3A2u, 1); break; }
+        c->d[2] = rd8(c->a[0]); c->a[0]++;
+        c->d[1] = set_b(c->d[1], c->d[1] & 0xF);
+        uint8_t k = (uint8_t)c->d[1];
+        if (!k) c->d[3] = set_w(c->d[3], 0x8020);
+        else if (k == 2) {
+            c->d[3] = set_b(c->d[3], rd8(c->a[0])); c->a[0]++;
+            c->d[3] = set_w(c->d[3], (uint16_t)(c->d[3] << 8));
+            c->d[3] = set_b(c->d[3], rd8(c->a[0])); c->a[0]++;
+        } else if (k == 9) c->d[3] = 0;
+        else {
+            c->d[3] = set_b(c->d[3], c->d[2]);
+            c->d[3] = set_w(c->d[3], (uint16_t)(c->d[3] << 8));
+            c->d[3] = set_b(c->d[3], rd8(c->a[0])); c->a[0]++;
+            c->d[2] = 0;
+        }
+        do {
+            uint16_t t = (uint16_t)c->d[3];
+            wr16(0xC00000, t);
+            if (t && t != 0x8020) c->d[3] = set_w(c->d[3], t + 1);
+            c->d[0] = set_w(c->d[0], c->d[0] + 1);
+            c->d[2] = set_w(c->d[2], c->d[2] - 1);
+        } while ((c->d[2] & 0xFFFF) != 0xFFFF);
+        if ((int8_t)(uint8_t)((uint8_t)c->d[0] - 0x40) >= 0) break;
+    }
+    wr32(0xFFFFA3BAu, c->a[0]);
+}
+/* $1AEC2 (down) and $1AEC6 (up): every 8 lines ($A3AB) the text's row ($A39E, 0-$1F) one on;
+ * d7 -1 when it moved */
+static void text_row_step(int8_t d)
+{
+    c->d[1] = (uint32_t)(int32_t)d;
+    c->d[7] = 0;
+    c->d[0] = 0xF & rd8(0xFFFFA3ABu);
+    if ((c->d[0] & 0xFF) && (c->d[0] & 0xFF) != 8) { c->d[0] = set_b(c->d[0], c->d[0] - 8); return; }
+    c->d[0] = 0;
+    c->d[2] = set_b(c->d[2], 0x20);
+    uint8_t r = (uint8_t)(rd8(0xFFFFA39Eu) + (uint8_t)d);
+    wr8(0xFFFFA39Eu, r);
+    if (r & 0x80) wr8(0xFFFFA39Eu, 0x1F);
+    else if (!(0x20 > r)) wr8(0xFFFFA39Eu, 0);
+    c->d[7] = 0xFFFFFFFFu;
+}
+static void text_down(void) { text_row_step(1); }
+static void text_up(void) { text_row_step(-1); }
+/* $1AEF6: past line $F80, the next row of text at its row of the window */
+static void ending_text_next(void)
+{
+    if (rd16(0xFFFFA3AAu) < 0xF80) return;
+    c->d[0] = set_b(c->d[0], rd8(0xFFFFA39Eu));
+    vdp_row_window();
+    ending_text_row();
+}
+/* $1B004: $95E8 the length of the string at a1 */
+static void str_len(void)
+{
+    c->a[2] = c->a[1];
+    wr16(0xFFFF95E8u, 0);
+    while (rd8(c->a[2]++)) wr16(0xFFFF95E8u, (uint16_t)(rd16(0xFFFF95E8u) + 1));
+}
+/* $1AF5A: the credits' next line at its row: centred ($875C), white or (a heading) yellow
+ * ($7874), then its pause: a byte with bit 7 its frames, else 2 (3 after a heading); $99 the end */
+static void ending_credit_line(void)
+{
+    c->d[0] = set_b(c->d[0], rd8(0xFFFFA39Du));
+    vdp_row_b();
+    c->a[1] = rd32(0xFFFFA3B6u);
+    str_len();
+    c->d[0] = 0x14;
+    c->d[0] = set_w(c->d[0], c->d[0] - rd16(0xFFFF95E8u));
+    uint32_t x = c->d[0] & 1;
+    c->d[0] = set_w(c->d[0], (uint16_t)c->d[0] >> 1);
+    c->d[5] = (uint16_t)(c->d[0] + x);
+    call(0x875C);
+    c->d[1] = set_w(c->d[1], rd8(0xFFFFA3A0u) ? 0xE000 : 0x8000);
+    call(0x7874);
+    if (c->d[0] & 0xFFFF) { c->d[5] = set_w(c->d[5], c->d[0]); call(0x875C); }
+    if (rd8(c->a[1]) == 0x99) { put8(0xFFFFA3A0u, 0xFF); return; }
+    c->d[0] = set_b(c->d[0], rd8(c->a[1])); c->a[1]++;
+    if (c->d[0] & 0x80) {
+        c->d[0] = set_b(c->d[0], c->d[0] & 0x1F);
+        put8(0xFFFFA39Fu, c->d[0]);
+        put8(0xFFFFA3A0u, 1);
+    } else {
+        put8(0xFFFFA39Fu, 2);
+        if (rd8(0xFFFFA3A0u)) { put8(0xFFFFA3A0u, 0); put8(0xFFFFA39Fu, 3); }
+        c->a[1] -= 1;
+    }
+    wr32(0xFFFFA3B6u, c->a[1]);
+}
+/* $1AF0C: every 8 lines ($A3A9) the credits' row ($A39D) on, and when its pause is over the next
+ * line; the row after it cleared ($875C, 20 blanks) */
+static void ending_credits_step(void)
+{
+    c->d[0] = set_b(c->d[0], rd8(0xFFFFA3A9u) & 0xF);
+    if ((c->d[0] & 0xFF) && (c->d[0] & 0xFF) != 8) return;
+    wr8(0xFFFFA39Fu, (uint8_t)(rd8(0xFFFFA39Fu) - 1));
+    wr8(0xFFFFA39Du, (uint8_t)(rd8(0xFFFFA39Du) + 1));
+    c->d[2] = 0x20;
+    if (!(0x20 > rd8(0xFFFFA39Du))) wr8(0xFFFFA39Du, 0);
+    if (!(rd8(0xFFFFA3A0u) & 0x80) && !rd8(0xFFFFA39Fu)) {
+        c->a[7] -= 4; wr32(c->a[7], 0x1AF40);
+        ending_credit_line();
+        c->a[7] += 4;
+    }
+    c->d[0] = set_b(c->d[0], rd8(0xFFFFA39Du) + 1);
+    if ((uint8_t)c->d[0] >= 0x20) c->d[0] = 0;
+    vdp_row_b();
+    c->d[5] = 0x14;
+    call(0x875C);
+}
+
+ENTRY(EndingStars, ending_stars)           /* $1AD62 */
+ENTRY(EndingSprite, ending_sprite)         /* $1AD98 */
+ENTRY(EndingStarsSetup, ending_stars_setup)   /* $1ADD2 */
+ENTRY(EndRand255, end_rand_255)            /* $1AE48 */
+ENTRY(EndRand6, end_rand_6)                /* $1AE4E */
+ENTRY(EndingTextRow, ending_text_row)      /* $1AE58 */
+ENTRY(TextDown, text_down)                 /* $1AEC2 */
+ENTRY(TextUp, text_up)                     /* $1AEC6 */
+ENTRY(EndingTextNext, ending_text_next)    /* $1AEF6 */
+ENTRY(EndingCreditsStep, ending_credits_step) /* $1AF0C */
+ENTRY(EndingCreditLine, ending_credit_line)   /* $1AF5A */
+ENTRY(VdpRowWindow, vdp_row_window)        /* $1AFDC */
+ENTRY(VdpRowB, vdp_row_b)                  /* $1AFE8 */
+ENTRY(VdpRowAt, vdp_row_at)                /* $1AFEA */
+ENTRY(StrLen, str_len)                     /* $1B004 */
