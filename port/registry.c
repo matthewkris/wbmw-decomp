@@ -110,6 +110,7 @@ void MakePartner(Cpu *), CopyToA2(Cpu *), MaybeBubble(Cpu *), BubbleInWater(Cpu 
 void TargetFromHome(Cpu *), EdgeTurnReturn(Cpu *), EdgeTurn(Cpu *), EdgeAhead(Cpu *), GroundAhead(Cpu *), FlyFacing(Cpu *), AccelFacing(Cpu *), FallAndMove(Cpu *), EnemyMove(Cpu *), ShieldContact(Cpu *), PlayerAhead(Cpu *), ShieldHit(Cpu *), PlayerTouch(Cpu *), PlayerContactAll(Cpu *), PlayerContactShield(Cpu *), FreezeEnemies(Cpu *), Despawn(Cpu *), EnemyDefeated(Cpu *), OffscreenDespawn(Cpu *), RoomKind(Cpu *), MaxHealth(Cpu *), HealthOf(Cpu *), DamageShown(Cpu *), ScaleDamage(Cpu *), DamageEnemy(Cpu *);
 void TileAtA(Cpu *), SlopeAtFeet(Cpu *), DirOffset(Cpu *), ProbeBelowA(Cpu *), SceneSega(Cpu *), SceneTitle(Cpu *), SceneTitleShown(Cpu *), SceneTitleAfter(Cpu *), SceneMenu(Cpu *), SceneDemo(Cpu *), SceneGame(Cpu *);
 void SwingY(Cpu *), SwingX(Cpu *), HopperStart(Cpu *), ChainLink(Cpu *), CopyFields(Cpu *), SlowOf(Cpu *), Bounce(Cpu *), AimLevel(Cpu *), SoundStopUnless12(Cpu *), Sound13Unless12(Cpu *), TouchedBack(Cpu *), PairAnim(Cpu *), PairHit(Cpu *), PairTouch(Cpu *), PairHover(Cpu *), PairOnBody(Cpu *), PairAlignX(Cpu *);
+void Room16Setup(Cpu *), FloorScroll(Cpu *), Room16Frame(Cpu *), Room16Exit(Cpu *), SpawnAtOffset(Cpu *), GfxSlotsFree(Cpu *), TintTiles(Cpu *), PartnerAnim(Cpu *), PartnerMove(Cpu *), OnPartner(Cpu *), MountHit(Cpu *), MountTouch(Cpu *), PartnerGrounded(Cpu *), PartnerAtWall(Cpu *), Shake(Cpu *);
 void Looks(Cpu *), LooksExtra(Cpu *), LooksBlock(Cpu *), LooksBody(Cpu *), LooksSword(Cpu *), LooksShield(Cpu *), EquipChange(Cpu *);
 void HudPanel(Cpu *), GoldLabel(Cpu *), ThreeLabels(Cpu *), DigitsOut(Cpu *), ItemsChoose(Cpu *), MagicChoose(Cpu *), SlotChoose(Cpu *), ActionToSlot(Cpu *),
      ItemToSlot(Cpu *), WornBlink(Cpu *), StatusFadeIn(Cpu *), StatusFadeOut(Cpu *), StatusWait(Cpu *);
@@ -1038,6 +1039,21 @@ const PortRoutine port_routines[] = {
     {0x0179F8, 0x017A26, "PairHover", PairHover, CT_SP},
     {0x017A26, 0x017A38, "PairOnBody", PairOnBody, CT_SP},
     {0x017A38, 0x017A44, "PairAlignX", PairAlignX, CT_SP},
+    {0x017FEC, 0x018074, "Room16Setup", Room16Setup, CT_SP},
+    {0x018074, 0x01813E, "FloorScroll", FloorScroll, CT_SP},   /* objhelp.c: room script 16 (its floor), spawning at an offset, the partner's helpers */
+    {0x01813E, 0x01822A, "Room16Frame", Room16Frame, CT_SP},
+    {0x01822A, 0x018256, "Room16Exit", Room16Exit, CT_SP},
+    {0x018256, 0x018290, "SpawnAtOffset", SpawnAtOffset, CT_SP | CT_NZVC},
+    {0x018290, 0x0182AA, "GfxSlotsFree", GfxSlotsFree, CT_SP},
+    {0x0182AA, 0x018314, "TintTiles", TintTiles, CT_SP},
+    {0x018314, 0x018322, "PartnerAnim", PartnerAnim, CT_SP},
+    {0x018322, 0x018332, "PartnerMove", PartnerMove, CT_SP},
+    {0x018332, 0x01838A, "OnPartner", OnPartner, CT_SP},
+    {0x01838A, 0x01839C, "MountHit", MountHit, CT_SP},
+    {0x01839C, 0x0183BA, "MountTouch", MountTouch, CT_SP},
+    {0x0183BA, 0x0183C8, "PartnerGrounded", PartnerGrounded, CT_SP | CT_NZVC},
+    {0x0183C8, 0x0183D4, "PartnerAtWall", PartnerAtWall, CT_SP | CT_NZVC},
+    {0x0183D4, 0x0183E0, "Shake", Shake, CT_SP},
     {0x017014, 0x0170EE, "Act17014", Act17014, CT_SP},           /* the hopper and the chain (batch 17); $170EE-$17131 are called */
     {0x01729A, 0x017302, "Act1729A", Act1729A, CT_SP},           /* $17302-$1730F (COPY_FIELDS) is called */
     {0x017310, 0x017362, "Act17310", Act17310, CT_SP},           /* $17132 (the link) is C */

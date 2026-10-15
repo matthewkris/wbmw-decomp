@@ -304,3 +304,320 @@ ENTRY(PairTouch, pair_touch)               /* $179DE */
 ENTRY(PairHover, pair_hover)               /* $179F8 */
 ENTRY(PairOnBody, pair_on_body)            /* $17A26 */
 ENTRY(PairAlignX, pair_align_x)            /* $17A38 */
+
+/* ---- batch T49: room script 16 (a scrolling floor), spawning at an offset, the partner's place ----
+ * Room script 16 ($C784/$C838's entry 16) moves the room's floor: $99E6 its position (16.16),
+ * $99EA its speed, $99E4 this frame's step across. Its two platforms ($99EE, $99F0, made by
+ * $11CE8) and the enemies ride along; when the floor runs past the screen's right edge
+ * ($9778) the whole room shifts back by a block's worth. $99DE: bit 0 moving, bit 1 slowing,
+ * bit 2 the exit drawn; once the player stands in the exit ($99F2, $99F4) its trigger ($1822A)
+ * changes the room. */
+
+#define FLOOR_POS     0xFFFF99E6u   /* long */
+#define FLOOR_SPEED   0xFFFF99EAu   /* long */
+#define FLOOR_STEP    0xFFFF99E4u   /* word */
+#define FLOOR_FLAGS   0xFFFF99DEu
+
+/* $18044: a platform (a1) riding the floor */
+static void floor_platform(void)
+{
+    put8(c->a[1] - 0x6072, 0x80);
+    put8(c->a[1] - 0x6071, 1);
+    put16(c->a[1] - 0x601C, 0x1048);
+    wr8(c->a[1] - 0x6070, 0xFF);
+    wr32(c->a[1] - 0x5FCA, 0);
+    put16(c->a[1] - 0x5F76, 8);
+    put16(c->a[1] - 0x5F74, 0x48);
+}
+/* $1806C: the floor's position for the layer ($985A) */
+static void floor_to_layer(void) { wr32(0xFFFF985Au, rd32(FLOOR_POS)); F_L(rd32(FLOOR_POS)); }
+/* $18024: the layer (a3) one column on */
+static void layer_column(void)
+{
+    c->d[0] = rd8(c->a[3] + 0x38);
+    wr8(c->a[3] + 0x38, (uint8_t)(rd8(c->a[3] + 0x38) + 1));
+    c->a[0] = sx(rd16(c->a[3] + 0x22));
+    wr8(c->a[0] + sx(c->d[0]), rd8(c->a[0]));
+    wr8(c->a[3] + 0x44, (uint8_t)(rd8(c->a[3] + 0x44) + 0x10));
+    wr16(c->a[3] + 0x24, (uint16_t)(rd16(c->a[3] + 0x24) + 0x100));
+}
+/* $17FEC: room script 16's setup: the floor at $1000, the layer a column on, two platforms */
+static void room16_setup(void)
+{
+    wr8(0xFFFF9858u, rd8(0xFFFF9858u) | 1);
+    wr32(FLOOR_POS, 0x10000000);
+    floor_to_layer();
+    c->a[3] = 0xFFFF9754u;
+    layer_column();
+    call(0x11CE8);
+    wr16(0xFFFF99EEu, (uint16_t)c->a[1]);
+    wr16(c->a[1] - 0x601E, 0xFF8);
+    floor_platform();
+    call(0x11CE8);
+    wr16(0xFFFF99F0u, (uint16_t)c->a[1]);
+    wr16(c->a[1] - 0x601E, 0x1108);
+    floor_platform();
+}
+/* the riders of the floor (in use, not held by -$3E00): x, -$2E00 and home moved by d */
+static void ride(uint32_t slot, int16_t d)
+{
+    if (!(rd8(slot - 0x4000) & 0x80) || rd16(slot - 0x3E00)) return;
+    static const int16_t f[] = { -0x3800, -0x2E00, -0x2100 };
+    for (int k = 0; k < 3; k++) wr16(slot + (uint32_t)(int32_t)f[k], (uint16_t)(rd16(slot + (uint32_t)(int32_t)f[k]) + d));
+}
+/* $18074: the floor moved by its speed; past the screen's edge the room shifts back ($975C,
+ * $975E, every entity and platform); the platforms and enemies ride the step */
+static void floor_scroll(void)
+{
+    if (rd8(0xFFFF9659u) & 0x20) return;
+    c->d[1] = rd32(FLOOR_POS);
+    c->d[0] = c->d[1];
+    c->d[1] += rd32(FLOOR_SPEED);
+    c->d[7] = c->d[1];
+    c->d[0] = c->d[0] << 16 | c->d[0] >> 16;
+    c->d[1] = c->d[1] << 16 | c->d[1] >> 16;
+    c->d[1] = set_w(c->d[1], c->d[1] - c->d[0]);
+    wr16(FLOOR_STEP, (uint16_t)c->d[1]);
+    c->d[1] = (uint32_t)rd16(0xFFFF9778u) << 16;
+    if (c->d[1] < c->d[7]) {
+        c->d[1] -= 0x10000000;
+        c->d[7] -= c->d[1];
+        c->d[1] = c->d[1] << 16 | c->d[1] >> 16;
+        c->d[0] = set_w(c->d[0], (uint16_t)c->d[1] >> 4);
+        wr16(0xFFFF975Eu, (uint16_t)(rd16(0xFFFF975Eu) - 0x10));
+        c->d[0] = set_w(c->d[0], c->d[0] - rd16(0xFFFF975Eu));
+        wr16(0xFFFF975Cu, (uint16_t)(rd16(0xFFFF975Cu) - (uint16_t)c->d[0]));
+        for (uint32_t s = 0; s < 0x100; s += 4) ride(s, (int16_t)-(int16_t)c->d[1]);
+        c->a[4] = 0x100; c->d[0] = 0xFFFF;
+        for (uint32_t s = 0; s < 24; s += 4)
+            if (rd8(s - 0x6072) & 0x80) wr16(s - 0x601E, (uint16_t)(rd16(s - 0x601E) - (uint16_t)c->d[1]));
+        c->a[0] = 24;
+    }
+    wr32(FLOOR_POS, c->d[7]);
+    c->a[0] = sx(rd16(0xFFFF99EEu));
+    c->a[1] = sx(rd16(0xFFFF99F0u));
+    c->d[7] = set_w(c->d[7], rd16(FLOOR_STEP));
+    wr16(c->a[0] - 0x5FCA, (uint16_t)c->d[7]);
+    wr16(c->a[1] - 0x5FCA, (uint16_t)c->d[7]);
+    if (!(c->d[7] & 0xFFFF)) return;
+    wr16(c->a[0] - 0x601E, (uint16_t)(rd16(c->a[0] - 0x601E) + (uint16_t)c->d[7]));
+    wr16(c->a[1] - 0x601E, (uint16_t)(rd16(c->a[1] - 0x601E) + (uint16_t)c->d[7]));
+    uint32_t base = sx(rd16(0xFFFFA11Au));
+    for (int k = 0; k < 16; k++) ride(base + 4 * k, (int16_t)c->d[7]);
+    c->a[4] = base + 64; c->d[0] = 0xFFFF;
+}
+/* $1813E: room script 16's frame. Moving: speeding up by $800 to $18000, or (slowing) down to 0;
+ * the floor moved; its speed for the layer ($980E; in area $F mirrored, $980F). Stopped and
+ * slowing: the exit drawn once ($2856: $1824C, or $18242 in area $F with game flag $44), then
+ * the player standing in it arms the trigger $1822A */
+static void room16_frame(void)
+{
+    uint8_t f = rd8(FLOOR_FLAGS);
+    if (f & 1) {
+        if (f & 2) {
+            uint32_t s = rd32(FLOOR_SPEED) - 0x800;
+            wr32(FLOOR_SPEED, s);
+            if (!s || (int32_t)s < 0) {
+                if ((int32_t)s < 0) wr32(FLOOR_SPEED, 0);
+                wr8(FLOOR_FLAGS, rd8(FLOOR_FLAGS) & 0xFE);
+            }
+        } else if (rd32(FLOOR_SPEED) < 0x18000) wr32(FLOOR_SPEED, rd32(FLOOR_SPEED) + 0x800);
+        floor_scroll();
+        floor_to_layer();
+        c->d[0] = rd32(FLOOR_SPEED) << 6;
+        c->d[0] = c->d[0] << 16 | c->d[0] >> 16;
+        wr8(0xFFFF980Eu, (uint8_t)c->d[0]);
+        if (rd8(0xFFFF9668u) == 0xF) {
+            c->d[0] = set_b(c->d[0], (uint8_t)-c->d[0]);
+            wr8(0xFFFF980Fu, (uint8_t)c->d[0]);
+        }
+        return;
+    }
+    if (!(f & 2)) return;
+    if (rd8(0xFFFF9668u) == 0xF && !(rd16(0xFFFF9994u) & 0x8000)) return;
+    wr8(FLOOR_FLAGS, rd8(FLOOR_FLAGS) | 4);
+    if (!(f & 4)) {
+        c->d[6] = set_w(0x70, 0x70 + rd16(0xFFFF9758u));
+        c->d[6] = set_w(c->d[6], c->d[6] & 0xFFF0);
+        wr16(0xFFFF99F2u, (uint16_t)c->d[6]);
+        wr16(0xFFFF99F4u, 0x1090);
+        c->d[6] = set_w(c->d[6], ((uint16_t)c->d[6] >> 4) - 1);
+        c->d[7] = set_w(c->d[7], 0x41C0);
+        c->a[0] = 0x1824C;
+        if (rd8(0xFFFF9668u) == 0xF) {
+            c->d[0] = 0x44; call(0x2752);
+            c->a[0] = 0x18242;
+        }
+        call(0x2856);
+        return;
+    }
+    c->a[0] = sx(rd16(0xFFFF9EEEu));
+    int16_t dx = (int16_t)(rd16(0xFFFF99F2u) - rd16(c->a[0] - 0x3800));
+    if (dx < 0) dx = (int16_t)-dx;
+    c->d[0] = set_w(c->d[0], (uint16_t)dx);
+    if ((uint16_t)dx >= 4) return;
+    c->d[0] = (uint32_t)rd8(c->a[0] - 0x34FD) + rd16(c->a[0] - 0x3700);
+    c->d[0] &= 0xFFFF;
+    if ((uint16_t)c->d[0] != rd16(0xFFFF99F4u)) return;
+    wr8(0xFFFF9966u, rd8(0xFFFF9966u) | 1);
+    wr8(0xFFFF9980u, 0xFF);
+    wr32(0xFFFF998Au, 0x1822A);
+}
+/* $1822A (room script 16's exit, when up is pressed there): to start point $41 (area $F) or $74 */
+static void room16_exit(void)
+{
+    c->d[0] = rd8(0xFFFF9668u) == 0xF ? 0x41 : 0x74;
+    wr16(0xFFFF9676u, (uint16_t)c->d[0]);
+    put16(0xFFFF9962u, 0xD);
+}
+
+/* $18256: an enemy of kind d0 at the offset (a0's two bytes, mirrored by its facing and flip)
+ * from this one, with its looks ($1A438): a2, mi if none */
+static void spawn_at_offset(void)
+{
+    wr16(0xFFFFA394u, (uint16_t)c->d[0]);
+    c->d[0] = set_w(c->d[0], (uint16_t)(int8_t)rd8(c->a[0])); c->a[0]++;
+    if (rd8(e(-0x3FFE)) & 8) c->d[0] = set_w(c->d[0], (uint16_t)-c->d[0]);
+    c->d[0] = set_w(c->d[0], c->d[0] + rd16(e(-0x3800)));
+    wr16(0xFFFFA396u, (uint16_t)c->d[0]);
+    c->d[0] = set_w(c->d[0], (uint16_t)(int8_t)rd8(c->a[0]));
+    if (rd8(e(-0x3FFE)) & 0x10) c->d[0] = set_w(c->d[0], (uint16_t)-c->d[0]);
+    c->d[0] = set_w(c->d[0], c->d[0] + rd16(e(-0x3700)));
+    wr16(0xFFFFA398u, (uint16_t)c->d[0]);
+    wr16(0xFFFFA39Au, rd16(e(-0x3DFE)));
+    call(0x1A438);
+}
+/* $18290: d2 of its graphics' slots in $8E08 (and the row after) marked free */
+static void gfx_slots_free(void)
+{
+    c->a[0] = 0xFFFF8E08u + ((uint32_t)rd16(e(-0x3DFE)) >> 4);
+    c->d[0] = 0xFFFFFFFFu;
+    do {
+        wr16(c->a[0] + 0x80, 0xFFFF);
+        wr16(c->a[0], 0xFFFF); c->a[0] += 2;
+        c->d[2] = set_w(c->d[2], c->d[2] - 1);
+    } while (c->d[2] & 0xFFFF);
+}
+/* $182AA: d2 tiles of its graphics (VRAM -$3DFE * 32) read back, masked to the colour d1 picks
+ * ($FFF rotated), written again; the buffer is on the stack, from a7 + d2*64 as the original's;
+ * the VDP's increment 32 meanwhile ($708), then 2 */
+static void tint_tiles(void)
+{
+    c->d[0] = 0x20; call(0x708);
+    c->a[2] = c->a[7];
+    c->d[2] = set_w(c->d[2], (uint16_t)(c->d[2] << 5));
+    c->d[0] = set_w(c->d[0], (uint16_t)(c->d[2] * 2));
+    c->a[7] += sx(c->d[0]);
+    c->d[2] = set_w(c->d[2], c->d[2] - 1);
+    c->d[5] = set_w(c->d[5], (uint16_t)(rd16(e(-0x3DFE)) << 5));
+    c->d[3] = (uint32_t)(uint16_t)c->d[5] << 2;
+    c->d[4] = set_w(c->d[4], 0xFFF);
+    if (c->d[1] & 1) c->d[4] = set_w(c->d[4], (uint16_t)((uint16_t)c->d[4] >> 4 | (uint16_t)c->d[4] << 12));
+    c->d[1] = set_w(c->d[1], (uint16_t)c->d[1] >> 1);
+    if (c->d[1] & 1) {
+        c->d[1] &= ~1u;
+        c->d[4] = set_w(c->d[4], (uint16_t)((uint16_t)c->d[4] >> 8 | (uint16_t)c->d[4] << 8));
+    }
+    c->d[5] = set_w(c->d[5], (c->d[5] | c->d[1]) & 0x3FFF);
+    c->d[3] = set_w(c->d[3], c->d[5]);
+    c->a[1] = 0xC00000;
+    c->d[3] = c->d[3] << 16 | c->d[3] >> 16;
+    wr32(0xC00004, c->d[3]);
+    c->a[0] = c->a[7];
+    c->d[5] = set_w(c->d[5], c->d[2]);
+    do {
+        c->d[0] = set_w(c->d[0], rd16(0xC00000) & (uint16_t)c->d[4]);
+        wr16(c->a[0], (uint16_t)c->d[0]); c->a[0] += 2;
+        c->d[5] = set_w(c->d[5], c->d[5] - 1);
+    } while ((c->d[5] & 0xFFFF) != 0xFFFF);
+    c->d[3] |= 0x40000000;
+    wr32(0xC00004, c->d[3]);
+    c->a[0] = c->a[7];
+    do {
+        wr16(0xC00000, rd16(c->a[0])); c->a[0] += 2;
+        c->d[2] = set_w(c->d[2], c->d[2] - 1);
+    } while ((c->d[2] & 0xFFFF) != 0xFFFF);
+    c->a[7] = c->a[2];
+    c->d[0] = 2; call(0x708);
+}
+/* $18314: the partner's animation d0 */
+static void partner_anim(void) { partner(); call(SET_ANIM); partner(); }
+/* $18332: placed on the partner by its animation (the table at $18372: x, y, sizes) */
+static void on_partner(void)
+{
+    c->a[0] = sx(rd16(e(-0x2CFE)));
+    c->d[0] = (uint32_t)rd8(c->a[0] - 0x3CFE) * 2;
+    c->d[1] = set_w(c->d[1], (uint16_t)(int8_t)rd8(0x18372 + c->d[0]));
+    if (rd8(c->a[0] - 0x3FFE) & 8) c->d[1] = set_w(c->d[1], (uint16_t)-c->d[1]);
+    c->d[1] = set_w(c->d[1], c->d[1] + rd16(c->a[0] - 0x3800));
+    put16(e(-0x3800), c->d[1]);
+    c->d[1] = set_w(c->d[1], (uint16_t)(int8_t)rd8(0x18373 + c->d[0]));
+    c->d[1] = set_w(c->d[1], c->d[1] + rd16(c->a[0] - 0x3700));
+    put16(e(-0x3700), c->d[1]);
+    put8(e(-0x3500), rd8(0x18374 + c->d[0]));
+    put8(e(-0x34FF), rd8(0x18375 + c->d[0]));
+}
+/* $18322: the partner falls and moves ($B44, $46DA); this one on it */
+static void partner_move(void)
+{
+    partner();
+    call(0xB44);
+    call(0x46DA);
+    partner();
+    on_partner();
+}
+/* $1839C: the mount (partner) takes its health and not its touch; the player against it */
+static void mount_touch(void)
+{
+    c->d[0] = set_w(c->d[0], rd16(e(-0x2600)));
+    partner();
+    put16(e(-0x2600), c->d[0]);
+    put8(e(-0x2AFD), 0);
+    c->a[2] = sx(rd16(0xFFFF9EEEu));
+    call(0xE64);
+    partner();
+}
+/* $183BA: z when the partner (a2) is on the ground; $183C8: its wall bit (btst: z clear at one) */
+static void partner_grounded(void)
+{
+    c->a[2] = sx(rd16(e(-0x2CFE)));
+    c->d[1] = 0xA & rd8(o(-0x3100));
+    c->d[1] = set_b(c->d[1], sub_b(&c->ccr, 2, c->d[1]));
+}
+static void partner_at_wall(void)
+{
+    c->a[2] = sx(rd16(e(-0x2CFE)));
+    c->ccr = (uint16_t)((c->ccr & ~CC_Z) | (rd8(o(-0x3100)) & 1 ? 0 : CC_Z));
+}
+/* $183D4: the screen shaken ($9738 -5), sound $39 */
+static void shake(void)
+{
+    put16(0xFFFF9738u, 0xFFFB);
+    c->d[0] = 0x39; call(0x366);
+}
+
+ENTRY(Room16Setup, room16_setup)           /* $17FEC */
+ENTRY(FloorScroll, floor_scroll)           /* $18074 */
+ENTRY(Room16Frame, room16_frame)           /* $1813E */
+ENTRY(Room16Exit, room16_exit)             /* $1822A */
+ENTRY(SpawnAtOffset, spawn_at_offset)      /* $18256 */
+ENTRY(GfxSlotsFree, gfx_slots_free)        /* $18290 */
+ENTRY(TintTiles, tint_tiles)               /* $182AA */
+ENTRY(PartnerAnim, partner_anim)           /* $18314 */
+ENTRY(PartnerMove, partner_move)           /* $18322 */
+ENTRY(OnPartner, on_partner)               /* $18332 */
+/* $1838A: touching the player and the sword; hit: state 2 (the caller's frame dropped); else
+ * as $1839C */
+void MountHit(Cpu *cpu)
+{
+    c = cpu;
+    call(0x4792);
+    call(0x439E);
+    if (c->ccr & CC_N) { leave_to_state(2); return; }
+    mount_touch();
+    c->ret = 0;
+}
+ENTRY(MountTouch, mount_touch)             /* $1839C */
+ENTRY(PartnerGrounded, partner_grounded)   /* $183BA */
+ENTRY(PartnerAtWall, partner_at_wall)      /* $183C8 */
+ENTRY(Shake, shake)                        /* $183D4 */
