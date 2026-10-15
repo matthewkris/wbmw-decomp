@@ -109,6 +109,7 @@ void CellVram(Cpu *), PlaneAClear(Cpu *), PlaneBClear(Cpu *), WindowClear(Cpu *)
 void MakePartner(Cpu *), CopyToA2(Cpu *), MaybeBubble(Cpu *), BubbleInWater(Cpu *), Bubble(Cpu *), SwimMove(Cpu *), SwimLimit(Cpu *), BobToward(Cpu *), RandomState(Cpu *), GroundedWait(Cpu *), ContactAndMove(Cpu *), ShieldAndMove(Cpu *), PuffA(Cpu *), PuffB(Cpu *), SpawnDebris(Cpu *), RandomSpread(Cpu *), SlowOnGround(Cpu *), TouchedState(Cpu *), BackOff(Cpu *), TakeHit(Cpu *), HitAction(Cpu *), RandomTimer(Cpu *), RandomTimer32(Cpu *), RandomDelay(Cpu *), Range40(Cpu *), Range80(Cpu *), WallTurnReturn(Cpu *), TurnAtWall(Cpu *), BumpAwayReturn(Cpu *), BumpAway(Cpu *), FaceAway(Cpu *), BumpTurnReturn(Cpu *), BumpTurn(Cpu *), Turn(Cpu *), WalkForward(Cpu *), SetVelXFacing(Cpu *), FaceVelocity(Cpu *), VelocityToward(Cpu *), FaceAndWalk(Cpu *), FacePlayer(Cpu *), FaceEntity(Cpu *), FaceX(Cpu *), Jump(Cpu *), Hop(Cpu *), SetVelY(Cpu *), StartBlinkFrozen(Cpu *), StartBlink(Cpu *), ThrownBack(Cpu *), KnockBackAt(Cpu *), KnockBack(Cpu *), DistXToPlayer(Cpu *), DistXToEntity(Cpu *), DistYToTarget(Cpu *), DistY(Cpu *), DistYAbsTarget(Cpu *), DistYAbs(Cpu *), WallClimbAction(Cpu *), RoomAbove(Cpu *), RangeTurnReturn(Cpu *), RangeTurn(Cpu *), PastRange80(Cpu *), PastRange(Cpu *);
 void TargetFromHome(Cpu *), EdgeTurnReturn(Cpu *), EdgeTurn(Cpu *), EdgeAhead(Cpu *), GroundAhead(Cpu *), FlyFacing(Cpu *), AccelFacing(Cpu *), FallAndMove(Cpu *), EnemyMove(Cpu *), ShieldContact(Cpu *), PlayerAhead(Cpu *), ShieldHit(Cpu *), PlayerTouch(Cpu *), PlayerContactAll(Cpu *), PlayerContactShield(Cpu *), FreezeEnemies(Cpu *), Despawn(Cpu *), EnemyDefeated(Cpu *), OffscreenDespawn(Cpu *), RoomKind(Cpu *), MaxHealth(Cpu *), HealthOf(Cpu *), DamageShown(Cpu *), ScaleDamage(Cpu *), DamageEnemy(Cpu *);
 void TileAtA(Cpu *), SlopeAtFeet(Cpu *), DirOffset(Cpu *), ProbeBelowA(Cpu *), SceneSega(Cpu *), SceneTitle(Cpu *), SceneTitleShown(Cpu *), SceneTitleAfter(Cpu *), SceneMenu(Cpu *), SceneDemo(Cpu *), SceneGame(Cpu *);
+void SwingY(Cpu *), SwingX(Cpu *), HopperStart(Cpu *), ChainLink(Cpu *), CopyFields(Cpu *), SlowOf(Cpu *), Bounce(Cpu *), AimLevel(Cpu *), SoundStopUnless12(Cpu *), Sound13Unless12(Cpu *), TouchedBack(Cpu *), PairAnim(Cpu *), PairHit(Cpu *), PairTouch(Cpu *), PairHover(Cpu *), PairOnBody(Cpu *), PairAlignX(Cpu *);
 void Looks(Cpu *), LooksExtra(Cpu *), LooksBlock(Cpu *), LooksBody(Cpu *), LooksSword(Cpu *), LooksShield(Cpu *), EquipChange(Cpu *);
 void HudPanel(Cpu *), GoldLabel(Cpu *), ThreeLabels(Cpu *), DigitsOut(Cpu *), ItemsChoose(Cpu *), MagicChoose(Cpu *), SlotChoose(Cpu *), ActionToSlot(Cpu *),
      ItemToSlot(Cpu *), WornBlink(Cpu *), StatusFadeIn(Cpu *), StatusFadeOut(Cpu *), StatusWait(Cpu *);
@@ -1020,6 +1021,23 @@ const PortRoutine port_routines[] = {
     {0x016ED0, 0x016F24, "Act16ED0", Act16ED0, CT_SP},           /* $16E56-$16ECE, $16F24-$16F4F: helpers */
     {0x016F50, 0x016FD8, "Act16F50", Act16F50, CT_SP},
     {0x016FF0, 0x017014, "Act16FF0", Act16FF0, CT_SP},
+    {0x0170EE, 0x0170F4, "SwingY", SwingY, CT_SP},   /* objhelp.c: the actions' helpers here */
+    {0x0170F4, 0x017118, "SwingX", SwingX, CT_SP},
+    {0x017118, 0x017132, "HopperStart", HopperStart, CT_SP},
+    {0x017132, 0x01729A, "ChainLink", ChainLink, CT_SP},
+    {0x01730A, 0x017310, "CopyFields", CopyFields, CT_SP},
+    {0x017418, 0x017420, "SlowOf", SlowOf, CT_SP | CT_D0},
+    {0x017420, 0x01743C, "Bounce", Bounce, CT_SP},
+    {0x0174B0, 0x0174E6, "AimLevel", AimLevel, CT_SP | CT_D0 << 3},
+    {0x0176E6, 0x0176F4, "SoundStopUnless12", SoundStopUnless12, CT_SP},
+    {0x0176F4, 0x017704, "Sound13Unless12", Sound13Unless12, CT_SP},
+    {0x017704, 0x01771C, "TouchedBack", TouchedBack, CT_SP},
+    {0x0179AA, 0x0179CC, "PairAnim", PairAnim, CT_SP},
+    {0x0179CC, 0x0179DE, "PairHit", PairHit, CT_SP},
+    {0x0179DE, 0x0179F8, "PairTouch", PairTouch, CT_SP},
+    {0x0179F8, 0x017A26, "PairHover", PairHover, CT_SP},
+    {0x017A26, 0x017A38, "PairOnBody", PairOnBody, CT_SP},
+    {0x017A38, 0x017A44, "PairAlignX", PairAlignX, CT_SP},
     {0x017014, 0x0170EE, "Act17014", Act17014, CT_SP},           /* the hopper and the chain (batch 17); $170EE-$17131 are called */
     {0x01729A, 0x017302, "Act1729A", Act1729A, CT_SP},           /* $17302-$1730F (COPY_FIELDS) is called */
     {0x017310, 0x017362, "Act17310", Act17310, CT_SP},           /* $17132 (the link) is C */

@@ -1427,6 +1427,37 @@ int hybrid_fuzz(const char *name, long count)
             if (!strcmp(name, "DemoStep")) ram[0x8A4E] = (uint8_t)(rnd() % 3 ? 1 : rnd());
         }
         if (!strcmp(name, "TasksStart")) m68k_set_reg(M68K_REG_A1, rnd() % 2 ? 0x4FC0 : 0x50CC);
+        {   /* batch T48 (objhelp.c): chains without loops, partner pairs, the copy's list */
+            uint32_t me = (uint32_t)m68k_get_reg(NULL, M68K_REG_A4) & 0xFC, other = (me + 4 * (1 + rnd() % 60)) & 0xFC;
+            if (!strcmp(name, "ChainLink")) {
+                uint32_t l1 = (me + 4) & 0xFC, l2 = (me + 8) & 0xFC;
+                if (rnd() % 3 == 0) put_word(0xD300 + me, other);           /* a follower: the link ahead */
+                else {
+                    put_word(0xD300 + me, 0xFFFF);
+                    int n = rnd() % 3;                                       /* the head and 0-2 links */
+                    put_word(0xD302 + me, n ? l1 : 0xFFFF);
+                    if (n) put_word(0xD302 + l1, n > 1 ? l2 : 0xFFFF);
+                    if (n > 1) put_word(0xD302 + l2, 0xFFFF);
+                    if (rnd() % 2) { ram[0xC000 + me] &= 0xFE; ram[0xC000 + l1] &= 0xFE; ram[0xC000 + l2] &= 0xFE; }
+                    ram[0xDA02 + me] = (uint8_t)(rnd() % 3); ram[0xD800 + me] = (uint8_t)(rnd() % 3);
+                    ram[0xCE01 + me] = (uint8_t)(rnd() % 7);
+                }
+                put_word(0x965A, rnd() % 2 ? rnd() & ~0xFu : rnd());
+                if (ram[0xA143] == 0) ram[0xA143] = 1;
+                put_word(0xA122, 0x2E);                                      /* the chain's kind is in the room's list */
+                if (rnd() % 4 == 0) {                                        /* no room for another link */
+                    uint32_t base = (uint32_t)ram[0xA11A] << 8 | ram[0xA11B];
+                    for (uint32_t k4 = 0; k4 < 16; k4++) ram[0xC000 + ((base + 4 * k4) & 0xFC)] |= 0x80;
+                }
+            }
+            if (!strncmp(name, "Pair", 4)) {                                  /* a partner that points back */
+                put_word(0xD302 + me, other); put_word(0xD302 + other, me);
+                m68k_set_reg(M68K_REG_D0, (rnd() << 16) | 2 * (rnd() % 5));
+            }
+            if (!strcmp(name, "CopyFields")) { m68k_set_reg(M68K_REG_A0, 0x172CE); m68k_set_reg(M68K_REG_A2, other); }
+            if (!strcmp(name, "AimLevel")) m68k_set_reg(M68K_REG_A2, other);
+            if (!strncmp(name, "Sound", 5) && strstr(name, "Unless12")) ram[0x9668] = (uint8_t)(rnd() % 2 ? 0x12 : rnd() % 0x16);
+        }
         {   /* batch T45 (enemylib.c): a2 another entity, the spreads and frame counts not 0, a table of states for $428C */
             char key[40]; snprintf(key, sizeof key, "|%s|", name);
             if (strstr("|MakePartner|CopyToA2|VelocityToward|FaceEntity|DistXToEntity|DistY|DistYAbs|", key))

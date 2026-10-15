@@ -2800,6 +2800,27 @@ game's scenes. 450,000 fuzz cases from six states, 0 mismatches, every instructi
 library pieces covered. Self-test caught 100 in 100 for those four. Replace mode: thirteen runs,
 no problems.
 
+#### The object region, batch T48: the actions' helpers, $170EE-$17A44 (2026-10-15)
+
+* In the new `port/objhelp.c`, seventeen entries:
+  * the swinging speeds (`$170EE`, `$170F4`) and the hopper's start (`$17118`);
+  * the chain's link (`$17132`): followers trace the link ahead, the head wanders and grows the
+    chain, and removes it when no link is on the screen, returning from its caller;
+  * copying fields by a list (`$1730A`), a speed over 64 (`$17418`), bouncing off walls
+    (`$17420`) and aiming within an eighth of level (`$174B0`);
+  * two sounds unless in area `$12` (`$176E6`, `$176F4`);
+  * touched from behind (`$17704`, which goes on to state 5);
+  * the pair's animations, touch, hit, hovering and alignment (`$179AA`-`$17A38`; `$179CC`
+    goes on to state 2 when hit).
+* `actions.c` keeps its own inline copies of `$17132`, `$17418`, `$17704` and `$179CC`; these
+  are the entries the original's callers reach.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(47 runs, all complete; 1,311,282 checked calls). 510,000 fuzz cases from six states,
+0 mismatches, every instruction covered. Self-test caught 100 in 100 for sixteen. `$17132`
+caught its first case, then ran away: a sabotaged return from the caller pops a wrong address.
+Replace mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
