@@ -1260,6 +1260,23 @@ int hybrid_fuzz(const char *name, long count)
             for (uint32_t k4 = 0; k4 < 2; k4++) if (rnd() % 2) ram[0x99BE] ^= (uint8_t)(1 << k4);
             ram[0x99DF] = (uint8_t)rnd(); put_word(0x99E4, 2 * (rnd() % 4));
         }
+        if (!strncmp(name, "Room16", 6) || !strcmp(name, "FloorScroll")) {          /* batch T49: room script 16's floor: moving or slowing, its speed and place, its platforms */
+            ram[0x99DE] = (uint8_t)(rnd() & 7);
+            put_long(0x99EA, rnd() % 3 ? rnd() % 0x20000 : 0x18000 - 0x800 * (rnd() % 3));
+            put_long(0x99E6, 0x10000000 + (rnd() << 8));
+            put_word(0x9778, 0x1000 + rnd() % 0x400);
+            put_word(0x99EE, 4 * (rnd() % 6)); put_word(0x99F0, 4 * (rnd() % 6));
+            for (uint32_t s4 = 0; s4 < 0x100; s4 += 4) if (rnd() % 3 == 0) { ram[0xC000 + s4] |= 0x80; put_word(0xC200 + s4, 0); }   /* riders */
+            for (uint32_t s4 = 0; s4 < 24; s4 += 4) if (rnd() % 2) ram[0x9F8E + s4] |= 0x80;                                     /* platforms in use */
+            ram[0x9668] = (uint8_t)(rnd() % 2 ? 0xF : rnd() % 0x16); put_word(0x9994, rnd());
+            ram[0x9659] = (uint8_t)(ram[0x9659] & ~0x20) | (uint8_t)(rnd() % 4 ? 0 : 0x20);
+            if (rnd() % 2) {                                                   /* the player at the exit */
+                uint32_t pl = (uint32_t)ram[0x9EEE] << 8 | ram[0x9EEF];
+                put_word(0xC800 + pl, ((uint32_t)ram[0x99F2] << 8 | ram[0x99F3]) + rnd() % 8 - 4);
+                put_word(0xC900 + pl, 0x1090 - ram[0xCB03 + pl]);
+                put_word(0x99F4, 0x1090);
+            }
+        }
         if (!strncmp(name, "Lift", 4) || !strcmp(name, "Room2Setup") || !strcmp(name, "Room3Setup") || !strcmp(name, "Room4Setup")) {
             /* a lift's room as $CC1C sets it up (x, the floors), the lift at either floor or moving, the player above or below */
             static const uint32_t data[3] = { 0xCB64, 0xCB74, 0xCB84 };
@@ -1455,6 +1472,18 @@ int hybrid_fuzz(const char *name, long count)
                 m68k_set_reg(M68K_REG_D0, (rnd() << 16) | 2 * (rnd() % 5));
             }
             if (!strcmp(name, "CopyFields")) { m68k_set_reg(M68K_REG_A0, 0x172CE); m68k_set_reg(M68K_REG_A2, other); }
+            if (!strncmp(name, "Partner", 7) || !strncmp(name, "Mount", 5) || !strcmp(name, "OnPartner")) {
+                put_word(0xD302 + me, other); put_word(0xD302 + other, me);
+                ram[0xC302 + other] = (uint8_t)(rnd() % 6);
+            }
+            if (!strcmp(name, "SpawnAtOffset")) {                             /* a kind of the room's list */
+                uint32_t n = ram[0xA143] ? (ram[0xA143] > 8 ? 8 : ram[0xA143]) : 1, k = rnd() % n;
+                m68k_set_reg(M68K_REG_D0, (rnd() << 16) | ((uint32_t)ram[0xA122 + 4 * k] << 8 | ram[0xA123 + 4 * k]));
+                m68k_set_reg(M68K_REG_A0, 0x1B000 + rnd() % 0x1000);
+            }
+            if (!strcmp(name, "GfxSlotsFree") || !strcmp(name, "TintTiles")) {
+                m68k_set_reg(M68K_REG_D2, (rnd() << 16) | (1 + rnd() % 4)); m68k_set_reg(M68K_REG_D1, (rnd() << 16) | rnd() % 4);
+            }
             if (!strcmp(name, "AimLevel")) m68k_set_reg(M68K_REG_A2, other);
             if (!strncmp(name, "Sound", 5) && strstr(name, "Unless12")) ram[0x9668] = (uint8_t)(rnd() % 2 ? 0x12 : rnd() % 0x16);
         }

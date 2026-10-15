@@ -2821,6 +2821,26 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 caught its first case, then ran away: a sabotaged return from the caller pops a wrong address.
 Replace mode: thirteen runs, no problems.
 
+#### The object region, batch T49: room script 16, spawning at an offset, the partner's helpers (2026-10-15)
+
+* In `port/objhelp.c`:
+  * Room script 16 (entry 16 of `$C784` and `$C838`): a floor that scrolls. `$17FEC` sets it up
+    with two platforms. `$1813E` speeds it up or slows it down. `$18074` moves it; the platforms
+    and enemies ride along, and the room shifts back past the screen's edge. Once it stops, the
+    exit is drawn and the player standing in it arms the trigger `$1822A`. No session reaches
+    the room; the fuzz checks it, every instruction.
+  * Spawning an enemy at an offset (`$18256`).
+  * Freeing graphics slots (`$18290`).
+  * Tinting tiles in VRAM through a buffer on the stack (`$182AA`), as the original.
+  * The partner's animation, moving and placing by its animation (`$18314`-`$18332`).
+  * The mount's touch and hit (`$1838A`, `$1839C`, which goes on to state 2 when hit).
+  * The partner's ground and wall tests (`$183BA`, `$183C8`) and a shake (`$183D4`).
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(47 runs, all complete; 1,311,282 checked calls). 450,000 fuzz cases from six states,
+0 mismatches, every instruction covered. Self-test caught 100 in 100 for all fifteen. Replace
+mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
