@@ -886,6 +886,7 @@ const PortRoutine port_routines[] = {
     {0x00C91E, 0x00C9B4, "Room0Frame", Room0Frame, CT_SP | CT_WAITS},   /* batch T70: verified by the owner's session script0 */
     {0x00C9B4, 0x00CA56, "Room0Release", Room0Release, CT_SP | CT_WAITS},
     {0x00CA56, 0x00CA66, "Room1Setup", Room1Setup, CT_ALL},
+    {0x00CA66, 0x00CB1C, "Room1Frame", Room1Frame, CT_SP | CT_WAITS},   /* batch T71: verified by the owner's sessions script1, script1b */
     {0x00CB1C, 0x00CB32, "Room1Flip", Room1Flip, CT_ALL},
     {0x00CB32, 0x00CB46, "Room1Flash", Room1Flash, CT_ALL},
     {0x00CB46, 0x00CB5C, "Room1Colour", Room1Colour, CT_ALL},   /* the scripts' parts that wait ($C91E, $C9B4, $CA66) wait for a session that runs them */

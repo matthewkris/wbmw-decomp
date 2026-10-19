@@ -3148,6 +3148,22 @@ Results: 0 mismatches over the standard runs, every owner state and session and 
 (76 runs, all complete; 1,972,235 checked calls), every instruction of the six covered by play
 alone. Replace mode: thirteen runs, no problems.
 
+#### Room script 1, batch T71: the stale registers after a nested entry (2026-10-19)
+
+* The bug that kept room script 1's frame (`$CA66`) out of T70: the port files keep the
+  registers they run on in a file-level `c`, and an entry of the same file reached inside a call
+  sets it to its own. `port/player.c` calls with copies of the registers, so after `$CA66` called
+  the player's update (`$DD08`), rooms.c's `c` pointed at a dead copy: the script finished, and
+  left by its continuation, on the wrong registers, and the game task's next waiting sequence (a
+  door) no longer waited (session `script1b`, frame 475,794).
+* Fixed in each port file's `call`: `c` is restored after the call (`port/rooms.c` and the nine
+  others with the same pattern). `$CA66` is registered (waits: on a task pass only), verified by
+  the owner's sessions `script1` and `script1b`.
+
+Results: 0 mismatches over the standard runs, every owner state and session and the test states
+(76 runs, all complete; 1,972,235 checked calls), all 46 instructions of `$CA66` covered by play.
+Replace mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

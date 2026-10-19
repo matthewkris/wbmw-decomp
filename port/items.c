@@ -61,7 +61,7 @@
 
 static Cpu *c;                        /* the running registers */
 
-static void call(uint32_t addr) { call_68k(c, addr); }
+static void call(uint32_t addr) { Cpu *self = c; call_68k(c, addr); c = self; }   /* c kept: see port/rooms.c */
 static void call_d0(uint32_t addr, uint32_t d0) { c->d[0] = d0; call_68k(c, addr); }
 static Ent player(void) { return (Ent)(int32_t)rdw(PLAYER_W); }
 
