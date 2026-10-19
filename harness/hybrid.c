@@ -1838,6 +1838,72 @@ int hybrid_fuzz(const char *name, long count)
             if (!strcmp(name, "Burning")) { anim_walk(); const uint8_t *t = anim_sga[rnd() % (unsigned)anim_n]; ram[0xC300 + me] = t[0]; ram[0xC301 + me] = t[1]; m68k_set_reg(M68K_REG_D0, (rnd() << 8) | t[2]); }
             if (!strcmp(name, "Sword") && rnd() % 2) put_word(0xD402 + me, 0x26);
         }
+        if (strstr("|CellList|CellFill|CellBlockAt|CellBlock|CellAnimsClear|CellAnimsRun|CellAnimStart|TriggersClear|TriggersRun|TriggerAdd|", key53)) {
+            /* batch T63: cells in the room's map (x 0-$3F, y rows of $40); lists, blocks and the
+             * animated cells' scripts made up at $FF2400 with every command; triggers about the
+             * player with small items and their lists */
+            uint32_t p = 0x2400, i, n;
+            m68k_set_reg(M68K_REG_D6, (rnd() << 16) | rnd() % 0x40);
+            m68k_set_reg(M68K_REG_D7, (rnd() << 16) | 0x40 * (rnd() % 32));
+            if (!strcmp(name, "CellList")) {
+                for (n = rnd() % 5; n; n--) { put_word(p, rnd() % 0x800); put_word(p + 2, rnd() % 0x40); put_word(p + 4, 0x40 * (rnd() % 32)); p += 6; }
+                put_word(p, 0x8000 | rnd());
+                m68k_set_reg(M68K_REG_A0, 0xFF2400);
+            }
+            if (!strcmp(name, "CellFill")) {
+                m68k_set_reg(M68K_REG_D0, (rnd() << 16) | (1 + rnd() % 4)); m68k_set_reg(M68K_REG_D1, (rnd() << 16) | (1 + rnd() % 4));
+                m68k_set_reg(M68K_REG_D2, (rnd() << 16) | rnd() % 0x800);
+            }
+            if (!strcmp(name, "CellBlockAt") || !strcmp(name, "CellBlock")) {
+                if (!strcmp(name, "CellBlockAt")) { put_word(p, rnd() % 0x40); put_word(p + 2, 0x40 * (rnd() % 28)); p += 4; }
+                uint32_t w = 1 + rnd() % 4, h = 1 + rnd() % 4;
+                ram[p++] = (uint8_t)w; ram[p++] = (uint8_t)h;
+                for (i = 0; i < w * h; i++) { put_word(p, rnd() % 0x800); p += 2; }
+                m68k_set_reg(M68K_REG_A0, 0xFF2400);
+            }
+            if (!strcmp(name, "CellAnimsRun") || !strcmp(name, "CellAnimStart")) {
+                for (uint32_t q = 0; q < 0x20; q += 4) {
+                    uint32_t start = 0xFF0000 | p;
+                    if (rnd() % 2) { ram[p++] = 0xFA; ram[p++] = (uint8_t)(1 + rnd() % 3); }
+                    put_long(0x9D90 + q, 0xFF0000 | p);
+                    int fb = 0;                             /* one loop end at most: two would loop for ever */
+                    for (n = 1 + rnd() % 6; n; n--) {
+                        uint32_t k = rnd() % 7;
+                        if (k < 3) {                        /* a frame of 1-2 cells */
+                            ram[p++] = (uint8_t)(1 + rnd() % 4);
+                            for (i = 1 + rnd() % 2; i; i--) { put_word(p, rnd() % 0x800); ram[p + 2] = (uint8_t)(rnd() % 8); ram[p + 3] = (uint8_t)(rnd() % 4); p += 4; }
+                            put_word(p, 0x8000); p += 2;
+                        } else if (k == 3) { if (!fb++) ram[p++] = 0xFB; }
+                        else if (k == 4) ram[p++] = 0xFC;
+                        else if (k == 5) ram[p++] = 0xFD;
+                        else { ram[p++] = 0xFE; ram[p++] = 0; ram[p++] = 2; }
+                    }
+                    ram[p++] = (uint8_t)(rnd() % 3 ? 0xFF : 0);
+                    put_long(0x9D1C + q, start);
+                    ram[0x9C34 + q] = (uint8_t)(rnd() % 4 ? 0x80 | (rnd() & 3) : rnd() & 3);
+                    ram[0x9C35 + q] = (uint8_t)(rnd() % 3 ? 1 : rnd() % 4);
+                    ram[0x9C36 + q] = (uint8_t)(1 + rnd() % 3);
+                    put_word(0x9CA8 + q, rnd() % 0x38); put_word(0x9CAA + q, 0x40 * (rnd() % 28));
+                }
+                m68k_set_reg(M68K_REG_A0, 0xFF2400);
+            }
+            if (!strcmp(name, "TriggersRun") || !strcmp(name, "TriggerAdd")) {
+                uint32_t pl = (uint32_t)(int32_t)get_sword(0x9EEE) & 0xFC;
+                int32_t px = get_sword(0xC800 + pl), py = get_sword(0xC900 + pl);
+                for (uint32_t q = 0; q < 0x10; q += 4) {
+                    ram[0x9E04 + q] = (uint8_t)(rnd() % 4 ? 0x80 | (rnd() & 7) : rnd() & 7);
+                    ram[0x9E05 + q] = (uint8_t)rnd(); ram[0x9E06 + q] = (uint8_t)(rnd() % 0x10);
+                    put_word(0x9E38 + q, px - rnd() % 0x40); put_word(0x9E3A + q, py - rnd() % 0x40);
+                    put_word(0x9E6C + q, rnd() % 0x80); put_word(0x9E6E + q, rnd() % 0x80);
+                    put_long(0x9EA0 + q, 0xFF0000 | p);
+                    for (n = rnd() % 3; n; n--) ram[p++] = (uint8_t)(rnd() % 0x10);
+                    ram[p++] = 0xFF;
+                }
+                m68k_set_reg(M68K_REG_A0, 0xFF0000 | p); ram[p] = (uint8_t)(rnd() % 0x10);
+                m68k_set_reg(M68K_REG_D4, (rnd() << 16) | ((px - rnd() % 0x40) & 0xFFFF)); m68k_set_reg(M68K_REG_D5, (rnd() << 16) | ((py - rnd() % 0x40) & 0xFFFF));
+                m68k_set_reg(M68K_REG_D6, (rnd() << 16) | rnd() % 0x80); m68k_set_reg(M68K_REG_D7, (rnd() << 16) | rnd() % 0x80);
+            }
+        }
         if (!strcmp(name, "ScrollClearPair")) {
             m68k_set_reg(M68K_REG_A0, 0xFF2400); m68k_set_reg(M68K_REG_A1, 0xFF2600);
             m68k_set_reg(M68K_REG_D1, (rnd() << 16) | rnd() % 0x80);

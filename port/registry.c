@@ -122,6 +122,7 @@ void CompanionRoute(Cpu *), TrailShift(Cpu *), RouteProbe(Cpu *), RouteByte(Cpu 
 void Area605(Cpu *), Area605Touched(Cpu *), Area605Away(Cpu *), Area605Beaten(Cpu *), Area605Leave(Cpu *), Area605Thrown(Cpu *), Area605Turn(Cpu *), Area605Hit(Cpu *), Area605Touch(Cpu *);
 void CalledBack(Cpu *), GuardTouch(Cpu *), GlideHome(Cpu *), GlideLegs(Cpu *), LegPose(Cpu *), LegsHide(Cpu *), Walker(Cpu *), WalkerWalk(Cpu *), WalkerGone(Cpu *);
 void StateKeep(Cpu *), ShotRecord(Cpu *), KindAttack(Cpu *), KindStats(Cpu *), AttackFrame(Cpu *), KindMoves(Cpu *), Rts15E0E(Cpu *), GroupBlink(Cpu *), GroupUnblink(Cpu *), Unblink(Cpu *), SceneDone(Cpu *), ToX(Cpu *), ToHeight(Cpu *), Sword(Cpu *), FaceByD0(Cpu *), Burning(Cpu *), TurnInRange(Cpu *);
+void CellList(Cpu *), CellFill(Cpu *), CellBlockAt(Cpu *), CellBlock(Cpu *), CellAnimsClear(Cpu *), CellAnimsRun(Cpu *), CellAnimStart(Cpu *), TriggersClear(Cpu *), TriggersRun(Cpu *), TriggerAdd(Cpu *);
 void Looks(Cpu *), LooksExtra(Cpu *), LooksBlock(Cpu *), LooksBody(Cpu *), LooksSword(Cpu *), LooksShield(Cpu *), EquipChange(Cpu *);
 void HudPanel(Cpu *), GoldLabel(Cpu *), ThreeLabels(Cpu *), DigitsOut(Cpu *), ItemsChoose(Cpu *), MagicChoose(Cpu *), SlotChoose(Cpu *), ActionToSlot(Cpu *),
      ItemToSlot(Cpu *), WornBlink(Cpu *), StatusFadeIn(Cpu *), StatusFadeOut(Cpu *), StatusWait(Cpu *);
@@ -155,6 +156,16 @@ const PortRoutine port_routines[] = {
     {0x000A36, 0x000A66, "ClearEntity", ClearEntity},
     {0x000A66, 0x000A8E, "FreezeEntities", FreezeEntities},
     {0x000A8E, 0x000AB4, "UnfreezeEntities", UnfreezeEntities},
+    {0x0027FA, 0x002812, "CellList", CellList, CT_SP | 0x7FFF | CT_NZVC},   /* kernhelp.c: cell lists and blocks, the animated cells, the area triggers */
+    {0x002812, 0x002852, "CellFill", CellFill, CT_SP | 0x7FFF},
+    {0x002852, 0x002856, "CellBlockAt", CellBlockAt, CT_SP | 0x7FFF},
+    {0x002856, 0x00289A, "CellBlock", CellBlock, CT_SP | 0x7FFF},
+    {0x00289A, 0x0028AC, "CellAnimsClear", CellAnimsClear, CT_SP | 0x7FFF},
+    {0x0028AC, 0x002974, "CellAnimsRun", CellAnimsRun, CT_SP | 0x7FFF},
+    {0x002974, 0x0029A4, "CellAnimStart", CellAnimStart, CT_SP | 0x7FFF | CT_NZVC},
+    {0x0029A4, 0x0029B4, "TriggersClear", TriggersClear, CT_SP | 0x7FFF},
+    {0x0029B4, 0x002A6C, "TriggersRun", TriggersRun, CT_SP | 0x7FFF},
+    {0x002A6C, 0x002AAE, "TriggerAdd", TriggerAdd, CT_SP | 0x7FFF | CT_NZVC},
     {0x0027E6, 0x0027FA, "FindFreeEffect", FindFreeEffect},
     {0x0041A2, 0x0041AA, "MakePartner", MakePartner, CT_SP},   /* enemylib.c: the enemies' shared routines; the flags and registers their callers use in the contract */
     {0x0041AA, 0x0041F0, "CopyToA2", CopyToA2, CT_SP},
