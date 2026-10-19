@@ -3051,6 +3051,20 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 0 mismatches, every instruction covered. Self-test caught 100 in 100 for all eleven. Replace
 mode: thirteen runs, no problems.
 
+#### The player, batch T65: the death and the refill as entries (2026-10-19)
+
+* In `port/player.c`, the death (`$E22E`, its fall resumed at `$E298`) and the refill (`$F282`
+  the full heal, `$F288`, its frames resumed at `$F2AA`) are registered entries over the C the
+  player's update already runs (`dying`, `refill`; the refill's frames split out). They wait
+  for frames: on a task pass only (CT_WAITS), off one they hand over to the original.
+* Verified by the owner's session `castle-play` (2026-10-19: a death and the revival potion),
+  now one of the shadow runs. The fuzz and self-test cannot reach them (fuzzing runs off a task
+  pass), as for the other routines that wait.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(48 runs, all complete; 1,390,677 checked calls), the ranges covered by `castle-play`. Replace
+mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

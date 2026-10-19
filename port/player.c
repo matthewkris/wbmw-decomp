@@ -1176,13 +1176,20 @@ static int dying(Cpu *c, Ent e)
 
 /* $F288: the hearts refill by $10 a frame from REFILL while the world is frozen; then the
  * gameplay loop starts again at $8FFC. Returns only if the health is full already. */
+static void refill_frames(Cpu *c, Ent e, int wait);
 static void refill(Cpu *c, Ent e)
 {
     if (rdw(HEALTH(e)) == rdw(MAX_HEALTH)) return;
     queue_sound(0x3D);
     with_player(c, e, 0xA66);                       /* freeze */
-    for (;;) {
-        task_wait_frame(c, 0xF2AA);
+    refill_frames(c, e, 1);
+}
+
+/* $F2A6: the refill's frames (`wait` 0: resumed at $F2AA, this frame's step first) */
+static void refill_frames(Cpu *c, Ent e, int wait)
+{
+    for (;; wait = 1) {
+        if (wait) task_wait_frame(c, 0xF2AA);
         cpu = c;
         uint16_t add = 0x10, left = rd16(REFILL);
         if (!left) break;
@@ -1387,3 +1394,32 @@ void PlayerGold(Cpu *c)       { cpu = c; pick_gold(c); }
 void PlayerItem(Cpu *c)       { cpu = c; pick_item(c); }
 void PlayerHeart(Cpu *c)      { cpu = c; pick_heart(c); }
 void PlayerPickups(Cpu *c)    { cpu = c; pickups(c); }        /* only from fuzzing: the update ($DD3A) runs it itself */
+
+/* The death and the refill as entries (batch T65): where the original jumps to them or a task's
+ * pass resumes in them. They wait for frames, so they run only on a task pass (CT_WAITS); the
+ * player's update runs the same code itself (dying, refill). */
+#define ON_PASS_ONLY(self) do { if (!task_in_pass()) { port_leave_to_68k(c, (self)); return; } } while (0)
+static Ent player_in_a4(Cpu *c) { c->a[4] = (uint32_t)(int32_t)(int16_t)rd16(PLAYER_W); return c->a[4]; }
+/* $E22E: dead (a4 the player): the fall started, or its next step; when it is over the frame
+ * carries on after the player's update ($9F1E) */
+void PlayerDead(Cpu *c)
+{
+    ON_PASS_ONLY(0xE22E);
+    cpu = c; c->ret = 0;
+    int over = dying(c, (Ent)(int32_t)(int16_t)c->a[4]);
+    if (over && !c->ret && (rd8(FALL_FLAGS) & GAME_OVER)) port_continue_at(c, rd32(AFTER_UPDATE), 0);
+}
+/* $E298: a pass resumed in the fall: one step */
+void PlayerDeadFall(Cpu *c)
+{
+    ON_PASS_ONLY(0xE298);
+    cpu = c; c->ret = 0;
+    Ent e = player_in_a4(c);
+    if (fall_step(c, e)) { set8(FALL_FLAGS, GAME_OVER); port_continue_at(c, rd32(AFTER_UPDATE), 0); }
+}
+/* $F282: the full heal (all of the maximum to add), then $F288 */
+void PlayerFullHeal(Cpu *c) { ON_PASS_ONLY(0xF282); cpu = c; c->ret = 0; wrw(REFILL, rdw(MAX_HEALTH)); refill(c, player_in_a4(c)); }
+/* $F288: the refill from REFILL; returns at once if the health is full */
+void PlayerRefill(Cpu *c) { ON_PASS_ONLY(0xF288); cpu = c; c->ret = 0; refill(c, player_in_a4(c)); }
+/* $F2AA: a pass resumed in the refill: this frame's step, then on */
+void PlayerRefillStep(Cpu *c) { ON_PASS_ONLY(0xF2AA); cpu = c; c->ret = 0; refill_frames(c, player_in_a4(c), 0); }
