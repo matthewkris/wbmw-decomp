@@ -1977,6 +1977,28 @@ int hybrid_fuzz(const char *name, long count)
             if (rnd() % 2) { put_word(0xC800 + me, get_sword(0x9758) + rnd() % 0x1C0 - 0x40); put_word(0xC900 + me, get_sword(0x975A) + rnd() % 0x160 - 0x40); }
         }
         if (!strcmp(name, "WindowReg") || !strcmp(name, "SpritesReg")) ram[0x8A60] ^= (uint8_t)(rnd() & 1);   /* batch T68: bit 0 of $8A60 (its register byte, so never set by the game) */
+        if (strstr("|TaskStart|TaskEnsure|TasksEndNamedA0|TasksEndNamed|TaskEnd|TimerAdd|TimersFree|TasksReset|UserTasksEnd|TaskStop|", key53)) {
+            /* batch T69: the task slots with their ending routines cleared (a random one would run
+             * anywhere), a free user slot and timer mostly; task records from the ROM; a running
+             * slot; names of slots in use */
+            static const uint32_t recs[] = { 0x5608, 0x6EA8, 0x4DDE, 0x4F54, 0x4FC8, 0x8EB0, 0x507C, 0x4DA4, 0x71C2, 0x6F86, 0x4D14, 0x703E };
+            for (uint32_t q = 0x8048; q < 0x8048 + 20 * 0x80; q += 0x80) put_long(q + 8, 0);
+            ram[0x8248 + 0x80 * (rnd() % 16)] = 0;          /* a free slot and timer: when none is, the original stops at $4CB4 */
+            ram[0x8008 + 2 * (rnd() % 32)] = 0;
+            uint32_t rec = recs[rnd() % 12];
+            m68k_set_reg(M68K_REG_A1, rec);
+            uint32_t s = rnd() % 16;
+            ram[0x8A48] = (uint8_t)(rnd() % 4 || strcmp(name, "TimerAdd") ? s : 0x80 | rnd() % 4);   /* a system slot only for the timers: the others index the user slots by it */
+            put_word(0x8A4C, 0x8248 + 0x80 * s);
+            for (uint32_t q = 0; q < 64; q += 2) { ram[0x8008 + q] = (uint8_t)(rnd() % 3 ? 0x80 : 0); ram[0x8009 + q] = (uint8_t)(rnd() % 2 ? ram[0x8A48] : rnd()); }   /* timers in use, some the running slot's */
+            ram[0x8008 + 2 * (rnd() % 32)] = 0;
+            ram[0x8249 + 0x80 * s] = (uint8_t)(rnd() % 4);   /* its timers: fewer than 4 */
+            if (rnd() % 2) put_long(0x8248 + 0x80 * s + 8, 0x29A4);   /* a small routine (the triggers cleared) */
+            uint32_t named = 0x8248 + 0x80 * (rnd() % 16);
+            m68k_set_reg(M68K_REG_D2, rnd() % 4 ? (uint32_t)(ram[named + 4] << 24 | ram[named + 5] << 16 | ram[named + 6] << 8 | ram[named + 7]) : bus_read16(rec) << 16 | bus_read16(rec + 2));
+            m68k_set_reg(M68K_REG_A0, rnd() % 2 ? 0xFF0000 | (named + 4) : rec);
+            if (!strcmp(name, "TimerAdd")) m68k_set_reg(M68K_REG_A0, 0x10000 + rnd() % 0x8000);
+        }
         if (!strcmp(name, "ScrollClearPair")) {
             m68k_set_reg(M68K_REG_A0, 0xFF2400); m68k_set_reg(M68K_REG_A1, 0xFF2600);
             m68k_set_reg(M68K_REG_D1, (rnd() << 16) | rnd() % 0x80);

@@ -824,3 +824,280 @@ ENTRY(StopAll, stop_all)                   /* $C1C */
 ENTRY(StopFractions, stop_fractions)       /* $C22 */
 ENTRY(StopVelocity, stop_velocity)         /* $C2E */
 ENTRY(D2cSwapped, d2c_swapped)             /* $D24 */
+
+/* ---- batch T69: the tasks' slots, the timers, the start-up's set-ups, the Z80 loaded ----
+ * The task slots: four system ones at $8048 and sixteen user ones at $8248, $80 bytes each
+ * (bit 7 of the first byte in use, +4 its name, +8 its ending routine, +$C its resume address);
+ * $8A48 the running slot's number, $8A4C its address. The timers: 32 words at $8008 (bit 7 in
+ * use, then the slot that owns it). The scheduler's loop, Yield ($400), the frame's wait ($3B8)
+ * and the error loops stay the original's: the harness's task passes are built on them. */
+#define TASKS_USER  0xFFFF8248u
+#define ERROR_LOOP  0x4CB4u
+static int stop_at_error;                       /* a routine that went on to the error loop */
+static void to_error_loop(uint32_t d0) { c->d[0] = d0; port_continue_at(c, ERROR_LOOP, 0); stop_at_error = 1; }
+/* $444: a user task started with a1's record (its name, then its code): d0 its slot number;
+ * none free: the error loop (d0 0) */
+static void task_start(void)
+{
+    c->a[0] = TASKS_USER;
+    c->d[0] = 0xF;
+    while (rd16(c->a[0]) & 0x8000) {
+        c->a[0] += 0x80;
+        c->d[0] = set_w(c->d[0], c->d[0] - 1);
+        if ((c->d[0] & 0xFFFF) == 0xFFFF) { to_error_loop(0); return; }
+    }
+    wr8(c->a[0], 0x80);
+    wr32(c->a[0] + 4, rd32(c->a[1])); c->a[1] += 4;
+    wr32(c->a[0] + 0xC, c->a[1]);
+    wr8(c->a[0] + 1, 0);
+    wr32(c->a[0] + 8, 0);
+    c->d[0] = set_w(c->d[0], -c->d[0]);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, 0xF, c->d[0]));   /* addi.w: all the flags */
+}
+/* $47A: the task of a1's record started unless one by its name runs: d0 1 if it did */
+static void task_ensure(void)
+{
+    c->d[0] = 0;
+    c->a[0] = TASKS_USER;
+    c->d[1] = 0xF;
+    c->d[2] = rd32(c->a[1]);
+    for (;;) {
+        if ((rd8(c->a[0]) & 0x80) && rd32(c->a[0] + 4) == c->d[2]) { c->d[0] = 1; F_L(1); return; }
+        c->a[0] += 0x80;
+        c->d[1] = set_w(c->d[1], c->d[1] - 1);
+        if ((c->d[1] & 0xFFFF) == 0xFFFF) break;
+    }
+    call(0x444);
+    if (c->ret == ERROR_LOOP) { stop_at_error = 1; return; }
+    c->d[0] = 0; F_L(0);
+}
+/* $582: the timers of the running slot freed */
+static void timers_free(void)
+{
+    c->d[0] = set_b(c->d[0], rd8(0xFFFF8A48u));
+    c->a[0] = 0xFFFF8008u;
+    for (int k = 0; k < 32; k++) {
+        if ((rd8(c->a[0]) & 0x80) && rd8(c->a[0] + 1) == (uint8_t)c->d[0]) wr8(c->a[0], 0);
+        c->a[0] += 2;
+    }
+    c->d[1] = 0xFFFF;
+}
+/* $4E6: the running task ended: its ending routine run (+8, if any), its slot freed, its timers */
+static void task_end(void)
+{
+    c->a[7] -= 4; wr32(c->a[7], c->a[5]);
+    c->d[0] = rd8(0xFFFF8A48u);
+    c->d[0] = set_w(c->d[0], c->d[0] << 7);
+    c->d[0] = set_w(c->d[0], c->d[0] + 0x8248);
+    c->a[5] = sx(c->d[0]);
+    c->d[0] = rd32(c->a[5] + 8);
+    if (c->d[0]) { c->a[0] = c->d[0]; call(c->a[0]); }
+    c->a[5] = rd32(c->a[7]); c->a[7] += 4;
+    c->d[0] = rd8(0xFFFF8A48u);
+    c->d[0] = set_w(c->d[0], c->d[0] << 7);
+    c->d[0] = set_w(c->d[0], c->d[0] + 0x8248);
+    c->a[0] = sx(c->d[0]);
+    wr8(c->a[0], 0);
+    timers_free();
+}
+/* $4A4: every user task named d2 ended ($4E6, as if each were running); $4A2 the name from (a0) */
+static void tasks_end_named(void)
+{
+    c->d[0] = set_b(c->d[0], rd8(0xFFFF8A48u));
+    c->a[7] -= 2; wr16(c->a[7], (uint16_t)c->d[0]);
+    c->a[1] = TASKS_USER;
+    c->d[1] = set_w(c->d[1], 0xF);
+    for (;;) {
+        if ((rd8(c->a[1]) & 0x80) && rd32(c->a[1] + 4) == c->d[2]) {
+            c->a[7] -= 2; wr16(c->a[7], (uint16_t)c->d[1]);
+            c->a[7] -= 4; wr32(c->a[7], c->d[2]);
+            c->a[7] -= 2; wr16(c->a[7], (uint16_t)c->a[1]);
+            c->d[1] = set_w(c->d[1], -c->d[1]);
+            c->d[1] = set_w(c->d[1], c->d[1] + 0xF);
+            wr8(0xFFFF8A48u, (uint8_t)c->d[1]);
+            task_end();
+            c->a[1] = sx(rd16(c->a[7])); c->a[7] += 2;
+            c->d[2] = rd32(c->a[7]); c->a[7] += 4;
+            c->d[1] = set_w(c->d[1], rd16(c->a[7])); c->a[7] += 2;
+        }
+        c->a[1] += 0x80;
+        c->d[1] = set_w(c->d[1], c->d[1] - 1);
+        if ((c->d[1] & 0xFFFF) == 0xFFFF) break;
+    }
+    c->d[0] = set_w(c->d[0], rd16(c->a[7])); c->a[7] += 2;
+    wr8(0xFFFF8A48u, (uint8_t)c->d[0]);
+}
+static void tasks_end_named_a0(void) { c->d[2] = rd32(c->a[0]); tasks_end_named(); }
+/* $514 (not called): a timer for the running slot (d0; bit 7 a system slot), its handler a0
+ * ($FF0C00 + $40 per timer); none free or more than 4 for the slot: the error loop (d0 1) */
+static void timer_add(void)
+{
+    c->d[0] = set_b(c->d[0], rd8(0xFFFF8A48u));
+    c->a[1] = 0xFFFF8008u;
+    c->d[1] = 0x1F;
+    while (rd8(c->a[1]) & 0x80) {
+        c->a[1] += 2;
+        c->d[1] = set_w(c->d[1], c->d[1] - 1);
+        if ((c->d[1] & 0xFFFF) == 0xFFFF) { to_error_loop(1); return; }
+    }
+    c->d[1] = set_w(c->d[1], -c->d[1]);
+    c->d[1] = set_w(c->d[1], c->d[1] + 0x1F);
+    c->d[1] <<= 6;
+    c->d[1] += 0xFF0C00;
+    c->a[0] = c->d[1];
+    wr8(c->a[1], 0x80);
+    c->a[2] = TASKS_USER;
+    wr8(c->a[1] + 1, (uint8_t)c->d[0]);
+    if (c->d[0] & 0x80) c->a[2] = 0xFFFF8048u;
+    c->d[0] = set_w(c->d[0], c->d[0] & 0x7F);
+    c->d[0] = set_w(c->d[0], c->d[0] << 7);
+    c->a[2] += sx(c->d[0]);
+    c->a[1] = c->a[2] + 0x10;
+    c->d[0] = rd8(c->a[2] + 1);
+    c->d[1] = set_b(c->d[1], c->d[0]);
+    c->d[0] = set_w(c->d[0], c->d[0] << 2);
+    c->a[1] += sx(c->d[0]);
+    wr32(c->a[1], c->a[0]);
+    c->d[1] = set_b(c->d[1], c->d[1] + 1);
+    if ((uint8_t)c->d[1] > 4) { to_error_loop(1); return; }
+    wr8(c->a[2] + 1, (uint8_t)c->d[1]);
+}
+/* $4A7A: the VDP's registers from $4AD0 (and their mirrors), the planes' addresses and size from
+ * $4AF4 ($716-$79C) */
+static void vdp_init(void)
+{
+    c->a[0] = 0x4AD0;
+    c->d[1] = set_w(c->d[1], 8);
+    do {
+        c->d[0] = set_w(c->d[0], rd16(c->a[0])); c->a[0] += 2;
+        c->a[1] = sx(rd16(c->a[0])); c->a[0] += 2;
+        wr16(c->a[1], (uint16_t)c->d[0]);
+        wr16(0xC00004u, (uint16_t)c->d[0]);
+        c->d[1] = set_w(c->d[1], c->d[1] - 1);
+    } while ((c->d[1] & 0xFFFF) != 0xFFFF);
+    c->a[1] = 0x4AF4;
+    static const struct { uint32_t mirror, fn; } regs[] = {
+        {0xFFFF8A62u, 0x716}, {0xFFFF8A66u, 0x72C}, {0xFFFF8A64u, 0x74E}, {0xFFFF8A68u, 0x764}, {0xFFFF8A6Au, 0x786} };
+    for (int k = 0; k < 5; k++) { wr16(regs[k].mirror, rd16(c->a[1])); c->a[1] += 2; call(regs[k].fn); }
+    wr16(0xFFFF8A72u, rd16(c->a[1])); c->a[1] += 2;
+    wr16(0xFFFF8A70u, rd16(c->a[1])); c->a[1] += 2;
+    call(0x79C);
+}
+/* $4B02: the pads' ports set up, their state cleared */
+static void pads_init(void)
+{
+    c->d[0] = 0x40;
+    wr8(0xA10009u, 0x40); wr8(0xA1000Bu, 0x40); wr8(0xA1000Du, 0x40);
+    c->d[0] = 0;
+    static const uint16_t a[] = { 0x8A7A, 0x8A7B, 0x8A7C, 0x8A7F, 0x8A80, 0x8A81, 0x8A82, 0x8A83, 0x8A84, 0x8A7D };
+    for (int k = 0; k < 10; k++) wr8(0xFFFF0000u | a[k], 0);
+    F_B(0);
+}
+/* $4B72: the timers cleared */
+static void timers_clear(void)
+{
+    c->d[0] = 0;
+    c->a[0] = 0xFFFF8008u;
+    for (int k = 0; k < 32; k++) { wr16(c->a[0], 0); c->a[0] += 2; }
+    c->d[1] = 0xFFFF;
+}
+/* $4B42: every task slot (20) and the timers cleared */
+static void tasks_clear(void)
+{
+    c->a[0] = 0xFFFF8048u;
+    c->d[0] = 0x13;
+    for (int k = 0; k < 20; k++) { wr16(c->a[0], 0); c->a[0] += 0x80; }
+    c->d[0] = set_w(c->d[0], 0xFFFF);
+    timers_clear();
+}
+/* $4B82: the system slots cleared */
+static void system_tasks_clear(void)
+{
+    c->d[0] = 0;
+    c->a[0] = 0xFFFF8048u;
+    for (int k = 0; k < 4; k++) { wr16(c->a[0], 0); c->a[0] += 0x80; }
+    c->d[1] = 0xFFFF;
+}
+/* $4B96: every user task ended ($4A4 by its name), its slot cleared */
+static void user_tasks_end(void)
+{
+    c->a[0] = TASKS_USER;
+    c->d[1] = 0xF;
+    for (;;) {
+        if (rd16(c->a[0]) & 0x8000) {
+            c->a[7] -= 2; wr16(c->a[7], (uint16_t)c->a[0]);
+            c->a[7] -= 2; wr16(c->a[7], (uint16_t)c->d[1]);
+            c->d[2] = rd32(c->a[0] + 4);
+            tasks_end_named();
+            c->d[1] = set_w(c->d[1], rd16(c->a[7])); c->a[7] += 2;
+            c->a[0] = sx(rd16(c->a[7])); c->a[7] += 2;
+            wr16(c->a[0], 0);
+        }
+        c->a[0] += 0x80;
+        c->d[1] = set_w(c->d[1], c->d[1] - 1);
+        if ((c->d[1] & 0xFFFF) == 0xFFFF) break;
+    }
+}
+/* $4B6A: every task ended and cleared, the timers too */
+static void tasks_reset(void)
+{
+    wr8(0xFFFF8A48u, 0);
+    system_tasks_clear();
+    user_tasks_end();
+    timers_clear();
+}
+/* $4CA8: the running task stopped with code d0 ($8068) */
+static void task_stop(void)
+{
+    c->a[5] = sx(rd16(0xFFFF8A4Cu));
+    wr16(c->a[5], 0);
+    wr16(0xFFFF8068u, (uint16_t)c->d[0]);
+}
+/* $34A: the Z80 reset (a short pulse) */
+static void z80_reset(void)
+{
+    wr16(0xA11200u, 0);
+    c->a[7] -= 44;                                   /* movem.l d0-d7/a0-a2: a delay */
+    for (int k = 0; k < 8; k++) wr32(c->a[7] + 4 * k, c->d[k]);
+    for (int k = 0; k < 3; k++) wr32(c->a[7] + 32 + 4 * k, c->a[k]);
+    c->a[7] += 44;
+    wr16(0xA11200u, 0x100);
+}
+/* $306: the sound driver loaded into the Z80 ($98000: its length at +6, little-endian) */
+static void z80_load(void)
+{
+    wr16(0xFFFF8000u, 0);
+    wr16(0xA11100u, 0x100);
+    z80_reset();
+    while (rd8(0xA11100u) & 1) ;
+    c->a[0] = 0x98000;
+    c->d[0] = set_b(c->d[0], rd8(c->a[0] + 7));
+    c->d[0] = set_w(c->d[0], c->d[0] << 8);
+    c->d[0] = set_b(c->d[0], rd8(c->a[0] + 6));
+    c->d[0] = set_w(c->d[0], c->d[0] - 1);
+    c->a[1] = 0xA00000;
+    do {
+        wr8(c->a[1], rd8(c->a[0])); c->a[0]++; c->a[1]++;
+        c->d[0] = set_w(c->d[0], c->d[0] - 1);
+    } while ((c->d[0] & 0xFFFF) != 0xFFFF);
+    z80_reset();
+    wr16(0xA11100u, 0);
+}
+#define ENTRY_ERR(name, fn) void name(Cpu *cpu) { c = cpu; stop_at_error = 0; fn(); if (!stop_at_error) c->ret = 0; }
+ENTRY_ERR(TaskStart, task_start)           /* $444 */
+ENTRY_ERR(TaskEnsure, task_ensure)         /* $47A */
+ENTRY(TasksEndNamedA0, tasks_end_named_a0) /* $4A2 */
+ENTRY(TasksEndNamed, tasks_end_named)      /* $4A4 */
+ENTRY(TaskEnd, task_end)                   /* $4E6 */
+ENTRY_ERR(TimerAdd, timer_add)             /* $514 */
+ENTRY(TimersFree, timers_free)             /* $582 */
+ENTRY(VdpInit, vdp_init)                   /* $4A7A */
+ENTRY(PadsInit, pads_init)                 /* $4B02 */
+ENTRY(TasksClear, tasks_clear)             /* $4B42 */
+ENTRY(TasksReset, tasks_reset)             /* $4B6A */
+ENTRY(TimersClear, timers_clear)           /* $4B72 */
+ENTRY(SystemTasksClear, system_tasks_clear)   /* $4B82 */
+ENTRY(UserTasksEnd, user_tasks_end)        /* $4B96 */
+ENTRY(TaskStop, task_stop)                 /* $4CA8 */
+ENTRY(Z80Load, z80_load)                   /* $306 */
+ENTRY(Z80Reset, z80_reset)                 /* $34A */
