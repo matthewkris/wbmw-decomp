@@ -1779,6 +1779,21 @@ int hybrid_fuzz(const char *name, long count)
                 m68k_set_reg(M68K_REG_D7, (rnd() << 16) | ((py + rnd() % 64 - 32) & 0xFFFF));
             }
         }
+        if (!strncmp(name, "Area605", 7)) {
+            /* batch T60: an enemy ($40-$7C) of a spawn point (0-$3C) in a state of $16918, its
+             * place in the row 0-4, no animation group pending */
+            uint32_t me = 0x40 + 4 * (rnd() % 16), sp = 4 * (rnd() % 16);
+            m68k_set_reg(M68K_REG_A4, me);
+            put_word(0xD500 + me, sp);
+            ram[0xD401 + me] = (uint8_t)(2 * (rnd() % 9) | (rnd() % 2 ? 0x80 : 0));
+            ram[0xD802 + me] = (uint8_t)(rnd() % 5);
+            anim_walk();                                  /* a real set and group with an animation 0 */
+            for (int k = 0; k < 64; k++) { const uint8_t *t = anim_sga[rnd() % (unsigned)anim_n]; if (t[2]) continue; ram[0xC300 + me] = t[0]; ram[0xC301 + me] = t[1]; break; }
+            ram[0xA15C + sp] = (uint8_t)((ram[0xA15C + sp] & 0x9F) | (rnd() % 3 ? (rnd() % 3) << 5 : 0));
+            put_word(0xA2EC + sp, rnd() % 6);
+            if (rnd() % 2) put_word(0xA1FC + sp, (uint32_t)get_sword(0xC800 + me) + rnd() % 0x60 - 0x30);
+            if (rnd() % 2) put_word(0xD800 + me, rnd() % 4);
+        }
         if (!strcmp(name, "ScrollClearPair")) {
             m68k_set_reg(M68K_REG_A0, 0xFF2400); m68k_set_reg(M68K_REG_A1, 0xFF2600);
             m68k_set_reg(M68K_REG_D1, (rnd() << 16) | rnd() % 0x80);

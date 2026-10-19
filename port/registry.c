@@ -119,6 +119,7 @@ void ThingSwingX(Cpu *), ThingSwingY(Cpu *), ThingLiftUp(Cpu *), ThingBlock(Cpu 
 void MagicSlotsClear(Cpu *), RidersClear(Cpu *), FindFreeThing(Cpu *), ThingWas(Cpu *), ThingMake(Cpu *), ThingsRun(Cpu *), FindFreeRider(Cpu *), ThingRiders(Cpu *), SwingSetup(Cpu *), WeightLook(Cpu *), ThingSetSwingX(Cpu *), ThingSetSwingY(Cpu *), ThingSetFloor(Cpu *), ThingSetLift(Cpu *), ThingSetStep(Cpu *), ThingSetBlock(Cpu *), ThingSetShaker(Cpu *), ThingSetSpring(Cpu *), ThingSetWeight(Cpu *), ThingSetShuttle(Cpu *), ThingSetPath(Cpu *);
 void SpiritsFrame(Cpu *), RunMagicEnts(Cpu *), MagicSpark(Cpu *), MagicRock(Cpu *), MagicBolt(Cpu *), MagicSpirit(Cpu *), SpiritTouch(Cpu *), SpiritMove(Cpu *), SpiritBurst(Cpu *), HurtBoxes(Cpu *), DropRock(Cpu *), QuakeShake(Cpu *), NextOnGround(Cpu *), NearestEnemy(Cpu *), EnemyForSpirits(Cpu *), EnemyForThunder(Cpu *);
 void CompanionRoute(Cpu *), TrailShift(Cpu *), RouteProbe(Cpu *), RouteByte(Cpu *), BoxNear(Cpu *), BoxNearX(Cpu *), BoxNearY(Cpu *), Slots80Clear(Cpu *), Slots80Clear2(Cpu *);
+void Area605(Cpu *), Area605Touched(Cpu *), Area605Away(Cpu *), Area605Beaten(Cpu *), Area605Leave(Cpu *), Area605Thrown(Cpu *), Area605Turn(Cpu *), Area605Hit(Cpu *), Area605Touch(Cpu *);
 void Looks(Cpu *), LooksExtra(Cpu *), LooksBlock(Cpu *), LooksBody(Cpu *), LooksSword(Cpu *), LooksShield(Cpu *), EquipChange(Cpu *);
 void HudPanel(Cpu *), GoldLabel(Cpu *), ThreeLabels(Cpu *), DigitsOut(Cpu *), ItemsChoose(Cpu *), MagicChoose(Cpu *), SlotChoose(Cpu *), ActionToSlot(Cpu *),
      ItemToSlot(Cpu *), WornBlink(Cpu *), StatusFadeIn(Cpu *), StatusFadeOut(Cpu *), StatusWait(Cpu *);
@@ -1105,6 +1106,15 @@ const PortRoutine port_routines[] = {
     {0x015E54, 0x015EE6, "Act15E54", Act15E54, CT_SP},
     {0x015EE6, 0x015F9C, "Act15EE6", Act15EE6, CT_SP},
     {0x015FB0, 0x01602A, "Act15FB0", Act15FB0, CT_SP},           /* $15F9C, $1600C are C; $1602A is called */
+    {0x016908, 0x016BB2, "Area605", Area605, CT_SP},   /* enemygfx.c: the enemies of area 6, room 5 (states $1692A-$16D00) */
+    {0x016BB2, 0x016BBC, "Area605Touched", Area605Touched, CT_SP},
+    {0x016BBC, 0x016BD2, "Area605Away", Area605Away, CT_SP},
+    {0x016BD2, 0x016C02, "Area605Beaten", Area605Beaten, CT_SP},
+    {0x016C02, 0x016CB4, "Area605Leave", Area605Leave, CT_SP},
+    {0x016CB4, 0x016D00, "Area605Thrown", Area605Thrown, CT_SP},
+    {0x016D00, 0x016D20, "Area605Turn", Area605Turn, CT_SP},
+    {0x016D20, 0x016D34, "Area605Hit", Area605Hit, CT_SP},
+    {0x016D34, 0x016D70, "Area605Touch", Area605Touch, CT_SP},
     {0x016D70, 0x016E56, "Act16D70", Act16D70, CT_SP},           /* on the water (batch 16) */
     {0x016ED0, 0x016F24, "Act16ED0", Act16ED0, CT_SP},           /* $16E56-$16ECE, $16F24-$16F4F: helpers */
     {0x016F50, 0x016FD8, "Act16F50", Act16F50, CT_SP},

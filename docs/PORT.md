@@ -2972,6 +2972,24 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 0 mismatches, every instruction covered. Self-test caught 100 in 100 for all 25. Replace mode:
 thirteen runs, no problems.
 
+#### Enemies and actions, batch T60: the enemies of area 6, room 5 (2026-10-19)
+
+* In `port/enemygfx.c`, the monsters' handler in area 6 room 5 (`$16908`, handed over by
+  `port/handlers.c`): by state (`$16918`) each enemy is set up, paces about its spawn point till
+  its turn, jumps to its place in the row (`$16A20`), waits there, then goes after the player
+  (jumping at it when near), is knocked back or hit, beaten (counted off its point), or, when
+  all are told away, leaves to ($10E0, $1030). Also the unreferenced touch at `$16D34`.
+* The library's `$4428` (turned at a wall, the caller returns) is done inline, as in
+  `port/actions.c`.
+* Fuzz: an enemy of a spawn point in any state, its point's bits, an animation set and group
+  that have an animation 0 (state 0 runs `$80E` at once).
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(47 runs, all complete; 1,311,282 checked calls). 270,000 fuzz cases from six states,
+0 mismatches, every instruction covered. Self-test caught 100 in 100 for eight; `$16BBC`, which
+returns from its caller, caught all 6 it ran before running away (as the earlier such entries).
+Replace mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
