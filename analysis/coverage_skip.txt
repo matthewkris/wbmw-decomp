@@ -83,3 +83,9 @@
 006B32
 006B36
 004922  # $4910, a kind not in the room's list: the original loops for ever there; the game never asks for one
+000456  # $444, no free task slot: the original goes to its error loop ($4CB4) and stops; the game never fills them
+000458  # $444, the same
+000528  # $514 (not called), no free timer: the error loop
+00052A  # $514, the same
+000574  # $514, more than four timers for a slot: the error loop
+000576  # $514, the same
