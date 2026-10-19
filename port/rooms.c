@@ -363,7 +363,9 @@ ENTRY(UnpackLayerMap, unpack_layer_map)        /* $A068 */
 #define STREAM_GFX    0x22F0u
 #define OWNS          0x23E4u
 
-static void call(uint32_t addr) { call_68k(c, addr); }
+/* c is restored after: an entry of this file reached inside (with a copy of the registers, as
+ * port/player.c passes) sets it to its own, which a routine that waits must not keep */
+static void call(uint32_t addr) { Cpu *self = c; call_68k(c, addr); c = self; }
 static uint32_t sub_l(uint16_t *ccr, uint32_t s, uint32_t d)   /* sub.l / subi.l */
 {
     uint32_t r = d - s;

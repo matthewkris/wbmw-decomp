@@ -332,7 +332,7 @@ void EnemySetState(Cpu *);           /* enemies.c */
 static Cpu *c;                        /* the running registers */
 static int went_on;                   /* go_on was called: c->ret holds where */
 
-static void call(uint32_t addr) { call_68k(c, addr); }
+static void call(uint32_t addr) { Cpu *self = c; call_68k(c, addr); c = self; }   /* c kept: see port/rooms.c */
 static void call_d0(uint32_t addr, uint32_t d0) { c->d[0] = d0; call_68k(c, addr); }   /* moveq #d0 */
 static void set_d0w(int v) { c->d[0] = set_w(c->d[0], (uint32_t)v); }
 static int  begins(Ent e) { uint8_t s = rd8(STEP(e)); wr8(STEP(e), s | 0x80); return !(s & 0x80); }

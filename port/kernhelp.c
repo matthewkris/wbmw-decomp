@@ -6,7 +6,7 @@
 #include "task.h"
 
 static Cpu *c;
-static void call(uint32_t addr) { call_68k(c, addr); }
+static void call(uint32_t addr) { Cpu *self = c; call_68k(c, addr); c = self; }   /* c kept: see port/rooms.c */
 
 static void f_move(uint32_t v, uint32_t sign) { c->ccr = (uint16_t)((c->ccr & CC_X) | (v & sign ? CC_N : 0) | ((v & (sign * 2 - 1)) ? 0 : CC_Z)); }
 #define F_B(v) f_move((v), 0x80u)
