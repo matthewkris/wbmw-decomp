@@ -1794,6 +1794,34 @@ int hybrid_fuzz(const char *name, long count)
             if (rnd() % 2) put_word(0xA1FC + sp, (uint32_t)get_sword(0xC800 + me) + rnd() % 0x60 - 0x30);
             if (rnd() % 2) put_word(0xD800 + me, rnd() % 4);
         }
+        if (strstr("|CalledBack|GuardTouch|GlideHome|GlideLegs|LegPose|LegsHide|Walker|WalkerWalk|WalkerGone|", key53)) {
+            /* batch T61: an enemy ($40-$7C) of a group record ($A0E2 or $A0F2: flags, head and
+             * two legs among the enemies), $A102's heads, a partner to touch; looks that exist */
+            uint32_t me = 0x40 + 4 * (rnd() % 16), r = rnd() % 2 ? 0xA0E2 : 0xA0F2, r2 = r ^ 0x10;
+            m68k_set_reg(M68K_REG_A4, me);
+            put_word(0xD300 + me, r);
+            for (uint32_t q = r; q == r || q == r2; q = (q == r ? r2 : 0)) {
+                put_word(q, (rnd() % 2 ? 0x8000 : 0) | rnd() % 8);
+                for (uint32_t k = 2; k < 8; k += 2) put_word(q + k, 0x40 + 4 * (rnd() % 16));
+                if (q == r2) break;
+            }
+            for (uint32_t k = 0; k < 2; k++) put_word(0xA102 + 2 * k, rnd() % 3 ? 0x40 + 4 * (rnd() % 16) : 0xFFFF);
+            for (uint32_t q = 0x40; q < 0x80; q += 4) {
+                if (rnd() % 2) put_word(0xD300 + q, rnd() % 2 ? 0xA0E2 : 0xA0F2);
+                put_word(0xC800 + q, (uint32_t)get_sword(0xC800 + me) + rnd() % 0xA0 - 0x50);
+                ram[0xC301 + q] = 0;
+            }
+            ram[0xA106] = (uint8_t)(rnd() % 4); put_word(0xA108, rnd() % 2 ? me : 0x40 + 4 * (rnd() % 16));
+            put_word(0xA10A, rnd() % 4 ? 0x40 + 4 * (rnd() % 16) : 0);
+            put_word(0xD302 + me, 0x40 + 4 * (rnd() % 16)); put_word(0xCE02 + me, rnd() % 2 ? 0xA0E2 : 0xA0F2);
+            ram[0xD401 + me] = (uint8_t)(2 * (rnd() % 4) | (rnd() % 2 ? 0x80 : 0));
+            ram[0xDA02 + me] = (uint8_t)(2 * (rnd() % 4));
+            if (rnd() % 2) put_word(0xDF02 + me, (uint32_t)get_sword(0xC900 + me) + rnd() % 0x40 - 0x10);
+            if (!strcmp(name, "LegPose")) {
+                m68k_set_reg(M68K_REG_A2, 0x40 + 4 * (rnd() % 16));
+                m68k_set_reg(M68K_REG_D0, (rnd() << 8) | (8 + 2 * (rnd() % 6)));
+            }
+        }
         if (!strcmp(name, "ScrollClearPair")) {
             m68k_set_reg(M68K_REG_A0, 0xFF2400); m68k_set_reg(M68K_REG_A1, 0xFF2600);
             m68k_set_reg(M68K_REG_D1, (rnd() << 16) | rnd() % 0x80);
