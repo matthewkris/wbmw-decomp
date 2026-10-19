@@ -844,9 +844,11 @@ const PortRoutine port_routines[] = {
     {0x00C572, 0x00C5D2, "DoorAtPlayer", DoorAtPlayer, CT_SP},
     {0x00C5D2, 0x00C5F8, "FadeInWait", FadeInWait, CT_SP | CT_WAITS},
     {0x00C5F8, 0x00C614, "ArriveDoor", ArriveDoor, CT_SP | CT_WAITS},
+    {0x00C614, 0x00C634, "ArriveStill", ArriveStill, CT_SP | CT_WAITS},   /* batch T70: verified by the owner's sessions and the tp-arrive states */
     {0x00C634, 0x00C67E, "InsideSetup", InsideSetup, CT_SP},
     {0x00C698, 0x00C6EE, "ArriveWalkOut", ArriveWalkOut, CT_SP | CT_WAITS},
     {0x00C6EE, 0x00C6F6, "WalkRight", WalkRight, CT_ALL},
+    {0x00C6F6, 0x00C71C, "ArriveInsideDoor", ArriveInsideDoor, CT_SP | CT_WAITS},   /* batch T70 */
     {0x00C71C, 0x00C728, "ArriveFade", ArriveFade, CT_SP | CT_WAITS},
     {0x00C728, 0x00C75C, "ArriveTalk", ArriveTalk, CT_SP | CT_WAITS},
     {0x00B32E, 0x00B394, "BreakCheck", BreakCheck, CT_ALL},   /* rooms.c: breaking and crumbling walls, the doors' records */
@@ -881,6 +883,8 @@ const PortRoutine port_routines[] = {
     {0x00C898, 0x00C89A, "ScriptFrameNone", ScriptFrameNone, CT_ALL},
     {0x00C89A, 0x00C8F4, "Drops", Drops, CT_ALL},
     {0x00C8F4, 0x00C91E, "Room0Setup", Room0Setup, CT_ALL},
+    {0x00C91E, 0x00C9B4, "Room0Frame", Room0Frame, CT_SP | CT_WAITS},   /* batch T70: verified by the owner's session script0 */
+    {0x00C9B4, 0x00CA56, "Room0Release", Room0Release, CT_SP | CT_WAITS},
     {0x00CA56, 0x00CA66, "Room1Setup", Room1Setup, CT_ALL},
     {0x00CB1C, 0x00CB32, "Room1Flip", Room1Flip, CT_ALL},
     {0x00CB32, 0x00CB46, "Room1Flash", Room1Flash, CT_ALL},
@@ -913,6 +917,8 @@ const PortRoutine port_routines[] = {
     {0x00D388, 0x00D3C8, "Room13Setup", Room13Setup, CT_ALL},
     {0x00D3C8, 0x00D3F2, "Room13Platform", Room13Platform, CT_ALL},
     {0x00D3F2, 0x00D44C, "Room13Figure", Room13Figure, CT_ALL},
+    {0x00D44C, 0x00D48C, "Room13Frame", Room13Frame, CT_SP | CT_WAITS},   /* batch T70: verified by the owner's sessions script13, script13b */
+    {0x00D48C, 0x00D61E, "Room13Ride", Room13Ride, CT_SP | CT_WAITS},
     {0x00D61E, 0x00D64E, "Room13Fade", Room13Fade, CT_ALL},       /* rooms.c: the room script 13's ride ($D44C, $D48C, $DAE6 wait for a session), 14's and 15's setups */
     {0x00D64E, 0x00D6C4, "Room13Drop", Room13Drop, CT_ALL},
     {0x00D6C4, 0x00D71A, "Room13Drops", Room13Drops, CT_ALL},
