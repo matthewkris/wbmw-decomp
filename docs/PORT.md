@@ -3023,6 +3023,20 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 0 mismatches, every instruction covered. Self-test caught 100 in 100 for all seventeen. Replace
 mode: thirteen runs, no problems.
 
+#### Kernel helpers, batch T63: cell lists, animated cells, area triggers (2026-10-19)
+
+* In `port/kernhelp.c` (new): the map's cell lists, rectangles and blocks (`$27FA`-`$2856`), the
+  animated cells' eight slots and their scripts (`$289A`-`$2974`: frames of cells, loops, the
+  other plane, jumps) and the four area triggers (`$29A4`-`$2A6C`: entering one gives its item
+  and sets its game flag, then its next item).
+* Fuzz: lists, blocks and scripts made up at `$FF2400` with every command (one loop end per
+  script: two would loop for ever, in the original too), triggers about the player.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(47 runs, all complete; 1,311,282 checked calls). 300,000 fuzz cases from six states,
+0 mismatches, every instruction covered. Self-test caught 100 in 100 for all ten. Replace mode:
+thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
