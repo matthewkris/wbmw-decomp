@@ -123,6 +123,7 @@ void Area605(Cpu *), Area605Touched(Cpu *), Area605Away(Cpu *), Area605Beaten(Cp
 void CalledBack(Cpu *), GuardTouch(Cpu *), GlideHome(Cpu *), GlideLegs(Cpu *), LegPose(Cpu *), LegsHide(Cpu *), Walker(Cpu *), WalkerWalk(Cpu *), WalkerGone(Cpu *);
 void StateKeep(Cpu *), ShotRecord(Cpu *), KindAttack(Cpu *), KindStats(Cpu *), AttackFrame(Cpu *), KindMoves(Cpu *), Rts15E0E(Cpu *), GroupBlink(Cpu *), GroupUnblink(Cpu *), Unblink(Cpu *), SceneDone(Cpu *), ToX(Cpu *), ToHeight(Cpu *), Sword(Cpu *), FaceByD0(Cpu *), Burning(Cpu *), TurnInRange(Cpu *);
 void CellList(Cpu *), CellFill(Cpu *), CellBlockAt(Cpu *), CellBlock(Cpu *), CellAnimsClear(Cpu *), CellAnimsRun(Cpu *), CellAnimStart(Cpu *), TriggersClear(Cpu *), TriggersRun(Cpu *), TriggerAdd(Cpu *);
+void VelocityAtAngle(Cpu *), ScaleVector(Cpu *), JumpTo(Cpu *), FlightTime(Cpu *), TileAnimStart(Cpu *), LiftCells(Cpu *), LiftOpen(Cpu *), EffectPlace(Cpu *), EffectMake(Cpu *), ItemRain(Cpu *), ItemRainStart(Cpu *);
 void Looks(Cpu *), LooksExtra(Cpu *), LooksBlock(Cpu *), LooksBody(Cpu *), LooksSword(Cpu *), LooksShield(Cpu *), EquipChange(Cpu *);
 void HudPanel(Cpu *), GoldLabel(Cpu *), ThreeLabels(Cpu *), DigitsOut(Cpu *), ItemsChoose(Cpu *), MagicChoose(Cpu *), SlotChoose(Cpu *), ActionToSlot(Cpu *),
      ItemToSlot(Cpu *), WornBlink(Cpu *), StatusFadeIn(Cpu *), StatusFadeOut(Cpu *), StatusWait(Cpu *);
@@ -156,6 +157,17 @@ const PortRoutine port_routines[] = {
     {0x000A36, 0x000A66, "ClearEntity", ClearEntity},
     {0x000A66, 0x000A8E, "FreezeEntities", FreezeEntities},
     {0x000A8E, 0x000AB4, "UnfreezeEntities", UnfreezeEntities},
+    {0x001220, 0x001234, "VelocityAtAngle", VelocityAtAngle, CT_SP | 0x7FFF},   /* kernhelp.c: the vector maths, tile animations, the lift, effects, the item rain */
+    {0x00127A, 0x0012B6, "ScaleVector", ScaleVector, CT_SP | 0x7FFF},
+    {0x0012B6, 0x001310, "JumpTo", JumpTo, CT_SP | 0x7FFF},
+    {0x001310, 0x00135C, "FlightTime", FlightTime, CT_SP | 0x7FFF},
+    {0x0023A6, 0x0023E4, "TileAnimStart", TileAnimStart, CT_SP | 0x7FFF},
+    {0x002C08, 0x002C4E, "LiftCells", LiftCells, CT_SP | 0x7FFF},
+    {0x002C4E, 0x002CC0, "LiftOpen", LiftOpen, CT_SP | 0x7FFF},
+    {0x002CC0, 0x002CF0, "EffectPlace", EffectPlace, CT_SP | 0x7FFF},
+    {0x002CF0, 0x002D1C, "EffectMake", EffectMake, CT_SP | 0x7FFF},
+    {0x002D1C, 0x002DFE, "ItemRain", ItemRain, CT_SP | 0x7FFF},
+    {0x002DFE, 0x002E2A, "ItemRainStart", ItemRainStart, CT_SP | 0x7FFF},
     {0x0027FA, 0x002812, "CellList", CellList, CT_SP | 0x7FFF | CT_NZVC},   /* kernhelp.c: cell lists and blocks, the animated cells, the area triggers */
     {0x002812, 0x002852, "CellFill", CellFill, CT_SP | 0x7FFF},
     {0x002852, 0x002856, "CellBlockAt", CellBlockAt, CT_SP | 0x7FFF},

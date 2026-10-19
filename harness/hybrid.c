@@ -1904,6 +1904,58 @@ int hybrid_fuzz(const char *name, long count)
                 m68k_set_reg(M68K_REG_D6, (rnd() << 16) | rnd() % 0x80); m68k_set_reg(M68K_REG_D7, (rnd() << 16) | rnd() % 0x80);
             }
         }
+        if (strstr("|VelocityAtAngle|ScaleVector|JumpTo|FlightTime|TileAnimStart|LiftCells|LiftOpen|EffectPlace|EffectMake|ItemRain|ItemRainStart|", key53)) {
+            /* batch T64: vectors and jumps in the game's ranges; a tile animation's data and the
+             * rain's list made up at $FF2400; the lift and the rain about the player */
+            uint32_t pl = (uint32_t)(int32_t)get_sword(0x9EEE) & 0xFC, p = 0x2400, n;
+            int32_t px = get_sword(0xC800 + pl), py = get_sword(0xC900 + pl);
+            if (!strcmp(name, "ScaleVector")) {
+                m68k_set_reg(M68K_REG_D0, (rnd() << 16) | ((rnd() % 0x800 - 0x400) & 0xFFFF));
+                m68k_set_reg(M68K_REG_D1, (rnd() << 16) | ((rnd() % 4 ? rnd() % 0x800 - 0x400 : 0) & 0xFFFF));
+                m68k_set_reg(M68K_REG_D2, (rnd() << 16) | rnd() % 0x800);
+            }
+            if (!strcmp(name, "JumpTo") || !strcmp(name, "FlightTime")) {
+                m68k_set_reg(M68K_REG_D0, (rnd() << 16) | ((rnd() % 0x200 - 0x100) & 0xFFFF));
+                m68k_set_reg(M68K_REG_D1, (rnd() << 16) | ((rnd() % 0x100 - 0x80) & 0xFFFF));
+                m68k_set_reg(M68K_REG_D2, (rnd() << 16) | rnd() % 0x80);
+                m68k_set_reg(M68K_REG_D6, (rnd() << 16) | rnd() % 0x100);
+            }
+            if (!strcmp(name, "VelocityAtAngle") || !strcmp(name, "EffectPlace")) m68k_set_reg(M68K_REG_A4, 4 * (rnd() % 64));
+            if (!strcmp(name, "TileAnimStart")) {
+                put_word(p, rnd()); for (n = 2; n < 16; n++) ram[p + n] = (uint8_t)rnd();
+                m68k_set_reg(M68K_REG_A0, 0xFF2400);
+                for (uint32_t q = 0; q < 0x80; q += 0x10) put_word(0x950C + q, rnd() % 3 ? 0x8000 | rnd() : rnd() & 0x7FFF);
+            }
+            ram[0x9A8B] = (uint8_t)(rnd() % 4 ? 0 : 1);
+            put_word(0x9A8C, px + rnd() % 0x80 - 0x40); put_word(0x9A8E, py + rnd() % 0x40);
+            ram[0x9A8A] = (uint8_t)rnd();
+            if (!strcmp(name, "ItemRain") || !strcmp(name, "ItemRainStart")) {
+                uint32_t list = 0xFF0000 | p;
+                for (n = rnd() % 4; n; n--) ram[p++] = (uint8_t)(rnd() % 4 ? rnd() % 0x10 : 0x80 | rnd() % 0x20);
+                ram[p++] = 0xFF;
+                ram[0x9BB6] = (uint8_t)(rnd() % 4 ? 0x80 | (rnd() & 1) : rnd() & 1);
+                ram[0x9BB7] = (uint8_t)(1 + rnd() % 8); ram[0x9BB8] = (uint8_t)(rnd() % 2 ? 1 : rnd() % 4);
+                ram[0x9BB9] = (uint8_t)(rnd() % 3 ? rnd() % 0x10 : 0x80 | rnd() % 0x20);
+                put_long(0x9BBA, list);
+                put_word(0x9BBE, px + rnd() % 0x40 - 0x20); put_word(0x9BC0, py - rnd() % 0x40);
+                put_word(0x9BC2, 1 + rnd() % 0x80); put_word(0x9BC4, 1 + rnd() % 0x80);
+                if (!strcmp(name, "ItemRainStart")) {
+                    uint32_t at = 0xFF0000 | p;
+                    ram[p++] = (uint8_t)rnd(); ram[p++] = (uint8_t)(1 + rnd() % 8); ram[p++] = (uint8_t)(1 + rnd() % 8);
+                    for (n = rnd() % 4; n; n--) ram[p++] = (uint8_t)(rnd() % 0x10);
+                    ram[p++] = 0xFF;
+                    m68k_set_reg(M68K_REG_A0, at);
+                    m68k_set_reg(M68K_REG_D0, (rnd() << 16) | ((px + rnd() % 0x40 - 0x20) & 0xFFFF));
+                    m68k_set_reg(M68K_REG_D1, (rnd() << 16) | ((py - rnd() % 0x40) & 0xFFFF));
+                    m68k_set_reg(M68K_REG_D2, (rnd() << 16) | (1 + rnd() % 0x80)); m68k_set_reg(M68K_REG_D3, (rnd() << 16) | (1 + rnd() % 0x80));
+                    if (rnd() % 4 == 0) ram[0x9668] = 0x12;
+                }
+            }
+            if (!strcmp(name, "EffectMake") || !strcmp(name, "EffectPlace")) {
+                m68k_set_reg(M68K_REG_D6, (rnd() << 16) | ((px + rnd() % 0x80 - 0x40) & 0xFFFF));
+                m68k_set_reg(M68K_REG_D7, (rnd() << 16) | ((py + rnd() % 0x80 - 0x40) & 0xFFFF));
+            }
+        }
         if (!strcmp(name, "ScrollClearPair")) {
             m68k_set_reg(M68K_REG_A0, 0xFF2400); m68k_set_reg(M68K_REG_A1, 0xFF2600);
             m68k_set_reg(M68K_REG_D1, (rnd() << 16) | rnd() % 0x80);
