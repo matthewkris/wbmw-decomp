@@ -1956,6 +1956,20 @@ int hybrid_fuzz(const char *name, long count)
                 m68k_set_reg(M68K_REG_D7, (rnd() << 16) | ((py + rnd() % 0x80 - 0x40) & 0xFFFF));
             }
         }
+        if (!strcmp(name, "PlayerUseItem")) {
+            /* batch T67: the player; up/down+A pressed or not; the room triggers' routines for
+             * up and down as the rooms set them; a6 a frame just below this call's return
+             * address, so that its unlk returns here */
+            static const uint32_t fns[] = { 0xA8D8, 0xA902, 0xA60A, 0xA898, 0xA68E };
+            uint32_t pl = (uint32_t)(int32_t)(int16_t)(ram[0x9EEE] << 8 | ram[0x9EEF]);
+            m68k_set_reg(M68K_REG_A4, pl);
+            ram[0x9980] = (uint8_t)(rnd() % 3 ? 0xFF : 0); ram[0x9981] = (uint8_t)(rnd() % 3 ? 0xFF : 0);
+            put_long(0x998A, fns[rnd() % 5]); put_long(0x998E, fns[rnd() % 5]);
+            ram[0x9F0D] = (uint8_t)((ram[0x9F0D] & 0xF0) | (rnd() % 4 ? 1 + rnd() % 2 : rnd() % 16));
+            if (rnd() % 4) ram[0xCE00 + (pl & 0xFC)] &= 0xBF;
+            if (rnd() % 4) ram[0x9F03] |= 1;
+            m68k_set_reg(M68K_REG_A6, m68k_get_reg(NULL, M68K_REG_SP) - 8);
+        }
         if (!strcmp(name, "ScrollClearPair")) {
             m68k_set_reg(M68K_REG_A0, 0xFF2400); m68k_set_reg(M68K_REG_A1, 0xFF2600);
             m68k_set_reg(M68K_REG_D1, (rnd() << 16) | rnd() % 0x80);

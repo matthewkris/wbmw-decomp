@@ -1423,3 +1423,29 @@ void PlayerFullHeal(Cpu *c) { ON_PASS_ONLY(0xF282); cpu = c; c->ret = 0; wrw(REF
 void PlayerRefill(Cpu *c) { ON_PASS_ONLY(0xF288); cpu = c; c->ret = 0; refill(c, player_in_a4(c)); }
 /* $F2AA: a pass resumed in the refill: this frame's step, then on */
 void PlayerRefillStep(Cpu *c) { ON_PASS_ONLY(0xF2AA); cpu = c; c->ret = 0; refill_frames(c, player_in_a4(c), 0); }
+/* $DF2E: up+A or down+A at a room's trigger ($9980/$9981, set by it) runs its routine ($998A,
+ * $998E), then returns past its caller's frame (unlk a6), as use_item's caller does (batch T67;
+ * verified by the owner's session `doors`) */
+void PlayerUseItem(Cpu *c)
+{
+    cpu = c; c->ret = 0;
+    Ent e = (Ent)(int32_t)(int16_t)c->a[4];
+    if ((rd8(e - 0x3200) & 0x40) || !(rd8(FALL_FLAGS) & 1)) return;
+    c->d[0] = set_b(c->d[0], rd8(0xFFFF9F0Du) & 0xF);
+    c->d[1] = set_b(c->d[1], c->d[0]);
+    if (rd8(ITEM_UP)) {
+        c->d[0] = set_b(c->d[0], c->d[0] ^ 1);
+        if (!(c->d[0] & 0xFF)) { set8(CTRL, 0x20); c->a[0] = rd32(ITEM_UP_FN); goto use; }
+    }
+    if (!rd8(ITEM_DOWN)) return;
+    c->d[1] = set_b(c->d[1], c->d[1] ^ 2);
+    if (c->d[1] & 0xFF) return;
+    set8(CTRL, 0x40);
+    c->a[0] = rd32(ITEM_DOWN_FN);
+use:
+    wrw(VEL_X(e), 0);
+    call_68k(c, c->a[0]);
+    c->ret = 0;
+    c->a[7] = c->a[6];                              /* unlk a6 */
+    c->a[6] = rd32(c->a[7]); c->a[7] += 4;
+}

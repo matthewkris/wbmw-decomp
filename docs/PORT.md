@@ -3079,6 +3079,20 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 (50 runs, all complete; 1,440,242 checked calls), the quake's start and the strike fully covered
 by `quake`. Replace mode: thirteen runs, no problems.
 
+#### The player, batch T67: up+A and down+A at a room's trigger (2026-10-19)
+
+* In `port/player.c`, `$DF2E` is a registered entry, exact: up+A or down+A where a room's
+  trigger has set `$9980`/`$9981` (a door entered with up+A, and so on) runs that trigger's
+  routine (`$998A`, `$998E`), then returns past its caller's frame (`unlk a6`).
+* Verified by the owner's session `doors` (2026-10-19), which runs all 24 instructions.
+* Fuzz: the room triggers' routines as the rooms set them, `a6` a frame just below the case's
+  return address so that the `unlk` returns to it.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(51 runs, all complete; 1,468,443 checked calls). 30,000 fuzz cases from six states,
+0 mismatches, every instruction covered (by play alone too). Self-test caught 100 in 100.
+Replace mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
