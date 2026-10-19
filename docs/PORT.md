@@ -2990,6 +2990,24 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 returns from its caller, caught all 6 it ran before running away (as the earlier such entries).
 Replace mode: thirteen runs, no problems.
 
+#### Enemies and actions, batch T61: Gragg & Glagg's helpers, the boss rooms' walkers (2026-10-19)
+
+* In `port/enemygfx.c`:
+  * Gragg & Glagg's group helpers: called back (`$15F9C`, the caller returns), its touch
+    (`$1600C`: outside the boss rooms a hit goes to `$1357E` as `$43BC` does), gliding home with
+    its two legs stretched under it by its height (`$1602A`-`$160E6`);
+  * the boss rooms' walkers (`$160E8`, the hopper's handler there, handed over by
+    `port/handlers.c`): with their group's head till the start, walking (turning from a partner
+    they touch, at walls, and calling a group ahead within $70 to rise), and gone off the boss's
+    count after $28 frames.
+* Fuzz: group records at `$A0E2`/`$A0F2` with enemies for head and legs, `$A102`'s heads, a
+  partner to touch.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(47 runs, all complete; 1,311,282 checked calls). 270,000 fuzz cases from six states,
+0 mismatches, every instruction covered. Self-test caught 100 in 100 for all nine. Replace mode:
+thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

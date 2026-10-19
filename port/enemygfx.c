@@ -1818,3 +1818,222 @@ void Area605Away(Cpu *cpu) { c = cpu; if (all_away()) c->a[7] += 4; c->ret = 0; 
 STATE(Area605Beaten, 0x16BD2)
 STATE(Area605Leave, 0x16C02)
 STATE(Area605Thrown, 0x16CB4)
+
+/* ---- batch T61: Gragg & Glagg's helpers and the boss rooms' walkers ($15F9C-$162C8) ----
+ * A group's record (-$2D00, at $A0E2 or $A0F2): its flags word (bit 15 in use; bit 0 start,
+ * bit 1 called back, bit 2 told to rise), then its head and two legs. */
+static uint32_t rec(void) { c->a[3] = sx(rd16(e(-0x2D00))); return c->a[3]; }
+/* $15F9C: called back (bit 1, cleared): step 8, and the caller returns (1) */
+static int called_back2(void)
+{
+    rec();
+    uint8_t g = rd8(c->a[3]);
+    wr8(c->a[3], g & 0xFD);
+    if (!(g & 2)) { c->ccr = (uint16_t)((c->ccr & ~CC_Z) | CC_Z); return 0; }
+    c->ccr &= (uint16_t)~CC_Z;
+    wr8(e(-0x2BFF), 8);
+    return 1;
+}
+/* $1609E: leg a2 at height d1 + $E, its look d0 (shown) */
+static void leg_pose(void)
+{
+    wr16(c->a[2] - 0x3700, (uint16_t)c->d[1]);
+    wr16(c->a[2] - 0x3700, (uint16_t)(rd16(c->a[2] - 0x3700) + 0xE));
+    if ((rd8(c->a[2] - 0x4000) & 0x40) && (uint8_t)c->d[0] == rd8(c->a[2] - 0x3CFE)) return;
+    { uint32_t t = c->a[2]; c->a[2] = c->a[4]; c->a[4] = t; }
+    call(0x7E8);
+    wr8(e(-0x4000), rd8(e(-0x4000)) | 0x40);
+    { uint32_t t = c->a[2]; c->a[2] = c->a[4]; c->a[4] = t; }
+}
+/* $160CE: the legs hidden */
+static void legs_hide(void)
+{
+    rec();
+    c->a[0] = sx(rd16(c->a[3] + 4)); wr8(c->a[0] - 0x4000, rd8(c->a[0] - 0x4000) & 0xBF);
+    c->a[0] = sx(rd16(c->a[3] + 6)); wr8(c->a[0] - 0x4000, rd8(c->a[0] - 0x4000) & 0xBF);
+}
+/* $1605A: the legs under the body by its height over home (-$20FE): stretched by 0-2 ($160C6,
+ * $160CA), $18 at most; hidden at home */
+static void glide_legs(void)
+{
+    c->d[2] = 0;
+    c->d[1] = set_w(c->d[1], rd16(e(-0x20FE)) - rd16(e(-0x3700)));
+    if (!(c->d[1] & 0xFFFF)) { legs_hide(); return; }
+    c->d[1] = set_w(c->d[1], (uint16_t)c->d[1] >> 1);
+    if ((uint16_t)c->d[1] >= 8) { c->d[2] = 1; if ((uint16_t)c->d[1] >= 0x10) c->d[2] = 2; }
+    if ((uint16_t)c->d[1] >= 0x18) c->d[1] = 0x18;
+    c->d[1] = set_w(c->d[1], -c->d[1]);
+    c->d[1] = set_w(c->d[1], c->d[1] + rd16(e(-0x20FE)));
+    rec();
+    c->a[2] = sx(rd16(c->a[3] + 4));
+    c->d[0] = set_b(c->d[0], rd8(0x160C6 + c->d[2]));
+    leg_pose();
+    c->a[2] = sx(rd16(c->a[3] + 6));
+    c->d[0] = set_b(c->d[0], rd8(0x160CA + c->d[2]));
+    leg_pose();
+}
+/* $1602A: towards its home height (VEL_Y), $30 above it at most; d0 0 (eq) when there */
+static void glide_home(void)
+{
+    call(0xAD6);
+    c->d[0] = set_w(c->d[0], rd16(e(-0x20FE)));
+    int there;
+    if (rd16(e(-0x35FE)) & 0x8000) {
+        c->d[0] = set_w(c->d[0], c->d[0] - 0x30);
+        there = !((uint16_t)c->d[0] < rd16(e(-0x3700)));
+    } else there = !((uint16_t)c->d[0] > rd16(e(-0x3700)));
+    if (there) wr16(e(-0x3700), (uint16_t)c->d[0]);
+    glide_legs();
+    c->d[0] = there ? 0 : 1; F_L(c->d[0]);
+}
+/* $160E8: the boss rooms' walkers (the hopper's handler when $966B bit 5): by state ($160F8) */
+static void walker_states(uint32_t at)
+{
+    switch (at) {
+    case 0x16100:                                   /* 0: with its group's head till the start */
+        rec();
+        if (!(rd16(c->a[3]) & 0x8000)) { wr8(e(-0x2BFF), 4); return; }
+        if (begun()) {
+            c->a[2] = sx(rd16(c->a[3] + 2));
+            c->d[0] = 8 & rd8(c->a[2] - 0x3FFE);
+            wr8(e(-0x3FFE), (uint8_t)c->d[0]);
+            wr16(e(-0x3800), rd16(c->a[2] - 0x3800));
+            wr16(e(-0x3700), rd16(c->a[2] - 0x3700));
+            wr8(e(-0x3CFD), 0x12);
+            anim(0);
+            wr8(e(-0x4000), rd8(e(-0x4000)) | 0x40);
+        }
+        {
+            uint8_t g = rd8(c->a[3]);
+            wr8(c->a[3], g & 0xFE);
+            if (g & 1) wr8(e(-0x2BFF), 4);
+        }
+        return;
+    case 0x16152: return;                           /* 2 */
+    case 0x16154:                                   /* 4: walking; turning from its partner; calling a group to rise */
+        if (begun()) {
+            wr8(e(-0x2200), 0);
+            wr8(e(-0x2800), 0);
+            wr8(e(-0x27FF), 0x10);
+            wr16(e(-0x27FE), rd16(e(-0x3400)));
+            wr8(e(-0x2F00), (uint8_t)((rd8(e(-0x2F00)) & 0x80) | 0x13));
+            anim(0);
+            return;
+        }
+        c->a[2] = sx(rd16(0xFFFF9EEEu));
+        call(0xE64);
+        if (rd8(e(-0x2200))) wr8(e(-0x2200), (uint8_t)(rd8(e(-0x2200)) - 1));
+        else if (rd8(0xFFFFA106u) >= 2 && sx(rd16(0xFFFFA108u)) == c->a[4]) {
+            c->d[0] = set_w(c->d[0], rd16(0xFFFFA10Au));
+            if (c->d[0] & 0xFFFF) {
+                c->a[2] = sx(c->d[0]);
+                call(0xE9A);
+                if (c->ccr & (CC_C | CC_Z)) {               /* the two touch: both turn */
+                    c->d[0] = 0x39; call(0x366);
+                    wr8(e(-0x3FFE), rd8(e(-0x3FFE)) ^ 8);
+                    wr8(c->a[2] - 0x3FFE, rd8(c->a[2] - 0x3FFE) ^ 8);
+                    wr16(e(-0x2800), 1);
+                    wr16(c->a[2] - 0x2800, 1);
+                    wr16(e(-0x3600), (uint16_t)-rd16(e(-0x3600)));
+                    wr16(c->a[2] - 0x3600, (uint16_t)-rd16(c->a[2] - 0x3600));
+                    wr8(e(-0x2200), 4);
+                }
+            }
+        }
+        c->d[0] = set_w(c->d[0], rd16(e(-0x27FE)));
+        call(0x46C6);
+        call(0xB42);
+        call(0x46DA);
+        if (rd8(e(-0x2800)) & 0x80) {
+            c->a[2] = sx(rd16(e(-0x31FE)));
+            if (rd16(c->a[2]) & 0x8000) { wr8(e(-0x2800), 0); goto wall; }
+            c->a[2] = sx(rd16(e(-0x2CFE)));
+            c->d[0] = set_w(c->d[0], rd16(c->a[2] - 0x3800) - rd16(e(-0x3800)));
+            if (c->d[0] & 0x8000) c->d[0] = set_w(c->d[0], -c->d[0]);
+            if ((uint16_t)c->d[0] >= 0x10) goto wall;
+            c->a[3] = sx(rd16(c->a[2] - 0x2D00));
+            wr8(c->a[3], rd8(c->a[3]) | 4);
+            wr8(e(-0x2BFF), 6);
+            return;
+        }
+        {
+            uint8_t t = (uint8_t)(rd8(e(-0x27FF)) - 1);
+            wr8(e(-0x27FF), t);
+            if (t) goto wall;
+        }
+        wr8(e(-0x27FF), 1);
+        c->a[3] = 0xFFFFA102u;
+        c->d[2] = 1;
+        do {                                        /* a group's head ahead within $70 */
+            c->d[0] = set_w(c->d[0], rd16(c->a[3])); c->a[3] += 2;
+            if (!(c->d[0] & 0x8000)) {
+                c->a[2] = sx(c->d[0]);
+                c->d[0] = set_w(c->d[0], rd16(c->a[2] - 0x3800));
+                c->d[1] = set_w(c->d[1], rd16(e(-0x3800)));
+                if (rd8(e(-0x3FFE)) & 8) { uint32_t t = c->d[0]; c->d[0] = c->d[1]; c->d[1] = t; }
+                c->d[0] = set_w(c->d[0], c->d[0] - c->d[1]);
+                if (!(c->d[0] & 0x8000) && (uint16_t)c->d[0] < 0x70) {
+                    wr16(e(-0x2CFE), (uint16_t)c->a[2]);
+                    wr16(e(-0x31FE), rd16(c->a[2] - 0x2CFE));
+                    c->a[3] = sx(rd16(c->a[2] - 0x2D00));
+                    wr8(c->a[3], rd8(c->a[3]) | 2);
+                    wr8(e(-0x2800), 0xFF);
+                    goto wall;
+                }
+            }
+            c->d[2] = set_w(c->d[2], c->d[2] - 1);
+        } while ((c->d[2] & 0xFFFF) != 0xFFFF);
+    wall:
+        c->d[0] = 0x41 & rd8(e(-0x3100));
+        c->d[0] = set_b(c->d[0], c->d[0] - 1);
+        if (c->d[0] & 0xFF) return;
+        wr8(e(-0x3FFE), rd8(e(-0x3FFE)) ^ 8);
+        c->d[0] = 0x39; call(0x366);
+        return;
+    case 0x16294:                                   /* 6: gone after $28 frames, off the boss's count */
+        if (begun()) wr8(e(-0x2800), 0x28);
+        call(0xB42);
+        call(0xAB4);
+        wr8(e(-0x2800), (uint8_t)(rd8(e(-0x2800)) - 1));
+        if (rd8(e(-0x2800))) return;
+        c->a[3] = 0xFFFFA102u;
+        wr8(c->a[3] + 4, (uint8_t)(rd8(c->a[3] + 4) - 1));
+        c->d[0] = rd8(e(-0x25FE));
+        wr16(c->a[3] + 6 + sx(c->d[0]), 0);
+        wr8(e(-0x4000), 0);
+        return;
+    default: call(at); return;
+    }
+}
+static void walker(void)
+{
+    c->d[0] = 0x7F & rd8(e(-0x2BFF));
+    c->a[0] = 0x160F8 + sx(rd16(0x160F8 + c->d[0]));
+    walker_states(c->a[0]);
+}
+/* $1600C: touches: outside the boss rooms ($966B bit 5) hit like any monster ($43BC: the caller
+ * returns and the action goes to $1357E with d0 2); in them, with the shield while it blinks */
+void GuardTouch(Cpu *cpu)
+{
+    c = cpu;
+    if (!(rd8(0xFFFF966Bu) & 0x20)) {
+        call(0x4792);
+        call(0x439E);
+        c->ret = 0;
+        if (!(c->ccr & CC_N)) return;
+        c->d[0] = 2; F_L(2);
+        c->a[7] += 4;
+        port_continue_at(c, 0x1357E, 0);
+        return;
+    }
+    call(rd8(e(-0x2800)) ? 0x4778 : 0x4792);
+    c->ret = 0;
+}
+void CalledBack(Cpu *cpu) { c = cpu; if (called_back2()) c->a[7] += 4; c->ret = 0; }   /* $15F9C */
+ENTRY(GlideHome, glide_home)               /* $1602A */
+ENTRY(GlideLegs, glide_legs)               /* $1605A */
+ENTRY(LegPose, leg_pose)                   /* $1609E */
+ENTRY(LegsHide, legs_hide)                 /* $160CE */
+ENTRY(Walker, walker)                      /* $160E8 */
+void WalkerWalk(Cpu *cpu) { c = cpu; walker_states(0x16154); c->ret = 0; }   /* $16154 */
+void WalkerGone(Cpu *cpu) { c = cpu; walker_states(0x16294); c->ret = 0; }   /* $16294 */
