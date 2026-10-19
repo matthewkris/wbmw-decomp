@@ -3037,6 +3037,20 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 0 mismatches, every instruction covered. Self-test caught 100 in 100 for all ten. Replace mode:
 thirteen runs, no problems.
 
+#### Kernel helpers, batch T64: the vector maths, the lift, effects, the item rain (2026-10-19)
+
+* In `port/kernhelp.c`: a vector scaled to a speed (`$127A`), a jump's arc to a point (`$12B6`,
+  with its square root `$1310`), the 68000's division overflow kept; a tile animation started
+  (`$23A6`; none free still stops the game at `$23C6`); the lift's cells and its opening with a
+  puff and four sparks (`$2C08`-`$2CC0`); an effect made (`$2CF0`); the item rain each interval
+  and its start (`$2D1C`, `$2DFE`); and the unreferenced `$1220`.
+* Left in the region: `$24D8`, one unreferenced branch into another routine.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(47 runs, all complete; 1,311,282 checked calls). 330,000 fuzz cases from six states,
+0 mismatches, every instruction covered. Self-test caught 100 in 100 for all eleven. Replace
+mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
