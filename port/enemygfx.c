@@ -1514,3 +1514,307 @@ ENTRY(BoxNearX, near_x)                       /* $108E2 */
 ENTRY(BoxNearY, near_y)                       /* $108EE */
 ENTRY(Slots80Clear, slots80_clear)         /* $108FA */
 ENTRY(Slots80Clear2, slots80_clear)        /* $1115E */
+
+/* ---- batch T60: the enemies of area 6, room 5 ($16908) ----
+ * The monsters' handler there (port/handlers.c hands it over): by state (-$2BFF, table $16918),
+ * each enemy walks to its place on its spawn point's row ($16A20), drops or jumps at the player,
+ * and is told by its spawn point (-$2B00: bit 6 its turn by -$27FE, bit 5 all of them away) when
+ * to go. */
+static int begun(void)     /* bset #7,-$2BFF: 1 the first time */
+{
+    uint8_t s = rd8(e(-0x2BFF));
+    wr8(e(-0x2BFF), s | 0x80);
+    return !(s & 0x80);
+}
+static void anim(uint32_t n) { c->d[0] = n; call(0x7E8); }
+static int zero_after(uint32_t addr) { call(addr); return (c->ccr & CC_Z) != 0; }
+static uint32_t point(void) { c->a[3] = sx(rd16(e(-0x2B00))); return c->a[3]; }
+/* is it this enemy's turn ($16D00 and the like): bit 6 and -$27FE the point's -$5D14 */
+static int my_turn(void)
+{
+    if (!(rd8(c->a[3] - 0x5EA4) & 0x40)) return 0;
+    c->d[0] = rd8(e(-0x27FE));
+    return (uint16_t)c->d[0] == rd16(c->a[3] - 0x5D14);
+}
+/* $16D00: its turn taken */
+static void turn_taken(void)
+{
+    point();
+    if (my_turn()) wr8(c->a[3] - 0x5EA4, rd8(c->a[3] - 0x5EA4) & 0xBF);
+}
+/* $16BBC: all away (bit 5): state $E, and the state returns (1) */
+static int all_away(void)
+{
+    point();
+    if (!(rd8(c->a[3] - 0x5EA4) & 0x20)) return 0;
+    wr8(e(-0x2BFF), 0xE);
+    return 1;
+}
+/* $16D20: hit: state $10, or $C when it is beaten ($4986) */
+static void a605_hit(void)
+{
+    wr8(e(-0x2BFF), 0x10);
+    if (zero_after(0x4986)) wr8(e(-0x2BFF), 0xC);
+}
+/* $16BB2: touched ($439E mi): as $16D20 */
+static void a605_touched(void) { call(0x439E); if (c->ccr & CC_N) a605_hit(); }
+static void a605_states(uint32_t at)
+{
+    switch (at) {
+    case 0x1692A:                                   /* 0: set up, facing, on its feet */
+        c->d[0] = (rd8(e(-0x3FFE)) & 8) ? 0x1E : 0xC;
+        wr8(e(-0x3CFD), (uint8_t)c->d[0]);
+        anim(0);
+        call(0x80E);
+        c->d[0] = rd8(e(-0x34FD));
+        wr16(e(-0x3700), (uint16_t)(rd16(e(-0x3700)) - c->d[0]));
+        wr8(e(-0x4000), rd8(e(-0x4000)) | 0x40);
+        wr8(e(-0x2F00), 0x43);
+        wr8(e(-0x2BFF), 2);
+        return;
+    case 0x16962:                                   /* 2: pacing $28 about its point till its turn */
+        if (begun()) anim(8);
+        point();
+        if (my_turn()) {
+            wr8(c->a[3] - 0x5EA4, rd8(c->a[3] - 0x5EA4) & 0xBF);
+            wr8(e(-0x2BFF), 4);
+            return;
+        }
+        c->d[0] = set_w(c->d[0], 0x80);
+        c->a[0] = sx(rd16(e(-0x2B00)));
+        c->d[2] = set_w(c->d[2], rd16(c->a[0] - 0x5E04));
+        if (rd8(e(-0x3FFE)) & 8) {
+            c->d[0] = set_w(c->d[0], -c->d[0]);
+            c->d[2] = set_w(c->d[2], c->d[2] - 0x28);
+            if ((uint16_t)c->d[2] < rd16(e(-0x3800))) goto pace;
+            c->d[1] = 0xC;
+        } else {
+            c->d[2] = set_w(c->d[2], c->d[2] + 0x28);
+            if ((uint16_t)c->d[2] > rd16(e(-0x3800))) goto pace;
+            c->d[1] = 0x1E;
+        }
+        c->d[0] = set_w(c->d[0], -c->d[0]);
+        wr8(e(-0x3CFD), (uint8_t)c->d[1]);
+        wr8(e(-0x3FFE), rd8(e(-0x3FFE)) ^ 8);
+    pace:
+        wr16(e(-0x3600), (uint16_t)c->d[0]);
+        call(0xAB8);
+        return;
+    case 0x169DC:                                   /* 4: a jump to its place in the row */
+        wr8(e(-0x3CFD), 0xC);
+        wr8(e(-0x2BFF), 6);
+        c->d[0] = rd8(e(-0x27FE));
+        c->d[0] = set_b(c->d[0], rd8(0x16A20 + (c->d[0] & 0xFFFF)));
+        c->d[0] = set_w(c->d[0], (uint16_t)(int8_t)c->d[0]);
+        c->d[0] = set_w(c->d[0], c->d[0] + rd16(e(-0x2100)));
+        c->d[0] = set_w(c->d[0], c->d[0] - rd16(e(-0x3800)));
+        c->d[1] = 0;
+        call(0x12B6);
+        wr16(e(-0x3600), (uint16_t)c->d[2]);
+        wr16(e(-0x35FE), (uint16_t)c->d[3]);
+        wr8(e(-0x3100), rd8(e(-0x3100)) & 0x75);
+        anim(0xA);
+        call(0xB44);
+        call(0xAB4);
+        return;
+    case 0x16A26:                                   /* 6: landing in its place, then waiting there */
+        if (!(rd8(e(-0x2BFF)) & 0x80)) {
+            call(0xB44);
+            if (rd16(e(-0x35FE)) & 0x8000) { call(0xAB4); return; }
+            call(0x2FD0);
+            call(0x44D6);
+            if (!zero_after(0x4362)) return;
+            point();
+            c->d[0] = set_b(c->d[0], rd8(e(-0x27FE)));
+            wr8(c->a[3] - 0x5D64, rd8(c->a[3] - 0x5D64) | (uint8_t)(1u << (c->d[0] & 7)));
+            wr8(e(-0x2800), 8);
+            wr8(e(-0x2BFF), rd8(e(-0x2BFF)) | 0x80);
+            c->d[0] = set_b(c->d[0], 6);
+            call(0x7E8);
+            return;
+        }
+        point();
+        if (rd8(c->a[3] - 0x5EA4) & 0x20) { wr8(e(-0x2BFF), 0xE); return; }
+        if (my_turn()) {
+            wr8(c->a[3] - 0x5D64, rd8(c->a[3] - 0x5D64) & (uint8_t)~(1u << (c->d[0] & 7)));
+            wr8(c->a[3] - 0x5EA4, rd8(c->a[3] - 0x5EA4) & 0xBF);
+            wr8(e(-0x2BFF), 8);
+            return;
+        }
+        call(0x46D6);
+        if (!zero_after(0x4362)) return;
+        wr16(e(-0x3600), 0);
+        if (rd8(e(-0x2800))) { wr8(e(-0x2800), (uint8_t)(rd8(e(-0x2800)) - 1)); return; }
+        call(0x5D8);
+        c->d[0] = set_b(c->d[0], c->d[0] & 0xF);
+        if (c->d[0] & 0xFF) return;
+        wr8(e(-0x2800), 8);
+        c->d[0] = set_w(c->d[0], 0xFD00);
+        call(0x4508);                               /* a hop */
+        return;
+    case 0x16AD8:                                   /* 8: after the player, jumping at it when near */
+        if (begun()) {
+            wr16(e(-0x3300), 0x180);
+            call(0x44D6);
+            call(0x43CC);
+            if (zero_after(0x4362)) {
+                call(0x455E);
+                if ((uint16_t)c->d[1] >= 0x50) goto walk;
+                c->d[2] = set_w(c->d[2], c->d[1]);
+                call(0x5D8);
+                c->d[0] = set_w(c->d[0], c->d[0] & 3);
+                if (c->d[0] & 0xFFFF) goto walk;
+                c->d[0] = set_w(c->d[0], 0xFC00);
+                call(0x4508);
+                c->d[0] = set_w(c->d[0], c->d[2]);
+                c->d[0] = set_w(c->d[0], c->d[0] << 3);
+                call(0x4496);
+            }
+            c->d[0] = 0xA;
+            goto look;
+        walk:
+            call(0x4492);
+            c->d[0] = 8;
+        look:
+            call(0x7E8);
+        }
+        turn_taken();
+        if (all_away()) return;
+        call(0x42C4);
+        a605_touched();
+        if (rd8(e(-0x2AFD)) & 4) { wr8(e(-0x2BFF), 0xA); return; }
+        if (!zero_after(0x4362)) return;
+        c->d[0] = 8;
+        if (rd8(e(-0x3CFE)) != 8) call(0x7E8);
+        c->d[0] = (uint8_t)((rd8(e(-0x3100)) & 0x41) - 1);   /* $4428: at a wall, turned, and the state returns */
+        if (!c->d[0]) { call(0x448C); return; }
+        if (rd8(e(-0x2800))) {
+            wr8(e(-0x2800), (uint8_t)(rd8(e(-0x2800)) - 1));
+            if (rd8(e(-0x2800))) return;
+        }
+        call(0x44D6);
+        call(0x4492);
+        call(0x43CC);
+        return;
+    case 0x16B78:                                   /* $A: knocked back, then after the player again */
+        if (begun()) {
+            c->d[0] = set_w(c->d[0], 0xFC00);
+            call(0x4508);
+            call(0x4492);
+            wr16(e(-0x3600), (uint16_t)-rd16(e(-0x3600)));
+            anim(0xA);
+        }
+        turn_taken();
+        if (all_away()) return;
+        call(0x42C4);
+        a605_touched();
+        if (zero_after(0x4362)) wr8(e(-0x2BFF), 8);
+        return;
+    case 0x16BD2:                                   /* $C: beaten: counted off its point, gone after $30 frames */
+        if (begun()) {
+            point();
+            turn_taken();
+            wr8(c->a[3] - 0x5D62, (uint8_t)(rd8(c->a[3] - 0x5D62) - 1));
+            wr8(c->a[3] - 0x5DB2, (uint8_t)(rd8(c->a[3] - 0x5DB2) + 1));
+            wr8(e(-0x2800), 0x30);
+            anim(2);
+            return;
+        }
+        wr8(e(-0x2800), (uint8_t)(rd8(e(-0x2800)) - 1));
+        if (!rd8(e(-0x2800))) wr8(e(-0x4000), 0);
+        return;
+    case 0x16C02:                                   /* $E: all away: to the right, then up to ($10E0, $1030) and off */
+        if (!(rd8(e(-0x2BFF)) & 0x80)) {
+            wr8(e(-0x3FFE), rd8(e(-0x3FFE)) & 0xF7);
+            call(0xB44);
+            call(0x2FD0);
+            c->d[0] = 0xA & rd8(e(-0x3100));
+            c->d[0] = set_b(c->d[0], c->d[0] - 2);
+            if (c->d[0] & 0xFF) return;
+            c->d[0] = 0x1F & rd16(0xFFFF965Au);
+            if (c->d[0] & 0xFFFF) return;
+            c->d[0] = set_w(c->d[0], 0x10A0);
+            if ((uint16_t)c->d[0] >= rd16(e(-0x3800))) { wr16(e(-0x3600), 0x200); return; }
+            wr8(e(-0x2BFF), rd8(e(-0x2BFF)) | 0x80);
+            c->d[0] = set_w(c->d[0], 0x10E0 - rd16(e(-0x3800)));
+            c->d[1] = set_w(c->d[1], 0x1030 - rd16(e(-0x3700)));
+            call(0x12B6);
+            wr16(e(-0x3600), (uint16_t)c->d[2]);
+            wr16(e(-0x35FE), (uint16_t)c->d[3]);
+            wr16(e(-0x2800), (uint16_t)c->d[5]);
+            c->d[6] <<= 8;
+            wr16(e(-0x36FE), (uint16_t)c->d[6]);
+            c->d[6] = c->d[6] << 16 | c->d[6] >> 16;
+            c->d[6] = set_w(c->d[6], (uint16_t)(int8_t)c->d[6]);
+            wr16(e(-0x3700), (uint16_t)(rd16(e(-0x3700)) + c->d[6]));
+            anim(8);
+            return;
+        }
+        if (rd16(e(-0x2800))) {
+            uint16_t t = (uint16_t)(rd16(e(-0x2800)) - 1);
+            wr16(e(-0x2800), t);
+            if (t) { call(0xB44); call(0xAB4); return; }
+            wr16(e(-0x3800), 0x10E0);
+            wr16(e(-0x3700), 0x1030);
+            wr16(e(-0x3600), 0x100);
+        }
+        call(0xAB8);
+        if (!(rd8(e(-0x4000)) & 1)) {
+            point();
+            wr8(c->a[3] - 0x5DB2, (uint8_t)(rd8(c->a[3] - 0x5DB2) + 1));
+            wr8(e(-0x4000), 0);
+        }
+        return;
+    case 0x16CB4:                                   /* $10: hit: thrown back $14 frames, blinking */
+        if (begun()) {
+            anim(4);
+            wr8(e(-0x4000), rd8(e(-0x4000)) | 0x20);
+            wr8(e(-0x2800), 0x14);
+            call(0x452E);
+        }
+        if (zero_after(0x4362)) { c->d[0] = 0x10; call(0xB92); }
+        call(0xB44);
+        call(0x46DA);
+        wr8(e(-0x2800), (uint8_t)(rd8(e(-0x2800)) - 1));
+        if (!rd8(e(-0x2800))) {
+            wr8(e(-0x3FFD), rd8(e(-0x3FFD)) & 0xBF);
+            wr8(e(-0x4000), rd8(e(-0x4000)) & 0xDF);
+            wr8(e(-0x2BFF), 8);
+        }
+        return;
+    default: call(at); return;
+    }
+}
+/* $16908: by state */
+static void area605(void)
+{
+    c->d[0] = 0x7F & rd8(e(-0x2BFF));
+    c->a[0] = 0x16918 + sx(rd16(0x16918 + c->d[0]));
+    a605_states(c->a[0]);
+}
+/* $16D34 (not called): the player's touch and damage for this enemy, with the boss bar */
+static void area605_touch(void)
+{
+    c->a[2] = sx(rd16(0xFFFF9EEEu));
+    if (rd8(0xFFFF9F03u) & 0x40) call(0x4742);
+    else { call(0xE64); call(0xD6E); }
+    call(0xD76);
+    call(0xC3E);
+    if (rd8(e(-0x2AFD)) & 4) {
+        c->d[0] = 0x58;
+        call(0x492E);
+        wr16(0xFFFF9628u, (uint16_t)c->d[0]);
+        wr16(0xFFFF962Au, rd16(e(-0x2600)));
+    }
+}
+ENTRY(Area605, area605)                    /* $16908 */
+ENTRY(Area605Turn, turn_taken)             /* $16D00 */
+ENTRY(Area605Touch, area605_touch)         /* $16D34 */
+void Area605Hit(Cpu *cpu) { c = cpu; a605_hit(); c->ret = 0; }           /* $16D20 */
+void Area605Touched(Cpu *cpu) { c = cpu; a605_touched(); c->ret = 0; }   /* $16BB2 */
+/* $16BBC returns from its caller when all are away */
+void Area605Away(Cpu *cpu) { c = cpu; if (all_away()) c->a[7] += 4; c->ret = 0; }
+#define STATE(name, at) void name(Cpu *cpu) { c = cpu; a605_states(at); c->ret = 0; }
+STATE(Area605Beaten, 0x16BD2)
+STATE(Area605Leave, 0x16C02)
+STATE(Area605Thrown, 0x16CB4)
