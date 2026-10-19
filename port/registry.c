@@ -125,6 +125,7 @@ void StateKeep(Cpu *), ShotRecord(Cpu *), KindAttack(Cpu *), KindStats(Cpu *), A
 void CellList(Cpu *), CellFill(Cpu *), CellBlockAt(Cpu *), CellBlock(Cpu *), CellAnimsClear(Cpu *), CellAnimsRun(Cpu *), CellAnimStart(Cpu *), TriggersClear(Cpu *), TriggersRun(Cpu *), TriggerAdd(Cpu *);
 void VelocityAtAngle(Cpu *), ScaleVector(Cpu *), JumpTo(Cpu *), FlightTime(Cpu *), TileAnimStart(Cpu *), LiftCells(Cpu *), LiftOpen(Cpu *), EffectPlace(Cpu *), EffectMake(Cpu *), ItemRain(Cpu *), ItemRainStart(Cpu *);
 void PlayerDead(Cpu *), PlayerDeadFall(Cpu *), PlayerFullHeal(Cpu *), PlayerRefill(Cpu *), PlayerRefillStep(Cpu *);
+void QuakeStart(Cpu *), ThunderFrame(Cpu *), ThunderStrike(Cpu *);
 void Looks(Cpu *), LooksExtra(Cpu *), LooksBlock(Cpu *), LooksBody(Cpu *), LooksSword(Cpu *), LooksShield(Cpu *), EquipChange(Cpu *);
 void HudPanel(Cpu *), GoldLabel(Cpu *), ThreeLabels(Cpu *), DigitsOut(Cpu *), ItemsChoose(Cpu *), MagicChoose(Cpu *), SlotChoose(Cpu *), ActionToSlot(Cpu *),
      ItemToSlot(Cpu *), WornBlink(Cpu *), StatusFadeIn(Cpu *), StatusFadeOut(Cpu *), StatusWait(Cpu *);
@@ -1309,6 +1310,9 @@ const PortRoutine port_routines[] = {
     {0x011170, 0x01141A, "MagicStart", MagicStart, CT_SP},       /* magic.c; a potion may carry on at $F288 */
     {0x01141A, 0x0114C0, "MagicFrame", MagicFrame, CT_SP},       /* may carry on at $11590 or $11780 off a pass */
     {0x0114C0, 0x011568, "MagicShieldHit", MagicShieldHit, CT_SP},
+    {0x011590, 0x0115BC, "QuakeStart", QuakeStart, CT_SP | CT_WAITS},   /* magic.c: the quake's start and the thunder's frame (batch T66) */
+    {0x011740, 0x011780, "ThunderFrame", ThunderFrame, CT_SP | CT_WAITS},
+    {0x011780, 0x011792, "ThunderStrike", ThunderStrike, CT_SP | CT_WAITS},
     {0x0115BC, 0x0115DE, "QuakeShaking", QuakeShaking, CT_SP},   /* resume points: on a task pass only */
     {0x0115DE, 0x011626, "QuakeRocks", QuakeRocks, CT_SP},
     {0x011626, 0x01163E, "QuakeSettling", QuakeSettling, CT_SP},

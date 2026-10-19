@@ -3065,6 +3065,20 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 (48 runs, all complete; 1,390,677 checked calls), the ranges covered by `castle-play`. Replace
 mode: thirteen runs, no problems.
 
+#### Items and magic, batch T66: the quake's start and the thunder's frame as entries (2026-10-19)
+
+* In `port/magic.c`, the quake's start (`$11590`) and the thunder's frame (`$11740`) with its
+  strike (`$11780`) are registered entries over the C the spells' frame already runs. They wait
+  for frames: on the task's pass only; off it they hand over to the original, as the frame does.
+* Verified by the owner's session `quake` (2026-10-19: the quake twice and thunder, from
+  `work/quake.state`, thunder.state with the quake given on A + left by `--poke`). Its start
+  state was rebuilt the same way after an F2 save overwrote it (that save kept as
+  `quake-f2.state`). The fuzz and self-test cannot reach these entries (they wait).
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(50 runs, all complete; 1,440,242 checked calls), the quake's start and the strike fully covered
+by `quake`. Replace mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

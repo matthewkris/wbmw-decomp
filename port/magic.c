@@ -921,3 +921,24 @@ void NextOnGround(Cpu *c)   { cpu = c; next_on_ground_regs(c); c->ret = 0; }  /*
 void NearestEnemy(Cpu *c)   { cpu = c; nearest_enemy_regs(c); c->ret = 0; }   /* $11B0E */
 void EnemyForSpirits(Cpu *c) { cpu = c; first_enemy_regs(c, 0); c->ret = 0; } /* $11B4A */
 void EnemyForThunder(Cpu *c) { cpu = c; first_enemy_regs(c, 2); c->ret = 0; } /* $11B76 */
+
+/* ---- batch T66: the quake's start and the thunder's frame as entries ----
+ * Where the original jumps to them ($11434's table) or a pass resumes. They wait for frames: on
+ * the task's pass only; off it (the frame run outside one) they hand over to the original, as the
+ * frame itself does. Verified by the owner's session `quake`. */
+void QuakeStart(Cpu *c)                         /* $11590 */
+{
+    if (!task_on_pass(c)) { port_leave_to_68k(c, 0x11590); return; }
+    cpu = c; quake(c);
+}
+void ThunderFrame(Cpu *c) { cpu = c; thunder_frame(c); }   /* $11740 */
+void ThunderStrike(Cpu *c)                      /* $11780: the world stops, the flashes begin */
+{
+    if (!task_on_pass(c)) { port_leave_to_68k(c, 0x11780); return; }
+    cpu = c;
+    c->a[7] = rd32(TASK_SP);
+    freeze();
+    flash_white();
+    wait_frame(c, 0x11792);
+    thunder_flashes(c);
+}
