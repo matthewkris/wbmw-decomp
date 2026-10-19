@@ -3008,6 +3008,21 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 0 mismatches, every instruction covered. Self-test caught 100 in 100 for all nine. Replace mode:
 thirteen runs, no problems.
 
+#### Enemies and actions, batch T62: the actions' small helpers (2026-10-19)
+
+* In `port/enemygfx.c`, exact in their registers, the helpers that `port/actions.c`,
+  `port/handlers.c` and `port/people.c` call by address: a state kept (`$140E0`), a shot's
+  record (`$159FA`), a kind's record, attack and moves (`$15A28`-`$15A76`), a group blinking or
+  not (`$15E10`-`$15E46`), the scene's text done (`$168E8`), accelerating towards a point
+  (`$16E56`, `$16E72`), the sword's touch (`$16E8E`), facing by d0, the burning look and a turn
+  at $20 from home (`$16F24`-`$16FD8`). The enemies and actions region ($14000-$17000) is now all
+  C.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(47 runs, all complete; 1,311,282 checked calls). 510,000 fuzz cases from six states,
+0 mismatches, every instruction covered. Self-test caught 100 in 100 for all seventeen. Replace
+mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

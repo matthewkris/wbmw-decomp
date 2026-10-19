@@ -121,6 +121,7 @@ void SpiritsFrame(Cpu *), RunMagicEnts(Cpu *), MagicSpark(Cpu *), MagicRock(Cpu 
 void CompanionRoute(Cpu *), TrailShift(Cpu *), RouteProbe(Cpu *), RouteByte(Cpu *), BoxNear(Cpu *), BoxNearX(Cpu *), BoxNearY(Cpu *), Slots80Clear(Cpu *), Slots80Clear2(Cpu *);
 void Area605(Cpu *), Area605Touched(Cpu *), Area605Away(Cpu *), Area605Beaten(Cpu *), Area605Leave(Cpu *), Area605Thrown(Cpu *), Area605Turn(Cpu *), Area605Hit(Cpu *), Area605Touch(Cpu *);
 void CalledBack(Cpu *), GuardTouch(Cpu *), GlideHome(Cpu *), GlideLegs(Cpu *), LegPose(Cpu *), LegsHide(Cpu *), Walker(Cpu *), WalkerWalk(Cpu *), WalkerGone(Cpu *);
+void StateKeep(Cpu *), ShotRecord(Cpu *), KindAttack(Cpu *), KindStats(Cpu *), AttackFrame(Cpu *), KindMoves(Cpu *), Rts15E0E(Cpu *), GroupBlink(Cpu *), GroupUnblink(Cpu *), Unblink(Cpu *), SceneDone(Cpu *), ToX(Cpu *), ToHeight(Cpu *), Sword(Cpu *), FaceByD0(Cpu *), Burning(Cpu *), TurnInRange(Cpu *);
 void Looks(Cpu *), LooksExtra(Cpu *), LooksBlock(Cpu *), LooksBody(Cpu *), LooksSword(Cpu *), LooksShield(Cpu *), EquipChange(Cpu *);
 void HudPanel(Cpu *), GoldLabel(Cpu *), ThreeLabels(Cpu *), DigitsOut(Cpu *), ItemsChoose(Cpu *), MagicChoose(Cpu *), SlotChoose(Cpu *), ActionToSlot(Cpu *),
      ItemToSlot(Cpu *), WornBlink(Cpu *), StatusFadeIn(Cpu *), StatusFadeOut(Cpu *), StatusWait(Cpu *);
@@ -1107,6 +1108,23 @@ const PortRoutine port_routines[] = {
     {0x015E54, 0x015EE6, "Act15E54", Act15E54, CT_SP},
     {0x015EE6, 0x015F9C, "Act15EE6", Act15EE6, CT_SP},
     {0x015FB0, 0x01602A, "Act15FB0", Act15FB0, CT_SP},           /* $15F9C, $1600C are C; $1602A is called */
+    {0x0140E0, 0x0140F2, "StateKeep", StateKeep, CT_SP | 0x7FFF},   /* enemygfx.c: the enemy actions' small helpers (exact) */
+    {0x0159FA, 0x015A28, "ShotRecord", ShotRecord, CT_SP | 0x7FFF},
+    {0x015A28, 0x015A3A, "KindAttack", KindAttack, CT_SP | 0x7FFF},
+    {0x015A3A, 0x015A4E, "KindStats", KindStats, CT_SP | 0x7FFF},
+    {0x015A4E, 0x015A76, "AttackFrame", AttackFrame, CT_SP | 0x7FFF},
+    {0x015A76, 0x015A86, "KindMoves", KindMoves, CT_SP | 0x7FFF},
+    {0x015E0E, 0x015E10, "Rts15E0E", Rts15E0E, CT_ALL},
+    {0x015E10, 0x015E2E, "GroupBlink", GroupBlink, CT_SP | 0x7FFF},
+    {0x015E2E, 0x015E46, "GroupUnblink", GroupUnblink, CT_SP | 0x7FFF},
+    {0x015E46, 0x015E54, "Unblink", Unblink, CT_SP | 0x7FFF},
+    {0x0168E8, 0x016908, "SceneDone", SceneDone, CT_SP | 0x7FFF},
+    {0x016E56, 0x016E72, "ToX", ToX, CT_SP | 0x7FFF},
+    {0x016E72, 0x016E8E, "ToHeight", ToHeight, CT_SP | 0x7FFF},
+    {0x016E8E, 0x016ED0, "Sword", Sword, CT_SP},
+    {0x016F24, 0x016F3A, "FaceByD0", FaceByD0, CT_SP | 0x7FFF},
+    {0x016F3A, 0x016F50, "Burning", Burning, CT_SP | 0x7FFF},
+    {0x016FD8, 0x016FF0, "TurnInRange", TurnInRange, CT_SP | 0x7FFF},
     {0x015F9C, 0x015FB0, "CalledBack", CalledBack, CT_SP | 0x7FFF},   /* enemygfx.c: Gragg & Glagg's helpers, the boss rooms' walkers ($160E8) */
     {0x01600C, 0x01602A, "GuardTouch", GuardTouch, CT_SP},
     {0x01602A, 0x01605A, "GlideHome", GlideHome, CT_SP | 0x7FFF | CT_NZVC},

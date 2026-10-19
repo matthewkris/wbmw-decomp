@@ -2037,3 +2037,187 @@ ENTRY(LegsHide, legs_hide)                 /* $160CE */
 ENTRY(Walker, walker)                      /* $160E8 */
 void WalkerWalk(Cpu *cpu) { c = cpu; walker_states(0x16154); c->ret = 0; }   /* $16154 */
 void WalkerGone(Cpu *cpu) { c = cpu; walker_states(0x16294); c->ret = 0; }   /* $16294 */
+
+/* ---- batch T62: the enemy actions' small helpers ($140E0-$16FF0) ----
+ * Called by address from port/actions.c, port/handlers.c and port/people.c: exact in their
+ * registers. */
+/* $140E0: state d0, the old one (its number) kept in -$2200 */
+static void state_keep(void)
+{
+    c->d[1] = set_b(c->d[1], rd8(e(-0x2BFF)) & 0x7F);
+    wr8(e(-0x2200), (uint8_t)c->d[1]);
+    wr8(e(-0x2BFF), (uint8_t)c->d[0]);
+    F_B(c->d[0]);
+}
+/* $159FA: a shot's record at $A394 from a0: its kind, x (by facing) and y from the entity, its
+ * tiles */
+static void shot_record(void)
+{
+    c->a[1] = 0xFFFFA394u;
+    wr16(c->a[1], rd16(c->a[0])); c->a[1] += 2; c->a[0] += 2;
+    c->d[0] = rd8(c->a[0]); c->a[0]++;
+    c->d[0] = set_w(c->d[0], (uint16_t)(int8_t)c->d[0]);
+    if (rd8(e(-0x3FFE)) & 8) c->d[0] = set_w(c->d[0], -c->d[0]);
+    c->d[0] = set_w(c->d[0], c->d[0] + rd16(e(-0x3800)));
+    wr16(c->a[1], (uint16_t)c->d[0]); c->a[1] += 2;
+    c->d[0] = rd8(c->a[0]); c->a[0]++;
+    c->d[0] = set_w(c->d[0], (uint16_t)(int8_t)c->d[0]);
+    c->d[0] = set_w(c->d[0], c->d[0] + rd16(e(-0x3700)));
+    wr16(c->a[1], (uint16_t)c->d[0]); c->a[1] += 2;
+    wr16(c->a[1], rd16(e(-0x3DFE)));
+}
+/* $15A3A: a1 its kind's record in $1381C (by -$2BFD) */
+static void kind_stats(void)
+{
+    c->a[0] = 0x1381C;
+    c->a[1] = c->a[0];
+    c->a[0] += sx(rd16(c->a[0]));
+    c->d[0] = rd8(e(-0x2BFD));
+    c->a[1] += sx(rd16(c->a[0] + c->d[0]));
+}
+/* $15A28: a0 its attack's record ($162C8, by the kind record's byte 6) */
+static void kind_attack(void)
+{
+    kind_stats();
+    c->d[0] = set_b(c->d[0], rd8(c->a[1] + 6));
+    c->d[0] = set_w(c->d[0], (uint16_t)(int8_t)c->d[0]);
+    c->a[0] = 0x162C8 + sx(rd16(0x162C8 + sx(c->d[0])));
+}
+/* $15A4E: -$2A00 the hit records of attack d0 ($16330) at its animation frame (-$2C00), or 0 */
+static void attack_frame(void)
+{
+    c->d[0] = set_w(c->d[0], (uint16_t)(int8_t)c->d[0]);
+    c->a[0] = 0x16330 + sx(rd16(0x16330 + sx(c->d[0])));
+    c->d[0] = 0;
+    wr32(e(-0x2A00), 0);
+    c->d[0] = rd8(e(-0x2C00));
+    c->d[0] = set_w(c->d[0], c->d[0] * 2);
+    c->d[0] = set_w(c->d[0], rd16(c->a[0] + sx(c->d[0])));
+    if (!(c->d[0] & 0xFFFF)) { F_W(0); return; }
+    c->d[0] += 0x16330;
+    wr32(e(-0x2A00), c->d[0]);
+}
+/* $15A76: -$2900 its moves d0 ($1638A) */
+static void kind_moves(void)
+{
+    c->d[0] = set_w(c->d[0], (uint16_t)(int8_t)c->d[0]);
+    c->a[0] = 0x1638A + sx(rd16(0x1638A + sx(c->d[0])));
+    wr32(e(-0x2900), c->a[0]);
+}
+/* $15E46: blinking stopped */
+static void unblink(void)
+{
+    wr8(e(-0x3FFD), rd8(e(-0x3FFD)) & 0xBF);
+    wr8(e(-0x4000), rd8(e(-0x4000)) & 0xDF);
+}
+/* $15E10 (blinking, $4514) and $15E2E (stopped): the group's three members (-$2D00), then this one */
+static void group_each(int blink)
+{
+    c->d[0] = 2;
+    c->a[3] = sx(rd16(e(-0x2D00)));
+    c->a[7] -= 2; wr16(c->a[7], (uint16_t)c->a[4]);
+    do {
+        c->d[1] = set_w(c->d[1], c->d[0] * 2);
+        c->a[4] = sx(rd16(c->a[3] + 2 + sx(c->d[1])));
+        if (blink) call(0x4514); else unblink();
+        c->d[0] = set_w(c->d[0], c->d[0] - 1);
+    } while ((c->d[0] & 0xFFFF) != 0xFFFF);
+    c->a[4] = sx(rd16(c->a[7])); c->a[7] += 2;
+    if (blink) call(0x4514); else unblink();
+}
+static void group_blink(void) { group_each(1); }
+static void group_unblink(void) { group_each(0); }
+/* $168E8: the scene's text is done ($A38C its entity): not drawn behind; when $8CC2 bit 0 was
+ * set and its animation is over, animation 4 */
+static void scene_done(void)
+{
+    c->a[4] = sx(rd16(0xFFFFA38Cu));
+    wr8(e(-0x4000), rd8(e(-0x4000)) & 0xDF);
+    uint8_t m = rd8(0xFFFF8CC2u);
+    wr8(0xFFFF8CC2u, m & 0xFE);
+    if (!(m & 1)) return;
+    if (rd8(e(-0x3A00))) return;
+    c->d[0] = 4;
+    call(0x7E8);
+}
+/* $16E56 (x, ACCEL_X, $AF4) and $16E72 (y, ACCEL_Y, $B44): accelerating towards d0 */
+static void accel_to(int32_t pos, int32_t vel, int32_t acc, uint32_t move)
+{
+    c->d[0] = set_w(c->d[0], c->d[0] + 2);
+    if (rd16(e(vel)) & 0x8000) c->d[0] = set_w(c->d[0], c->d[0] - 4);
+    c->d[1] = 0x10;
+    if ((uint16_t)c->d[0] < rd16(e(pos))) c->d[1] = set_w(c->d[1], -c->d[1]);
+    wr16(e(acc), (uint16_t)c->d[1]);
+    call(move);
+}
+static void to_x(void) { accel_to(-0x3800, -0x3600, -0x3400, 0xAF4); }
+static void to_height(void) { accel_to(-0x3700, -0x35FE, -0x33FE, 0xB44); }
+/* $16F24: facing left (d2 negated) if d0's low byte is negative, else right */
+static void face_by_d0(void)
+{
+    if (c->d[0] & 0x80) { wr8(e(-0x3FFE), rd8(e(-0x3FFE)) | 8); c->d[2] = set_w(c->d[2], -c->d[2]); }
+    else wr8(e(-0x3FFE), rd8(e(-0x3FFE)) & 0xF7);
+}
+/* $16F3A: its burning look (flashing), animation d0 at once */
+static void burning(void)
+{
+    wr8(e(-0x2F00), 0x77);
+    wr8(e(-0x3FFD), rd8(e(-0x3FFD)) | 0x40);
+    wr16(e(-0x3900), 1);
+    call(0x7FC);
+}
+/* $16FD8: turned at $20 from home ($45F4), a new wait ($43DE) */
+static void turn_in_range(void)
+{
+    c->d[2] = 0x20;
+    call(0x45F4);
+    if (!(c->ccr & CC_C)) wr8(e(-0x3FFE), rd8(e(-0x3FFE)) ^ 8);
+    c->d[0] = 8;
+    call(0x46C6);
+    call(0x43DE);
+}
+/* $16E8E: the sword: the player's touch ($D76); hit ($439E mi): state 2 and the caller returns
+ * to $1357E; touching the player: its damage ($14 less its defence, a quarter for kind $26, 1 at
+ * least) into $9856 */
+void Sword(Cpu *cpu)
+{
+    c = cpu;
+    c->a[2] = sx(rd16(0xFFFF9EEEu));
+    call(0xD76);
+    call(0x439E);
+    c->ret = 0;
+    if (c->ccr & CC_N) {
+        c->d[0] = set_b(c->d[0], 2);
+        c->a[7] += 4;
+        port_continue_at(c, 0x1357E, 0);
+        return;
+    }
+    call(0xE9A);
+    c->ret = 0;
+    if (!(c->ccr & (CC_C | CC_Z))) return;
+    c->d[0] = 0x14;
+    c->d[0] = set_w(c->d[0], c->d[0] - rd16(c->a[2] - 0x26FE));
+    if (c->d[0] & 0x8000) c->d[0] = 1;
+    else {
+        if (rd16(e(-0x2BFE)) == 0x26) c->d[0] = set_w(c->d[0], (uint16_t)c->d[0] >> 2);
+        if (!(c->d[0] & 0xFFFF)) c->d[0] = 1;
+    }
+    wr16(0xFFFF9856u, (uint16_t)c->d[0]);
+    wr8(0xFFFF9854u, rd8(0xFFFF9854u) | 2);
+}
+ENTRY(StateKeep, state_keep)               /* $140E0 */
+ENTRY(ShotRecord, shot_record)             /* $159FA */
+ENTRY(KindAttack, kind_attack)             /* $15A28 */
+ENTRY(KindStats, kind_stats)               /* $15A3A */
+ENTRY(AttackFrame, attack_frame)           /* $15A4E */
+ENTRY(KindMoves, kind_moves)               /* $15A76 */
+ENTRY(GroupBlink, group_blink)             /* $15E10 */
+ENTRY(GroupUnblink, group_unblink)         /* $15E2E */
+ENTRY(Unblink, unblink)                    /* $15E46 */
+ENTRY(SceneDone, scene_done)               /* $168E8 */
+ENTRY(ToX, to_x)                           /* $16E56 */
+ENTRY(ToHeight, to_height)                 /* $16E72 */
+ENTRY(FaceByD0, face_by_d0)                /* $16F24 */
+ENTRY(Burning, burning)                    /* $16F3A */
+ENTRY(TurnInRange, turn_in_range)          /* $16FD8 */
+void Rts15E0E(Cpu *cpu) { cpu->ret = 0; }    /* $15E0E (not called): an rts */

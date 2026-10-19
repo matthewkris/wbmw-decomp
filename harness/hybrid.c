@@ -1822,6 +1822,22 @@ int hybrid_fuzz(const char *name, long count)
                 m68k_set_reg(M68K_REG_D0, (rnd() << 8) | (8 + 2 * (rnd() % 6)));
             }
         }
+        if (strstr("|StateKeep|ShotRecord|KindAttack|KindStats|AttackFrame|KindMoves|GroupBlink|GroupUnblink|Unblink|SceneDone|ToX|ToHeight|FaceByD0|Burning|TurnInRange|Sword|Rts15E0E|", key53)) {
+            /* batch T62: an enemy ($40-$7C) with a group record of enemies, its kind and frame
+             * small, a looked-up record in d0; the scene's entity among the people */
+            uint32_t me = 0x40 + 4 * (rnd() % 16), r = rnd() % 2 ? 0xA0E2 : 0xA0F2;
+            m68k_set_reg(M68K_REG_A4, me);
+            put_word(0xD300 + me, r);
+            for (uint32_t k = 2; k < 8; k += 2) put_word(r + k, 0x40 + 4 * (rnd() % 16));
+            ram[0xD403 + me] = (uint8_t)(2 * (rnd() % 24));
+            ram[0xD400 + me] = (uint8_t)(rnd() % 6);
+            ram[0xC301 + me] = 0;
+            if (!strcmp(name, "AttackFrame") || !strcmp(name, "KindMoves")) m68k_set_reg(M68K_REG_D0, (rnd() << 8) | 2 * (rnd() % 8));
+            if (!strcmp(name, "ShotRecord")) m68k_set_reg(M68K_REG_A0, 0x10000 + 2 * (rnd() % 0x8000));
+            if (!strcmp(name, "SceneDone")) put_word(0xA38C, 0x40 + 4 * (rnd() % 48));
+            if (!strcmp(name, "Burning")) { anim_walk(); const uint8_t *t = anim_sga[rnd() % (unsigned)anim_n]; ram[0xC300 + me] = t[0]; ram[0xC301 + me] = t[1]; m68k_set_reg(M68K_REG_D0, (rnd() << 8) | t[2]); }
+            if (!strcmp(name, "Sword") && rnd() % 2) put_word(0xD402 + me, 0x26);
+        }
         if (!strcmp(name, "ScrollClearPair")) {
             m68k_set_reg(M68K_REG_A0, 0xFF2400); m68k_set_reg(M68K_REG_A1, 0xFF2600);
             m68k_set_reg(M68K_REG_D1, (rnd() << 16) | rnd() % 0x80);
