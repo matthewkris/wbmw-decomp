@@ -3127,24 +3127,26 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 0 mismatches, every instruction covered. Self-test caught 100 in 100 for all seventeen. Replace
 mode: thirteen runs, no problems.
 
-#### The boot region, batch T69: the tasks' slots and timers, the start-up's set-ups, the Z80 (2026-10-19)
+#### Room scripts and arrivals, batch T70: registered from the owner's sessions (2026-10-19)
 
-* In `port/kernhelp.c`, exact: a user task started (`$444`), started unless running (`$47A`),
-  ended by name (`$4A2`, `$4A4`), the running one ended (`$4E6`, its ending routine, slot and
-  timers), a timer added (`$514`, not called) and freed (`$582`); the VDP's registers set up
-  (`$4A7A`), the pads (`$4B02`), the slots and timers cleared or ended (`$4B42`-`$4BBA`), a
-  task stopped with a code (`$4CA8`); the sound driver loaded into the Z80 (`$306`, `$34A`).
-* What stays the original's in this region, the machinery the harness's task passes run on:
-  the reset (`$200`) and the start-up (`$4A06`, which sets the interrupt mask: C in the harness
-  cannot), the frame's wait (`$3B8`), Yield (`$400`, `$40C`), the VBlank interrupt (`$4B5C`,
-  `rte`), the scheduler's loop (`$4BBC`-`$4CA6`) and the error loops (`$49F8`-`$4A04`, `$4CB4`).
-* The error loop's paths (no free slot or timer) are in `analysis/coverage_skip.txt`: the
-  original stops there for good, and the game never gets there.
+* Registered (they wait for frames: on a task pass only), each fully covered by play:
+  room script 0's frame and its release (`$C91E`, `$C9B4`, area 15 room 1), room script 13's
+  frame and ride (`$D44C`, `$D48C`, area 16 room 4 and area 18 room 6), the fade-in arrival
+  (`$C614`) and the arrival inside through its door (`$C6F6`).
+* The sessions came from test states made by teleporting from `session8` (`work/tp-*.state`:
+  the item exit, `$9962` 11, with the start point `$9676` replaced after `$8F98` sets its own;
+  the room forced as it loads where a room has no start point). The arrival states start
+  mid-teleport, so the arrival runs inside every run of them.
+* Not registered: room script 1's frame (`$CA66`, the player transformed), although fully
+  covered: with it the game task's next waiting sequence (a door, `$BDDE`) loaded its room at
+  once instead of after its frames (session `script1b`, frame 475,794): an interplay between its
+  ending (the player's update `$DD08`, called from inside it) and the task coroutines, still to
+  find. Also not registered, only partly covered: script 11 (`$D068`, one outcome of the
+  Sphinx's game), 12 (`$D1FE`), 15 (`$D766`) and `$DAE6`-`$DB36`.
 
-Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
-(51 runs, all complete; 1,468,468 checked calls). 690,000 fuzz cases from six states,
-0 mismatches, every instruction covered. Self-test caught 100 in 100 for all seventeen. Replace
-mode: thirteen runs, no problems.
+Results: 0 mismatches over the standard runs, every owner state and session and the test states
+(76 runs, all complete; 1,972,235 checked calls), every instruction of the six covered by play
+alone. Replace mode: thirteen runs, no problems.
 
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
