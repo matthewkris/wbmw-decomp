@@ -124,6 +124,7 @@ void CalledBack(Cpu *), GuardTouch(Cpu *), GlideHome(Cpu *), GlideLegs(Cpu *), L
 void StateKeep(Cpu *), ShotRecord(Cpu *), KindAttack(Cpu *), KindStats(Cpu *), AttackFrame(Cpu *), KindMoves(Cpu *), Rts15E0E(Cpu *), GroupBlink(Cpu *), GroupUnblink(Cpu *), Unblink(Cpu *), SceneDone(Cpu *), ToX(Cpu *), ToHeight(Cpu *), Sword(Cpu *), FaceByD0(Cpu *), Burning(Cpu *), TurnInRange(Cpu *);
 void CellList(Cpu *), CellFill(Cpu *), CellBlockAt(Cpu *), CellBlock(Cpu *), CellAnimsClear(Cpu *), CellAnimsRun(Cpu *), CellAnimStart(Cpu *), TriggersClear(Cpu *), TriggersRun(Cpu *), TriggerAdd(Cpu *);
 void VelocityAtAngle(Cpu *), ScaleVector(Cpu *), JumpTo(Cpu *), FlightTime(Cpu *), TileAnimStart(Cpu *), LiftCells(Cpu *), LiftOpen(Cpu *), EffectPlace(Cpu *), EffectMake(Cpu *), ItemRain(Cpu *), ItemRainStart(Cpu *);
+void PlayerDead(Cpu *), PlayerDeadFall(Cpu *), PlayerFullHeal(Cpu *), PlayerRefill(Cpu *), PlayerRefillStep(Cpu *);
 void Looks(Cpu *), LooksExtra(Cpu *), LooksBlock(Cpu *), LooksBody(Cpu *), LooksSword(Cpu *), LooksShield(Cpu *), EquipChange(Cpu *);
 void HudPanel(Cpu *), GoldLabel(Cpu *), ThreeLabels(Cpu *), DigitsOut(Cpu *), ItemsChoose(Cpu *), MagicChoose(Cpu *), SlotChoose(Cpu *), ActionToSlot(Cpu *),
      ItemToSlot(Cpu *), WornBlink(Cpu *), StatusFadeIn(Cpu *), StatusFadeOut(Cpu *), StatusWait(Cpu *);
@@ -402,6 +403,11 @@ const PortRoutine port_routines[] = {
     {0x003E4C, 0x003EB8, "Currents", Currents, CT_SP},
     {0x003F08, 0x003F54, "Conveyors", Conveyors, CT_SP},
     {0x00E2C6, 0x00ED5C, "PlayerState", PlayerState, CT_SP},   /* player.c: the state handlers and their checks */
+    {0x00E22E, 0x00E298, "PlayerDead", PlayerDead, CT_SP | CT_WAITS},   /* player.c: the death and the refill (wait for frames: on a task pass only) */
+    {0x00E298, 0x00E2C6, "PlayerDeadFall", PlayerDeadFall, CT_SP | CT_WAITS},
+    {0x00F282, 0x00F288, "PlayerFullHeal", PlayerFullHeal, CT_SP | CT_WAITS},
+    {0x00F288, 0x00F2AA, "PlayerRefill", PlayerRefill, CT_SP | CT_WAITS},
+    {0x00F2AA, 0x00F2F4, "PlayerRefillStep", PlayerRefillStep, CT_SP | CT_WAITS},
     {0x00E1A6, 0x00E22E, "PlayerStartFrame", PlayerStartFrame, CT_SP},
     {0x00DE6A, 0x00DF2E, "PlayerInput", PlayerInput, CT_SP},
     {0x00DFA0, 0x00DFDE, "PlayerBounce", PlayerBounce, CT_SP},
