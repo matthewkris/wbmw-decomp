@@ -3093,6 +3093,21 @@ Results: 0 mismatches over the standard runs, every owner state, the sessions an
 0 mismatches, every instruction covered (by play alone too). Self-test caught 100 in 100.
 Replace mode: thirteen runs, no problems.
 
+#### The boot region, batch T68: the VDP registers' helpers, the on-screen tests (2026-10-19)
+
+* In `port/kernhelp.c`, exact: the VDP registers' helpers (`$5FE`-`$79C`: each register kept
+  in RAM at `$8A5A`-`$8A6E` and written to the control port; some entries are a `moveq` the
+  disassembly took for data, falling into the next), the display turned off then the frame's
+  wait (`$62A`, going on at `$3B8`), an entity switched on (`$A1A`), the on-screen tests
+  (`$BC6`-`$BFE`), velocities cleared (`$C1C`-`$C2E`) and the unreferenced `$D24`.
+* `$72C` and `$764` test bit 0 of the byte at `$8A60` for H40, which is the register's number
+  (`$8C`): never set by the game, covered by a fuzz bias.
+
+Results: 0 mismatches over the standard runs, every owner state, the sessions and the title runs
+(51 runs, all complete; 1,468,478 checked calls). 1,530,000 fuzz cases from six states,
+0 mismatches, every instruction covered. Self-test caught 100 in 100 for all 51. Replace mode:
+thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

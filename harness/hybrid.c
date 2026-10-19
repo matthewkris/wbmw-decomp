@@ -1970,6 +1970,13 @@ int hybrid_fuzz(const char *name, long count)
             if (rnd() % 4) ram[0x9F03] |= 1;
             m68k_set_reg(M68K_REG_A6, m68k_get_reg(NULL, M68K_REG_SP) - 8);
         }
+        if (strstr("|EntityOn|OffScreenX|OffScreen|OffScreenY|StopAll|StopFractions|StopVelocity|D2cSwapped|", key53)) {
+            /* batch T68: entities in a4 and a2, by the camera or not */
+            uint32_t me = 4 * (rnd() % 64);
+            m68k_set_reg(M68K_REG_A4, me); m68k_set_reg(M68K_REG_A2, 4 * (rnd() % 64));
+            if (rnd() % 2) { put_word(0xC800 + me, get_sword(0x9758) + rnd() % 0x1C0 - 0x40); put_word(0xC900 + me, get_sword(0x975A) + rnd() % 0x160 - 0x40); }
+        }
+        if (!strcmp(name, "WindowReg") || !strcmp(name, "SpritesReg")) ram[0x8A60] ^= (uint8_t)(rnd() & 1);   /* batch T68: bit 0 of $8A60 (its register byte, so never set by the game) */
         if (!strcmp(name, "ScrollClearPair")) {
             m68k_set_reg(M68K_REG_A0, 0xFF2400); m68k_set_reg(M68K_REG_A1, 0xFF2600);
             m68k_set_reg(M68K_REG_D1, (rnd() << 16) | rnd() % 0x80);
