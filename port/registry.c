@@ -125,7 +125,7 @@ void StateKeep(Cpu *), ShotRecord(Cpu *), KindAttack(Cpu *), KindStats(Cpu *), A
 void CellList(Cpu *), CellFill(Cpu *), CellBlockAt(Cpu *), CellBlock(Cpu *), CellAnimsClear(Cpu *), CellAnimsRun(Cpu *), CellAnimStart(Cpu *), TriggersClear(Cpu *), TriggersRun(Cpu *), TriggerAdd(Cpu *);
 void VelocityAtAngle(Cpu *), ScaleVector(Cpu *), JumpTo(Cpu *), FlightTime(Cpu *), TileAnimStart(Cpu *), LiftCells(Cpu *), LiftOpen(Cpu *), EffectPlace(Cpu *), EffectMake(Cpu *), ItemRain(Cpu *), ItemRainStart(Cpu *);
 void PlayerDead(Cpu *), PlayerDeadFall(Cpu *), PlayerFullHeal(Cpu *), PlayerRefill(Cpu *), PlayerRefillStep(Cpu *);
-void QuakeStart(Cpu *), ThunderFrame(Cpu *), ThunderStrike(Cpu *);
+void QuakeStart(Cpu *), ThunderFrame(Cpu *), ThunderStrike(Cpu *), PlayerUseItem(Cpu *);
 void Looks(Cpu *), LooksExtra(Cpu *), LooksBlock(Cpu *), LooksBody(Cpu *), LooksSword(Cpu *), LooksShield(Cpu *), EquipChange(Cpu *);
 void HudPanel(Cpu *), GoldLabel(Cpu *), ThreeLabels(Cpu *), DigitsOut(Cpu *), ItemsChoose(Cpu *), MagicChoose(Cpu *), SlotChoose(Cpu *), ActionToSlot(Cpu *),
      ItemToSlot(Cpu *), WornBlink(Cpu *), StatusFadeIn(Cpu *), StatusFadeOut(Cpu *), StatusWait(Cpu *);
@@ -410,6 +410,7 @@ const PortRoutine port_routines[] = {
     {0x00F288, 0x00F2AA, "PlayerRefill", PlayerRefill, CT_SP | CT_WAITS},
     {0x00F2AA, 0x00F2F4, "PlayerRefillStep", PlayerRefillStep, CT_SP | CT_WAITS},
     {0x00E1A6, 0x00E22E, "PlayerStartFrame", PlayerStartFrame, CT_SP},
+    {0x00DF2E, 0x00DF80, "PlayerUseItem", PlayerUseItem, CT_SP},   /* returns past its caller's frame (unlk a6); batch T67 */
     {0x00DE6A, 0x00DF2E, "PlayerInput", PlayerInput, CT_SP},
     {0x00DFA0, 0x00DFDE, "PlayerBounce", PlayerBounce, CT_SP},
     {0x00EF4E, 0x00EFE2, "PlayerAccel", PlayerAccel, CT_SP},
