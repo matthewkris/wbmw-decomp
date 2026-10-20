@@ -125,7 +125,7 @@ void StateKeep(Cpu *), ShotRecord(Cpu *), KindAttack(Cpu *), KindStats(Cpu *), A
 void CellList(Cpu *), CellFill(Cpu *), CellBlockAt(Cpu *), CellBlock(Cpu *), CellAnimsClear(Cpu *), CellAnimsRun(Cpu *), CellAnimStart(Cpu *), TriggersClear(Cpu *), TriggersRun(Cpu *), TriggerAdd(Cpu *);
 void VelocityAtAngle(Cpu *), ScaleVector(Cpu *), JumpTo(Cpu *), FlightTime(Cpu *), TileAnimStart(Cpu *), LiftCells(Cpu *), LiftOpen(Cpu *), EffectPlace(Cpu *), EffectMake(Cpu *), ItemRain(Cpu *), ItemRainStart(Cpu *);
 void PlayerDead(Cpu *), PlayerDeadFall(Cpu *), PlayerFullHeal(Cpu *), PlayerRefill(Cpu *), PlayerRefillStep(Cpu *);
-void QuakeStart(Cpu *), ThunderFrame(Cpu *), ThunderStrike(Cpu *), PlayerUseItem(Cpu *), ScriptsRun(Cpu *), GameLoop(Cpu *), GameFrame(Cpu *);
+void QuakeStart(Cpu *), ThunderFrame(Cpu *), ThunderStrike(Cpu *), PlayerUseItem(Cpu *), ScriptsRun(Cpu *), GameLoop(Cpu *), GameFrame(Cpu *), RoomChangeGo(Cpu *);
 void Vdp0Set10(Cpu *), Vdp0Clr10(Cpu *), Vdp0Store(Cpu *), DisplayOn(Cpu *), DisplayOff(Cpu *), Vdp1Set40(Cpu *), Vdp1Clr40(Cpu *), Vdp1Set20(Cpu *), Vdp1Clr20(Cpu *), Vdp1Set10(Cpu *), Vdp1Or(Cpu *), Vdp1Clr10(Cpu *), Vdp1And(Cpu *), Vdp1Store(Cpu *), Vdp6C(Cpu *), Vdp11Set8(Cpu *), Vdp11Clr8(Cpu *), Vdp11Clr4(Cpu *), Vdp11Set4(Cpu *), Vdp11Clr3(Cpu *), Vdp11And(Cpu *), Vdp11Set2(Cpu *), Vdp11Set3(Cpu *), Vdp11Or(Cpu *), Vdp12H32(Cpu *), Vdp12H40(Cpu *), Vdp12Clr6(Cpu *), Vdp12Mode2(Cpu *), Vdp12Mode4(Cpu *), Vdp12Set8(Cpu *), Vdp12Or(Cpu *), Vdp12Clr8(Cpu *), Vdp12And(Cpu *), Vdp12Store(Cpu *), Vdp6E(Cpu *), PlaneAReg(Cpu *), WindowReg(Cpu *), PlaneBReg(Cpu *), SpritesReg(Cpu *), HScrollReg(Cpu *), PlaneSizeReg(Cpu *), EntityOn(Cpu *), OffScreenX(Cpu *), OffScreenXAt(Cpu *), OffScreen(Cpu *), OffScreenY(Cpu *), OffScreenYAt(Cpu *), StopAll(Cpu *), StopFractions(Cpu *), StopVelocity(Cpu *), D2cSwapped(Cpu *);
 void Z80Load(Cpu *), Z80Reset(Cpu *), TaskStart(Cpu *), TaskEnsure(Cpu *), TasksEndNamedA0(Cpu *), TasksEndNamed(Cpu *), TaskEnd(Cpu *), TimerAdd(Cpu *), TimersFree(Cpu *), VdpInit(Cpu *), PadsInit(Cpu *), TasksClear(Cpu *), TasksReset(Cpu *), TimersClear(Cpu *), SystemTasksClear(Cpu *), UserTasksEnd(Cpu *), TaskStop(Cpu *);
 void Looks(Cpu *), LooksExtra(Cpu *), LooksBlock(Cpu *), LooksBody(Cpu *), LooksSword(Cpu *), LooksShield(Cpu *), EquipChange(Cpu *);
@@ -743,7 +743,9 @@ const PortRoutine port_routines[] = {
     {0x008FFC, 0x00901C, "GameLoop", GameLoop, CT_SP | CT_WAITS},   /* batch T73: the game task's loop (yields each frame) */
     {0x00901C, 0x009100, "GameFrame", GameFrame, CT_SP | CT_WAITS},   /* a pass resumed after its yield */
     {0x009100, 0x009144, "NextRoom", NextRoom, CT_SP | CT_WAITS},
-    {0x009144, 0x0091EA, "GameOver", GameOver, CT_SP | CT_WAITS},   /* $9228 (the room's message) waits for a session that runs it */
+    {0x009144, 0x0091EA, "GameOver", GameOver, CT_SP | CT_WAITS},
+    {0x0091EA, 0x0091F4, "RoomChangeGo", RoomChangeGo, CT_SP | CT_WAITS},   /* batch T74: the room change's jump, only to sequences that wait (not fuzzed) */
+    {0x009228, 0x0092A4, "RoomMessage", RoomMessage, CT_SP | CT_WAITS},
     {0x007544, 0x00757A, "HudPanel", HudPanel, CT_SP},           /* rooms.c: the HUD's panel and the status screen's labels; status.c: its parts that wait, as entries */
     {0x008596, 0x0085A8, "GoldLabel", GoldLabel, CT_SP},
     {0x0084C4, 0x0084DE, "ThreeLabels", ThreeLabels, CT_ALL},
@@ -835,7 +837,8 @@ const PortRoutine port_routines[] = {
     {0x00BD52, 0x00BD9A, "DoorClose", DoorClose, CT_SP | CT_WAITS},
     {0x00BD9A, 0x00BDB0, "RoomLeave", RoomLeave, CT_ALL},
     {0x00BDB0, 0x00BDC0, "SeqExit", SeqExit, CT_SP | CT_WAITS},   /* verified by the session7 recordings */
-    {0x00BDDE, 0x00BE50, "SeqDoor", SeqDoor, CT_SP | CT_WAITS},   /* the sequences wait for frames: checked by the task passes, not fuzzed ($BDC0, $BE50 and $BF80 wait for a session that runs them) */
+    {0x00BDDE, 0x00BE50, "SeqDoor", SeqDoor, CT_SP | CT_WAITS},   /* the sequences wait for frames: checked by the task passes, not fuzzed ($BDC0 and $BF80 wait for a session that runs them) */
+    {0x00BE50, 0x00BE6C, "SeqWarp", SeqWarp, CT_SP | CT_WAITS},
     {0x00BE6C, 0x00BEF2, "SeqInside", SeqInside, CT_SP | CT_WAITS},
     {0x00BEF2, 0x00BF80, "SeqOutside", SeqOutside, CT_SP | CT_WAITS},
     {0x00C0C2, 0x00C128, "WalkInSetup", WalkInSetup, CT_ALL},

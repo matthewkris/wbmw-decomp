@@ -3210,6 +3210,20 @@ Results: 0 mismatches over the standard runs, every owner state and session and 
 Results: 0 mismatches over the standard runs, every owner state and session and the test states
 (84 runs, all complete; 2,112,782 checked calls). Replace mode: thirteen runs, no problems.
 
+#### A warp, the room's message and the room change's jump, batch T74 (2026-10-20)
+
+* Registered (on a task pass only): the warp (`$BE50`, room change 12, run by the owner's
+  `warp` session), the room's message from the game loop (`$9228`, sound `$56` and the message
+  `$9686` run to its end) and the room change's jump (`$91EA`, by the table at `$91F4`; it only
+  jumps to sequences that wait, so it is marked as waiting and not fuzzed). Every instruction
+  of the three runs in the sessions.
+* Still waiting for a session: the kept door (`$BDC0`, room script 16's exit), a house's door
+  (`$BF80`, trigger kind 6: area 1 room 6, area 7 room 7, area 8 room 8, area 17 room 9), the
+  arrival inside it (`$C67E`) and the palettes of a received thing (`$C31A`, only item `$31`).
+
+Results: 0 mismatches over the standard runs, every owner state and session and the test states
+(84 runs, all complete; 2,112,779 checked calls). Replace mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
