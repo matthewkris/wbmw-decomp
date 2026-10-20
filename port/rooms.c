@@ -2945,7 +2945,7 @@ void DoorClose(Cpu *cpu) { c = cpu; NEEDS_PASS(0xBD52); door_animation_68k(1); }
  * When a trigger's routine sets $9962, the game's task jumps (from its table at $91F4) to one of
  * these. They run on the task's coroutine, wait for frames at the original's resume addresses,
  * and leave as the original does: back to the game's loop ($8FFC), to the next room ($9100), or
- * to the exits' code ($F76C). $BDC0 is not yet registered: no session runs it yet. */
+ * to the exits' code ($F76C). */
 
 #define GAME_LOOP     0x8FFC
 #define NEXT_ROOM     0x9100

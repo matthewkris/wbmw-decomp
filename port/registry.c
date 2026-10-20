@@ -837,7 +837,8 @@ const PortRoutine port_routines[] = {
     {0x00BD52, 0x00BD9A, "DoorClose", DoorClose, CT_SP | CT_WAITS},
     {0x00BD9A, 0x00BDB0, "RoomLeave", RoomLeave, CT_ALL},
     {0x00BDB0, 0x00BDC0, "SeqExit", SeqExit, CT_SP | CT_WAITS},   /* verified by the session7 recordings */
-    {0x00BDDE, 0x00BE50, "SeqDoor", SeqDoor, CT_SP | CT_WAITS},   /* the sequences wait for frames: checked by the task passes, not fuzzed ($BDC0 waits for a session that runs it) */
+    {0x00BDC0, 0x00BDDE, "SeqKeptDoor", SeqKeptDoor, CT_SP | CT_WAITS},   /* batch T76 */
+    {0x00BDDE, 0x00BE50, "SeqDoor", SeqDoor, CT_SP | CT_WAITS},   /* the sequences wait for frames: checked by the task passes, not fuzzed */
     {0x00BE50, 0x00BE6C, "SeqWarp", SeqWarp, CT_SP | CT_WAITS},
     {0x00BE6C, 0x00BEF2, "SeqInside", SeqInside, CT_SP | CT_WAITS},
     {0x00BEF2, 0x00BF80, "SeqOutside", SeqOutside, CT_SP | CT_WAITS},

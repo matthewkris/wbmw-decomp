@@ -3242,6 +3242,21 @@ Results: 0 mismatches over the standard runs, every owner state and session and 
 Results: 0 mismatches over the standard runs, every owner state and session and the test states
 (87 runs, all complete; 2,164,529 checked calls). Replace mode: thirteen runs, no problems.
 
+#### The kept door, and the enemies' runner at the original's stack depth, batch T76 (2026-10-20)
+
+* Registered (it waits: on a task pass only): the kept door (`$BDC0`, room change 13: up on the
+  exit room script 16 draws once its boss is beaten), verified by the owner's `keptdoor3`
+  session from `tp-kept18c` (area 18 room 9's boss after its intro with 1 life).
+* That session found an old difference: the enemies' runner (`$133B2`) did not keep the
+  original's frame (`link a6,#-2`), so the handlers ran 6 bytes higher on the stack. The boss's
+  flash (`$182AA`) puts its buffer by the stack pointer (above it, in RAM no stack uses), so the
+  buffer landed 6 bytes off. The runner now keeps the frame, its count in the frame's word.
+* Fuzzing `$133B2` from random RAM reaches handler addresses that are not code: so before this
+  change too; it is checked inside every task pass (765,667 passes in the runs).
+
+Results: 0 mismatches over the standard runs, every owner state and session and the test states
+(88 runs, all complete; 2,176,705 checked calls). Replace mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
