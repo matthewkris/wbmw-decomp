@@ -1514,28 +1514,33 @@ static void sprite_at(uint32_t rec, uint32_t d0w, uint32_t d1, uint32_t d2)   /*
 
 /* $1B91C: $A3AC frames; $1B904 the same plus one, with the stars; $1B950 plus one, the entity
  * $A3B0 moved each frame. ret: where the original goes on ($A3BE) */
-static void end_wait_count(uint32_t ret)
+static void end_wait_count_at(uint32_t ret, uint32_t at)
 {
+    if (at) goto resumed;
     wr32(END_RET, ret);
-    do end_wait(0x1B924); while (wr16(END_COUNT, (uint16_t)(rd16(END_COUNT) - 1)), rd16(END_COUNT));
+    do { end_wait(0x1B924); resumed: ; } while (wr16(END_COUNT, (uint16_t)(rd16(END_COUNT) - 1)), rd16(END_COUNT));
     c->a[0] = rd32(END_RET);
 }
-static void end_wait_stars(uint32_t ret)
+static void end_wait_stars_at(uint32_t ret, uint32_t at)
 {
+    if (at) goto resumed;
     wr32(END_RET, ret);
     for (;;) {
         end_wait(0x1B90C);
+resumed:
         ending_stars();
         uint16_t n = rd16(END_COUNT); wr16(END_COUNT, (uint16_t)(n - 1));
         if (!n) break;                                  /* bcc: until it passes 0 */
     }
     c->a[0] = rd32(END_RET);
 }
-static void end_wait_move(uint32_t ret)
+static void end_wait_move_at(uint32_t ret, uint32_t at)
 {
+    if (at) goto resumed;
     wr32(END_RET, ret);
     for (;;) {
         end_wait(0x1B958);
+resumed:
         c->a[4] = sx(rd16(END_ACTOR));
         call(0xAB4);
         uint16_t n = rd16(END_COUNT); wr16(END_COUNT, (uint16_t)(n - 1));
@@ -1544,32 +1549,45 @@ static void end_wait_move(uint32_t ret)
     c->a[0] = rd32(END_RET);
 }
 /* $1B804: a fade out, waited for */
-static void end_fade(uint32_t ret)
+static void end_fade_at(uint32_t ret, uint32_t at)
 {
+    if (at) goto resumed;
     wr32(END_RET, ret);
     call(0x5842);
-    do end_wait(0x1B812); while (!(rd8(0xFFFF8C56u) & 0x10));
+    do { end_wait(0x1B812); resumed: ; } while (!(rd8(0xFFFF8C56u) & 0x10));
     c->a[0] = rd32(END_RET);
 }
 /* $1B30A: the scene's message ($7A + $A3A6, its window by $2002), run to its end */
-static void end_message(uint32_t ret)
+static void end_message_at(uint32_t ret, uint32_t at)
 {
+    if (at == 0x1B322) goto r1B322;
+    if (at == 0x1B326) goto r1B326;
     wr32(END_RET, ret);
     c->d[0] = set_w(c->d[0], rd16(0xFFFFA3A6u) + 0x7A);
     call(0x2002);
     wr16(0xFFFFA3A6u, (uint16_t)(rd16(0xFFFFA3A6u) + 1));
     do {
         end_wait(0x1B322);
+r1B322:
         call_68k_ret(c, 0x13BC, 0x1B326);
+r1B326: ;
     } while (rd8(0xFFFF8CA4u) & 0x80);
     c->a[0] = rd32(END_RET);
 }
 /* $1B2FE: see above; its count ($A3AC) is not reached */
 static void end_mark_wait(void) { end_mark(0x1B302); }
+/* $1B302, a pass resumed there (no later wait marked another address): the count down, a pass
+ * each, then rts to the scheduler as well */
+static void end_mark_resumed(void)
+{
+    wr16(END_COUNT, (uint16_t)(rd16(END_COUNT) - 1));
+    if (rd16(END_COUNT)) end_mark(0x1B302);
+}
 /* $1B250: the last scene's figure ($5C0's graphics in entity 4) walks in from the top for 11
  * frames, then turns ($16) */
-static void end_walk_in(uint32_t ret)
+static void end_walk_in_at(uint32_t ret, uint32_t at)
 {
+    if (at == 0x1B2C4) goto r1B2C4;
     wr32(END_RET, ret);
     c->d[0] = set_w(c->d[0], 0xB80); c->d[2] = set_w(c->d[2], 0x20); c->d[1] = set_w(c->d[1], 0xC1C);
     call(0x22A8);
@@ -1591,6 +1609,7 @@ static void end_walk_in(uint32_t ret)
     wr16(END_ACTOR, 4);
     do {
         end_wait(0x1B2C4);
+r1B2C4:
         c->a[4] = sx(rd16(END_ACTOR));
         call(0xAD6);
         wr16(END_COUNT, (uint16_t)(rd16(END_COUNT) - 1));
@@ -1606,6 +1625,12 @@ static void end_walk_in(uint32_t ret)
     c->d[0] = 0; call(0x7FC);
     c->a[0] = rd32(END_RET);
 }
+static void end_wait_count(uint32_t ret) { end_wait_count_at(ret, 0); }
+static void end_wait_stars(uint32_t ret) { end_wait_stars_at(ret, 0); }
+static void end_wait_move(uint32_t ret) { end_wait_move_at(ret, 0); }
+static void end_fade(uint32_t ret) { end_fade_at(ret, 0); }
+static void end_message(uint32_t ret) { end_message_at(ret, 0); }
+static void end_walk_in(uint32_t ret) { end_walk_in_at(ret, 0); }
 
 /* $1B778: the screen cleared ($5188), the ending's graphics slots ($1B796) and palettes */
 static void end_screen(void)
@@ -1702,16 +1727,19 @@ static void end_sprite_f0(void)
     ending_sprite();
 }
 
-static void end_finale(void);
+static void end_finale(uint32_t at);
 /* $1B016: the script: a word under $8000 waits so many frames, a command byte and its byte
  * else ($FF: the finale) */
-static void end_script(void)
+static void end_script(uint32_t at)
 {
+    if (at == 0x1B074) goto next_command;
+    if (at == 0x1B046) goto counting;
     c->d[0] = 0x16; call(0x366);
     wr16(0xFFFFA3A6u, 0);
     wr16(0xFFFFA3AEu, 0);
     wr32(END_SCRIPT, 0x1B0A2);
     for (;;) {
+next_command:                                           /* $1B02C ($1B074: bra there) */
         c->a[0] = rd32(END_SCRIPT);
         c->d[0] = rd8(c->a[0]); c->a[0]++;
         if (!(c->d[0] & 0x80)) {
@@ -1719,10 +1747,10 @@ static void end_script(void)
             c->d[0] = set_b(c->d[0], rd8(c->a[0])); c->a[0]++;
             wr16(END_COUNT, (uint16_t)c->d[0]);
             wr32(END_SCRIPT, c->a[0]);
-            do end_wait(0x1B046); while (wr16(END_COUNT, (uint16_t)(rd16(END_COUNT) - 1)), rd16(END_COUNT));
+            do { end_wait(0x1B046); counting: ; } while (wr16(END_COUNT, (uint16_t)(rd16(END_COUNT) - 1)), rd16(END_COUNT));
             continue;
         }
-        if ((c->d[0] & 0xFF) == 0xFF) { end_finale(); return; }
+        if ((c->d[0] & 0xFF) == 0xFF) { end_finale(0); return; }
         c->d[0] = set_b(c->d[0], c->d[0] & 0xF);
         if ((c->d[0] & 0xFF) == 8) wr16(0xFFFFA3AEu, (uint16_t)(rd16(0xFFFFA3AEu) + 2));
         c->d[1] = rd8(c->a[0]); c->a[0]++;
@@ -1745,8 +1773,14 @@ static void end_script(void)
 
 /* $1B332: the finale: the screen again, the story's last text scrolled in and out, the Sega
  * logo's rows and colours, the figure's last poses, then the end ($A3A4 cleared) and $4F66 */
-static void end_finale(void)
+static void end_finale(uint32_t at)
 {
+    switch (at) {
+    case 0x1B366: goto r1B366; case 0x1B374: goto r1B374; case 0x1B3B8: goto r1B3B8; case 0x1B3DA: goto r1B3DA;
+    case 0x1B424: case 0x1B542: goto moves;
+    case 0x1B478: goto r1B478; case 0x1B4C4: goto r1B4C4; case 0x1B50E: goto r1B50E; case 0x1B5AA: goto r1B5AA;
+    case 0x1B5B8: goto r1B5B8;
+    }
     end_screen();
     wr8(0xFFFFA39Cu, 0xFF);
     ending_stars_setup();
@@ -1757,10 +1791,12 @@ static void end_finale(void)
     call(0x581A);
     wr16(END_COUNT, 0xA4);
     end_wait_count(0x1B366);
+r1B366:
     wr16(0xFFFFA3AAu, 0);
     wr8(0xFFFFA39Eu, 0x1E);
     for (;;) {
         end_wait(0x1B374);
+r1B374:
         ending_stars();
         wr16(0xFFFFA3AAu, (uint16_t)(rd16(0xFFFFA3AAu) - 1));
         if (rd16(0xFFFFA3AAu) == 0xFF30) break;
@@ -1775,17 +1811,20 @@ static void end_finale(void)
     }
     wr16(END_COUNT, 0x12C);
     end_wait_stars(0x1B3B8);
+r1B3B8:
     c->a[0] = 0x1B61A; wr32(END_ROWS, c->a[0]);
     wr8(0xFFFFA3A3u, 0);
     do end_rows(); while (rd8(0xFFFFA3A3u) < 0x40);
     wr16(END_COUNT, 0x168);
     end_wait_count(0x1B3DA);
+r1B3DA:
     wr8(0xFFFFA3A3u, 0);
     c->a[0] = 0x1B75A; c->d[2] = 0; end_sprite_f0();
     c->d[0] = 0x14; call(0x5658);
     wr8(0xFFFFC0F0u, rd8(0xFFFFC0F0u) | 0x20);
     wr32(END_SCRIPT, 0x1B5DC);
     for (;;) {                                          /* $1B3FE: the figure's moves */
+moves:                                                  /* ($1B424, $1B542: bra there) */
         c->a[4] = 0xF0;
         c->a[0] = rd32(END_SCRIPT);
         c->d[0] = set_w(c->d[0], rd16(c->a[0])); c->a[0] += 2;
@@ -1809,6 +1848,7 @@ static void end_finale(void)
             if ((c->d[6] & 0xFF) != 0xFF) { wr16(END_COUNT, (uint16_t)c->d[6]); end_wait_count(0x1B542); continue; }
             wr16(END_COUNT, 7);
             end_wait_count(0x1B4C4);
+r1B4C4:
             wr8(0xFFFFC0F0u, rd8(0xFFFFC0F0u) | 0x20);
             c->a[0] = 0x1B71A;
             c->d[1] = set_w(c->d[1], 0x16);
@@ -1828,6 +1868,7 @@ static void end_finale(void)
             do {
                 wr16(END_COUNT, 0x14);
                 end_wait_count(0x1B50E);
+r1B50E:
                 c->d[1] = set_b(c->d[1], rd8(0xFFFFA39Du));
                 c->d[0] = 3;
                 vdp_row_at();
@@ -1863,10 +1904,12 @@ static void end_finale(void)
             c->a[0] = 0x1B76E; c->d[2] = 6; end_sprite_f0();
             wr16(END_COUNT, (uint16_t)c->d[6]);
             end_wait_count(0x1B5AA);
+r1B5AA:
             wr8(0xFFFFC0F0u, 0);
             wr16(END_COUNT, 0x12C);
             do {
                 end_wait(0x1B5B8);
+r1B5B8:
                 ending_stars();
                 wr16(END_COUNT, (uint16_t)(rd16(END_COUNT) - 1));
             } while (rd16(END_COUNT));
@@ -1884,6 +1927,7 @@ static void end_finale(void)
         wr8(0xFFFFA3A3u, 0);
         for (;;) {                                      /* $1B474: and the logo's rows as it passes */
             end_wait(0x1B478);
+r1B478:
             c->a[4] = 0xF0;
             c->d[7] = set_w(c->d[7], rd16(c->a[4] - 0x3800));
             call(0xAB4);
@@ -1901,8 +1945,12 @@ static void end_finale(void)
 /* $1AA3C: the ending's task: the screen, the stars, the hero and the princess's figures moved in
  * ($1AACE, $1AAD8), then the story's text and the credits scrolled up together until line $820,
  * the hero walked off, a fade, then the script */
-static void end_main(void)
+static void end_main(uint32_t at)
 {
+    switch (at) {
+    case 0x1AA78: goto r1AA78; case 0x1AA9C: goto r1AA9C; case 0x1AABE: goto r1AABE; case 0x1AB28: goto r1AB28;
+    case 0x1AB8C: goto r1AB8C; case 0x1ABBA: goto r1ABBA; case 0x1ABC4: goto r1ABC4; case 0x1ABCE: goto r1ABCE;
+    }
     wr8(0xFFFFA39Cu, 0);
     end_screen();
     ending_stars_setup();
@@ -1911,16 +1959,19 @@ static void end_main(void)
     call(0x581A);
     wr16(END_COUNT, 0x10);
     end_wait_count(0x1AA78);
+r1AA78:
     wr8(0xFFFFC0F4u, 0);
     sprite_at(0x1AAD8, 0xF4, 0, 0);
     wr16(END_COUNT, 0x80);
     wr16(END_ACTOR, 0xF4);
     end_wait_move(0x1AA9C);
+r1AA9C:
     wr8(0xFFFFC0F0u, 0);
     wr8(0xFFFFC0F4u, 0);
     sprite_at(0x1AACE, 0xF0, 2, 2);
     wr16(END_COUNT, 0x48);
     end_wait_count(0x1AABE);
+r1AABE:
     wr8(0xFFFFC0F0u, 0);
     c->d[0] = 1;
     wr8(0xFFFFA39Fu, 1); wr8(0xFFFFA3A0u, 1);
@@ -1933,6 +1984,7 @@ static void end_main(void)
     wr8(0xFFFFA3A4u, 0xFF);
     for (;;) {
         end_wait(0x1AB28);
+r1AB28:
         ending_stars();
         uint8_t h = rd8(0xFFFFA3A1u); wr8(0xFFFFA3A1u, (uint8_t)(h + 0x80));
         if (h & 0x80) {                                 /* every other frame: the credits */
@@ -1952,6 +2004,7 @@ static void end_main(void)
     sprite_at(0x1AAE2, 0xF0, 0, 2);
     do {
         end_wait(0x1AB8C);
+r1AB8C:
         c->a[4] = 0xF0;
         call(0xAD6);
     } while ((int16_t)(rd16(c->a[4] - 0x3700) - 0x68) < 0);
@@ -1959,11 +2012,14 @@ static void end_main(void)
     sprite_at(0x1AAD8, 0xF0, 0, 6);
     wr16(END_COUNT, 0x80);
     end_wait_count(0x1ABBA);
+r1ABBA:
     c->d[0] = 0xFFFFFFFAu; call(0x366);
     end_fade(0x1ABC4);
+r1ABC4:
     wr16(END_COUNT, 0x80);
     end_wait_count(0x1ABCE);
-    end_script();
+r1ABCE:
+    end_script(0);
 }
 
 /* the entries: those that wait run on a task pass only; those that keep a return address take
@@ -1976,10 +2032,42 @@ END_KEEPS(EndWaitMove, end_wait_move, 0x1B950)    /* $1B950 */
 END_KEEPS(EndFade, end_fade, 0x1B804)             /* $1B804 */
 END_KEEPS(EndMessage, end_message, 0x1B30A)       /* $1B30A */
 END_KEEPS(EndWalkIn, end_walk_in, 0x1B250)        /* $1B250 */
-void EndMain(Cpu *cpu)   { c = cpu; END_NEEDS_PASS(0x1AA3C); end_main(); }      /* $1AA3C: it ends at $4F66 */
-void EndScript(Cpu *cpu) { c = cpu; END_NEEDS_PASS(0x1B016); end_script(); }    /* $1B016 */
-void EndFinale(Cpu *cpu) { c = cpu; END_NEEDS_PASS(0x1B332); end_finale(); }    /* $1B332 */
+void EndMain(Cpu *cpu)   { c = cpu; END_NEEDS_PASS(0x1AA3C); end_main(0); }      /* $1AA3C: it ends at $4F66 */
+void EndScript(Cpu *cpu) { c = cpu; END_NEEDS_PASS(0x1B016); end_script(0); }    /* $1B016 */
+void EndFinale(Cpu *cpu) { c = cpu; END_NEEDS_PASS(0x1B332); end_finale(0); }    /* $1B332 */
 ENTRY(EndMarkWait, end_mark_wait)          /* $1B2FE */
+/* batch N3g: the ending started where it waited or where a wait goes on (a loaded state) */
+#define END_CONT_AT(name, fn, at) void name(Cpu *cpu) { c = cpu; END_NEEDS_PASS(at); fn(0, at); port_continue_at(c, c->a[0], 0); }
+END_CONT_AT(EndWaitCountAt1B924, end_wait_count_at, 0x1B924)
+END_CONT_AT(EndWaitStarsAt1B90C, end_wait_stars_at, 0x1B90C)
+END_CONT_AT(EndWaitMoveAt1B958, end_wait_move_at, 0x1B958)
+END_CONT_AT(EndFadeAt1B812, end_fade_at, 0x1B812)
+END_CONT_AT(EndMessageAt1B322, end_message_at, 0x1B322)
+END_CONT_AT(EndMessageAt1B326, end_message_at, 0x1B326)
+END_CONT_AT(EndWalkInAt1B2C4, end_walk_in_at, 0x1B2C4)
+#define END_AT(name, fn, at) void name(Cpu *cpu) { c = cpu; END_NEEDS_PASS(at); fn(at); }
+END_AT(EndScriptAt1B046, end_script, 0x1B046)
+END_AT(EndScriptAt1B074, end_script, 0x1B074)
+END_AT(EndMainAt1AA78, end_main, 0x1AA78)
+END_AT(EndMainAt1AA9C, end_main, 0x1AA9C)
+END_AT(EndMainAt1AABE, end_main, 0x1AABE)
+END_AT(EndMainAt1AB28, end_main, 0x1AB28)
+END_AT(EndMainAt1AB8C, end_main, 0x1AB8C)
+END_AT(EndMainAt1ABBA, end_main, 0x1ABBA)
+END_AT(EndMainAt1ABC4, end_main, 0x1ABC4)
+END_AT(EndMainAt1ABCE, end_main, 0x1ABCE)
+END_AT(EndFinaleAt1B366, end_finale, 0x1B366)
+END_AT(EndFinaleAt1B374, end_finale, 0x1B374)
+END_AT(EndFinaleAt1B3B8, end_finale, 0x1B3B8)
+END_AT(EndFinaleAt1B3DA, end_finale, 0x1B3DA)
+END_AT(EndFinaleAt1B424, end_finale, 0x1B424)
+END_AT(EndFinaleAt1B478, end_finale, 0x1B478)
+END_AT(EndFinaleAt1B4C4, end_finale, 0x1B4C4)
+END_AT(EndFinaleAt1B50E, end_finale, 0x1B50E)
+END_AT(EndFinaleAt1B542, end_finale, 0x1B542)
+END_AT(EndFinaleAt1B5AA, end_finale, 0x1B5AA)
+END_AT(EndFinaleAt1B5B8, end_finale, 0x1B5B8)
+void EndMarkWaitAt1B302(Cpu *cpu) { c = cpu; END_NEEDS_PASS(0x1B302); end_mark_resumed(); c->ret = 0; }
 ENTRY(EndScreen, end_screen)               /* $1B778 */
 ENTRY(EndScene, end_scene)                 /* $1B7A4 */
 ENTRY(EndLayerA, end_layer_a)              /* $1B7AE */

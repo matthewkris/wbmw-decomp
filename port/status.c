@@ -1218,10 +1218,12 @@ static void ret_to(uint32_t cell, uint32_t addr) { wr32(cell, addr); }
 
 /* $805A: the next frame, then the menus' buttons ($95D9: pressed, or held 16 frames then every
  * 8), and the three blinks */
-static void wait_input(uint32_t ret)
+static void wait_input_at(uint32_t ret, uint32_t at)
 {
+    if (at) goto resumed;
     ret_to(0xFFFF9634u, ret);
     yield_at(0x8062);
+resumed:
     c->d[0] = set_b(c->d[0], rd8(PAD_NEW)); F_B(c->d[0]);
     if (c->d[0] & 0xFF) {
         wr8(0xFFFF95D8u, 0x10);
@@ -1243,6 +1245,7 @@ static void wait_input(uint32_t ret)
     up_blink();
     down_blink();
 }
+static void wait_input(uint32_t ret) { wait_input_at(ret, 0); }
 
 /* $7952, $794E: the sprite cursor beside the slot chosen (x by the slot, $799A; y d6) */
 static void cursor_sprite(void)
@@ -1279,8 +1282,9 @@ static void slot_flip_low(void) { slot_flip(cursor_sprite_low); }   /* $7938 */
 
 /* $799E: choosing a slot with left/right (the sprite cursor; CHOOSING: from the top, the line
  * kept in CHOSEN_SLOT); B or Start: d6 -1, A or C: d6 0 */
-static void choose_slot(uint32_t ret)
+static void choose_slot_at(uint32_t ret, uint32_t at)
 {
+    if (at == 0x79B8) goto r79B8;
     ret_to(0xFFFF964Cu, ret);
     F_B(rd8(CHOOSING));
     if (rd8(CHOOSING)) {
@@ -1290,6 +1294,7 @@ static void choose_slot(uint32_t ret)
     }
     for (;;) {
         wait_input(0x79B8);
+r79B8:
         pressed(0xFFFFFF90u);
         if (c->d[6]) { wr8(0xFFFFC00Cu, 0); f_clr(); break; }
         F_B(rd8(CHOOSING));
@@ -1303,14 +1308,17 @@ static void choose_slot(uint32_t ret)
     }
     click_back();
 }
+static void choose_slot(uint32_t ret) { choose_slot_at(ret, 0); }
 
 /* $79EE: put the special action of the line chosen in a slot: the slot's old one taken out
  * (its name plain), the new one's name bright, the slot's icon redrawn */
-static void put_in_slot(uint32_t ret)
+static void put_in_slot_at(uint32_t ret, uint32_t at)
 {
+    if (at == 0x79FA) goto r79FA;
     ret_to(0xFFFF9640u, ret);
     wr8(CHOOSING, 1); F_B(1);
     choose_slot(0x79FA);
+r79FA:
     F_W(c->d[6]);
     if (!(c->d[6] & 0x8000)) {
         c->a[0] = sx(rd16(LIST_LINE));
@@ -1326,13 +1334,16 @@ static void put_in_slot(uint32_t ret)
     }
     wr16(LIST_LINE, rd16(CHOSEN_SLOT)); F_W(rd16(CHOSEN_SLOT));
 }
+static void put_in_slot(uint32_t ret) { put_in_slot_at(ret, 0); }
 
 /* $7A44: put the item of the items page in a slot */
-static void item_in_slot(uint32_t ret)
+static void item_in_slot_at(uint32_t ret, uint32_t at)
 {
+    if (at == 0x7A52) goto r7A52;
     ret_to(0xFFFF9654u, ret);
     wr8(CHOOSING, 1); F_B(1);
     choose_slot(0x7A52);
+r7A52:
     F_W(c->d[6]);
     if (c->d[6] & 0xFFFF) {
         c->d[6] = 0; F_L(0);
@@ -1356,16 +1367,20 @@ static void item_in_slot(uint32_t ret)
     line_mark();
     wr16(LIST_LINE, rd16(CHOSEN_SLOT)); F_W(rd16(CHOSEN_SLOT));
 }
+static void item_in_slot(uint32_t ret) { item_in_slot_at(ret, 0); }
 
 /* $7882: the items page's choosing: a line with the sprite cursor; one that can be used is
  * marked and put in a slot ($7A44); d6 -1 when done */
-static void items_choose(uint32_t ret)
+static void items_choose_at(uint32_t ret, uint32_t at)
 {
+    if (at == 0x7892) goto r7892;
+    if (at == 0x78C8) goto r78C8;
     ret_to(0xFFFF9650u, ret);
     for (;;) {
         wr8(CHOOSING, 0); f_clr();
         cursor_sprite_low();
         choose_slot(0x7892);
+r7892:
         F_W(c->d[6]);
         if (c->d[6] & 0x8000) break;
         line_x2();
@@ -1379,17 +1394,20 @@ static void items_choose(uint32_t ret)
         if (c->d[0] & 0xFFFF) c->d[2] = set_w(c->d[2], 0x8FB5);
         line_mark();
         item_in_slot(0x78C8);
+r78C8:
         F_W(c->d[6]);
         if (c->d[6] & 0xFFFF) break;
     }
     click_back();
     wr16(LIST_LINE, rd16(MENU_OF)); F_W(rd16(MENU_OF));
 }
+static void items_choose(uint32_t ret) { items_choose_at(ret, 0); }
 
 /* $78DC: the special actions' page: A or C on one with uses puts it in a slot; B or Start
  * leaves (d6 -1) */
-static void magic_choose(uint32_t ret)
+static void magic_choose_at(uint32_t ret, uint32_t at)
 {
+    if (at == 0x7906) goto r7906;
     ret_to(0xFFFF9644u, ret);
     pressed(0xFFFFFF90u);
     if (!c->d[6]) {
@@ -1403,10 +1421,12 @@ static void magic_choose(uint32_t ret)
         click_back();
         put_in_slot(0x7906);
     }
+r7906:
     wr16(LIST_LINE, rd16(MENU_OF)); F_W(rd16(MENU_OF));
     c->d[6] = 0xFFFFFFFFu; F_L(c->d[6]);
     click_back();
 }
+static void magic_choose(uint32_t ret) { magic_choose_at(ret, 0); }
 
 /* $7D9C: a list page's buttons: up/down; A or C wears the thing of the line (its byte in the
  * list menu's -$6A33, the list re-marked, the stats and lines redrawn); B or Start leaves (d6
@@ -1448,14 +1468,16 @@ leave:
 }
 
 /* $7E12: the line just worn blinks (12 frames each way) for $50 frames or until a button */
-static void blink_worn(uint32_t ret)
+static void blink_worn_at(uint32_t ret, uint32_t at)
 {
+    if (at == 0x7E2A) goto r7E2A;
     ret_to(0xFFFF9648u, ret);
     wr8(NO_REDRAW_ARROWS, 0x50);
     wr8(0xFFFF95DEu, 0x0C);
     wr8(0xFFFF95DFu, 0); f_clr();
     for (;;) {
         yield_at(0x7E2A);
+r7E2A:
         c->d[0] = set_b(0xFFFFFFF0u, 0xF0 & rd8(PAD_NEW)); F_B(c->d[0]);
         if (c->d[0] & 0xFF) break;
         if (!count_down(0xFFFF95DEu)) {
@@ -1480,28 +1502,34 @@ static void blink_worn(uint32_t ret)
     }
     wr8(NO_REDRAW_ARROWS, 0); f_clr();
 }
+static void blink_worn(uint32_t ret) { blink_worn_at(ret, 0); }
 
 /* $7E8C, $7EBA: the screen fading in (palette steps 9-$10) and out ($F-8; the frame's lower part
  * and the gold label back) */
-static void fade_in(uint32_t ret)
+static void fade_in_at(uint32_t ret, uint32_t at)
 {
+    if (at == 0x7E9C) goto r7E9C;
     ret_to(0xFFFF963Cu, ret);
     stats_page();
     wr8(0xFFFF95DAu, 9);
     do {
         wait_input(0x7E9C);
+r7E9C:
         wr8(PAL_STEP, rd8(0xFFFF95DAu));
         set8(GAME_FLAGS2, 4);
         wr8(0xFFFF95DAu, (uint8_t)add_b(&c->ccr, 1, rd8(0xFFFF95DAu)));
         cmp_byte(0x11, rd8(0xFFFF95DAu));
     } while (rd8(0xFFFF95DAu) != 0x11);
 }
-static void fade_out(uint32_t ret)
+static void fade_in(uint32_t ret) { fade_in_at(ret, 0); }
+static void fade_out_at(uint32_t ret, uint32_t at)
 {
+    if (at == 0x7EC8) goto r7EC8;
     ret_to(0xFFFF963Cu, ret);
     wr8(0xFFFF95DAu, 0x0F);
     do {
         wait_input(0x7EC8);
+r7EC8:
         wr8(PAL_STEP, rd8(0xFFFF95DAu));
         set8(GAME_FLAGS2, 4);
         wr8(0xFFFF95DAu, (uint8_t)sub_b(&c->ccr, 1, rd8(0xFFFF95DAu)));
@@ -1510,6 +1538,7 @@ static void fade_out(uint32_t ret)
     frame_lower();
     call_68k(c, GOLD_LABEL);
 }
+static void fade_out(uint32_t ret) { fade_out_at(ret, 0); }
 
 /* $8BB6: the screen's setup: which pages can be used, by the things in use ($8C1E) */
 static void screen_setup(void)
@@ -1591,38 +1620,47 @@ no:
 }
 
 /* $763E, $766E, $7684: a line's page, until B or Start; then the stats page back */
-static void line_page(void)
+static void line_page(uint32_t at)
 {
+    switch (at) {
+    case 0x764A: goto r764A; case 0x7662: goto r7662; case 0x767E: goto r767E; case 0x7694: goto r7694;
+    case 0x769C: goto r769C; case 0x76A8: goto r76A8;
+    }
     ret_to(0xFFFF9638u, 0x75D8);
     open_line();
     switch (rd16(MENU_OF)) {
     case 4:
         items_page();
-        do items_choose(0x767E); while (!(c->d[6] & 0x8000));
+        do { items_choose(0x767E); r767E: ; } while (!(c->d[6] & 0x8000));
         break;
     case 5:
         magic_page();
         do {
             wait_input(0x7694);
+r7694:
             menu_move();
             magic_choose(0x769C);
+r769C: ;
         } while (!(c->d[6] & 0xFFFF));
         break;
     default:                                        /* 0-3: a list */
         do {
             wait_input(0x764A);
+r764A:
             list_buttons();
         } while (!(c->ccr & CC_N));
         c->a[0] = sx(rd16(MENU_OF));
         c->d[0] = set_b(c->d[0], rd8(0xFFFF95D6u));
         cmp_byte(rd8(c->a[0] - 0x6A32), c->d[0]);
         if ((c->d[0] & 0xFF) != rd8(c->a[0] - 0x6A32)) blink_worn(0x7662);
+r7662:
         wr16(LIST_LINE, rd16(MENU_OF));
         clear_panel();
         goto back;
     }
     stats_page();
     yield_at(0x76A8);
+r76A8:
 back:
     stats();
     wr16(PAGE, 0); f_clr();
@@ -1631,18 +1669,21 @@ back:
 
 /* $7582: the status screen, from the game's frame when Start is pressed: fade in, the main menu
  * and its pages until B or Start, fade out; then back where it was called from */
-static void status_screen(void)
+static void status_screen(uint32_t at)
 {
+    switch (at) { case 0x7592: goto r7592; case 0x759E: goto r759E; case 0x75D8: goto r75D8; case 0x75EE: goto r75EE; }
     ret_to(0xFFFF9630u, rd32(c->a[7]));
     c->a[7] += 4;
     screen_setup();
     menu_reset();
     fade_in(0x7592);
+r7592:
     stats();
     for (;;) {
         main_menu();
         for (;;) {
             wait_input(0x759E);
+r759E:
             menu_move();
             pressed(0xFFFFFF90u);
             if (c->d[6]) goto close;
@@ -1657,20 +1698,23 @@ static void status_screen(void)
         clear_panel();
         line_x2();
         c->a[0] = 0x7604u + sx(rd16(0x7604u + sx(c->d[0])));   /* jsr (a0): the page */
-        line_page();
+        line_page(0);
+r75D8: ;
     }
 close:
     view_limits();
     screen_setup();
     fade_out(0x75EE);
+r75EE:
     call_68k(c, WINDOW_REDRAW);
     c->a[0] = rd32(0xFFFF9630u);
     port_continue_at(c, c->a[0], 0);
 }
 
 /* $7F0E: the pause screen (when $9659 bit 2 is set instead of the status screen): PAUSE until B */
-static void pause_screen(void)
+static void pause_screen(uint32_t at)
 {
+    if (at == 0x7F36) goto r7F36;
     ret_to(0xFFFF963Cu, rd32(c->a[7]));
     c->a[7] += 4;
     frame_pause();
@@ -1682,6 +1726,7 @@ static void pause_screen(void)
     set8(GAME_FLAGS2, 4);
     do {
         yield_at(0x7F36);
+r7F36:
         pressed(0xFFFFFF80u);
     } while (!c->d[6]);
     wr8(PAL_STEP, 8);
@@ -1694,8 +1739,8 @@ static void pause_screen(void)
 /* a routine that waits for frames runs only on a task pass; reached outside one (a pass the harness
  * finished on the 68000), it goes on in the original at its own address (port/task.h, CT_WAITS) */
 #define NEEDS_PASS(self) do { if (!task_in_pass()) { port_leave_to_68k(c, (self)); return; } } while (0)
-void StatusScreen(Cpu *cpu) { c = cpu; NEEDS_PASS(0x7582); status_screen(); }   /* $7582 */
-void PauseScreen(Cpu *cpu)  { c = cpu; NEEDS_PASS(0x7F0E); pause_screen(); }    /* $7F0E */
+void StatusScreen(Cpu *cpu) { c = cpu; NEEDS_PASS(0x7582); status_screen(0); }  /* $7582 */
+void PauseScreen(Cpu *cpu)  { c = cpu; NEEDS_PASS(0x7F0E); pause_screen(0); }   /* $7F0E */
 /* the screen's parts that wait, as entries: nothing in the original calls them any more (the
  * screen's C calls them itself, and the sessions check them as part of it); an entry takes its
  * return address, as the original's routine does, and goes on where the original's jmp (a0)
@@ -1716,6 +1761,33 @@ void WornBlink(Cpu *cpu)     { c = cpu; NEEDS_PASS(0x7E12); status_part(blink_wo
 void StatusFadeIn(Cpu *cpu)  { c = cpu; NEEDS_PASS(0x7E8C); status_part(fade_in, 0xFFFF963Cu); }        /* $7E8C */
 void StatusFadeOut(Cpu *cpu) { c = cpu; NEEDS_PASS(0x7EBA); status_part(fade_out, 0xFFFF963Cu); }       /* $7EBA */
 void StatusWait(Cpu *cpu)    { c = cpu; NEEDS_PASS(0x805A); status_part(wait_input, 0xFFFF9634u); }     /* $805A */
+/* batch N3i: the screen's parts started where they waited or where a part they called goes on (a
+ * loaded state); each then goes on where the original's jmp (a0) from its cell would */
+#define PART_AT(name, fn, at, cell) void name(Cpu *cpu) { c = cpu; NEEDS_PASS(at); fn(0, at); c->a[0] = rd32(cell); port_continue_at(c, c->a[0], 0); }
+PART_AT(StatusWaitAt8062, wait_input_at, 0x8062, 0xFFFF9634u)
+PART_AT(SlotChooseAt79B8, choose_slot_at, 0x79B8, 0xFFFF964Cu)
+PART_AT(ActionToSlotAt79FA, put_in_slot_at, 0x79FA, 0xFFFF9640u)
+PART_AT(ItemToSlotAt7A52, item_in_slot_at, 0x7A52, 0xFFFF9654u)
+PART_AT(ItemsChooseAt7892, items_choose_at, 0x7892, 0xFFFF9650u)
+PART_AT(ItemsChooseAt78C8, items_choose_at, 0x78C8, 0xFFFF9650u)
+PART_AT(MagicChooseAt7906, magic_choose_at, 0x7906, 0xFFFF9644u)
+PART_AT(WornBlinkAt7E2A, blink_worn_at, 0x7E2A, 0xFFFF9648u)
+PART_AT(StatusFadeInAt7E9C, fade_in_at, 0x7E9C, 0xFFFF963Cu)
+PART_AT(StatusFadeOutAt7EC8, fade_out_at, 0x7EC8, 0xFFFF963Cu)
+/* a line's page resumed: then the status screen after it ($75D8, its cell $9638) */
+#define PAGE_AT(name, at) void name(Cpu *cpu) { c = cpu; NEEDS_PASS(at); line_page(at); port_continue_at(c, c->a[0], 0); }
+PAGE_AT(LinePageAt764A, 0x764A)
+PAGE_AT(LinePageAt7662, 0x7662)
+PAGE_AT(LinePageAt767E, 0x767E)
+PAGE_AT(LinePageAt7694, 0x7694)
+PAGE_AT(LinePageAt769C, 0x769C)
+PAGE_AT(LinePageAt76A8, 0x76A8)
+#define SCREEN_AT(name, fn, at) void name(Cpu *cpu) { c = cpu; NEEDS_PASS(at); fn(at); }
+SCREEN_AT(StatusScreenAt7592, status_screen, 0x7592)
+SCREEN_AT(StatusScreenAt759E, status_screen, 0x759E)
+SCREEN_AT(StatusScreenAt75D8, status_screen, 0x75D8)
+SCREEN_AT(StatusScreenAt75EE, status_screen, 0x75EE)
+SCREEN_AT(PauseScreenAt7F36, pause_screen, 0x7F36)
 
 /* call_68k leaves its mark in ret: cleared, as none of these goes on elsewhere */
 #define ENTRY(name, fn) void name(Cpu *cpu) { c = cpu; fn(); c->ret = 0; }

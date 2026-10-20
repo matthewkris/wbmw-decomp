@@ -897,13 +897,19 @@ static int count8(uint32_t a) { uint8_t n = (uint8_t)(rd8(a) - 1); wr8(a, n); re
  * slot, $8000 restarts it ($8), $8001 jumps once more if bit 0 is set, other $80xx jump; else a
  * frame: (tiles << 8 | time), then the tiles' index, copied to the slot's VRAM ($4) by $22A8.
  * Nothing moves while $950A is set; the task ends ($4E6) when no slot is in use. */
-static void tile_anims_task(void)
+static void tile_anims_task(uint32_t at)
 {
+    if (at == 0x6EC0) goto resumed_frame;
+    if (at == 0x6F10) goto resumed_vblank;
     wr32(c->a[5] + 8, 0x6BAE);
     wr16(c->a[5] + 0x40, rd16(0xFFFF8F08u));
     goto slots;
 frame:                                              /* $6EBC */
-    do wait_frame(0x6EC0); while (rd8(0xFFFF950Au));
+    for (;;) {
+        wait_frame(0x6EC0);
+resumed_frame:
+        if (!rd8(0xFFFF950Au)) break;
+    }
     wr16(0xFFFF8F08u, (uint16_t)(rd16(0xFFFF8F08u) + 1));
     c->d[0] = set_w(c->d[0], rd16(0xFFFF8F08u));
     c->d[1] = set_w(c->d[1], c->d[0] - rd16(c->a[5] + 0x40));
@@ -929,6 +935,7 @@ slots:                                              /* $6EFE */
 next_vblank:                                        /* $6F08 */
     wr16(c->a[5] + 0x44, (uint16_t)c->a[0]);
     if (frame_late()) wait_frame(0x6F10);
+resumed_vblank:
     c->a[0] = sx16(rd16(c->a[5] + 0x44));
 slot:                                               /* $6F14 */
     {
@@ -972,8 +979,15 @@ skip:                                               /* $6F18 */
 /* $6F8A, the Kseg task: the Sega screen. A new screen, its graphics, palette and layout, colour
  * script $18 (the logo's shine), a fade in, half a second, script $1C, three seconds, a fade out,
  * then the next scene ($4CA8, d0 0) */
-static void sega_task(void)
+static void sega_task(uint32_t at)
 {
+    switch (at) {
+    case 0x6FB4: goto r6FB4;
+    case 0x6FCA: goto r6FCA;
+    case 0x6FDE: goto r6FDE;
+    case 0x6FF4: goto r6FF4;
+    case 0x7004: goto r7004;
+    }
     call(0x5188);
     c->a[0] = 0x701C; call(0x234C);
     call(0x22F0);
@@ -983,18 +997,19 @@ static void sega_task(void)
     c->d[0] = 0x18;
     if (color_script_start()) return;
     wait_frame(0x6FB4);
+r6FB4:
     wr8(LAYOUT_PLANE, 2);
     c->a[2] = 0x7024; draw_layout();
     fade_in();
-    do wait_frame(0x6FCA); while (!(rd8(PAL_FLAGS) & 0x10));
+    do { wait_frame(0x6FCA); r6FCA: ; } while (!(rd8(PAL_FLAGS) & 0x10));
     wr16(c->a[5] + 0x40, 0x1E);
-    do wait_frame(0x6FDE); while (count_w(c->a[5] + 0x40));
+    do { wait_frame(0x6FDE); r6FDE: ; } while (count_w(c->a[5] + 0x40));
     wr16(c->a[5] + 0x40, 0xB4);
     c->d[0] = 0x1C;
     if (color_script_start()) return;
-    do wait_frame(0x6FF4); while (count_w(c->a[5] + 0x40));
+    do { wait_frame(0x6FF4); r6FF4: ; } while (count_w(c->a[5] + 0x40));
     fade_out();
-    do wait_frame(0x7004); while (!(rd8(PAL_FLAGS) & 0x10));
+    do { wait_frame(0x7004); r7004: ; } while (!(rd8(PAL_FLAGS) & 0x10));
     c->d[0] = set_w(c->d[0], rd16(c->a[5] + 0x40));
     port_continue_at(c, 0x4CA8, 0);
 }
@@ -1010,8 +1025,8 @@ ENTRY(TileAnimsClear, tile_anims_clear)    /* $6BAE */
 ENTRY(CellVram, pic_cell)                  /* $5CA */
 /* the tasks wait for frames and leave by port_continue_at */
 #define NEEDS_PASS(self) do { if (!task_in_pass()) { port_leave_to_68k(c, (self)); return; } } while (0)
-void TileAnimsTask(Cpu *cpu) { c = cpu; NEEDS_PASS(0x6EAC); tile_anims_task(); }   /* $6EAC */
-void SegaTask(Cpu *cpu)      { c = cpu; NEEDS_PASS(0x6F8A); sega_task(); }         /* $6F8A */
+void TileAnimsTask(Cpu *cpu) { c = cpu; NEEDS_PASS(0x6EAC); tile_anims_task(0); }   /* $6EAC */
+void SegaTask(Cpu *cpu)      { c = cpu; NEEDS_PASS(0x6F8A); sega_task(0); }         /* $6F8A */
 
 /* ---- batch T47: the scenes' tasks ----
  * A scene is a task that starts others ($5106) and each frame watches for Start ($513C) or for
@@ -1027,23 +1042,27 @@ static int first_running(void) { return rd8(SCENE_FIRST) & 0x80; }
 
 /* $4CC8, Ksmt: the Sega screen ($6F86); Start: the title's menu (Ktm2); when it ends: the game's
  * intro (Kedm) or, with no scene to go to, the title (Ktmt) */
-static void scene_sega(void)
+static void scene_sega(uint32_t at)
 {
+    if (at == 0x4CD8) goto resumed;
     call(0x364);
     c->a[1] = 0x4D0C; tasks_start();
     for (;;) {
         wait_frame(0x4CD8);
+resumed:
         if (start_pressed()) { sound_stop_25(); scene_leave(0x50D4, 0x4D64); return; }
         if (!first_running()) { scene_leave(0x50D4, rd16(SCENE_NEXT) ? 0x4F54 : 0x4D14); return; }
     }
 }
 /* $4D18, Ktmt: the title's opening ($703E); Start or its end: the colour task, then Ktm3 */
-static void scene_title(void)
+static void scene_title(uint32_t at)
 {
+    if (at == 0x4D28) goto resumed;
     call(0x364);
     c->a[1] = 0x4D4A; tasks_start();
     do {
         wait_frame(0x4D28);
+resumed:
         if (start_pressed()) break;
     } while (first_running());
     c->a[0] = 0x5608; call(0x4A2);
@@ -1051,29 +1070,35 @@ static void scene_title(void)
 }
 /* $4D6C: the title's screen (a1's list): Start: sound $25, the menu (Kmnu); its end: the demo
  * (Kdym) */
-static void scene_title_screen(void)
+static void scene_title_screen(uint32_t at)
 {
+    if (at == 0x4D74) goto resumed;
     tasks_start();
     for (;;) {
         wait_frame(0x4D74);
+resumed:
         if (start_pressed()) { c->d[0] = 0x25; call(0x366); scene_leave(0x50E2, 0x4DA4); return; }
         if (!first_running()) { scene_leave(0x50D4, 0x4DDE); return; }
     }
 }
-static void scene_title_shown(void) { c->a[1] = 0x4D5C; scene_title_screen(); }   /* $4D56, Ktm3 */
-static void scene_title_after(void) { c->a[1] = 0x4D9C; scene_title_screen(); }   /* $4D68, Ktm2 */
+static void scene_title_shown(void) { c->a[1] = 0x4D5C; scene_title_screen(0); }   /* $4D56, Ktm3 */
+static void scene_title_after(void) { c->a[1] = 0x4D9C; scene_title_screen(0); }   /* $4D68, Ktm2 */
 /* $4DA8, Kmnu: the menu ($71C2); when it ends: the demo if $20(a5) is negative, else the game
  * (Kgmt) */
-static void scene_menu(void)
+static void scene_menu(uint32_t at)
 {
-    c->a[1] = 0x4DD6; tasks_start();
-    do wait_frame(0x4DB4); while (first_running());
+    if (at != 0x4DB4) {
+        c->a[1] = 0x4DD6; tasks_start();
+        wait_frame(0x4DB4);
+    }
+    while (first_running()) wait_frame(0x4DB4);
     scene_leave(0x50D4, (rd16(c->a[5] + 0x20) & 0x8000) ? 0x4DDE : 0x507C);
 }
 /* $4DE2, Kdym: the demo: its input ($4E64), its starting state ($4F14 into $FF3300), the game's
  * task; Start: Ktm2; the input's end or the game's: the Sega screen again */
-static void scene_demo(void)
+static void scene_demo(uint32_t at)
 {
+    if (at == 0x4E20) goto resumed;
     call(0x364);
     clear_9996();
     wr8(0xFFFF8A50u, 0x80);
@@ -1085,6 +1110,7 @@ static void scene_demo(void)
     wr8(0xFFFF8A51u, rd8(0xFFFF8A51u) | 1);
     for (;;) {
         wait_frame(0x4E20);
+resumed:
         if (start_pressed()) { sound_stop_25(); wr8(0xFFFF8A50u, 0); c->a[1] = 0x4D64; break; }
         demo_step();
         if (rd8(DEMO_COUNT) && first_running()) continue;
@@ -1100,47 +1126,57 @@ static void scene_ending(void)
     port_continue_at(c, 0x1AA3C, 0);
 }
 /* $4FA6 (put in place by $4FCC): a fade out, then the Sega screen */
-static void scene_ending_fade(void)
+static void scene_ending_fade(uint32_t at)
 {
-    fade_out();
-    do wait_frame(0x4FAE); while (!(rd8(PAL_FLAGS) & 0x10));
+    if (at != 0x4FAE) { fade_out(); wait_frame(0x4FAE); }
+    while (!(rd8(PAL_FLAGS) & 0x10)) wait_frame(0x4FAE);
     scene_leave(0x50D4, 0x4CC4);
 }
 /* $4F66 (from the ending, $1B5C6): an hour ($E10 frames) of the ending's frames ($1AD62) or
  * until Start; then a fade out with them, then the Sega screen */
-static void scene_ending_wait(void)
+static void scene_ending_wait(uint32_t at)
 {
+    if (at == 0x4F70) goto counting;
+    if (at == 0x4F8C) goto fading;
     wr16(c->a[5] + 0x40, 0xE10);
     for (;;) {
         wait_frame(0x4F70);
+counting:
         call(0x1AD62);
         uint16_t n = (uint16_t)(rd16(c->a[5] + 0x40) - 1);
         wr16(c->a[5] + 0x40, n);
         if (!n || start_pressed()) break;
     }
     fade_out();
-    do { wait_frame(0x4F8C); call(0x1AD62); } while (!(rd8(PAL_FLAGS) & 0x10));
+    do {
+        wait_frame(0x4F8C);
+fading:
+        call(0x1AD62);
+    } while (!(rd8(PAL_FLAGS) & 0x10));
     scene_leave(0x50D4, 0x4CC4);
 }
 /* $4FCC, Keds: waits for $A3A4 (the ending's end) and then button 7 (Start): the ending's task
  * goes on at $4FA6, and this one ends */
-static void scene_ending_end(void)
+static void scene_ending_end(uint32_t at)
 {
-    wr8(0xFFFFA3A4u, 0);
-    do wait_frame(0x4FD4); while (!rd8(0xFFFFA3A4u) || !(rd8(PAD_PRESSED) & 0x80));
+    if (at != 0x4FD4) { wr8(0xFFFFA3A4u, 0); wait_frame(0x4FD4); }
+    while (!rd8(0xFFFFA3A4u) || !(rd8(PAD_PRESSED) & 0x80)) wait_frame(0x4FD4);
     wr32(0xFFFF8054u, 0x4FA6);
     wr16(c->a[5], 0);
 }
 /* $5080, Kgmt: the game ($8EB0); when its task ends: the ending (Kedm) or the Sega screen */
-static void scene_game(void)
+static void scene_game(uint32_t at)
 {
-    call(0x364);
-    clear_9996();
-    wr8(0xFFFF8A50u, 0);
-    wr8(0xFFFF9658u, 0);
-    c->a[1] = 0x50CC; tasks_start();
-    wr8(0xFFFF8A51u, rd8(0xFFFF8A51u) | 1);
-    do wait_frame(0x50A2); while (first_running());
+    if (at != 0x50A2) {
+        call(0x364);
+        clear_9996();
+        wr8(0xFFFF8A50u, 0);
+        wr8(0xFFFF9658u, 0);
+        c->a[1] = 0x50CC; tasks_start();
+        wr8(0xFFFF8A51u, rd8(0xFFFF8A51u) | 1);
+        wait_frame(0x50A2);
+    }
+    while (first_running()) wait_frame(0x50A2);
     c->a[1] = rd16(SCENE_NEXT) ? 0x4F54 : 0x4CC4;
     wr8(0xFFFF8A51u, rd8(0xFFFF8A51u) & 0xFE);
     port_continue_at(c, 0x50D4, 0);
@@ -1163,16 +1199,36 @@ static void scene_switch(void)
     port_continue_at(c, 0x4BF8, 0);
 }
 
-void SceneSega(Cpu *cpu)        { c = cpu; NEEDS_PASS(0x4CC8); scene_sega(); }          /* $4CC8 */
-void SceneTitle(Cpu *cpu)       { c = cpu; NEEDS_PASS(0x4D18); scene_title(); }         /* $4D18 */
+void SceneSega(Cpu *cpu)        { c = cpu; NEEDS_PASS(0x4CC8); scene_sega(0); }         /* $4CC8 */
+void SceneTitle(Cpu *cpu)       { c = cpu; NEEDS_PASS(0x4D18); scene_title(0); }        /* $4D18 */
 void SceneTitleShown(Cpu *cpu)  { c = cpu; NEEDS_PASS(0x4D56); scene_title_shown(); }   /* $4D56 */
 void SceneTitleAfter(Cpu *cpu)  { c = cpu; NEEDS_PASS(0x4D68); scene_title_after(); }   /* $4D68 */
-void SceneMenu(Cpu *cpu)        { c = cpu; NEEDS_PASS(0x4DA8); scene_menu(); }          /* $4DA8 */
-void SceneDemo(Cpu *cpu)        { c = cpu; NEEDS_PASS(0x4DE2); scene_demo(); }          /* $4DE2 */
+void SceneMenu(Cpu *cpu)        { c = cpu; NEEDS_PASS(0x4DA8); scene_menu(0); }         /* $4DA8 */
+void SceneDemo(Cpu *cpu)        { c = cpu; NEEDS_PASS(0x4DE2); scene_demo(0); }         /* $4DE2 */
 /* the ending's four are not registered yet: no session reaches the ending */
 void SceneEnding(Cpu *cpu)      { c = cpu; NEEDS_PASS(0x4F58); scene_ending(); }        /* $4F58 */
-void SceneEndingWait(Cpu *cpu)  { c = cpu; NEEDS_PASS(0x4F66); scene_ending_wait(); }   /* $4F66 */
-void SceneEndingFade(Cpu *cpu)  { c = cpu; NEEDS_PASS(0x4FA6); scene_ending_fade(); }   /* $4FA6 */
-void SceneEndingEnd(Cpu *cpu)   { c = cpu; NEEDS_PASS(0x4FCC); scene_ending_end(); c->ret = 0; }   /* $4FCC */
-void SceneGame(Cpu *cpu)        { c = cpu; NEEDS_PASS(0x5080); scene_game(); }          /* $5080 */
+void SceneEndingWait(Cpu *cpu)  { c = cpu; NEEDS_PASS(0x4F66); scene_ending_wait(0); }  /* $4F66 */
+void SceneEndingFade(Cpu *cpu)  { c = cpu; NEEDS_PASS(0x4FA6); scene_ending_fade(0); }  /* $4FA6 */
+void SceneEndingEnd(Cpu *cpu)   { c = cpu; NEEDS_PASS(0x4FCC); scene_ending_end(0); c->ret = 0; }  /* $4FCC */
+void SceneGame(Cpu *cpu)        { c = cpu; NEEDS_PASS(0x5080); scene_game(0); }         /* $5080 */
 void SceneSwitchOn(Cpu *cpu)    { c = cpu; NEEDS_PASS(0x50E2); scene_switch(); }        /* $50E2 */
+/* batch N3a: the same tasks started where they waited (their resume addresses): a loaded state
+ * finds them there, with no coroutine to carry on in */
+#define RESUME(name, fn, at) void name(Cpu *cpu) { c = cpu; NEEDS_PASS(at); fn(at); }
+RESUME(SceneSegaAt4CD8, scene_sega, 0x4CD8)
+RESUME(SceneTitleAt4D28, scene_title, 0x4D28)
+RESUME(SceneTitleScreenAt4D74, scene_title_screen, 0x4D74)
+RESUME(SceneMenuAt4DB4, scene_menu, 0x4DB4)
+RESUME(SceneDemoAt4E20, scene_demo, 0x4E20)
+RESUME(SceneEndingWaitAt4F70, scene_ending_wait, 0x4F70)
+RESUME(SceneEndingWaitAt4F8C, scene_ending_wait, 0x4F8C)
+RESUME(SceneEndingFadeAt4FAE, scene_ending_fade, 0x4FAE)
+void SceneEndingEndAt4FD4(Cpu *cpu) { c = cpu; NEEDS_PASS(0x4FD4); scene_ending_end(0x4FD4); c->ret = 0; }
+RESUME(SceneGameAt50A2, scene_game, 0x50A2)
+RESUME(TileAnimsTaskAt6EC0, tile_anims_task, 0x6EC0)
+RESUME(TileAnimsTaskAt6F10, tile_anims_task, 0x6F10)
+RESUME(SegaTaskAt6FB4, sega_task, 0x6FB4)
+RESUME(SegaTaskAt6FCA, sega_task, 0x6FCA)
+RESUME(SegaTaskAt6FDE, sega_task, 0x6FDE)
+RESUME(SegaTaskAt6FF4, sega_task, 0x6FF4)
+RESUME(SegaTaskAt7004, sega_task, 0x7004)

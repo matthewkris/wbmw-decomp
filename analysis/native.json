@@ -7,5 +7,12 @@
  "exits": [ "004CB4"],
  "cycles": "work/cycles.bin",
  "hand_ports": true,
- "hand_resume": true
+ "hand_resume": true,
+ "yield_also": ["00040C"],
+ "unreachable": {
+  "00C686": "in $C67E, arriving with kind 6: no start point has that kind", 
+  "00C694": "in $C67E, as above", 
+  "00DD32": "the player's update after $DFDE: only when the death or the refill is reached off a task pass (the fuzz); on a pass the refill restarts the game loop and the death goes on at the update's caller ($9F1E)", 
+  "00DFE0": "in $DFDE after $E04E: the same"
+ }
 }

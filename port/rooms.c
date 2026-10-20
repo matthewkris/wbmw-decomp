@@ -2882,16 +2882,19 @@ static void picture_grow(void)
  * animation's end ($C608). The caller's return address (ret) waits on the continuations' stack,
  * as in the original, and is popped (a0) at the end */
 static void wait_frame(uint32_t resume) { Cpu *me = c; task_wait_frame(me, resume); c = me; }
-static void door_animation(uint32_t ret, int closing)
+static void door_animation_at(uint32_t ret, int closing, uint32_t at)
 {
+    uint32_t base = closing ? 0xBD66 : 0xBD1E;
+    if (at == base) goto opening;
+    if (at == base + 0x1A) goto moving;
     c->a[0] = sx(rd16(CONTINUATIONS));
     wr32(c->a[0], ret); c->a[0] += 4; F_L(ret);
     put16m(CONTINUATIONS, c->a[0]);
     c->d[0] = 35; F_L(35);
     call(QUEUE_SOUND);
-    uint32_t base = closing ? 0xBD66 : 0xBD1E;
     for (;;) {
         wait_frame(base);
+opening:
         c->a[4] = 8;
         F_B(rd8(c->a[4] - 0x3A00));
         if (!rd8(c->a[4] - 0x3A00)) break;
@@ -2900,6 +2903,7 @@ static void door_animation(uint32_t ret, int closing)
     call(RESET_ANIM);
     for (;;) {
         wait_frame(base + 0x1A);
+moving:
         F_B(rd8(0xFFFFC608u));
         if (!rd8(0xFFFFC608u)) break;
     }
@@ -2910,6 +2914,7 @@ static void door_animation(uint32_t ret, int closing)
     c->a[0] = rd32(c->a[1]);
     put16m(CONTINUATIONS, c->a[1]);
 }
+static void door_animation(uint32_t ret, int closing) { door_animation_at(ret, closing, 0); }
 /* from the original's code: the return address taken off the stack, the animation, then on at
  * the popped address (jmp (a0)) */
 static void door_animation_68k(int closing)
@@ -2940,6 +2945,13 @@ ENTRY(RoomLeave, room_leave)               /* $BD9A */
 #define NEEDS_PASS(self) do { if (!task_in_pass()) { port_leave_to_68k(c, (self)); return; } } while (0)
 void DoorOpen(Cpu *cpu)  { c = cpu; NEEDS_PASS(0xBD0A); door_animation_68k(0); }   /* $BD0A */
 void DoorClose(Cpu *cpu) { c = cpu; NEEDS_PASS(0xBD52); door_animation_68k(1); }   /* $BD52 */
+/* batch N3c: resumed in their loops (a loaded state), then on at the address kept on the
+ * continuations' stack */
+#define DOOR_AT(name, closing, at) void name(Cpu *cpu) { c = cpu; NEEDS_PASS(at); door_animation_at(0, closing, at); port_continue_at(c, c->a[0], 0); }
+DOOR_AT(DoorOpenAtBD1E, 0, 0xBD1E)
+DOOR_AT(DoorOpenAtBD38, 0, 0xBD38)
+DOOR_AT(DoorCloseAtBD66, 1, 0xBD66)
+DOOR_AT(DoorCloseAtBD80, 1, 0xBD80)
 
 /* ---- batch T19: the room changes' sequences: doors, warps, shops and houses ----
  * When a trigger's routine sets $9962, the game's task jumps (from its table at $91F4) to one of
@@ -2961,8 +2973,9 @@ static void player_a4(void) { c->a[4] = sx(rd16(PLAYER_ENT)); }
 
 /* $C128, $C152: the frame's animation waited for (a sound first; $C152 restarts it), the
  * caller's return address on the continuations' stack meanwhile */
-static void frame_wait(uint32_t ret, int restart)
+static void frame_wait_at(uint32_t ret, int restart, uint32_t at)
 {
+    if (at) goto resumed;
     c->a[0] = sx(rd16(CONTINUATIONS));
     wr32(c->a[0], ret); c->a[0] += 4; F_L(ret);
     put16m(CONTINUATIONS, c->a[0]);
@@ -2971,6 +2984,7 @@ static void frame_wait(uint32_t ret, int restart)
     if (restart) { c->a[4] = 8; call(RESET_ANIM); }
     do {
         wait_frame(restart ? 0xC16E : 0xC13C);
+resumed:
         c->a[4] = 8;
         F_B(rd8(c->a[4] - 0x3A00));
     } while (rd8(c->a[4] - 0x3A00));
@@ -3008,8 +3022,10 @@ static void walk_in_setup(void)
 }
 
 /* $BE18: the door at (d0, d1), d2 pixels each way: its frame (picture d3) opens, then the next room */
-static void door_then_next(void)
+static void door_then_next(uint32_t at)
 {
+    if (at == 0xBE44) goto rBE44;
+    if (at == 0xBE4C) goto rBE4C;
     c->d[0] = set_w(c->d[0], sub_w(&c->ccr, c->d[2], c->d[0]));
     put16m(DOOR, c->d[0]);
     c->d[2] = set_w(c->d[2], add_w(&c->ccr, c->d[2], c->d[2]));
@@ -3023,8 +3039,10 @@ static void door_then_next(void)
     push32(0xBE3A); door_frame(); c->a[7] += 4;
     put8(c->a[4] - 0x3CFD, 0x16);
     wait_frame(0xBE44);
+rBE44:
     push32(0xBE48); door_blank(); c->a[7] += 4;
     door_animation(0xBE4C, 0);
+rBE4C:
     leave_to(NEXT_ROOM);
 }
 
@@ -3048,7 +3066,7 @@ static void seq_kept_door(void)
     c->d[3] = 0; F_L(0);
     cmp_byte(0xF, rd8(AREA));
     if (rd8(AREA) != 0xF) { c->d[3] = 6; F_L(6); }
-    door_then_next();
+    door_then_next(0);
 }
 /* $BDDE (2): start point $9982's door (none for kind $10: an exit) */
 static void seq_door(void)
@@ -3068,21 +3086,26 @@ static void seq_door(void)
     c->d[2] = 16; F_L(16);
     cmp_byte(8, c->d[3]);
     if ((c->d[3] & 0xFF) == 8) { c->d[2] = 8; F_L(8); }
-    door_then_next();
+    door_then_next(0);
 }
 /* $BE50 (12): a warp, after 20 frames */
-static void seq_warp(void)
+static void seq_warp(uint32_t at)
 {
+    if (at == 0xBE62) goto rBE62;
     push32(0xBE54); room_leave(); c->a[7] += 4;
     call(DOOR_KEEP);
     put16m(0xFFFF9C1Cu, 0x14);
-    do wait_frame(0xBE62); while (mem_sub_w(0xFFFF9C1Cu, 1));
+    do { wait_frame(0xBE62); rBE62: ; } while (mem_sub_w(0xFFFF9C1Cu, 1));
     leave_to(NEXT_ROOM);
 }
 /* $BE6C (3): into a shop or house: its picture swapped in behind a frame that opens, its things,
  * then the picture growing from the middle every 3 frames */
-static void seq_inside(void)
+static void seq_inside(uint32_t at)
 {
+    switch (at) {
+    case 0xBE9C: goto rBE9C; case 0xBEBC: goto rBEBC; case 0xBED0: goto rBED0; case 0xBED4: goto rBED4;
+    case 0xBED8: goto rBED8; case 0xBEE6: goto rBEE6; case 0xBEEA: goto rBEEA;
+    }
     push32(0xBE70); reset_continuations(); c->a[7] += 4;
     call(DOOR_KEEP);
     uint8_t v = rd8(0xFFFF9659u); f_bit(v >> 4 & 1); wr8(0xFFFF9659u, v | 0x10);
@@ -3092,6 +3115,7 @@ static void seq_inside(void)
     push32(0xBE92); picture_frame(); c->a[7] += 4;
     put8(c->a[4] - 0x3CFD, 0x16);
     wait_frame(0xBE9C);
+rBE9C:
     push32(0xBEA0); picture_corner(); c->a[7] += 4;
     push32(0xBEA4); rect_redraw(); c->a[7] += 4;
     v = rd8(0xFFFF9659u); f_bit(v & 1); wr8(0xFFFF9659u, v | 1);
@@ -3099,22 +3123,33 @@ static void seq_inside(void)
     call(0x133B2);
     v = rd8(0xFFFF9659u); f_bit(v & 1); wr8(0xFFFF9659u, v & ~1);
     door_animation(0xBEBC, 0);
+rBEBC:
     push32(0xBEC0); picture_frame_2(); c->a[7] += 4;
     wr16(0xFFFF9BE8u, 0); wr16(0xFFFF9BE6u, 0); c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z);
     push32(0xBECC); picture_put(); c->a[7] += 4;
     do {
-        wait_frame(0xBED0); wait_frame(0xBED4); wait_frame(0xBED8);
+        wait_frame(0xBED0);
+rBED0:  wait_frame(0xBED4);
+rBED4:  wait_frame(0xBED8);
+rBED8:
         mem_add_w(0xFFFF9BE6u, 1);
         push32(0xBEE0); picture_grow(); c->a[7] += 4;
     } while (!(c->ccr & CC_Z));
-    wait_frame(0xBEE6); wait_frame(0xBEEA);
+    wait_frame(0xBEE6);
+rBEE6:
+    wait_frame(0xBEEA);
+rBEEA:
     wr16(ROOM_CHANGE, 0); c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z);
     leave_to(GAME_LOOP);
 }
 /* $BEF2 (4): out of it: the picture shrinking back (from the largest step still inside), the
  * frame closing, the room's triggers back */
-static void seq_outside(void)
+static void seq_outside(uint32_t at)
 {
+    switch (at) {
+    case 0xBF42: goto rBF42; case 0xBF46: goto rBF46; case 0xBF4A: goto rBF4A; case 0xBF5C: goto rBF5C;
+    case 0xBF6A: goto rBF6A;
+    }
     push32(0xBEF6); reset_continuations(); c->a[7] += 4;
     call(DOOR_FREE); call(0xF99C); call(0x108FA);
     push32(0xBF06); rect_restore(); c->a[7] += 4;
@@ -3135,14 +3170,19 @@ static void seq_outside(void)
     put16m(0xFFFF9BE6u, c->d[0]);
     put16m(0xFFFF9BE8u, 0x8000);
     do {
-        wait_frame(0xBF42); wait_frame(0xBF46); wait_frame(0xBF4A);
+        wait_frame(0xBF42);
+rBF42:  wait_frame(0xBF46);
+rBF46:  wait_frame(0xBF4A);
+rBF4A:
         push32(0xBF4E); picture_grow(); c->a[7] += 4;
     } while (mem_sub_w(0xFFFF9BE6u, 1));
     push32(0xBF58); picture_frame(); c->a[7] += 4;
     door_animation(0xBF5C, 1);
+rBF5C:
     call(0x13748);
     uint8_t v = rd8(0xFFFF9659u); f_bit(v >> 4 & 1); wr8(0xFFFF9659u, v & ~0x10);
     wait_frame(0xBF6A);
+rBF6A:
     wr8(0xFFFFC008u, 0); c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z);
     put32m(TRIGGERS, rd32(0xFFFF9970u));
     push32(0xBF78); rect_redraw(); c->a[7] += 4;
@@ -3151,8 +3191,12 @@ static void seq_outside(void)
 }
 /* $BF80 (5): a house's door: the frame opens, the player walks through to the place inside (by
  * $127A's speed for $200), the frame closes behind */
-static void seq_house(void)
+static void seq_house(uint32_t at)
 {
+    switch (at) {
+    case 0xBFCA: goto rBFCA; case 0xBFD2: goto rBFD2; case 0xBFE0: goto rBFE0; case 0xC056: goto rC056;
+    case 0xC09C: goto rC09C; case 0xC0B2: goto rC0B2;
+    }
     push32(0xBF84); reset_continuations(); c->a[7] += 4;
     call(DOOR_KEEP); call(0xF99C); call(0x108FA);
     c->a[2] = rd32(0xFFFF9986u);
@@ -3172,11 +3216,14 @@ static void seq_house(void)
     put16m(DOOR + 6, c->d[1]);
     push32(0xBFC6); door_frame(); c->a[7] += 4;
     wait_frame(0xBFCA);
+rBFCA:
     push32(0xBFCE); door_blank(); c->a[7] += 4;
     door_animation(0xBFD2, 0);
+rBFD2:
     player_a4();
     uint8_t v = rd8(c->a[4] - 0x3FFD) | 0x10; wr8(c->a[4] - 0x3FFD, v); F_B(v);
     wait_frame(0xBFE0);
+rBFE0:
     push32(0xBFE4); door_restore(); c->a[7] += 4;
     wr16(0xFFFFC008u, 0); c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z);
     player_a4();
@@ -3213,6 +3260,7 @@ static void seq_house(void)
     put16m(0xFFFF9C1Cu, c->d[2]);
     for (;;) {
         wait_frame(0xC056);
+rC056:
         player_a4();
         call(APPLY_VELOCITY);
         push32(0xC062); layers_frame(); c->a[7] += 4;
@@ -3230,11 +3278,13 @@ static void seq_house(void)
     push32(0xC092); door_frame(); c->a[7] += 4;
     put8(c->a[4] - 0x3CFD, 8);
     wait_frame(0xC09C);
+rC09C:
     push32(0xC0A0); door_blank(); c->a[7] += 4;
     player_a4();
     call(DOOR_FREE);
     v = rd8(c->a[4] - 0x3FFD) & 0xEF; wr8(c->a[4] - 0x3FFD, v); F_B(v);
     door_animation(0xC0B2, 1);
+rC0B2:
     push32(0xC0B6); door_restore(); c->a[7] += 4;
     wr8(0xFFFFC008u, 0); c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z);
     wr16(ROOM_CHANGE, 0); c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z);
@@ -3246,10 +3296,11 @@ ENTRY(WalkInSetup, walk_in_setup)          /* $C0C2 */
 void SeqExit(Cpu *cpu)      { c = cpu; NEEDS_PASS(0xBDB0); seq_exit(); }        /* $BDB0 */
 void SeqKeptDoor(Cpu *cpu)  { c = cpu; NEEDS_PASS(0xBDC0); seq_kept_door(); }   /* $BDC0 */
 void SeqDoor(Cpu *cpu)      { c = cpu; NEEDS_PASS(0xBDDE); seq_door(); }        /* $BDDE */
-void SeqWarp(Cpu *cpu)      { c = cpu; NEEDS_PASS(0xBE50); seq_warp(); }        /* $BE50 */
-void SeqInside(Cpu *cpu)    { c = cpu; NEEDS_PASS(0xBE6C); seq_inside(); }      /* $BE6C */
-void SeqOutside(Cpu *cpu)   { c = cpu; NEEDS_PASS(0xBEF2); seq_outside(); }     /* $BEF2 */
-void SeqHouse(Cpu *cpu)     { c = cpu; NEEDS_PASS(0xBF80); seq_house(); }       /* $BF80 */
+void SeqWarp(Cpu *cpu)      { c = cpu; NEEDS_PASS(0xBE50); seq_warp(0); }        /* $BE50 */
+void SeqInside(Cpu *cpu)    { c = cpu; NEEDS_PASS(0xBE6C); seq_inside(0); }      /* $BE6C */
+void SeqOutside(Cpu *cpu)   { c = cpu; NEEDS_PASS(0xBEF2); seq_outside(0); }     /* $BEF2 */
+void SeqHouse(Cpu *cpu)     { c = cpu; NEEDS_PASS(0xBF80); seq_house(0); }       /* $BF80 */
+static void frame_wait(uint32_t ret, int restart) { frame_wait_at(ret, restart, 0); }
 static void frame_wait_68k(int restart)
 {
     uint32_t ret = rd32(c->a[7]); c->a[7] += 4;
@@ -3258,6 +3309,8 @@ static void frame_wait_68k(int restart)
 }
 void FrameWait(Cpu *cpu)    { c = cpu; NEEDS_PASS(0xC128); frame_wait_68k(0); }   /* $C128 */
 void FrameRestart(Cpu *cpu) { c = cpu; NEEDS_PASS(0xC152); frame_wait_68k(1); }   /* $C152 */
+void FrameWaitAtC13C(Cpu *cpu)    { c = cpu; NEEDS_PASS(0xC13C); frame_wait_at(0, 0, 0xC13C); port_continue_at(c, c->a[0], 0); }   /* batch N3c */
+void FrameRestartAtC16E(Cpu *cpu) { c = cpu; NEEDS_PASS(0xC16E); frame_wait_at(0, 1, 0xC16E); port_continue_at(c, c->a[0], 0); }
 
 /* ---- batch T20: arriving in a room ----
  * After loading a room the game's task jumps by how the player arrived ($9678, its table at
@@ -3308,16 +3361,19 @@ static void door_at_player(uint32_t ret)
     pop_cont();
 }
 /* $C5D2: the screen faded in, waiting for the fade's end */
-static void fade_in_wait(uint32_t ret)
+static void fade_in_wait_at(uint32_t ret, uint32_t at)
 {
+    if (at == 0xC5E4) goto rC5E4;
     push_cont(ret);
     call(0x581A);
     do {
         wait_frame(0xC5E4);
+rC5E4:
         f_bit(rd8(0xFFFF8C56u) >> 4 & 1);
     } while (!(rd8(0xFFFF8C56u) & 0x10));
     pop_cont();
 }
+static void fade_in_wait(uint32_t ret) { fade_in_wait_at(ret, 0); }
 /* $C634: arriving inside: the event $996A's picture swapped in and its things spawned */
 static void inside_setup(uint32_t ret)
 {
@@ -3338,23 +3394,36 @@ static void inside_setup(uint32_t ret)
 }
 
 /* the arrivals ($8F6C) */
-static void arrive_door(void)        /* $C5F8 (2, 4): through a door, its frame closing */
+static void arrive_door(uint32_t at)        /* $C5F8 (2, 4): through a door, its frame closing */
 {
+    switch (at) {
+    case 0xC600: goto rC600;
+    case 0xC604: goto rC604;
+    case 0xC608: goto rC608;
+    }
     push32(0xC5FC); reset_continuations(); c->a[7] += 4;
     door_at_player(0xC600);
+rC600:
     fade_in_wait(0xC604);
+rC604:
     door_animation(0xC608, 1);
+rC608:
     push32(0xC60C); door_restore(); c->a[7] += 4;
     wr8(0xFFFFC008u, 0); c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z);
     leave_to(GAME_LOOP);
 }
-static void arrive_still(void)       /* $C614 (10): a fade in, then 20 frames */
+static void arrive_still(uint32_t at)       /* $C614 (10): a fade in, then 20 frames */
 {
+    switch (at) {
+    case 0xC620: goto rC620;
+    case 0xC62A: goto rC62A;
+    }
     push32(0xC618); reset_continuations(); c->a[7] += 4;
     call(DOOR_FREE);
     fade_in_wait(0xC620);
+rC620:
     put16m(0xFFFF9C1Cu, 0x14);
-    do wait_frame(0xC62A); while (mem_sub_w(0xFFFF9C1Cu, 1));
+    do { wait_frame(0xC62A); rC62A: ; } while (mem_sub_w(0xFFFF9C1Cu, 1));
     leave_to(GAME_LOOP);
 }
 static void arrive_inside(void)      /* $C67E (3): inside a shop or house */
@@ -3366,20 +3435,33 @@ static void arrive_inside(void)      /* $C67E (3): inside a shop or house */
     fade_in_wait(0xC694);
     leave_to(GAME_LOOP);
 }
-static void arrive_walk_out(void)    /* $C698 (5): walking out of a building, to its door's right */
+static void arrive_walk_out(uint32_t at)    /* $C698 (5): walking out of a building, to its door's right */
 {
+    switch (at) {
+    case 0xC6AA: goto rC6AA;
+    case 0xC6B6: goto rC6B6;
+    case 0xC6BE: goto rC6BE;
+    case 0xC6C2: goto rC6C2;
+    case 0xC6C6: goto rC6C6;
+    case 0xC6DE: goto rC6DE;
+    }
     push32(0xC69C); reset_continuations(); c->a[7] += 4;
     player_a4();
     mem_sub_w(c->a[4] - 0x3800, 0x18);
     fade_in_wait(0xC6AA);
+rC6AA:
     c->a[0] = 0xC6EEu;
     push32(0xC6B2); walk_in_setup(); c->a[7] += 4;
     wait_frame(0xC6B6);
+rC6B6:
     push32(0xC6BA); door_blank(); c->a[7] += 4;
     frame_wait(0xC6BE, 0);
+rC6BE:
     for (;;) {
         wait_frame(0xC6C2);
+rC6C2:
         call_back(0xDD08, 0xC6C6);
+rC6C6:
         player_a4();
         c->d[0] = set_w(c->d[0], rd16(c->a[4] - 0x3800)); F_W(c->d[0]);
         c->d[0] = set_w(c->d[0], sub_w(&c->ccr, rd16(0xFFFF9BD6u), c->d[0]));
@@ -3387,44 +3469,70 @@ static void arrive_walk_out(void)    /* $C698 (5): walking out of a building, to
         if ((int16_t)c->d[0] > 0x14) break;
     }
     frame_wait(0xC6DE, 1);
+rC6DE:
     push32(0xC6E2); door_restore(); c->a[7] += 4;
     wr8(0xFFFFC008u, 0); wr8(0xFFFF9F05u, 0); c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z);
     leave_to(GAME_LOOP);
 }
-static void arrive_inside_door(void) /* $C6F6 (6, 7): inside, through its door */
+static void arrive_inside_door(uint32_t at) /* $C6F6 (6, 7): inside, through its door */
 {
+    switch (at) {
+    case 0xC6FE: goto rC6FE;
+    case 0xC702: goto rC702;
+    case 0xC706: goto rC706;
+    case 0xC70A: goto rC70A;
+    }
     push32(0xC6FA); reset_continuations(); c->a[7] += 4;
     inside_setup(0xC6FE);
+rC6FE:
     door_at_player(0xC702);
+rC702:
     fade_in_wait(0xC706);
+rC706:
     door_animation(0xC70A, 1);
+rC70A:
     push32(0xC70E); door_restore(); c->a[7] += 4;
     push32(0xC712); picture_frame_2(); c->a[7] += 4;
     put8(c->a[4] - 0x3CFD, 8);
     leave_to(GAME_LOOP);
 }
-static void arrive_fade(void)        /* $C71C (8): a fade in, then the exits' arrival ($F7EA) */
+static void arrive_fade(uint32_t at)        /* $C71C (8): a fade in, then the exits' arrival ($F7EA) */
 {
+    switch (at) {
+    case 0xC724: goto rC724;
+    }
     push32(0xC720); reset_continuations(); c->a[7] += 4;
     fade_in_wait(0xC724);
+rC724:
     leave_to(0xF7EA);
 }
-static void arrive_talk(void)        /* $C728 (9): inside, then a conversation after 30 frames ($C1E8) */
+static void arrive_talk(uint32_t at)        /* $C728 (9): inside, then a conversation after 30 frames ($C1E8) */
 {
+    switch (at) {
+    case 0xC730: goto rC730;
+    case 0xC73E: goto rC73E;
+    case 0xC752: goto rC752;
+    }
     push32(0xC72C); reset_continuations(); c->a[7] += 4;
     inside_setup(0xC730);
+rC730:
     push32(0xC734); picture_frame_2(); c->a[7] += 4;
     put8(c->a[4] - 0x3CFD, 8);
     fade_in_wait(0xC73E);
+rC73E:
     uint8_t v = rd8(0xFFFF965Fu); f_bit(v & 1); wr8(0xFFFF965Fu, v & ~1);
     if (v & 1) { leave_to(0xF7EA); return; }
     put16m(0xFFFF9C32u, 0x1E);
-    do wait_frame(0xC752); while (mem_sub_w(0xFFFF9C32u, 1));
+    do { wait_frame(0xC752); rC752: ; } while (mem_sub_w(0xFFFF9C32u, 1));
     leave_to(0xC1E8);
 }
 /* $C184 (6): walking into a building to start point $9982 (going left), then $9984's room */
-static void seq_walk_in(void)
+static void seq_walk_in(uint32_t at)
 {
+    switch (at) {
+    case 0xC1A4: goto rC1A4; case 0xC1AC: goto rC1AC; case 0xC1B0: goto rC1B0; case 0xC1B4: goto rC1B4;
+    case 0xC1CC: goto rC1CC;
+    }
     push32(0xC188); reset_continuations(); c->a[7] += 4;
     put16m(0xFFFF9676u, rd16(0xFFFF9982u));
     c->a[0] = 0xC1E0u;
@@ -3433,11 +3541,15 @@ static void seq_walk_in(void)
     c->d[0] = 0; F_L(0);
     call(SET_ANIM);
     wait_frame(0xC1A4);
+rC1A4:
     push32(0xC1A8); door_blank(); c->a[7] += 4;
     frame_wait(0xC1AC, 0);
+rC1AC:
     for (;;) {
         wait_frame(0xC1B0);
+rC1B0:
         call_back(0xDD08, 0xC1B4);
+rC1B4:
         player_a4();
         c->d[0] = set_w(c->d[0], rd16(c->a[4] - 0x3800)); F_W(c->d[0]);
         c->d[0] = set_w(c->d[0], sub_w(&c->ccr, rd16(0xFFFF9BD6u), c->d[0]));
@@ -3445,6 +3557,7 @@ static void seq_walk_in(void)
         if ((int16_t)c->d[0] < -0x18) break;
     }
     frame_wait(0xC1CC, 1);
+rC1CC:
     put16m(0xFFFF9676u, rd16(0xFFFF9984u));
     wr8(0xFFFF9F05u, 0); c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z);
     put8(0xFFFF966Au, 3);
@@ -3461,14 +3574,14 @@ static void cont_68k(void (*fn)(uint32_t)) { uint32_t ret = rd32(c->a[7]); c->a[
 void DoorAtPlayer(Cpu *cpu) { c = cpu; cont_68k(door_at_player); }   /* $C572 */
 void FadeInWait(Cpu *cpu)   { c = cpu; NEEDS_PASS(0xC5D2); cont_68k(fade_in_wait); }     /* $C5D2 */
 void InsideSetup(Cpu *cpu)  { c = cpu; cont_68k(inside_setup); }     /* $C634 */
-void ArriveDoor(Cpu *cpu)       { c = cpu; NEEDS_PASS(0xC5F8); arrive_door(); }          /* $C5F8 */
-void ArriveStill(Cpu *cpu)      { c = cpu; NEEDS_PASS(0xC614); arrive_still(); }         /* $C614 */
+void ArriveDoor(Cpu *cpu)       { c = cpu; NEEDS_PASS(0xC5F8); arrive_door(0); }          /* $C5F8 */
+void ArriveStill(Cpu *cpu)      { c = cpu; NEEDS_PASS(0xC614); arrive_still(0); }         /* $C614 */
 void ArriveInside(Cpu *cpu)     { c = cpu; NEEDS_PASS(0xC67E); arrive_inside(); }        /* $C67E */
-void ArriveWalkOut(Cpu *cpu)    { c = cpu; NEEDS_PASS(0xC698); arrive_walk_out(); }      /* $C698 */
-void ArriveInsideDoor(Cpu *cpu) { c = cpu; NEEDS_PASS(0xC6F6); arrive_inside_door(); }   /* $C6F6 */
-void ArriveFade(Cpu *cpu)       { c = cpu; NEEDS_PASS(0xC71C); arrive_fade(); }          /* $C71C */
-void ArriveTalk(Cpu *cpu)       { c = cpu; NEEDS_PASS(0xC728); arrive_talk(); }          /* $C728 */
-void SeqWalkIn(Cpu *cpu)        { c = cpu; NEEDS_PASS(0xC184); seq_walk_in(); }          /* $C184 */
+void ArriveWalkOut(Cpu *cpu)    { c = cpu; NEEDS_PASS(0xC698); arrive_walk_out(0); }      /* $C698 */
+void ArriveInsideDoor(Cpu *cpu) { c = cpu; NEEDS_PASS(0xC6F6); arrive_inside_door(0); }   /* $C6F6 */
+void ArriveFade(Cpu *cpu)       { c = cpu; NEEDS_PASS(0xC71C); arrive_fade(0); }          /* $C71C */
+void ArriveTalk(Cpu *cpu)       { c = cpu; NEEDS_PASS(0xC728); arrive_talk(0); }          /* $C728 */
+void SeqWalkIn(Cpu *cpu)        { c = cpu; NEEDS_PASS(0xC184); seq_walk_in(0); }          /* $C184 */
 
 /* ---- batch T21: breaking walls, crumbling walls, the door records ----
  * In a room with breakable floors ($966B bit 3) the player's downward thrust on a cracked tile
@@ -4428,11 +4541,12 @@ static void room0_setup(void)
 }
 /* $C9B4: 22 room objects (kind 0, each its own look from $CA40) let out every 8 frames, the
  * others frozen, until they are all gone */
-static void room0_release(uint32_t ret)
+static void room0_release_at(uint32_t ret, uint32_t at)
 {
     static const uint8_t looks[22] = { 0x24, 0x1B, 0x18, 0x06, 0x27, 0x12, 0x09, 0x1E, 0x15, 0x0C, 0x00,
                                        0x21, 0x0F, 0x03, 0x30, 0x39, 0x2A, 0x3F, 0x33, 0x36, 0x2D, 0x3C };
-    push_cont(ret);
+    if (!at) push_cont(ret);
+    if (at == 0xCA2E) goto rCA2E;
     call(FREEZE);
     put32m(0xFFFF99E0u, 0);                             /* $99E0 how many, $99E2 the wait */
     for (;;) {
@@ -4468,15 +4582,18 @@ static void room0_release(uint32_t ret)
     next:
         call(ROOM_OBJECTS);
         wait_frame(0xCA2E);
+rCA2E: ;
     }
     call(UNFREEZE);
     pop_cont();
 }
+static void room0_release(uint32_t ret) { room0_release_at(ret, 0); }
 /* $C91E, each frame: $9995 bit 4 sets game flag 0 and puts the block back ($B3); bit 5 sets
  * flag 1 and lets the room objects out; bit 0, once, the effects at $C982 */
-static void room0_frame(uint32_t ret)
+static void room0_frame_at(uint32_t ret, uint32_t at)
 {
-    push_cont(ret);
+    if (!at) push_cont(ret);
+    if (at == 0xC958) goto rC958;
     if (mem_bclr(0xFFFF9995u, 4)) {
         c->d[0] = 0; F_L(0);
         push32(0xC936); flag_set(); c->a[7] += 4;
@@ -4489,6 +4606,7 @@ static void room0_frame(uint32_t ret)
         c->d[0] = 1; F_L(1);
         push32(0xC954); flag_set(); c->a[7] += 4;
         room0_release(0xC958);
+rC958:
     }
     f_bit(rd8(SCRIPT_VARS) & 1);
     if (!(rd8(SCRIPT_VARS) & 1)) {
@@ -4501,6 +4619,7 @@ static void room0_frame(uint32_t ret)
     }
     pop_cont();
 }
+static void room0_frame(uint32_t ret) { room0_frame_at(ret, 0); }
 
 /* index 1: area 12's room 9, area 17's rooms 14 and 16. $CA56 as it loads: $9F05 6 and the
  * player's frame routine $DB36 */
@@ -4540,10 +4659,15 @@ static void room1_flash(void)
 /* $CA66, each frame: once (unless $A0DE is negative), the player changes: sound 68, its look
  * flipping 6, 12 and 24 times, each 8, 4 and 2 frames, with the screen flashing; then its form
  * ($9EF1 bit 4) changed and set up again */
-static void room1_frame(uint32_t ret)
+static void room1_frame_at(uint32_t ret, uint32_t at)
 {
     static const uint8_t flips[3] = { 6, 12, 24 }, frames[3] = { 8, 4, 2 };   /* $CB16, $CB19 */
-    push_cont(ret);
+    if (!at) push_cont(ret);
+    switch (at) {
+    case 0xCAC0: goto rCAC0;
+    case 0xCAE2: goto rCAE2;
+    case 0xCB06: goto rCB06;
+    }
     F_B(rd8(SCRIPT_VARS));
     if (rd8(SCRIPT_VARS) & 0x80) goto done;
     F_W(rd16(0xFFFFA0DEu));
@@ -4566,6 +4690,7 @@ static void room1_frame(uint32_t ret)
             do {
                 push32(0xCABC); room1_flash(); c->a[7] += 4;
                 wait_frame(0xCAC0);
+rCAC0: ;
             } while (mem_dec8(0xFFFF99E3u));
         } while (mem_dec8(0xFFFF99E2u));
         c->d[0] = set_w(c->d[0], rd16(0xFFFF99E0u)); F_W(c->d[0]);
@@ -4576,6 +4701,7 @@ static void room1_frame(uint32_t ret)
     put16m(0xFFFF8C18u, 0);
     push32(0xCADE); room1_colour(); c->a[7] += 4;
     wait_frame(0xCAE2);
+rCAE2:
     { uint8_t v = rd8(0xFFFF9EF1u) ^ 0x10; wr8(0xFFFF9EF1u, v); F_B(v); }
     call(0xF5FC);
     mem_or8(0xFFFF9F02u, 0x10);
@@ -4584,10 +4710,12 @@ static void room1_frame(uint32_t ret)
     call(0x86BC);
     call(0x8BB6);
     call_back(0xDD08, 0xCB06);
+rCB06:
     put8(0xFFFF9F05u, 0);
 done:
     pop_cont();
 }
+static void room1_frame(uint32_t ret) { room1_frame_at(ret, 0); }
 
 ENTRY(DropThing, drop_thing)               /* $B42A */
 ENTRY(RoomScriptSetup, room_script_setup)  /* $C75C */
@@ -4983,8 +5111,13 @@ ENTRY(Room10Setup, room10_setup)           /* $CFE8 */
  * the game; or, ended by a fade ($9BF3 bit 0), the screen faded out and either the game
  * restarted ($4CA8, bit 1) or, after sound 84, 300 frames' sleep (the inn's, $C262: left to the
  * original, which waits on the VBlank flag) */
-static void seq_talk(void)
+static void seq_talk(uint32_t at)
 {
+    switch (at) {
+    case 0xC20A: goto rC20A;
+    case 0xC20E: goto rC20E;
+    case 0xC248: goto rC248;
+    }
     push32(0xC1EC); reset_continuations(); c->a[7] += 4;
     mem_or8(0xFFFF9659u, 8);
     put8(TALK_STATE, 0);
@@ -4994,7 +5127,9 @@ static void seq_talk(void)
     call(0x279C);
     for (;;) {
         wait_frame(0xC20A);
+rC20A:
         call_back(MESSAGES, 0xC20E);
+rC20E:
         c->d[0] = rd32(TALK_DONE); F_L(c->d[0]);
         if (!(c->d[0] & 0x80000000u)) { c->a[0] = c->d[0]; call(c->a[0]); }
         f_bit(rd8(TALK_STATE) & 1);
@@ -5012,6 +5147,7 @@ static void seq_talk(void)
     call(0x5842);
     do {
         wait_frame(0xC248);
+rC248:
         f_bit(rd8(0xFFFF8C56u) >> 4 & 1);
     } while (!(rd8(0xFFFF8C56u) & 0x10));
     f_bit(rd8(TALK_STATE) >> 1 & 1);
@@ -5116,8 +5252,10 @@ static void receive_heart(void)
 }
 /* $C31A: the thing's own routine, then the back palette stepped through its list ($C36E by
  * $9685; two frames each) */
-static void receive_palettes(uint32_t ret)
+static void receive_palettes_at(uint32_t ret, uint32_t at)
 {
+    if (at == 0xC35C) goto rC35C;
+    if (at == 0xC360) goto rC360;
     push_cont(ret);
     c->d[0] = set_w(c->d[0], rd16(c->a[4] - 0x2300)); F_W(c->d[0]);
     call(0x245A);
@@ -5135,7 +5273,9 @@ static void receive_palettes(uint32_t ret)
         call(LOAD_PALETTES);
         call(0x55BA);
         wait_frame(0xC35C);
+rC35C:
         wait_frame(0xC360);
+rC360:
         c->a[0] = rd32(0xFFFF9C2Cu);
     }
     pop_cont();
@@ -5143,8 +5283,13 @@ static void receive_palettes(uint32_t ret)
 /* $C27E, room change 9: a thing received ($B42A). It rises with sparkles until it is gone,
  * then takes effect: below $20 its own routine; from $20 by the table at $C46A (its own routine,
  * nothing, a heart, or the palettes; $27 and $2F hang, as in the original), and its message */
-static void seq_receive(void)
+static void receive_palettes(uint32_t ret) { receive_palettes_at(ret, 0); }
+static void seq_receive(uint32_t at)
 {
+    switch (at) {
+    case 0xC298: goto rC298;
+    case 0xC2C2: goto rC2C2;
+    }
     push32(0xC282); reset_continuations(); c->a[7] += 4;
     put16m(0xFFFF9962u, 0);
     call(FREEZE);
@@ -5153,6 +5298,7 @@ static void seq_receive(void)
         F_B(rd8(c->a[4] - 0x4000));
         if (!(rd8(c->a[4] - 0x4000) & 0x80)) break;
         wait_frame(0xC298);
+rC298: ;
     }
     c->d[0] = set_w(c->d[0], rd16(c->a[4] - 0x2300)); F_W(c->d[0]);
     c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 0x20, c->d[0]));
@@ -5162,8 +5308,8 @@ static void seq_receive(void)
         c->a[0] = 0xC46A;                                /* by thing: 0 own, 2 nothing, 4 heart, 6 palettes, -1 none */
         move_b(0, rd8(c->a[0] + (c->d[0] & 0xFFFF)));
         if (c->ccr & CC_N) { leave_to(0xC2B4); return; }   /* bmi to itself */
-        static const uint16_t at[4] = { 0xC2DE, 0xC2E6, 0xC2E8, 0xC31A };
-        c->a[0] = at[(c->d[0] & 0xFF) / 2];
+        static const uint16_t routine[4] = { 0xC2DE, 0xC2E6, 0xC2E8, 0xC31A };
+        c->a[0] = routine[(c->d[0] & 0xFF) / 2];
         switch (c->d[0] & 0xFF) {
         case 0: push32(0xC2C2); receive_own(); c->a[7] += 4; break;
         case 2: break;
@@ -5171,6 +5317,7 @@ static void seq_receive(void)
         default: receive_palettes(0xC2C2); break;
         }
     }
+rC2C2:
     c->a[0] = sx(rd16(0xFFFF9968u));
     c->d[0] = set_w(c->d[0], rd16(c->a[0] - 0x2300)); F_W(c->d[0]);
     call(0x1FD0);
@@ -5180,8 +5327,17 @@ static void seq_receive(void)
 
 /* $C48C: a statue ($A0DE): its window ($C56E) and message; with the ocarina, the statue's tune
  * played ($2AAE): a right one sets its room flag, and the message says how it went */
-static void seq_statue(void)
+static void seq_statue(uint32_t at)
 {
+    switch (at) {
+    case 0xC4BE: goto rC4BE;
+    case 0xC4C2: goto rC4C2;
+    case 0xC4E4: goto rC4E4;
+    case 0xC4E8: goto rC4E8;
+    case 0xC4FA: goto rC4FA;
+    case 0xC53E: goto rC53E;
+    case 0xC542: goto rC542;
+    }
     push32(0xC490); reset_continuations(); c->a[7] += 4;
     c->d[0] = 0xFFFFFFFCu; F_L(c->d[0]);
     call(QUEUE_SOUND);
@@ -5193,15 +5349,16 @@ static void seq_statue(void)
         call(0x27B0);
         put32m(MESSAGE_AT, 0x2B56);
         put8(MESSAGE_ON, 0x80);
-        do { wait_frame(0xC4BE); call_back(MESSAGES, 0xC4C2); F_B(rd8(MESSAGE_ON)); } while (rd8(MESSAGE_ON) & 0x80);
+        do { wait_frame(0xC4BE); rC4BE: call_back(MESSAGES, 0xC4C2); rC4C2: F_B(rd8(MESSAGE_ON)); } while (rd8(MESSAGE_ON) & 0x80);
     } else {
         call(0x27B0);
         put32m(MESSAGE_AT, 0x2B8F);
         put8(MESSAGE_ON, 0x80);
-        do { wait_frame(0xC4E4); call_back(MESSAGES, 0xC4E8); F_B(rd8(MESSAGE_ON)); } while (rd8(MESSAGE_ON) & 0x80);
+        do { wait_frame(0xC4E4); rC4E4: call_back(MESSAGES, 0xC4E8); rC4E8: F_B(rd8(MESSAGE_ON)); } while (rd8(MESSAGE_ON) & 0x80);
         c->a[0] = sx(rd16(0xFFFFA0DEu));
         move_b(0, rd8(c->a[0] - 0x31FE));
         call_back(0x2AAE, 0xC4FA);
+rC4FA:
         wr8(0xFFFF9ED4u, 0xFF);
         F_B(c->d[0]);
         if (!(c->d[0] & 0xFF)) {                        /* the right tune */
@@ -5215,7 +5372,7 @@ static void seq_statue(void)
             put32m(MESSAGE_AT, c->d[0] & 0x80 ? 0x2BE5 : 0x2BC4);
         }
         put8(MESSAGE_ON, 0xC0);
-        do { wait_frame(0xC53E); call_back(MESSAGES, 0xC542); F_B(rd8(MESSAGE_ON)); } while (rd8(MESSAGE_ON) & 0x80);
+        do { wait_frame(0xC53E); rC53E: call_back(MESSAGES, 0xC542); rC542: F_B(rd8(MESSAGE_ON)); } while (rd8(MESSAGE_ON) & 0x80);
     }
     call(0x225C);
     call(UNFREEZE);
@@ -5234,9 +5391,9 @@ ENTRY(ReceiveOwn, receive_own)             /* $C2DE */
 ENTRY(ReceiveHeart, receive_heart)         /* $C2E8 */
 ENTRY(ReceiveNone, nothing)                /* $C2E6 */
 /* the sequences leave by port_continue_at, so ret is theirs to set */
-void SeqTalk(Cpu *cpu)          { c = cpu; NEEDS_PASS(0xC1E8); seq_talk(); }                  /* $C1E8 */
-void SeqReceive(Cpu *cpu)       { c = cpu; NEEDS_PASS(0xC27E); seq_receive(); }               /* $C27E */
-void SeqStatue(Cpu *cpu)        { c = cpu; NEEDS_PASS(0xC48C); seq_statue(); }                /* $C48C */
+void SeqTalk(Cpu *cpu)          { c = cpu; NEEDS_PASS(0xC1E8); seq_talk(0); }                  /* $C1E8 */
+void SeqReceive(Cpu *cpu)       { c = cpu; NEEDS_PASS(0xC27E); seq_receive(0); }               /* $C27E */
+void SeqStatue(Cpu *cpu)        { c = cpu; NEEDS_PASS(0xC48C); seq_statue(0); }                /* $C48C */
 void ReceivePalettes(Cpu *cpu)  { c = cpu; NEEDS_PASS(0xC31A); cont_68k(receive_palettes); }  /* $C31A */
 
 /* ---- batch T28: the rooms' scripts 11 and 12 ----
@@ -5283,10 +5440,14 @@ static void room11_setup(void)
  * the figures for 30 frames and the middle one ($99E2) moving at random. The result ($8CD3):
  * 0 the gold and the player's hearts ($DA00) gone, 1 the hearts, 2-3 to room $28 or $2F, others
  * to room $5E with game flag $9688 set. 1 when it returns through the continuation, 0 when it went to the next room */
-static int room11_frame(uint32_t ret)
+static int room11_frame_at(uint32_t ret, uint32_t at)
 {
     static const uint8_t moves[8] = { 0, 2, 4, 2, 4, 0, 2, 4 };   /* $D0E0 */
-    push_cont(ret);
+    if (!at) push_cont(ret);
+    switch (at) {
+    case 0xD08A: goto rD08A;
+    case 0xD08E: goto rD08E;
+    }
     move_b(0, rd8(SCRIPT_VARS));
     if (c->d[0] & 0xFF) { pop_cont(); return 1; }
     mem_or8(0xFFFF9659u, 8);
@@ -5294,7 +5455,9 @@ static int room11_frame(uint32_t ret)
     call(0x279C);
     do {
         wait_frame(0xD08A);
+rD08A:
         call_back(MESSAGES, 0xD08E);
+rD08E:
         F_B(rd8(0xFFFF99DFu));
         if (rd8(0xFFFF99DFu)) {
             if (mem_dec8(0xFFFF99DFu)) continue;
@@ -5398,7 +5561,7 @@ void Room11Frame(Cpu *cpu)
 {
     c = cpu; NEEDS_PASS(0xD068);
     uint32_t ret = rd32(c->a[7]); c->a[7] += 4;
-    if (room11_frame(ret)) port_continue_at(c, c->a[0], 0);
+    if (room11_frame_at(ret, 0)) port_continue_at(c, c->a[0], 0);
 }                                                                                         /* $D068 */
 
 /* ---- batch T29: the room script 12's frames, 13's setup ----
@@ -5425,9 +5588,13 @@ static void find_kind(void) { c->d[1] = set_w(c->d[1], 0x454); F_W(0x454); find_
 /* $D352: the player's buttons for its frame routine: left */
 static void room12_walk(void) { put8(0xFFFF9F0Bu, 4); }
 /* $D1FE, each frame: by step ($99DE) */
-static void room12_frame(uint32_t ret)
+static void room12_frame_at(uint32_t ret, uint32_t at)
 {
-    push_cont(ret);
+    if (!at) push_cont(ret);
+    switch (at) {
+    case 0xD31C: goto rD31C;
+    case 0xD324: goto rD324;
+    }
     move_b(0, rd8(SCRIPT_VARS));
     switch (rd8(SCRIPT_VARS)) {
     case 0:                                             /* room flag $11: game flag $39, the player walked left */
@@ -5498,8 +5665,10 @@ static void room12_frame(uint32_t ret)
         push32(0xD312); door_frame(); c->a[7] += 4;
         put8(c->a[4] - 0x3CFD, 0x1E);
         wait_frame(0xD31C);
+rD31C:
         push32(0xD320); door_blank(); c->a[7] += 4;
         door_animation(0xD324, 0);
+rD324:
         put8(0xFFFFC008u, 0);
         push32(0xD32C); door_restore(); c->a[7] += 4;
         push32(0xD32E); find_kind(); c->a[7] += 4;
@@ -5517,6 +5686,7 @@ static void room12_frame(uint32_t ret)
     }
     pop_cont();
 }
+static void room12_frame(uint32_t ret) { room12_frame_at(ret, 0); }
 
 /* index 13. $D3C8: moving platform a1 (of $11CE8) from the 8 bytes at a0 */
 static void room13_platform(void)
@@ -5584,13 +5754,15 @@ void Room12Frame(Cpu *cpu) { c = cpu; NEEDS_PASS(0xD1FE); cont_68k(room12_frame)
  * graphics change and figures rain down, then all goes back. */
 
 /* $DAE6: d0 frames waited */
-static void script_wait(uint32_t ret)
+static void script_wait_at(uint32_t ret, uint32_t at)
 {
-    push_cont(ret);
+    if (!at) push_cont(ret);
+    if (at) goto rDAF8;
     put8(0xFFFF99DFu, c->d[0]);
-    do wait_frame(0xDAF8); while (mem_dec8(0xFFFF99DFu));
+    do { wait_frame(0xDAF8); rDAF8: ; } while (mem_dec8(0xFFFF99DFu));
     pop_cont();
 }
+static void script_wait(uint32_t ret) { script_wait_at(ret, 0); }
 /* $D61E: the palette $8B98 faded by $99E6 / 4 (signed) into $8C18 ($594A) */
 static void room13_fade(void)
 {
@@ -5660,29 +5832,48 @@ static void room13_drops(void)
     } while (dbra(7));
 }
 /* the two figures ($99E2, $99E4, or only the second) moved for 64 frames at speed v */
-static void room13_move(int both, uint32_t v, uint32_t resume)
+static void room13_move_at(int both, uint32_t v, uint32_t resume, int resumed)
 {
+    if (resumed) goto moved;
     if (both) { c->a[4] = sx(rd16(0xFFFF99E2u)); put16m(c->a[4] - 0x35FE, v); }
     c->a[4] = sx(rd16(0xFFFF99E4u)); put16m(c->a[4] - 0x35FE, v);
     put8(0xFFFF99DFu, 0x40);
     do {
         wait_frame(resume);
+moved:
         if (both) { c->a[4] = sx(rd16(0xFFFF99E2u)); call(APPLY_VEL_Y); }
         c->a[4] = sx(rd16(0xFFFF99E4u)); call(APPLY_VEL_Y);
     } while (mem_dec8(0xFFFF99DFu));
 }
+static void room13_move(int both, uint32_t v, uint32_t resume) { room13_move_at(both, v, resume, 0); }
 /* $D48C: the ride */
-static void room13_ride(uint32_t ret)
+static void room13_ride_at(uint32_t ret, uint32_t at)
 {
-    push_cont(ret);
+    if (!at) push_cont(ret);
+    switch (at) {
+    case 0xD4BA: room13_move_at(1, 0, 0xD4BA, 1); goto rD4BA;
+    case 0xD4D6: goto rD4D6;
+    case 0xD4EA: room13_move_at(0, 0, 0xD4EA, 1); goto rD4EA;
+    case 0xD4FC: goto rD4FC;
+    case 0xD548: goto rD548;
+    case 0xD582: goto rD582;
+    case 0xD598: goto rD598;
+    case 0xD5BA: room13_move_at(0, 0, 0xD5BA, 1); goto rD5BA;
+    case 0xD5CE: goto rD5CE;
+    case 0xD5F2: room13_move_at(1, 0, 0xD5F2, 1); goto rD5F2;
+    }
     c->d[0] = 0x51; F_L(0x51);
     call(QUEUE_SOUND);
     room13_move(1, 0x100, 0xD4BA);                      /* both down */
+rD4BA:
     c->d[0] = 0x1E; F_L(0x1E);
     script_wait(0xD4D6);
+rD4D6:
     room13_move(0, 0xFF00, 0xD4EA);                     /* the second up */
+rD4EA:
     do {                                                /* faded out */
         wait_frame(0xD4FC);
+rD4FC:
         mem_dec8(0xFFFF99E6u);
         push32(0xD504); room13_fade(); c->a[7] += 4;
         cmp_byte(0xC8, rd8(0xFFFF99E6u));
@@ -5702,6 +5893,7 @@ static void room13_ride(uint32_t ret)
     put16m(0xFFFF99E8u, 0x101);
     for (;;) {
         wait_frame(0xD548);
+rD548:
         push32(0xD54C); room13_drops(); c->a[7] += 4;
         if (mem_dec8(0xFFFF99E8u)) continue;
         for (;;) {
@@ -5719,6 +5911,7 @@ rained:
     call(QUEUE_SOUND);
     do {
         wait_frame(0xD582);
+rD582:
         push32(0xD586); room13_drops(); c->a[7] += 4;
         F_B(rd8(0xFFFF99DFu));
     } while (rd8(0xFFFF99DFu));
@@ -5726,25 +5919,31 @@ rained:
     call(QUEUE_SOUND);
     do {                                                /* faded in */
         wait_frame(0xD598);
+rD598:
         wr8(0xFFFF99E6u, (uint8_t)add_b(&c->ccr, 1, rd8(0xFFFF99E6u)));
         push32(0xD5A0); room13_fade(); c->a[7] += 4;
         F_B(rd8(0xFFFF99E6u));
     } while (rd8(0xFFFF99E6u));
     room13_move(0, 0x100, 0xD5BA);                      /* the second down */
+rD5BA:
     c->d[0] = 0x1E; F_L(0x1E);
     script_wait(0xD5CE);
+rD5CE:
     c->d[0] = 0x51; F_L(0x51);
     call(QUEUE_SOUND);
     room13_move(1, 0xFF00, 0xD5F2);                     /* both up */
+rD5F2:
     c->a[1] = sx(rd16(0xFFFF99E0u));
     put8(c->a[1] - 0x6071, 1);
     pop_cont();
 }
+static void room13_ride(uint32_t ret) { room13_ride_at(ret, 0); }
 /* $D44C, each frame: the first platform stood on ($9F8E bit 0, not in a conversation): the ride,
  * once, and room flag $10 */
-static void room13_frame(uint32_t ret)
+static void room13_frame_at(uint32_t ret, uint32_t at)
 {
-    push_cont(ret);
+    if (!at) push_cont(ret);
+    if (at == 0xD476) goto rD476;
     move_b(0, rd8(SCRIPT_VARS));
     if (!(c->d[0] & 0xFF)) {
         c->a[1] = sx(rd16(0xFFFF99E0u));
@@ -5753,6 +5952,7 @@ static void room13_frame(uint32_t ret)
             if (!(rd8(0xFFFF9659u) & 4)) {
                 wr8(SCRIPT_VARS, (uint8_t)add_b(&c->ccr, 1, rd8(SCRIPT_VARS)));
                 room13_ride(0xD476);
+rD476:
                 c->d[0] = 0x10; F_L(0x10);
                 push32(0xD47C); room_flag_bit(); c->a[7] += 4;
                 { uint32_t a = c->a[0] + sx(c->d[1]); uint8_t v = rd8(a); f_bit(v >> (c->d[0] & 7) & 1); wr8(a, (uint8_t)(v | 1 << (c->d[0] & 7))); }
@@ -5761,6 +5961,7 @@ static void room13_frame(uint32_t ret)
     }
     pop_cont();
 }
+static void room13_frame(uint32_t ret) { room13_frame_at(ret, 0); }
 
 /* index 14 (area 16's room 3). $D71A: a lift (x $1030, floors $1080 and $15C0) */
 static void room14_setup(void) { c->a[0] = 0xD722; lift_setup(); }
@@ -5803,14 +6004,17 @@ void ScriptWait(Cpu *cpu)  { c = cpu; NEEDS_PASS(0xDAE6); cont_68k(script_wait);
  * for a message; 23 (area 12's room 2): its graphics by game flags $4D and $4E. */
 
 /* $DB0A: message d0 run to its end */
-static void script_message(uint32_t ret)
+static void script_message_at(uint32_t ret, uint32_t at)
 {
-    push_cont(ret);
+    if (!at) push_cont(ret);
+    if (at == 0xDB1C) goto rDB1C;
+    if (at == 0xDB20) goto rDB20;
     call(0x279C);
-    do { wait_frame(0xDB1C); call_back(MESSAGES, 0xDB20); F_B(rd8(MESSAGE_ON)); } while (rd8(MESSAGE_ON) & 0x80);
+    do { wait_frame(0xDB1C); rDB1C: call_back(MESSAGES, 0xDB20); rDB20: F_B(rd8(MESSAGE_ON)); } while (rd8(MESSAGE_ON) & 0x80);
     call(0x225C);
     pop_cont();
 }
+static void script_message(uint32_t ret) { script_message_at(ret, 0); }
 /* $DB36, $D87E: the player's buttons for its frame routine: none, right */
 static void walk_stop(void) { put8(0xFFFF9F0Bu, 0); }
 static void room15_walk(void) { put8(0xFFFF9F0Bu, 8); }
@@ -5819,15 +6023,24 @@ static void room15_walk(void) { put8(0xFFFF9F0Bu, 8); }
  * stops, message $60; then sound 55 and an effect (kind $E) every 6 frames, 32 times (32 frames
  * apart at the last); then a figure at ($1058, $1070) with the effects at $D886 until its
  * animation ends, message $61, item $3A taken and game flag $43 set */
-static void room15_frame(uint32_t ret)
+static void room15_frame_at(uint32_t ret, uint32_t at)
 {
-    push_cont(ret);
+    if (!at) push_cont(ret);
+    switch (at) {
+    case 0xD780: goto rD780;
+    case 0xD7BC: goto rD7BC;
+    case 0xD7C2: goto rD7C2;
+    case 0xD83E: goto rD83E;
+    case 0xD84A: goto rD84A;
+    case 0xD85E: goto rD85E;
+    }
     move_b(0, rd8(SCRIPT_VARS));
     switch (rd8(SCRIPT_VARS)) {
     case 0:
         wr8(SCRIPT_VARS, (uint8_t)add_b(&c->ccr, 1, rd8(SCRIPT_VARS)));
         c->d[0] = 0x1E; F_L(0x1E);
         script_wait(0xD780);
+rD780:
         put8(0xFFFF9F05u, 6);
         put32m(0xFFFF9F22u, 0xD87E);
         break;
@@ -5843,8 +6056,10 @@ static void room15_frame(uint32_t ret)
         c->d[0] = set_b(c->d[0], sub_b(&c->ccr, 2, c->d[0]));
         c->d[0] = 0x1E; F_L(0x1E);
         script_wait(0xD7BC);
+rD7BC:
         c->d[0] = 0x60; F_L(0x60);
         script_message(0xD7C2);
+rD7C2:
         put16m(0xFFFF99E0u, 0x2010);
         wr8(SCRIPT_VARS, (uint8_t)add_b(&c->ccr, 1, rd8(SCRIPT_VARS)));
         break;
@@ -5874,12 +6089,14 @@ static void room15_frame(uint32_t ret)
         call(SET_ANIM);
         put8(c->a[4] - 0x4000, 0xC0);
         wait_frame(0xD83E);
+rD83E:
         c->a[0] = 0xD886;
         call(0x2852);
-        do { wait_frame(0xD84A); c->a[4] = sx(rd16(0xFFFF99E0u)); F_B(rd8(c->a[4] - 0x3A00)); } while (rd8(c->a[4] - 0x3A00));
+        do { wait_frame(0xD84A); rD84A: c->a[4] = sx(rd16(0xFFFF99E0u)); F_B(rd8(c->a[4] - 0x3A00)); } while (rd8(c->a[4] - 0x3A00));
         put8(c->a[4] - 0x4000, 0);
         c->d[0] = 0x61; F_L(0x61);
         script_message(0xD85E);
+rD85E:
         put8(0xFFFF9F05u, 0);
         c->d[0] = 0x3A; F_L(0x3A);
         call(0x24DC);
@@ -5893,6 +6110,7 @@ static void room15_frame(uint32_t ret)
     }
     pop_cont();
 }
+static void room15_frame(uint32_t ret) { room15_frame_at(ret, 0); }
 
 /* index 19. $D942: the player's buttons on its walk: right while slow (under $180), and a jump
  * ($20, 8 frames apart) when it is below $1068 */
@@ -6877,11 +7095,13 @@ static void game_restart(void)
     room_enter();
 }
 /* $8FEA, arrivals 0 and 1: the screen faded in, then the game */
-static void arrive_plain(void)
+static void arrive_plain(uint32_t at)
 {
+    if (at == 0x8FF2) goto r8FF2;
     call(0x581A);
     do {
         wait_frame(0x8FF2);
+r8FF2:
         f_bit(rd8(0xFFFF8C56u) >> 4 & 1);
     } while (!(rd8(0xFFFF8C56u) & 0x10));
     leave_to(GAME_LOOP);
@@ -6889,8 +7109,9 @@ static void arrive_plain(void)
 /* $9100: the next room: after a restart's room change ($965F bit 1) only bit 2; else the area's
  * data again if it changed ($966A bit 1), the music faded if it differs, the screen faded out,
  * the room entered */
-static void next_room(void)
+static void next_room(uint32_t at)
 {
+    if (at == 0x9138) goto r9138;
     if (mem_bclr(0xFFFF965Fu, 1)) { mem_or8(0xFFFF965Fu, 4); leave_to(GAME_LOOP); return; }
     if (mem_bclr(0xFFFF966Au, 1)) call(0xA37E);
     call(0x92D4);
@@ -6899,16 +7120,18 @@ static void next_room(void)
     call(0x5842);
     do {
         wait_frame(0x9138);
+r9138:
         f_bit(rd8(0xFFFF8C56u) >> 4 & 1);
     } while (!(rd8(0xFFFF8C56u) & 0x10));
     room_enter();
 }
 /* $9144: the game over: faded out, its picture ($91BE, $91C2) and palette faded in, held 240
  * frames or until a button, faded out, then the game restarted ($4CA8, 0) */
-static void game_over(void)
+static void game_over(uint32_t at)
 {
+    switch (at) { case 0x914C: goto r914C; case 0x9182: goto r9182; case 0x9194: goto r9194; case 0x91AA: goto r91AA; }
     call(0x5842);
-    do { wait_frame(0x914C); f_bit(rd8(0xFFFF8C56u) >> 4 & 1); } while (!(rd8(0xFFFF8C56u) & 0x10));
+    do { wait_frame(0x914C); r914C: f_bit(rd8(0xFFFF8C56u) >> 4 & 1); } while (!(rd8(0xFFFF8C56u) & 0x10));
     call(0x5188);
     c->a[0] = 0x91BE;
     call(SET_GFX_SLOTS);
@@ -6919,32 +7142,36 @@ static void game_over(void)
     c->a[0] = 0x91BA;
     call(LOAD_PALETTES);
     call(0x581A);
-    do { wait_frame(0x9182); f_bit(rd8(0xFFFF8C56u) >> 4 & 1); } while (!(rd8(0xFFFF8C56u) & 0x10));
+    do { wait_frame(0x9182); r9182: f_bit(rd8(0xFFFF8C56u) >> 4 & 1); } while (!(rd8(0xFFFF8C56u) & 0x10));
     put16m(c->a[5] + 0x40, 0xF0);
     for (;;) {
         wait_frame(0x9194);
+r9194:
         c->d[0] = 0xFFFFFFF0u; F_L(c->d[0]);
         c->d[0] = set_b(c->d[0], c->d[0] & rd8(0xFFFF8A7Cu)); F_B(c->d[0]);
         if (c->d[0] & 0xFF) break;
         if (!mem_sub_w(c->a[5] + 0x40, 1)) break;
     }
     call(0x5842);
-    do { wait_frame(0x91AA); f_bit(rd8(0xFFFF8C56u) >> 4 & 1); } while (!(rd8(0xFFFF8C56u) & 0x10));
+    do { wait_frame(0x91AA); r91AA: f_bit(rd8(0xFFFF8C56u) >> 4 & 1); } while (!(rd8(0xFFFF8C56u) & 0x10));
     c->d[0] = 0; F_L(0);
     leave_to(0x4CA8);
 }
 /* $9228 (from the loop: a message $9686 waiting and $9667 clear): sound 56, the player kept
  * ($9F05 8) while the screen fades through 56 steps, the palette $9689, back over 56, then the
  * message $9686 run, and the room's music */
-static void room_message(void)
+static void room_message(uint32_t at)
 {
+    switch (at) { case 0x923C: goto r923C; case 0x9240: goto r9240; case 0x9264: goto r9264; case 0x927C: goto r927C; case 0x9280: goto r9280; }
     c->d[0] = 0x38; F_L(0x38);
     call(QUEUE_SOUND);
     put8(0xFFFF9F05u, 8);
     put8(0xFFFF9666u, 0);
     do {
         wait_frame(0x923C);
+r923C:
         call_back(0xDD08, 0x9240);
+r9240:
         push32(0x9242); fade_step(); c->a[7] += 4;
         wr8(0xFFFF9666u, (uint8_t)add_b(&c->ccr, 1, rd8(0xFFFF9666u)));
         cmp_byte(0x38, rd8(0xFFFF9666u));
@@ -6955,13 +7182,14 @@ static void room_message(void)
     call(LOAD_PALETTES);
     do {
         wait_frame(0x9264);
+r9264:
         mem_dec8(0xFFFF9666u);
         push32(0x926A); fade_step(); c->a[7] += 4;
         F_B(rd8(0xFFFF9666u));
     } while (rd8(0xFFFF9666u));
     c->d[0] = set_w(c->d[0], rd16(0xFFFF9686u)); F_W(c->d[0]);
     call(0x279C);
-    do { wait_frame(0x927C); call_back(MESSAGES, 0x9280); F_B(rd8(MESSAGE_ON)); } while (rd8(MESSAGE_ON) & 0x80);
+    do { wait_frame(0x927C); r927C: call_back(MESSAGES, 0x9280); r9280: F_B(rd8(MESSAGE_ON)); } while (rd8(MESSAGE_ON) & 0x80);
     call(0x225C);
     wr8(0xFFFF9686u, 0xFF);
     move_b(0, rd8(0xFFFF9660u));
@@ -6974,10 +7202,10 @@ ENTRY(StartEntry, start_entry)             /* $8F98 */
 /* these leave by port_continue_at, so ret is theirs to set */
 void GameRestart(Cpu *cpu) { c = cpu; game_restart(); }                                  /* $8EB4 */
 void RoomEnter(Cpu *cpu)   { c = cpu; room_enter(); }                                    /* $8EE6 */
-void ArrivePlain(Cpu *cpu) { c = cpu; NEEDS_PASS(0x8FEA); arrive_plain(); }              /* $8FEA */
-void NextRoom(Cpu *cpu)    { c = cpu; NEEDS_PASS(0x9100); next_room(); }                 /* $9100 */
-void GameOver(Cpu *cpu)    { c = cpu; NEEDS_PASS(0x9144); game_over(); }                 /* $9144 */
-void RoomMessage(Cpu *cpu) { c = cpu; NEEDS_PASS(0x9228); room_message(); }              /* $9228 */
+void ArrivePlain(Cpu *cpu) { c = cpu; NEEDS_PASS(0x8FEA); arrive_plain(0); }              /* $8FEA */
+void NextRoom(Cpu *cpu)    { c = cpu; NEEDS_PASS(0x9100); next_room(0); }                 /* $9100 */
+void GameOver(Cpu *cpu)    { c = cpu; NEEDS_PASS(0x9144); game_over(0); }                 /* $9144 */
+void RoomMessage(Cpu *cpu) { c = cpu; NEEDS_PASS(0x9228); room_message(0); }              /* $9228 */
 
 /* ---- batch T36: the HUD's panel and the status screen's labels ----
  * Small pieces of the status screen's region still in the original, which the C calls. */
@@ -7143,8 +7371,10 @@ static void looks(void)
  * a frame; once the animation flags it (bit 0 of $C002) the looks, a frame, and unless the
  * player's animation is still on, back to the caller with $9F02 bit 4. Returns 1 if it left
  * elsewhere. */
-static int equip_change(void)
+static int equip_change(uint32_t at)
 {
+    if (at == 0xDB8C) goto rDB8C;
+    if (at == 0xDBA2) goto rDBA2;
     c->a[4] = sx(rd16(0xFFFF9EEEu));
     put16m(c->a[4] - 0x2700, rd16(0xFFFF95F4u));
     c->d[0] = set_w(c->d[0], rd16(0xFFFF95F6u)); F_W(c->d[0]);
@@ -7165,10 +7395,12 @@ static int equip_change(void)
     mem_and8(c->a[4] - 0x3FFE, 0xFC);
     call(SET_ANIM);
     wait_frame(0xDB8C);
+rDB8C:
     c->a[4] = sx(rd16(0xFFFF9EEEu));
     if (!mem_bclr(c->a[4] - 0x3FFE, 0)) return 0;   /* rts, at the game loop's level */
     looks();
     wait_frame(0xDBA2);
+rDBA2:
     c->a[4] = sx(rd16(0xFFFF9EEEu));
     F_B(rd8(c->a[4] - 0x3A00));
     if (rd8(c->a[4] - 0x3A00)) return 0;
@@ -7185,7 +7417,11 @@ ENTRY(LooksBlock, looks_block)             /* $F670 */
 ENTRY(LooksBody, looks_body)               /* $F698 */
 ENTRY(LooksSword, looks_sword)             /* $F6F8 */
 ENTRY(LooksShield, looks_shield)           /* $F742 */
-void EquipChange(Cpu *cpu) { c = cpu; NEEDS_PASS(0xDB3C); if (!equip_change()) c->ret = 0; }   /* $DB3C */
+void EquipChange(Cpu *cpu) { c = cpu; NEEDS_PASS(0xDB3C); if (!equip_change(0)) c->ret = 0; }   /* $DB3C */
+/* batch N3f: resumed after its frames (a loaded state): its rts then ends the pass, as the
+ * original's at the game loop's level does */
+void EquipChangeAtDB8C(Cpu *cpu) { c = cpu; NEEDS_PASS(0xDB8C); if (!equip_change(0xDB8C)) c->ret = 0; }
+void EquipChangeAtDBA2(Cpu *cpu) { c = cpu; NEEDS_PASS(0xDBA2); if (!equip_change(0xDBA2)) c->ret = 0; }
 
 /* ---- batch T38: the player placed in a room, and the companion set up ----
  * As a room is entered ($8EE6), $DBBE sets the companion up, resets the player and places it by
@@ -8020,8 +8256,9 @@ static void pose_free(void)
 }
 /* $F76C: the exit's graphics ($50), sound $3C, animation $16 for 3 frames; then the pose for
  * its palette ($F7E6) until it ends; then rising (-$2000) for 8 frames; the next room */
-static void exit_room(void)
+static void exit_room(uint32_t at)
 {
+    switch (at) { case 0xF790: goto rF790; case 0xF7BA: goto rF7BA; case 0xF7D4: goto rF7D4; }
     put16m(0xFFFF8E76u, 0x50);
     call(STREAM_GFX);
     c->d[0] = 0x3C; F_L(0x3C);
@@ -8032,6 +8269,7 @@ static void exit_room(void)
     call(SET_ANIM);
     do {
         wait_frame(0xF790);
+rF790:
         c->a[4] = sx(rd16(0xFFFF9EEEu));
     } while (mem_dec8(p4(-0x2800)));
     mem_and8(p4(-0x3FFD), 0xF7);
@@ -8043,6 +8281,7 @@ static void exit_room(void)
     call(SET_ANIM);
     do {
         wait_frame(0xF7BA);
+rF7BA:
         c->a[4] = sx(rd16(0xFFFF9EEEu));
         F_B(rd8(p4(-0x3A00)));
     } while (rd8(p4(-0x3A00)));
@@ -8050,6 +8289,7 @@ static void exit_room(void)
     put8(p4(-0x2800), 8);
     do {
         wait_frame(0xF7D4);
+rF7D4:
         c->a[4] = sx(rd16(0xFFFF9EEEu));
         call(0xAD6);
     } while (mem_dec8(p4(-0x2800)));
@@ -8057,8 +8297,9 @@ static void exit_room(void)
 }
 /* $F7EA: the exit's graphics, the player $100 lower, the pose for its palette ($F87C), rising
  * ($2000) for 8 frames, still for 3, animation $16 for 3; the game's loop */
-static void exit_arrive(void)
+static void exit_arrive(uint32_t at)
 {
+    switch (at) { case 0xF830: goto rF830; case 0xF850: goto rF850; case 0xF86E: goto rF86E; }
     put16m(0xFFFF8E76u, 0x50);
     call(STREAM_GFX);
     c->a[4] = sx(rd16(0xFFFF9EEEu));
@@ -8075,6 +8316,7 @@ static void exit_arrive(void)
     put8(p4(-0x2800), 8);
     do {
         wait_frame(0xF830);
+rF830:
         c->a[4] = sx(rd16(0xFFFF9EEEu));
         call(0xAD6);
     } while (mem_dec8(p4(-0x2800)));
@@ -8083,6 +8325,7 @@ static void exit_arrive(void)
     put8(p4(-0x2800), 3);
     do {
         wait_frame(0xF850);
+rF850:
         c->a[4] = sx(rd16(0xFFFF9EEEu));
     } while (mem_dec8(p4(-0x2800)));
     put16m(p4(-0x3DFE), 0);
@@ -8091,6 +8334,7 @@ static void exit_arrive(void)
     put8(p4(-0x2800), 3);
     do {
         wait_frame(0xF86E);
+rF86E:
         c->a[4] = sx(rd16(0xFFFF9EEEu));
     } while (mem_dec8(p4(-0x2800)));
     leave_to(GAME_LOOP);
@@ -8099,8 +8343,16 @@ static void exit_arrive(void)
 ENTRY(PoseKeep, pose_keep)                 /* $DF80 */
 ENTRY(PoseFree, pose_free)                 /* $DF90 */
 /* these are jumped to and leave by port_continue_at */
-void ExitRoom(Cpu *cpu)   { c = cpu; NEEDS_PASS(0xF76C); exit_room(); }     /* $F76C */
-void ExitArrive(Cpu *cpu) { c = cpu; NEEDS_PASS(0xF7EA); exit_arrive(); }   /* $F7EA */
+void ExitRoom(Cpu *cpu)   { c = cpu; NEEDS_PASS(0xF76C); exit_room(0); }    /* $F76C */
+void ExitArrive(Cpu *cpu) { c = cpu; NEEDS_PASS(0xF7EA); exit_arrive(0); }  /* $F7EA */
+/* batch N3f: resumed where they waited (a loaded state) */
+#define EXIT_AT(name, fn, at) void name(Cpu *cpu) { c = cpu; NEEDS_PASS(at); fn(at); }
+EXIT_AT(ExitRoomAtF790, exit_room, 0xF790)
+EXIT_AT(ExitRoomAtF7BA, exit_room, 0xF7BA)
+EXIT_AT(ExitRoomAtF7D4, exit_room, 0xF7D4)
+EXIT_AT(ExitArriveAtF830, exit_arrive, 0xF830)
+EXIT_AT(ExitArriveAtF850, exit_arrive, 0xF850)
+EXIT_AT(ExitArriveAtF86E, exit_arrive, 0xF86E)
 
 /* ---- batch T41: the companion each frame, kinds 2 and 6 ----
  * Kind 2 walks after the player along a trail of its cells ($9F34: up to 15 longs, $9F74 the
@@ -8651,8 +8903,12 @@ static void room_change_go(void)
 /* $C7E6, each frame: the doors ($B90A), the room's script's part ($C838, by $9682), the room
  * objects, the walls, the drops, the animated cells, the triggers; $9A94 counting down to the
  * lift's cells. On the continuations' stack, as the scripts that wait need it */
-static int scripts_run(uint32_t ret)
+static int scripts_run_at(uint32_t ret, uint32_t at)
 {
+    switch (at) {
+    case 0xC808: goto rC808;
+    case 0xC814: goto rC814;
+    }
     call(0xB90A);
     push_cont(ret);
     c->d[0] = set_w(c->d[0], rd16(ROOM_SCRIPT)); F_W(c->d[0]);
@@ -8661,9 +8917,11 @@ static int scripts_run(uint32_t ret)
         c->a[0] = rd32(0xC838 + (c->d[0] & 0xFFFF));
         if (!call_ret(c->a[0], 0xC808)) return 0;
     }
+rC808:
     call(0xAEA2);
     call(0xB32E);
     if (!call_ret(0xC89A, 0xC814)) return 0;
+rC814:
     call(0x28AC);
     call(0x29B4);
     if (rd16(0xFFFF9A94u)) {
@@ -8674,13 +8932,21 @@ static int scripts_run(uint32_t ret)
     pop_cont();
     return 1;
 }
+static int scripts_run(uint32_t ret) { return scripts_run_at(ret, 0); }
 /* $901C on: the frame's work after the yield. 1: back to the loop's top ($8FFC); 0: it left.
  * The routines that keep their return addresses get the original's ($9038, $908A, $90E4-$90EE) */
-static int game_frame(void)
+static int game_frame(uint32_t at)
 {
+    switch (at) {                                       /* resumed (batch N3b): after the player, */
+    case 0x9038: goto r9038;                            /* the scripts, the status screen, the */
+    case 0x908A: goto r908A;                            /* equipment or the pause */
+    case 0x90E4: goto r90E4;
+    case 0x90E8: case 0x90EE: goto r90EE;
+    }
     if (!(rd8(0xFFFF9659u) & 0x80)) {                 /* the world not frozen */
         call(0x11C9E);                                  /* the room's things */
         if (!(rd8(0xFFFF965Fu) & 4) && !call_ret(0xDD08, 0x9038)) return 0;   /* the player */
+r9038:
         if (rd8(0xFFFF9F03u) & 0x80) { leave_to(0x9144); return 0; }        /* game over */
         if (rd8(0xFFFF965Fu) & 8) { call(0x5188); c->d[0] = 1; leave_to(0x4CA8); return 0; }
         if (rd8(0xFFFF965Fu) & 2) { leave_to(0xF76C); return 0; }           /* an exit */
@@ -8695,6 +8961,7 @@ static int game_frame(void)
         call(0x2D1C);                                   /* the item rain */
     }
     if (!scripts_run(0x908A)) return 0;                 /* $C7E6: the room's scripts and objects */
+r908A:
     call(0x9CD2);                                       /* the scroll */
     if (rd16(0xFFFF965Cu)) {
         uint16_t t = (uint16_t)(rd16(0xFFFF965Cu) - 1);
@@ -8713,8 +8980,11 @@ static int game_frame(void)
     wr16(0xFFFF965Cu, 0);
     call(0xA66);                                        /* the world frozen */
     if (!(rd8(0xFFFF9659u) & 4)) {
-        if (!call_ret(0x7582, 0x90E4) || !call_ret(0xDB3C, 0x90E8)) return 0;   /* the status screen, the equipment */
+        if (!call_ret(0x7582, 0x90E4)) return 0;        /* the status screen */
+r90E4:
+        if (!call_ret(0xDB3C, 0x90E8)) return 0;        /* the equipment */
     } else if (!call_ret(0x7F0E, 0x90EE)) return 0;     /* paused */
+r90EE:
     c->d[0] = 0xFFFFFFFDu; call(0x366);
     wr8(0xFFFF950Au, 0);
     call(0xA8E);
@@ -8730,7 +9000,7 @@ static void game_loop(void)
         wr16(0xFFFF965Au, (uint16_t)(rd16(0xFFFF965Au) + 1));
         wr32(0xFFFF9662u, c->a[7]);
         wait_frame(0x901C);
-        if (!game_frame()) return;
+        if (!game_frame(0)) return;
     }
 }
 void ScriptsRun(Cpu *cpu)                                                              /* $C7E6 */
@@ -8739,5 +9009,122 @@ void ScriptsRun(Cpu *cpu)                                                       
     if (scripts_run(pop32())) port_continue_at(c, c->a[0], 0);
 }
 void GameLoop(Cpu *cpu)     { c = cpu; NEEDS_PASS(0x8FFC); game_loop(); }              /* $8FFC */
-void GameFrame(Cpu *cpu)    { c = cpu; NEEDS_PASS(0x901C); if (game_frame()) game_loop(); }   /* $901C: a pass resumed there */
+void GameFrame(Cpu *cpu)    { c = cpu; NEEDS_PASS(0x901C); if (game_frame(0)) game_loop(); }  /* $901C: a pass resumed there */
+/* batch N3b: the game task's code started where it waited (its resume and continuation
+ * addresses): a loaded state finds it there, with no coroutine to carry on in */
+#define FRAME_AT(name, at) void name(Cpu *cpu) { c = cpu; NEEDS_PASS(at); if (game_frame(at)) game_loop(); }
+FRAME_AT(GameFrameAt9038, 0x9038)
+FRAME_AT(GameFrameAt908A, 0x908A)
+FRAME_AT(GameFrameAt90E4, 0x90E4)
+FRAME_AT(GameFrameAt90E8, 0x90E8)
+FRAME_AT(GameFrameAt90EE, 0x90EE)
+#define TASK_AT(name, fn, at) void name(Cpu *cpu) { c = cpu; NEEDS_PASS(at); fn(at); }
+TASK_AT(ArrivePlainAt8FF2, arrive_plain, 0x8FF2)
+TASK_AT(NextRoomAt9138, next_room, 0x9138)
+TASK_AT(GameOverAt914C, game_over, 0x914C)
+TASK_AT(GameOverAt9182, game_over, 0x9182)
+TASK_AT(GameOverAt9194, game_over, 0x9194)
+TASK_AT(GameOverAt91AA, game_over, 0x91AA)
+TASK_AT(RoomMessageAt923C, room_message, 0x923C)
+TASK_AT(RoomMessageAt9240, room_message, 0x9240)
+TASK_AT(RoomMessageAt9264, room_message, 0x9264)
+TASK_AT(RoomMessageAt927C, room_message, 0x927C)
+TASK_AT(RoomMessageAt9280, room_message, 0x9280)
+/* batch N3c: the sequences started where they waited or where a helper goes on (a loaded state) */
+TASK_AT(SeqDoorAtBE44, door_then_next, 0xBE44)
+TASK_AT(SeqDoorAtBE4C, door_then_next, 0xBE4C)
+TASK_AT(SeqWarpAtBE62, seq_warp, 0xBE62)
+TASK_AT(SeqInsideAtBE9C, seq_inside, 0xBE9C)
+TASK_AT(SeqInsideAtBEBC, seq_inside, 0xBEBC)
+TASK_AT(SeqInsideAtBED0, seq_inside, 0xBED0)
+TASK_AT(SeqInsideAtBED4, seq_inside, 0xBED4)
+TASK_AT(SeqInsideAtBED8, seq_inside, 0xBED8)
+TASK_AT(SeqInsideAtBEE6, seq_inside, 0xBEE6)
+TASK_AT(SeqInsideAtBEEA, seq_inside, 0xBEEA)
+TASK_AT(SeqOutsideAtBF42, seq_outside, 0xBF42)
+TASK_AT(SeqOutsideAtBF46, seq_outside, 0xBF46)
+TASK_AT(SeqOutsideAtBF4A, seq_outside, 0xBF4A)
+TASK_AT(SeqOutsideAtBF5C, seq_outside, 0xBF5C)
+TASK_AT(SeqOutsideAtBF6A, seq_outside, 0xBF6A)
+TASK_AT(SeqHouseAtBFCA, seq_house, 0xBFCA)
+TASK_AT(SeqHouseAtBFD2, seq_house, 0xBFD2)
+TASK_AT(SeqHouseAtBFE0, seq_house, 0xBFE0)
+TASK_AT(SeqHouseAtC056, seq_house, 0xC056)
+TASK_AT(SeqHouseAtC09C, seq_house, 0xC09C)
+TASK_AT(SeqHouseAtC0B2, seq_house, 0xC0B2)
+TASK_AT(SeqWalkInAtC1A4, seq_walk_in, 0xC1A4)
+TASK_AT(SeqWalkInAtC1AC, seq_walk_in, 0xC1AC)
+TASK_AT(SeqWalkInAtC1B0, seq_walk_in, 0xC1B0)
+TASK_AT(SeqWalkInAtC1B4, seq_walk_in, 0xC1B4)
+TASK_AT(SeqWalkInAtC1CC, seq_walk_in, 0xC1CC)
+/* batch N3d: the arrivals, the conversation, a thing received, the statue and the room scripts'
+ * driver started where they waited or where a helper goes on (a loaded state) */
+#define CONT_AT(name, fn, at) void name(Cpu *cpu) { c = cpu; NEEDS_PASS(at); fn(0, at); port_continue_at(c, c->a[0], 0); }
+CONT_AT(FadeInWaitAtC5E4, fade_in_wait_at, 0xC5E4)
+CONT_AT(ReceivePalettesAtC35C, receive_palettes_at, 0xC35C)
+CONT_AT(ReceivePalettesAtC360, receive_palettes_at, 0xC360)
+/* batch N3e: the room scripts' frames, the ride's moves, the scripts' waits and messages started
+ * where they waited or where a helper goes on (a loaded state) */
+CONT_AT(Room0ReleaseAtCA2E, room0_release_at, 0xCA2E)
+CONT_AT(Room0FrameAtC958, room0_frame_at, 0xC958)
+CONT_AT(Room1FrameAtCAC0, room1_frame_at, 0xCAC0)
+CONT_AT(Room1FrameAtCAE2, room1_frame_at, 0xCAE2)
+CONT_AT(Room1FrameAtCB06, room1_frame_at, 0xCB06)
+CONT_AT(Room12FrameAtD31C, room12_frame_at, 0xD31C)
+CONT_AT(Room12FrameAtD324, room12_frame_at, 0xD324)
+CONT_AT(Room13FrameAtD476, room13_frame_at, 0xD476)
+CONT_AT(Room13RideAtD4BA, room13_ride_at, 0xD4BA)
+CONT_AT(Room13RideAtD4D6, room13_ride_at, 0xD4D6)
+CONT_AT(Room13RideAtD4EA, room13_ride_at, 0xD4EA)
+CONT_AT(Room13RideAtD4FC, room13_ride_at, 0xD4FC)
+CONT_AT(Room13RideAtD548, room13_ride_at, 0xD548)
+CONT_AT(Room13RideAtD582, room13_ride_at, 0xD582)
+CONT_AT(Room13RideAtD598, room13_ride_at, 0xD598)
+CONT_AT(Room13RideAtD5BA, room13_ride_at, 0xD5BA)
+CONT_AT(Room13RideAtD5CE, room13_ride_at, 0xD5CE)
+CONT_AT(Room13RideAtD5F2, room13_ride_at, 0xD5F2)
+CONT_AT(Room15FrameAtD780, room15_frame_at, 0xD780)
+CONT_AT(Room15FrameAtD7BC, room15_frame_at, 0xD7BC)
+CONT_AT(Room15FrameAtD7C2, room15_frame_at, 0xD7C2)
+CONT_AT(Room15FrameAtD83E, room15_frame_at, 0xD83E)
+CONT_AT(Room15FrameAtD84A, room15_frame_at, 0xD84A)
+CONT_AT(Room15FrameAtD85E, room15_frame_at, 0xD85E)
+CONT_AT(ScriptWaitAtDAF8, script_wait_at, 0xDAF8)
+CONT_AT(ScriptMessageAtDB1C, script_message_at, 0xDB1C)
+CONT_AT(ScriptMessageAtDB20, script_message_at, 0xDB20)
+void Room11FrameAtD08A(Cpu *cpu) { c = cpu; NEEDS_PASS(0xD08A); if (room11_frame_at(0, 0xD08A)) port_continue_at(c, c->a[0], 0); }
+void Room11FrameAtD08E(Cpu *cpu) { c = cpu; NEEDS_PASS(0xD08E); if (room11_frame_at(0, 0xD08E)) port_continue_at(c, c->a[0], 0); }
+void ScriptsRunAtC808(Cpu *cpu) { c = cpu; NEEDS_PASS(0xC808); if (scripts_run_at(0, 0xC808)) port_continue_at(c, c->a[0], 0); }
+void ScriptsRunAtC814(Cpu *cpu) { c = cpu; NEEDS_PASS(0xC814); if (scripts_run_at(0, 0xC814)) port_continue_at(c, c->a[0], 0); }
+TASK_AT(ArriveDoorAtC600, arrive_door, 0xC600)
+TASK_AT(ArriveDoorAtC604, arrive_door, 0xC604)
+TASK_AT(ArriveDoorAtC608, arrive_door, 0xC608)
+TASK_AT(ArriveStillAtC620, arrive_still, 0xC620)
+TASK_AT(ArriveStillAtC62A, arrive_still, 0xC62A)
+TASK_AT(ArriveWalkOutAtC6AA, arrive_walk_out, 0xC6AA)
+TASK_AT(ArriveWalkOutAtC6B6, arrive_walk_out, 0xC6B6)
+TASK_AT(ArriveWalkOutAtC6BE, arrive_walk_out, 0xC6BE)
+TASK_AT(ArriveWalkOutAtC6C2, arrive_walk_out, 0xC6C2)
+TASK_AT(ArriveWalkOutAtC6C6, arrive_walk_out, 0xC6C6)
+TASK_AT(ArriveWalkOutAtC6DE, arrive_walk_out, 0xC6DE)
+TASK_AT(ArriveInsideDoorAtC6FE, arrive_inside_door, 0xC6FE)
+TASK_AT(ArriveInsideDoorAtC702, arrive_inside_door, 0xC702)
+TASK_AT(ArriveInsideDoorAtC706, arrive_inside_door, 0xC706)
+TASK_AT(ArriveInsideDoorAtC70A, arrive_inside_door, 0xC70A)
+TASK_AT(ArriveFadeAtC724, arrive_fade, 0xC724)
+TASK_AT(ArriveTalkAtC730, arrive_talk, 0xC730)
+TASK_AT(ArriveTalkAtC73E, arrive_talk, 0xC73E)
+TASK_AT(ArriveTalkAtC752, arrive_talk, 0xC752)
+TASK_AT(SeqTalkAtC20A, seq_talk, 0xC20A)
+TASK_AT(SeqTalkAtC20E, seq_talk, 0xC20E)
+TASK_AT(SeqTalkAtC248, seq_talk, 0xC248)
+TASK_AT(SeqReceiveAtC298, seq_receive, 0xC298)
+TASK_AT(SeqReceiveAtC2C2, seq_receive, 0xC2C2)
+TASK_AT(SeqStatueAtC4BE, seq_statue, 0xC4BE)
+TASK_AT(SeqStatueAtC4C2, seq_statue, 0xC4C2)
+TASK_AT(SeqStatueAtC4E4, seq_statue, 0xC4E4)
+TASK_AT(SeqStatueAtC4E8, seq_statue, 0xC4E8)
+TASK_AT(SeqStatueAtC4FA, seq_statue, 0xC4FA)
+TASK_AT(SeqStatueAtC53E, seq_statue, 0xC53E)
+TASK_AT(SeqStatueAtC542, seq_statue, 0xC542)
 void RoomChangeGo(Cpu *cpu) { c = cpu; NEEDS_PASS(0x91EA); room_change_go(); }        /* $91EA */
