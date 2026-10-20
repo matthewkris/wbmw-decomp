@@ -1,18 +1,18 @@
 /* The native build: Wonder Boy in Monster World as C, without a 68000 emulator.
  *
- * All of the game's code is the C in work/gen_native (tools/m68k2c.py with analysis/native.json)
- * and port/ (the hand ports). This file is the host: it plays the part of the console around
- * that code. The memory map, the save EEPROM, the controller and the VDP (video) are the
+ * The game's code is the hand-written C of port/ (the hand ports) and machine.c (the machine
+ * core: reset, frame loop, scheduler, frame wait, interrupt); work/gen_native (tools/m68k2c.py
+ * with analysis/native.json) translates only what has no C yet. This file is the host: it plays
+ * the part of the console around that code. The memory map, the save EEPROM, the controller and the VDP (video) are the
  * harness's own (harness/bus.c, harness/vdp.c), and so is the sound (harness/sound.c: the Z80
  * running the game's sound driver, the YM2612 and the SN76489), one frame of it at each poll point.
  *
- * Time: the translated code takes no time of its own. It runs until it waits for the VBlank
- * interrupt (the poll points in analysis/native.json); there the host draws the frame, shows it,
- * waits for the next 60 Hz tick, reads the controller and runs the game's interrupt handler
- * ($4B5C), as the hardware would. Restart points ($4BF8: reset the stack and re-enter the frame
- * loop) unwind the C stack to the host, which calls them again from the top.
+ * Time: the code takes no time of its own. It runs until it waits for the VBlank interrupt
+ * (machine.c's frame wait calls rt_poll); there the host draws the frame, shows it, waits for
+ * the next 60 Hz tick, reads the controller and runs the game's interrupt handler (machine.c's
+ * $4B5C), as the hardware would.
  *
- *   wbmw ROM [--scale N] [--save FILE] [--fullscreen] [--integer-scale] [--fps] [--timing]   play in a window
+ *   wbmw ROM [--scale N] [--save FILE] [--fullscreen] [--integer-scale] [--fps]   play in a window
  *   wbmw ROM --frames N [--png-every K] [--out DIR] [--input FILE] [--wav FILE]   headless, for comparison
  *            [--frame-log FILE] [--input-game FILE] [--dump-at N DIR]          by game frame (harness/framelog.c)
  *
@@ -44,6 +44,7 @@ void wr16(uint32_t a, uint16_t v) { bus_write16(a, v); }
 
 /* ported code waiting on the Z80 (QueueSound): let sound time pass, as the hardware would */
 void port_idle(void) { sound_idle(); }
+int port_frames_in_c(void) { return 1; }   /* native/machine.c has it */
 
 /* save states: the harness's own file format (harness/core.c), so states move between play.exe
  * and wbmw.exe. The modules write their parts through state_io. */
@@ -55,14 +56,19 @@ void state_io(FILE *f, void *p, size_t n, int saving)
     if (done != n) state_failed = 1;
 }
 
-/* generated code reached an address with no translation: everything is translated here, so
- * this is a bug in the translation (a computed jump the translator did not find) */
+/* code reached an address that neither the hand ports (native/machine.c's rt_dispatch) nor the
+ * translated code have: control goes back up with c->ret set to it, as in the harness (a hand
+ * port going on at its caller's return address ends here too); machine.c reports it if it
+ * reaches the frame loop */
 void rt_leave(Cpu *c, uint32_t from, uint32_t target)
 {
-    (void)c;
-    fprintf(stderr, "wbmw: no translation for %06X (jumped to from %06X)\n", (unsigned)target, (unsigned)from);
-    exit(4);
+    (void)from;
+    c->ret = target;
 }
+
+void task_reset(void);                          /* port/task.c */
+int machine_run(Cpu *c, uint32_t pc);             /* native/machine.c: the machine core */
+void machine_isr(Cpu *c);
 
 /* the watchdog of the generated code: in the native build a call only ends at a poll point,
  * so it is reset every frame; it fires if a frame never comes */
@@ -511,7 +517,7 @@ static uint32_t resume_pc;
 
 static int resumable(Cpu *c, uint32_t pc)
 {
-    return pc >= 0x3D6 && pc <= 0x3FE && entry(pc) && (c->a[7] & 0xFFFFFF) == 0xFF0BFC && rd32(0xFF0BFC) == 0x4BF6;
+    return pc >= 0x3D6 && pc <= 0x3FE && (c->a[7] & 0xFFFFFF) == 0xFF0BFC && rd32(0xFF0BFC) == 0x4BF6;
 }
 
 static void state_regs(FILE *f, Cpu *c, uint32_t *pc, int saving)
@@ -570,6 +576,7 @@ static int load_state(const char *path, Cpu *c, uint32_t *pc)
         fprintf(stderr, "%s: the game is not waiting for a frame there (PC %06X); save it again a moment later\n", path, (unsigned)*pc);
         return -1;
     }
+    task_reset();                                   /* port/task.c: the waiting passes are stale now */
     if (timing) { line = 0; slice = 0; start_line(); vdp_line_cycle = 0; rt_budget = SLICE; rt_irq_check = 1; }
     else { vdp_line = 0; vdp_set_vblank(0); }       /* untimed code runs at line 0 */
     fprintf(stderr, "loaded state from %s (frame %d)\n", path, frame);
@@ -613,10 +620,8 @@ void rt_poll(Cpu *c, uint32_t at)
     if (!vdp_vint_enabled()) return;                /* the game turned the interrupt off */
     c->a[7] -= 6;                                   /* the 68000's interrupt frame: SR, then PC */
     wr16(c->a[7], (uint16_t)(0x2000 | sr_mask << 8 | c->ccr)); wr32(c->a[7] + 2, at);
-    static const PortRoutine *isr;
-    if (!isr && !(isr = entry(0x4B5C))) { fprintf(stderr, "wbmw: no VBlank handler\n"); exit(4); }
     uint32_t ret = c->ret;
-    isr->fn(c);                                     /* ends in rte: SR and PC popped */
+    machine_isr(c);                                 /* $4B5C, ending in rte: SR and PC popped */
     c->ret = ret;
 }
 
@@ -634,7 +639,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--input-game") && i + 1 < argc) { if (framelog_input(argv[++i])) return 1; }
         else if (!strcmp(argv[i], "--dump-at") && i + 2 < argc) { long n = atol(argv[++i]); framelog_dump_at(n, argv[++i]); }
         else if (!strcmp(argv[i], "--mute")) mute = 1;
-        else if (!strcmp(argv[i], "--timing")) timing = 1;
+        else if (!strcmp(argv[i], "--timing")) fprintf(stderr, "wbmw: --timing counts the translated code's cycles; the hand-written code has none, so it is off\n");
         else if (!strcmp(argv[i], "--state") && i + 1 < argc) state_path = argv[++i];
         else if (!strcmp(argv[i], "--load")) load_path = state_path_ptr;
         else if (!strcmp(argv[i], "--load-state") && i + 1 < argc) load_path = argv[++i];
@@ -687,11 +692,5 @@ int main(int argc, char **argv)
         if (headless && !framelog_input_active()) pad_buttons = buttons_at(frame + 1);
     }
     if (setjmp(restart)) pc = resume_pc;             /* a state was loaded (F4) */
-    for (;;) {                                       /* restart points come back here */
-        const PortRoutine *r = entry(pc);
-        if (!r) { fprintf(stderr, "wbmw: cannot start at %06X\n", (unsigned)pc); return 4; }
-        r->fn(&c);
-        pc = c.ret & 0xFFFFFF;
-        if (pc == 0x4CB4) { fprintf(stderr, "wbmw: the game stopped (no free task slot, $4CB4)\n"); return 5; }
-    }
+    return machine_run(&c, pc);                      /* from reset, or the state's frame wait */
 }

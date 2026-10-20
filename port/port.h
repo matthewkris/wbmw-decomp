@@ -33,6 +33,9 @@ static inline void wr32(uint32_t a, uint32_t v) { wr16(a, (uint16_t)(v >> 16)); 
  * Ported code takes no time, so a wait loop that rereads a flag only another chip changes needs
  * this to ever end. */
 void port_idle(void);
+/* 1 where the frame wait ($3B8) is C as well (the native build), so a hand port may wait for a
+ * frame in place; 0 in the harness, where that is left to the 68000 */
+int port_frames_in_c(void);
 
 /* d(An): a 16-bit signed displacement, as the 68000 adds it */
 static inline uint32_t ea(uint32_t base, int16_t disp) { return base + (uint32_t)(int32_t)disp; }
