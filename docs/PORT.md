@@ -3317,6 +3317,36 @@ finds every routine broken that the fuzz can reach. Replace mode: no problems; i
 ending are the same as before this batch (they differ from the original's by timing, as replace
 mode does elsewhere). The native build plays the ending to the title.
 
+#### The native build on the hand ports: the machine core, batch N1 (2026-10-20)
+
+The owner's decision: ship no translated code. Until now the native build ran none of the hand
+ports (`analysis/native.json` had `hand_ports` false, for `--timing`'s cycle counts): it was the
+translated original, all of it.
+
+* `native/machine.c`: the machine core by hand, for the native build (the harness leaves it to
+  the 68000, as it sets the status register or waits on the hardware): the reset (`$200`, the
+  hardware from the table at `$28E`), the restart (`$4A06`), the frame loop (`$4BF8`) with the
+  system and user task slots (`$4BBC`, `$4C00`: every pass through port/task.c's
+  `TaskCallSystem` and `TaskCallUser`), the frame wait (`$3B8`), the VBlank interrupt (`$4B5C`),
+  the scene switch with the display off (`$50D4`) and the inn's sleep (`$C262`).
+* `machine.c`'s `rt_dispatch` calls the hand ports by address first; the translated code's
+  dispatcher is its fallback (`gen_dispatch`), counted (`WBMW_GEN_STATS=1`). `rt_leave` in the
+  native host hands the address back up, as in the harness.
+* `port_frames_in_c()`: 1 in the native build, where a hand port may wait for a frame in place;
+  the colour task's fade out uses it (`$62A`), where the harness still lets the 68000 run it.
+* `analysis/native.json`: `hand_ports` true, and `hand_resume` (a new option of
+  `tools/m68k2c.py`): the original's code at the hand ports' 132 resume and 81 continuation
+  points is translated, for a loaded state (the hand ports' coroutines cannot be saved), until
+  the hand ports can start there themselves (the next step, N3).
+* Results: from power-on, 4,000 frames into a new game with no translated code at all; every
+  owner state and test state that is saved between frames (81) plays to its end, using
+  translated code at 1 to 10 resume points after the load. The frames are those of the
+  harness's replace mode (the same C) but for 12 of 160 (timing: the native build has none).
+  `--timing` is off: it counted the translated code's cycles.
+
+Harness results: unchanged (the new paths are the native build's): 0 mismatches over 90 runs
+(2,293,614 checked calls); replace mode clean.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

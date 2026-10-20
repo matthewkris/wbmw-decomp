@@ -29,6 +29,10 @@ CONFIG (analysis/translate.json) gives the game's facts, as hex address strings:
   parts   how many files the routines are split into (12): make compiles them in parallel
   hand_ports  false: translate routines even where port/ has a hand port (the native build's
           timing needs every instruction counted).
+  hand_resume  true: also translate the original code at the resume points (after a call that
+          yields) and continuation points (after a call that keeps its return address) inside the
+          hand ports: where a task carries on when its C coroutine is gone (a loaded state), until
+          the hand ports can start there themselves (the native build)
   seen    entries found only at run time: targets of computed jumps the tracer could not
           resolve, from the harness's "left generated code" report. Translated like roots.
 
@@ -634,6 +638,12 @@ HINT_ROOTS += [x for t in HINTS.get('tables', []) for x in m['tables'].get('%06X
 fns, todo = {}, list(ROOTS) + sorted(RESTART) + [x for x in HINT_ROOTS if x in INS]
 RESUME = set()
 CONTINUE = set()
+if CONFIG.get('hand_resume'):                       # the hand ports' own resume and continuation points
+    for e in sorted(HAND):
+        if e not in INS: continue
+        for site, tgt, ret in fn_of(e).sites:
+            if yields(tgt): RESUME.add(ret); todo.append(ret)
+            elif saves(tgt): CONTINUE.add(ret); todo.append(ret)
 while todo:
     e = todo.pop()
     if e in fns or e in HAND or (e in EXITS and e not in RESTART) or e in DEFER: continue

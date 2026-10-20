@@ -1,8 +1,12 @@
 # The native build
 
-`wbmw` runs Wonder Boy in Monster World as C, with no 68000 emulator: every instruction of the
-game is translated (`tools/m68k2c.py` with `analysis/native.json`, into `work/gen_native`) or
-hand-ported (`port/`). `wbmw.c` is the host around it: the memory map, save EEPROM, controller and
+`wbmw` runs Wonder Boy in Monster World as C, with no 68000 emulator. The game is the
+hand-written C of `port/` (verified routine by routine against the original in the harness) and
+`machine.c`, the machine core the harness must leave to the 68000: the reset and restart, the
+frame loop and its scheduler, the frame wait, the VBlank interrupt. What has no C yet is
+translated (`tools/m68k2c.py` with `analysis/native.json`, into `work/gen_native`): only the
+places where a task carries on after a state is loaded (see Save states). `WBMW_GEN_STATS=1`
+prints, at exit, every translated entry point used. `wbmw.c` is the host around it: the memory map, save EEPROM, controller and
 VDP come from the harness (`harness/bus.c`, `harness/vdp.c`). Sound is the harness's too (`harness/sound.c`: the Z80 running the game's driver, ymfm's YM2612, an SN76489). The ROM is
 still needed at run time, for the game's data (graphics, maps, text).
 
@@ -16,7 +20,7 @@ This makes `work/native/wbmw.exe` (and copies `SDL2.dll` next to it).
 
 ## Run
 
-    work/native/wbmw ROM [--scale N] [--save FILE] [--fullscreen] [--integer-scale] [--fps] [--mute] [--timing]
+    work/native/wbmw ROM [--scale N] [--save FILE] [--fullscreen] [--integer-scale] [--fps] [--mute]
                          [--state FILE] [--load]
 
 plays in a window: arrows, Z = A, X = B, C = C, Enter = Start, Esc opens the menu; a controller
@@ -61,22 +65,24 @@ The format is the harness's own (`WBMWST02`, `harness/core.c`): states move free
 `play.exe` and `wbmw.exe`, including all the earlier ones (`WBMWST01`). The default file is
 `wbmw.state`. A state is taken only where the game waits for VBlank, called from the frame loop.
 The harness's states stop there too (between frames). F2 saves at the next such point, normally
-the same frame. A loaded state resumes by starting the translated code at its PC; every
-instruction of that wait is an entry. With `--timing`, a state loads at line 0, as the harness's
-next frame would, so a run from a state matches the harness from the same state exactly.
+the same frame. A loaded state resumes in `machine.c`'s frame wait at its PC. The tasks then
+carry on from the addresses they keep in RAM; the hand ports' waits run on coroutines whose C
+stacks a state cannot hold, so until those can start at their resume addresses themselves, the
+translated code runs each task from there to its next C entry.
 
-## Exact timing (`--timing`)
+## Exact timing (`--timing`): off for now
 
-By default the game's code takes no time: it never slows down, and the raster always reads
-line 0. With `--timing` the native build counts the 68000 cycles the original would spend and
-runs scanlines, interrupts and sound exactly as the harness runs them on Musashi. It is then
-identical to the original frame for frame, slowdowns and sound included (`docs/PORT.md`,
-"Exact timing"). Both modes use the same program.
+`--timing` counted the 68000 cycles of the translated code, which made the native build
+identical to the original frame for frame, slowdowns included (`docs/PORT.md`, "Exact timing").
+The hand-written C has no cycle counts, so the option is off (it says so) until the C has a
+timing model of its own. Without it the native build plays like the harness's replace mode: the
+same game, with small differences where the original's timing shows (fades, the time-sliced
+user tasks).
 
 ## How time works
 
-Translated code takes no time of its own. The game runs until it waits for the VBlank interrupt
-(the poll points, `$3DC` and `$C262`); there the host draws the whole frame, shows it, waits for
+The game's code takes no time of its own. It runs until it waits for the VBlank interrupt
+(`machine.c`'s frame wait, and the inn's sleep); there the host draws the whole frame, shows it, waits for
 the next 60 Hz tick, reads the controller and runs the game's interrupt handler (`$4B5C`). The
 original drops frames when the 68000 cannot finish a frame's work in time; the native build
 never does, so it runs ahead of the original in real frames while playing the same game (see

@@ -20,6 +20,7 @@ int task_in_pass(void);
 
 /* ported code waiting on the Z80: let sound time pass (undone with the snapshot in shadow mode) */
 void port_idle(void) { sound_idle(); }
+int port_frames_in_c(void) { return 0; }   /* the frame wait is the 68000's here */
 
 /* memory for port/, through the bus so VDP and Z80 writes behave as on the machine */
 uint8_t rd8(uint32_t a) { return (uint8_t)bus_read8(a); }

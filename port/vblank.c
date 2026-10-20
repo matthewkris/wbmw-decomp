@@ -406,7 +406,8 @@ static int fade_out_step(void)
     c->d[0] = set_b(c->d[0], v);
     if ((int8_t)v >= -14) { fade_level_all(v); return 0; }
     wr8(PAL_FLAGS, (uint8_t)((rd8(PAL_FLAGS) & 0xC7) | 0x10));
-    port_continue_at(c, 0x62A, 0x5902);             /* jsr $62A: the display blanked, then the frame waited for in place */
+    if (port_frames_in_c()) { call(0x62A); return 0; }   /* jsr $62A: the display blanked, the frame waited for in place */
+    port_continue_at(c, 0x62A, 0x5902);             /* the harness: that wait is the 68000's */
     return 1;
 }
 /* $587E: unless the colour task is running ($47A finds it: d0), the fades reset */
@@ -600,7 +601,8 @@ static void colour_frame(void)
 }
 
 /* the fade out ends this frame: its end blanks the display and waits for the frame in place ($62A
- * to $3B8), which C cannot do; the original runs that frame */
+ * to $3B8), which C can do only where the frame wait is C too (the native build); in the harness
+ * the original runs that frame */
 static int fade_out_ends(void)
 {
     return rd8(0xFFFF8C6Eu) == 1 && (int8_t)(rd8(FADE_LEVEL) - rd8(0xFFFF8C74u)) < -14;
@@ -608,7 +610,7 @@ static int fade_out_ends(void)
 void ColourFrame(Cpu *cpu)                 /* $560C */
 {
     c = cpu;
-    if ((rd8(PAL_FLAGS) & 0x2C) == 0x28 && fade_out_ends()) { port_leave_to_68k(c, 0x560C); return; }
+    if ((rd8(PAL_FLAGS) & 0x2C) == 0x28 && fade_out_ends() && !port_frames_in_c()) { port_leave_to_68k(c, 0x560C); return; }
     colour_frame(); c->ret = 0;
 }
 void FadeOutStep(Cpu *cpu)                 /* $58D6 */

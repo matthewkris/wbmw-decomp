@@ -239,6 +239,11 @@ static inline int rt_muls_cyc(uint32_t s)
  * in one call the host's rt_stuck reports the recent branch targets (a ring of 16). */
 extern uint32_t rt_ring[16]; extern unsigned rt_ring_i; extern unsigned long rt_steps, rt_limit;
 void rt_stuck(void);
+#ifdef RT_TRACE    /* measuring which translated code still runs: every label reached, kept by the host */
+extern unsigned char rt_seen[0x40000];
+#define RT_AT(a) do { rt_seen[((a) >> 1) & 0x3FFFF] = 1; rt_ring[rt_ring_i++ & 15] = (a); if (++rt_steps > rt_limit) rt_stuck(); } while (0)
+#else
 #define RT_AT(a) do { rt_ring[rt_ring_i++ & 15] = (a); if (++rt_steps > rt_limit) rt_stuck(); } while (0)
+#endif
 
 #endif
