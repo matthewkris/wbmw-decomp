@@ -1101,3 +1101,394 @@ ENTRY(UserTasksEnd, user_tasks_end)        /* $4B96 */
 ENTRY(TaskStop, task_stop)                 /* $4CA8 */
 ENTRY(Z80Load, z80_load)                   /* $306 */
 ENTRY(Z80Reset, z80_reset)                 /* $34A */
+
+/* ---- batch T78: the saved game ----
+ * The game is saved in 64 bytes at $FF3300 (a checksum at $3C), kept in the cartridge's serial
+ * EEPROM (an X24C01 on $200001: bit 0 the data line, bit 1 the clock) or, by the header's
+ * $1B3, in its RAM. Ported instruction for instruction: the EEPROM sees every write the
+ * original makes, and the registers and flags are the original's. The original's delay ($1C4DE:
+ * registers pushed and pulled) only takes time. */
+
+#define SAVE_BUF   0x00FF3300u     /* lea $ff3300.l: not sign-extended */
+#define EEPROM     0x200001u
+
+static void f_or_b(uint32_t v) { F_B(v); }                         /* or/and/move: V, C cleared */
+static void bus_out(void) { wr8(EEPROM, (uint8_t)c->d[0]); }
+
+/* $1C4AC, $1C4B8, $1C4C4, $1C4D0: the data line up or down, the clock up or down (d0 the port) */
+static void sda_hi(void) { c->d[0] = set_b(c->d[0], c->d[0] | 1); f_or_b(c->d[0]); bus_out(); }
+static void sda_lo(void) { c->d[0] = set_b(c->d[0], c->d[0] & 0xFE); f_or_b(c->d[0]); bus_out(); }
+static void scl_hi(void) { c->d[0] = set_b(c->d[0], c->d[0] | 2); f_or_b(c->d[0]); bus_out(); }
+static void scl_lo(void) { c->d[0] = set_b(c->d[0], c->d[0] & 0xFD); f_or_b(c->d[0]); bus_out(); }
+static void i2c_delay(void) { }                                     /* $1C4DE */
+
+/* roxl.b #1 / addx-style: the byte shifted left with X in, X and C the bit out */
+static uint32_t roxl_b1(uint32_t r)
+{
+    uint32_t b = r & 0xFF, x = c->ccr & CC_X ? 1 : 0, out = b >> 7, v = (b << 1 | x) & 0xFF;
+    c->ccr = (uint16_t)((out ? CC_X | CC_C : 0) | (v & 0x80 ? CC_N : 0) | (v ? 0 : CC_Z));
+    return set_b(r, v);
+}
+
+/* $1C4F0: a byte read into d1, most significant bit first (d2, d3 used) */
+static void i2c_read_byte(void)
+{
+    c->d[3] = 8; F_L(8);
+    sda_hi();
+    do {
+        scl_hi();
+        c->d[2] = set_b(c->d[2], rd8(EEPROM)); F_B(c->d[2]);
+        c->d[2] = set_b(c->d[2], lsr_n(&c->ccr, c->d[2], 1, 8));
+        c->d[1] = roxl_b1(c->d[1]);
+        scl_lo();
+        c->d[3] = set_b(c->d[3], sub_b(&c->ccr, 1, c->d[3]));
+    } while (c->d[3] & 0xFF);
+}
+/* $1C50E: the master's acknowledge */
+static void i2c_ack(void) { sda_lo(); scl_hi(); scl_lo(); }
+
+static int i2c_hung;    /* a byte not acknowledged: the original stops the bus and hangs ($1C556) */
+static void i2c_stop(void);
+
+/* $1C51A: d1 written, most significant bit first (d2 used), then its acknowledge read */
+static void i2c_write_byte(void)
+{
+    c->d[2] = 8; F_L(8);
+    do {
+        scl_lo();
+        c->d[0] = set_b(c->d[0], lsr_n(&c->ccr, c->d[0], 1, 8));
+        c->d[1] = set_b(c->d[1], add_b(&c->ccr, c->d[1], c->d[1]));
+        c->d[0] = roxl_b1(c->d[0]);
+        F_B(c->d[0]); bus_out();
+        i2c_delay();
+        scl_hi();
+        c->d[2] = set_b(c->d[2], sub_b(&c->ccr, 1, c->d[2]));
+    } while (c->d[2] & 0xFF);
+    scl_lo();
+    sda_hi();
+    scl_hi();
+    uint8_t in = rd8(EEPROM);
+    c->ccr = (uint16_t)((c->ccr & ~CC_Z) | (in & 1 ? 0 : CC_Z));
+    if (!(in & 1)) { scl_lo(); return; }
+    i2c_stop();
+    i2c_hung = 1;
+}
+/* $1C55A: a start, then the byte d1 (the word address and the direction) */
+static void i2c_start(void)
+{
+    c->d[0] = set_b(c->d[0], 3); F_B(3); bus_out();
+    i2c_delay();
+    sda_lo();
+    scl_lo();
+    i2c_write_byte();
+}
+/* $1C57E: a stop; $1C572: after a read, no acknowledge, then the stop */
+static void i2c_stop(void) { sda_lo(); scl_hi(); sda_hi(); }
+static void i2c_read_end(void) { sda_hi(); scl_hi(); scl_lo(); i2c_stop(); }
+
+/* $1C58A: d2+1 bytes from word address d1 to a0 */
+static void eeprom_read(void)
+{
+    c->d[4] = set_w(c->d[4], c->d[2]); F_W(c->d[2]);
+    c->d[1] = set_b(c->d[1], add_b(&c->ccr, c->d[1], c->d[1]));
+    c->d[1] = set_b(c->d[1], c->d[1] | 1); F_B(c->d[1]);
+    i2c_start();
+    if (i2c_hung) return;
+    for (;;) {
+        i2c_read_byte();
+        wr8(c->a[0], (uint8_t)c->d[1]); c->a[0]++; F_B(c->d[1]);
+        c->d[4] = set_b(c->d[4], sub_b(&c->ccr, 1, c->d[4]));
+        if (c->d[4] & 0x80) break;
+        i2c_ack();
+    }
+    i2c_read_end();
+}
+/* $1C5A8: (d2/4)+1 pages of 4 bytes from a0 to word address d1 on, each written and waited for */
+static void eeprom_write(void)
+{
+    c->d[5] = set_w(c->d[5], c->d[1]); F_W(c->d[1]);
+    c->d[2] = set_w(c->d[2], lsr_n(&c->ccr, c->d[2], 2, 16));
+    c->d[4] = set_w(c->d[4], c->d[2]); F_W(c->d[2]);
+    do {
+        c->d[1] = set_w(c->d[1], c->d[5]); F_W(c->d[5]);
+        c->d[1] = set_b(c->d[1], add_b(&c->ccr, c->d[1], c->d[1]));
+        i2c_start();
+        if (i2c_hung) return;
+        c->d[6] = 3; F_L(3);
+        do {
+            c->d[1] = set_b(c->d[1], rd8(c->a[0])); c->a[0]++; F_B(c->d[1]);
+            i2c_write_byte();
+            if (i2c_hung) return;
+            c->d[6] = set_w(c->d[6], c->d[6] - 1);
+        } while ((c->d[6] & 0xFFFF) != 0xFFFF);
+        c->d[5] = set_w(c->d[5], add_w(&c->ccr, 4, c->d[5]));
+        i2c_stop();
+        c->d[1] = set_w(c->d[1], 0x99); F_W(0x99);
+        c->d[1] = set_w(c->d[1], 0xFFFF);                           /* the delay loop, run out */
+        c->d[4] = set_w(c->d[4], c->d[4] - 1);
+    } while ((c->d[4] & 0xFFFF) != 0xFFFF);
+}
+/* $1C5DA, $1C5EE: d2+1 bytes from or to the cartridge's RAM (odd bytes from $200001 + 2*d1) */
+static void sram_read(void)
+{
+    c->a[1] = EEPROM;
+    c->d[1] = set_w(c->d[1], add_w(&c->ccr, c->d[1], c->d[1]));
+    c->a[1] += sx(c->d[1]);
+    do {
+        uint8_t v = rd8(c->a[1]); wr8(c->a[0], v); c->a[0]++; F_B(v);
+        c->a[1] += 2;
+        c->d[2] = set_w(c->d[2], c->d[2] - 1);
+    } while ((c->d[2] & 0xFFFF) != 0xFFFF);
+}
+static void sram_write(void)
+{
+    c->a[1] = EEPROM;
+    c->d[1] = set_w(c->d[1], add_w(&c->ccr, c->d[1], c->d[1]));
+    c->a[1] += sx(c->d[1]);
+    do {
+        uint8_t v = rd8(c->a[0]); c->a[0]++; wr8(c->a[1], v); F_B(v);
+        c->a[1] += 2;
+        c->d[2] = set_w(c->d[2], c->d[2] - 1);
+    } while ((c->d[2] & 0xFFFF) != 0xFFFF);
+}
+/* $1C478, $1C494: the 64 bytes read into $FF3300, or written from it */
+static int save_in_ram(void)
+{
+    c->a[0] = SAVE_BUF;
+    c->d[1] = 0; F_L(0);
+    c->d[2] = 0x3F; F_L(0x3F);
+    cmp_b(&c->ccr, 0x20, rd8(0x1B3));
+    return rd8(0x1B3) == 0x20;
+}
+static void save_read(void)  { if (save_in_ram()) sram_read(); else eeprom_read(); }
+static void save_write(void) { if (save_in_ram()) sram_write(); else eeprom_write(); }
+
+/* $1C416: the checksum: the 58 bytes from $FF3302 added, plus $1234 */
+static void save_sum(void)
+{
+    c->d[0] = 0; c->d[2] = 0; c->d[1] = 0x39;
+    c->a[1] = 0x00FF3302u;
+    do {
+        c->d[2] = set_b(c->d[2], rd8(c->a[1])); c->a[1]++;
+        c->d[0] = set_w(c->d[0], (c->d[0] + c->d[2]) & 0xFFFF);
+        c->d[1] = set_w(c->d[1], c->d[1] - 1);
+    } while ((c->d[1] & 0xFFFF) != 0xFFFF);
+    c->d[0] = set_w(c->d[0], add_w(&c->ccr, 0x1234, c->d[0]));
+}
+/* $1C430: the save read and checked: eq if it is good (marks set, a sane count, the sum) */
+static void save_check(void)
+{
+    save_read();
+    if (i2c_hung) return;
+    c->a[0] = SAVE_BUF;
+    int ok = (rd8(c->a[0] + 0x10) & 8) && (rd8(c->a[0] + 0x11) & 0x40) && (rd8(c->a[0] + 0x13) & 0x40);
+    if (ok) { cmp_b(&c->ccr, 3, rd8(c->a[0] + 0xC)); ok = rd8(c->a[0] + 0xC) >= 3; }
+    uint16_t sum = rd16(c->a[0] + 0x3C);
+    if (ok) ok = sum > 0x1234 && sum <= 0x4BFA;
+    if (!ok) { c->d[0] = 0xFFFFFFFFu; F_L(c->d[0]); return; }
+    save_sum();
+    cmp_w(&c->ccr, rd16(c->a[0] + 0x3C), c->d[0]);
+}
+
+/* $1C320: a byte's two digits apart: $xy to $0x0y */
+static void nibbles_spread(void)
+{
+    c->d[1] = set_b(c->d[1], c->d[0]);
+    c->d[1] = set_w(c->d[1], c->d[1] & 0xF);
+    c->d[0] = set_w(c->d[0], c->d[0] & 0xF0);
+    c->d[0] = set_w(c->d[0], (c->d[0] << 4) | (c->d[1] & 0xF));
+    c->ccr = (uint16_t)((c->d[0] & 0xFFFF) ? 0 : CC_Z);          /* asl cleared X; or: N, V, C clear */
+}
+/* $1C40A: and back: $0x0y to $xy */
+static void nibbles_join(void)
+{
+    c->d[0] = set_w(c->d[0], c->d[0] & 0xF0F);
+    c->d[1] = set_b(c->d[1], c->d[0]);
+    c->d[0] = set_w(c->d[0], lsr_n(&c->ccr, c->d[0], 4, 16));
+    c->d[0] = set_b(c->d[0], c->d[0] | c->d[1]);
+    c->ccr = (uint16_t)((c->ccr & CC_X) | (c->d[0] & 0x80 ? CC_N : 0) | ((c->d[0] & 0xFF) ? 0 : CC_Z));
+}
+
+/* $1C254: the save at $FF3300 into the game: the options, hearts, gold, items, equipment, the
+ * flags of the things owned and the game's flags ($99BA on) */
+static void save_unpack(void)
+{
+    c->a[0] = SAVE_BUF + 7;
+    c->d[0] = set_b(c->d[0], rd8(c->a[0])); c->a[0]++;
+    c->d[1] = set_b(c->d[1], c->d[0]);
+    c->d[2] = 0xF;
+    c->d[1] = set_b(c->d[1], c->d[1] & 0xF);
+    if ((c->d[1] & 0xFF) == 0xF) c->d[1] = 0xFFFFFFFFu;
+    wr8(0xFFFF9F11u, (uint8_t)c->d[1]);
+    c->d[0] = set_b(c->d[0], (c->d[0] & 0xFF) >> 4);
+    c->d[0] = set_b(c->d[0], c->d[0] & 0xF);
+    if ((c->d[0] & 0xFF) == 0xF) c->d[0] = 0xFFFFFFFFu;
+    wr8(0xFFFF9F10u, (uint8_t)c->d[0]);
+    c->d[0] = set_b(c->d[0], rd8(c->a[0]));
+    c->d[0] = set_b(c->d[0], (c->d[0] & 0xFF) >> 4);
+    wr8(0xFFFF965Eu, (uint8_t)c->d[0]);
+    c->d[0] = set_b(c->d[0], rd8(c->a[0])); c->a[0]++;
+    c->d[0] = set_w(c->d[0], c->d[0] & 0xF);
+    wr16(0xFFFF962Cu, (uint16_t)c->d[0]);
+    wr8(0xFFFF962Eu, rd8(c->a[0])); c->a[0]++;
+    wr8(0xFFFF962Fu, rd8(c->a[0])); c->a[0]++;
+    wr8(0xFFFF959Cu, rd8(c->a[0])); c->a[0]++;
+    wr16(0xFFFF9F00u, 0);
+    wr8(0xFFFF9F00u, rd8(c->a[0])); c->a[0]++;
+    c->d[2] = 2;
+    c->a[1] = 0xFFFF95BEu;
+    do {
+        c->d[0] = set_b(c->d[0], rd8(c->a[0])); c->a[0]++;
+        nibbles_spread();
+        wr16(c->a[1], (uint16_t)c->d[0]); c->a[1] += 2;
+        c->d[2] = set_w(c->d[2], c->d[2] - 1);
+    } while ((c->d[2] & 0xFFFF) != 0xFFFF);
+    wr32(0xFFFF95CAu, rd32(c->a[0])); c->a[0] += 4;
+    c->a[1] = 0xFFFF95CEu;
+    c->a[2] = 0xFFFF958Cu;
+    c->d[2] = 7;
+    c->d[3] = 4;
+    wr8(c->a[2] + 0x11, 0);
+    c->d[1] = set_w(c->d[1], rd16(c->a[0])); c->a[0] += 2;
+    if (c->d[1] & 0x8000) wr8(c->a[2] + 0x11, 1);
+    do {
+        c->d[0] = set_w(c->d[0], c->d[1]);
+        c->d[0] = set_b(c->d[0], c->d[0] & 7);
+        wr8(c->a[1], (uint8_t)c->d[0]); c->a[1]++;
+        c->d[1] = set_w(c->d[1], (c->d[1] & 0xFFFF) >> 3);
+        c->d[3] = set_w(c->d[3], c->d[3] - 1);
+    } while (c->d[3] & 0xFFFF);
+    if (!rd8(0xFFFF95D0u) && !(rd8(0xFFFF95CCu) & 1)) wr8(0xFFFF95D0u, 0x80);
+    wr8(c->a[2] + 0x12, (uint8_t)c->d[3]);
+    c->d[1] = set_w(c->d[1], c->d[1] & 7);
+    if ((c->d[1] & 0xFF) == 7) c->d[1] = 0xFFFFFFFFu;
+    wr8(c->a[2] + 0x12, (uint8_t)c->d[1]);
+    c->d[0] = set_w(c->d[0], rd16(c->a[0])); c->a[0] += 2;
+    c->d[1] = 0xF;
+    do {
+        c->d[3] = 0;
+        c->d[0] = set_w(c->d[0], lsr_n(&c->ccr, c->d[0], 1, 16));
+        c->d[3] = c->ccr & CC_X ? 1 : 0;                          /* addx.b d3,d3: 0 + 0 + X */
+        wr8(c->a[2], (uint8_t)c->d[3]); c->a[2]++;
+        c->d[1] = set_w(c->d[1], c->d[1] - 1);
+    } while ((c->d[1] & 0xFFFF) != 0xFFFF);
+    c->d[1] = 8;
+    c->a[1] = 0xFFFF99BAu;
+    uint32_t v = 0;
+    do {
+        v = rd32(c->a[0]); c->a[0] += 4;
+        wr32(c->a[1], v); c->a[1] += 4;
+        c->d[1] = set_w(c->d[1], c->d[1] - 1);
+    } while ((c->d[1] & 0xFFFF) != 0xFFFF);
+    c->ccr = (uint16_t)((v & 0x80000000u ? CC_N : 0) | (v ? 0 : CC_Z));   /* X: the addx's, clear */
+}
+
+/* $1C330: the game into the save at $FF3300, its checksum at $3C */
+static void save_pack(void)
+{
+    c->a[0] = SAVE_BUF;
+    wr16(c->a[0], 0); c->a[0] += 2;
+    wr32(c->a[0], 0x20202020); c->a[0] += 4;
+    wr8(c->a[0], 0); c->a[0]++;
+    c->d[0] = set_w(c->d[0], rd16(0xFFFF9F10u));
+    nibbles_join();
+    wr8(c->a[0], (uint8_t)c->d[0]); c->a[0]++;
+    c->d[0] = set_b(c->d[0], rd8(0xFFFF965Eu) << 4);
+    c->d[1] = set_b(c->d[1], rd8(0xFFFF962Du) & 0xF);
+    c->d[0] = set_b(c->d[0], c->d[0] | c->d[1]);
+    wr8(c->a[0], (uint8_t)c->d[0]); c->a[0]++;
+    wr8(c->a[0], rd8(0xFFFF962Eu)); c->a[0]++;
+    wr8(c->a[0], rd8(0xFFFF962Fu)); c->a[0]++;
+    wr8(c->a[0], rd8(0xFFFF959Cu)); c->a[0]++;
+    wr8(c->a[0], rd8(0xFFFF9F00u)); c->a[0]++;
+    c->a[1] = 0xFFFF95BEu;
+    c->d[2] = 2;
+    do {
+        c->d[0] = set_w(c->d[0], rd16(c->a[1])); c->a[1] += 2;
+        nibbles_join();
+        wr8(c->a[0], (uint8_t)c->d[0]); c->a[0]++;
+        c->d[2] = set_w(c->d[2], c->d[2] - 1);
+    } while ((c->d[2] & 0xFFFF) != 0xFFFF);
+    wr32(c->a[0], rd32(0xFFFF95CAu)); c->a[0] += 4;
+    c->d[2] = 7;
+    c->d[0] = set_b(c->d[0], rd8(0xFFFF95CEu));
+    c->d[3] = set_b(c->d[3], c->d[0]);
+    c->d[0] = set_w(c->d[0], c->d[0] & 7);
+    c->d[1] = set_b(c->d[1], rd8(0xFFFF95CFu));
+    c->d[1] = set_w(c->d[1], c->d[1] & 7);
+    c->d[1] = set_w(c->d[1], c->d[1] << 3);
+    c->d[0] = set_w(c->d[0], c->d[0] | c->d[1]);
+    c->d[1] = set_b(c->d[1], rd8(0xFFFF95D0u));
+    if (c->d[1] & 0x80) {                                           /* none chosen: the first owned */
+        c->d[4] = 0x70;
+        if (!(c->d[4] >> (c->d[3] & 31) & 1)) {
+            c->d[4] = 0;
+            do {
+                if (rd8(0xFFFF95CCu) >> (c->d[4] & 7) & 1) {
+                    wr8(0xFFFF95D0u, (uint8_t)c->d[4]);
+                    c->d[1] = set_b(c->d[1], c->d[4]);
+                    break;
+                }
+                c->d[4] = set_b(c->d[4], c->d[4] + 1);
+            } while ((c->d[4] & 0xFF) < 7);
+        }
+    }
+    c->d[1] = set_w(c->d[1], c->d[1] & 7);
+    c->d[1] = set_w(c->d[1], c->d[1] << 6);
+    c->d[0] = set_w(c->d[0], c->d[0] | c->d[1]);
+    c->d[1] = set_b(c->d[1], rd8(0xFFFF95D1u));
+    c->d[1] = set_w(c->d[1], c->d[1] & 7);
+    { uint32_t w = c->d[1] & 0xFFFF; c->d[1] = set_w(c->d[1], w >> 7 | w << 9); }
+    c->d[0] = set_w(c->d[0], c->d[0] | c->d[1]);
+    c->a[1] = 0xFFFF958Cu;
+    c->d[1] = set_b(c->d[1], rd8(c->a[1] + 0x12));
+    c->d[1] = set_w(c->d[1], c->d[1] & 7);
+    { uint32_t w = c->d[1] & 0xFFFF; c->d[1] = set_w(c->d[1], w >> 4 | w << 12); }
+    c->d[0] = set_w(c->d[0], c->d[0] | c->d[1]);
+    if (rd8(c->a[1] + 0x11)) c->d[0] = set_w(c->d[0], c->d[0] | 0x8000);
+    wr16(c->a[0], (uint16_t)c->d[0]); c->a[0] += 2;
+    c->d[1] = 0xF;
+    do {
+        c->d[0] = set_b(c->d[0], rd8(c->a[1]) ? 0xFF : 0); c->a[1]++;
+        c->d[0] = c->d[0] >> 1 | c->d[0] << 31;
+        c->d[1] = set_w(c->d[1], c->d[1] - 1);
+    } while ((c->d[1] & 0xFFFF) != 0xFFFF);
+    c->d[0] = c->d[0] << 16 | c->d[0] >> 16;
+    wr16(c->a[0], (uint16_t)c->d[0]); c->a[0] += 2;
+    c->d[1] = 8;
+    c->a[1] = 0xFFFF99BAu;
+    do {
+        wr32(c->a[0], rd32(c->a[1])); c->a[0] += 4; c->a[1] += 4;
+        c->d[1] = set_w(c->d[1], c->d[1] - 1);
+    } while ((c->d[1] & 0xFFFF) != 0xFFFF);
+    save_sum();
+    wr16(c->a[0], (uint16_t)c->d[0]); c->a[0] += 2;
+    wr16(c->a[0], 0);
+    c->ccr = (uint16_t)((c->ccr & CC_X) | CC_Z);
+}
+
+ENTRY(SaveUnpack, save_unpack)             /* $1C254 */
+ENTRY(NibblesSpread, nibbles_spread)       /* $1C320 */
+ENTRY(SavePack, save_pack)                 /* $1C330 */
+ENTRY(NibblesJoin, nibbles_join)           /* $1C40A */
+ENTRY(SaveSum, save_sum)                   /* $1C416 */
+ENTRY(SdaHigh, sda_hi)                     /* $1C4AC */
+ENTRY(SdaLow, sda_lo)                      /* $1C4B8 */
+ENTRY(SclHigh, scl_hi)                     /* $1C4C4 */
+ENTRY(SclLow, scl_lo)                      /* $1C4D0 */
+ENTRY(I2cDelay, i2c_delay)                 /* $1C4DE */
+ENTRY(I2cReadByte, i2c_read_byte)          /* $1C4F0 */
+ENTRY(I2cAck, i2c_ack)                     /* $1C50E */
+ENTRY(I2cReadEnd, i2c_read_end)            /* $1C572 */
+ENTRY(I2cStop, i2c_stop)                   /* $1C57E */
+ENTRY(SramRead, sram_read)                 /* $1C5DA */
+ENTRY(SramWrite, sram_write)               /* $1C5EE */
+/* those that can hang on a byte not acknowledged: on to the original's loop ($1C556) */
+#define I2C_ENTRY(name, fn) void name(Cpu *cpu) { c = cpu; i2c_hung = 0; fn(); c->ret = 0; if (i2c_hung) { i2c_hung = 0; port_continue_at(c, 0x1C556, 0); } }
+I2C_ENTRY(SaveCheck, save_check)           /* $1C430 */
+I2C_ENTRY(SaveRead, save_read)             /* $1C478 */
+I2C_ENTRY(SaveWrite, save_write)           /* $1C494 */
+I2C_ENTRY(I2cWriteByte, i2c_write_byte)    /* $1C51A */
+I2C_ENTRY(I2cStart, i2c_start)             /* $1C55A */
+I2C_ENTRY(EepromRead, eeprom_read)         /* $1C58A */
+I2C_ENTRY(EepromWrite, eeprom_write)       /* $1C5A8 */

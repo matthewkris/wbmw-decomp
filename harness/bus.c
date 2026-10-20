@@ -64,6 +64,13 @@ static void eeprom_write(unsigned v)
 
 static unsigned eeprom_read(void) { return (e_drive ? e_out : e_sda) | e_scl << 1; }
 
+void eeprom_capture(uint8_t out[136])
+{
+    memcpy(out, eeprom, sizeof eeprom);
+    int v[8] = {e_sda, e_scl, e_out, e_drive, e_state, e_bit, e_byte, e_addr};
+    for (int i = 0; i < 8; i++) out[128 + i] = (uint8_t)v[i];
+}
+
 /* the 128 bytes of save data, kept in a file between sessions of the live window */
 int eeprom_load(const char *path)
 {

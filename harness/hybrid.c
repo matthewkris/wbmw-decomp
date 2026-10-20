@@ -95,6 +95,7 @@ typedef struct {
     uint8_t ram[0x10000], zram[0x2000], vram[0x10000], reg[32];
     uint16_t cram[64], vsram[40];
     int latch[4];
+    uint8_t eeprom[136];                         /* the save EEPROM and its serial state */
 } Result;
 
 static void capture(Result *r)
@@ -104,6 +105,7 @@ static void capture(Result *r)
     memcpy(r->vram, vram, sizeof vram); memcpy(r->reg, vdp_reg, sizeof r->reg);
     memcpy(r->cram, cram, sizeof cram); memcpy(r->vsram, vsram, sizeof vsram);
     vdp_latch(r->latch);
+    eeprom_capture(r->eeprom);
 }
 
 static Result *want, *got;
@@ -265,7 +267,8 @@ static void check(void)
            || got->pc != want->pc || memcmp(got->ram, want->ram, sizeof got->ram)
            || memcmp(got->zram, want->zram, sizeof got->zram) || memcmp(got->vram, want->vram, sizeof got->vram)
            || memcmp(got->reg, want->reg, sizeof got->reg) || memcmp(got->cram, want->cram, sizeof got->cram)
-           || memcmp(got->vsram, want->vsram, sizeof got->vsram) || memcmp(got->latch, want->latch, sizeof got->latch);
+           || memcmp(got->vsram, want->vsram, sizeof got->vsram) || memcmp(got->latch, want->latch, sizeof got->latch)
+           || memcmp(got->eeprom, want->eeprom, sizeof got->eeprom);
     if (bad) {
         stats[shadow.idx].bad++;
         if (reports++ < 20) {
@@ -280,6 +283,7 @@ static void check(void)
             diff_bytes("VDP reg", got->reg, want->reg, sizeof got->reg, 0);
             diff_bytes("CRAM", (uint8_t *)got->cram, (uint8_t *)want->cram, sizeof got->cram, 0);
             if (memcmp(got->latch, want->latch, sizeof got->latch)) fprintf(stderr, "    VDP port latch differs\n");
+            diff_bytes("EEPROM", got->eeprom, want->eeprom, sizeof got->eeprom, 0);
         }
     }
     shadow.open = 0;
@@ -2002,6 +2006,17 @@ int hybrid_fuzz(const char *name, long count)
             m68k_set_reg(M68K_REG_D2, rnd() % 4 ? (uint32_t)(ram[named + 4] << 24 | ram[named + 5] << 16 | ram[named + 6] << 8 | ram[named + 7]) : bus_read16(rec) << 16 | bus_read16(rec + 2));
             m68k_set_reg(M68K_REG_A0, rnd() % 2 ? 0xFF0000 | (named + 4) : rec);
             if (!strcmp(name, "TimerAdd")) m68k_set_reg(M68K_REG_A0, 0x10000 + rnd() % 0x8000);
+        }
+        if (!strncmp(name, "Save", 4) || !strncmp(name, "Eeprom", 6) || !strncmp(name, "Sram", 4)) {
+            /* batch T78: the save's buffer, a word address and a count of up to 64 bytes */
+            m68k_set_reg(M68K_REG_A0, 0xFF3300);
+            m68k_set_reg(M68K_REG_D1, rnd() % 32);
+            m68k_set_reg(M68K_REG_D2, rnd() % 64);
+            if (rnd() % 2) { ram[0x95D0] = (uint8_t)(0x80 | rnd()); ram[0x95CE] = (uint8_t)(rnd() % 8); ram[0x95CC] = (uint8_t)rnd(); }   /* no equipment chosen: SavePack takes the first owned */
+        }
+        if (!strcmp(name, "I2cWriteByte")) {        /* the EEPROM in a transfer (a start sent), so it acknowledges */
+            bus_write8(0x200001, 3); bus_write8(0x200001, 2); bus_write8(0x200001, 0);
+            m68k_set_reg(M68K_REG_D0, rnd() & ~3u);
         }
         if (!strcmp(name, "ScrollClearPair")) {
             m68k_set_reg(M68K_REG_A0, 0xFF2400); m68k_set_reg(M68K_REG_A1, 0xFF2600);
