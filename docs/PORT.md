@@ -3186,6 +3186,30 @@ Replace mode: thirteen runs, no problems.
 Results: 0 mismatches over the standard runs, every owner state and session and the test states
 (84 runs, all complete; 2,112,769 checked calls). Replace mode: thirteen runs, no problems.
 
+#### The game task's loop and the room scripts' driver, batch T73 (2026-10-20)
+
+* Registered (they wait: on a task pass only): the game task's loop (`$8FFC`, yielding each
+  frame at its resume address `$901C`), the frame's work after the yield (`$901C`-`$9100`: the
+  world, the player, game over, exits, room changes by the table at `$91F4`, the status and
+  pause screens) and the room scripts' driver (`$C7E6`, on the continuations' stack). The room
+  change's jump (`$91EA`) is done inline and not registered on its own: it only jumps to
+  sequences that wait, so it cannot be fuzzed.
+* Routines that keep their return address in RAM (the continuations' stack at `$9C14`, `$8CD6`,
+  `$9630`-`$9654`) must get the original's, or RAM differs from the original once the whole pass
+  is C: `rooms.c` now calls them with `call_ret` / `call_back`, which push the original's return
+  address and run the routine's C version directly. That covers the script frames (`$C808`),
+  the drops (`$C814`), the player (`$9038`, `$C1B4`, `$C6C6`, `$CB06`, `$9240`), the status,
+  equipment and pause screens (`$90E4`-`$90EE`), the message interpreter called while waiting
+  (`$C20E`, `$C4C2`, `$C4E8`, `$C542`, `$D08E`, `$DB20`, `$9280`) and the ocarina (`$C4FA`).
+* `$BD9A` (a room left) now leaves the flags its last `clr.w` leaves: `$1115E`'s C promises
+  none. Seen only by a teleport test state that reached `$BD9A` from the original.
+* The fuzz of `$901C` (from a random state, into enemy code) cannot finish: an artefact of
+  fuzzing a routine that waits, as before; the loop and the driver are checked by every task
+  pass of every session.
+
+Results: 0 mismatches over the standard runs, every owner state and session and the test states
+(84 runs, all complete; 2,112,782 checked calls). Replace mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
