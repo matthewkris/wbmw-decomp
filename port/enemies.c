@@ -84,12 +84,17 @@ void EnemyNextState(Cpu *c)
     c->ccr = tst_b(cc, next);
 }
 
-/* $133B2: the spawn points, then every enemy */
+/* $133B2: the spawn points, then every enemy. Its frame (link a6,#-2: a6 kept, the count in a
+ * word) is kept as the original's, so that the handlers run at the original's stack depth: the
+ * boss's flash ($182AA) puts its buffer by the stack pointer */
 void RunEnemies(Cpu *c)
 {
     call_68k(c, 0x12A70);                           /* the spawn points */
+    c->a[7] -= 4; wr32(c->a[7], c->a[6]); c->a[6] = c->a[7]; c->a[7] -= 2;
+    uint32_t frame = c->a[6];
     c->a[4] = (Ent)(int32_t)rdw(FIRST_ENEMY);
-    for (int n = 0; n < 16; n++, c->a[4] += 4) {
+    wrw(frame - 2, 16);
+    for (int n = 0; n < 16; n++, c->a[4] += 4, wrw(frame - 2, 16 - n)) {
         Ent e = c->a[4];
         if (!(rd8(ALIVE(e)) & 0x80)) continue;
         uint8_t group = rd8(TYPE(e));
@@ -106,5 +111,6 @@ void RunEnemies(Cpu *c)
         wr8(MAGIC_HIT(e), 0);
         wrw(MAGIC_DMG(e), 0);
     }
+    c->a[7] = c->a[6]; c->a[6] = rd32(c->a[7]); c->a[7] += 4;   /* unlk a6 */
     c->ret = 0;                                     /* call_68k on these registers left its mark */
 }
