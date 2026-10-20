@@ -29,10 +29,14 @@ CONFIG (analysis/translate.json) gives the game's facts, as hex address strings:
   parts   how many files the routines are split into (12): make compiles them in parallel
   hand_ports  false: translate routines even where port/ has a hand port (the native build's
           timing needs every instruction counted).
+  yield_also   routines that branch to the yield with their caller's return address on the stack
+          ($40C, the yield if the frame is late): a call of one is a resume point too
   hand_resume  true: also translate the original code at the resume points (after a call that
           yields) and continuation points (after a call that keeps its return address) inside the
           hand ports: where a task carries on when its C coroutine is gone (a loaded state), until
           the hand ports can start there themselves (the native build)
+  unreachable  resume or continuation points of the hand ports that hand_resume leaves out, each
+          with the reason no task can be there in the build
   seen    entries found only at run time: targets of computed jumps the tracer could not
           resolve, from the harness's "left generated code" report. Translated like roots.
 
@@ -638,12 +642,27 @@ HINT_ROOTS += [x for t in HINTS.get('tables', []) for x in m['tables'].get('%06X
 fns, todo = {}, list(ROOTS) + sorted(RESTART) + [x for x in HINT_ROOTS if x in INS]
 RESUME = set()
 CONTINUE = set()
+_waits = {}
+def may_wait(e, seen=()):
+    """e can end a task's pass before it is done: it yields, or calls or jumps to code that does"""
+    if e not in INS or e in EXITS: return False
+    if e in _waits: return _waits[e]
+    if e in seen: return False
+    f = fn_of(e)
+    r = yields(e) or any(may_wait(t, seen + (e,)) for t in f.calls | set(f.tails))
+    _waits[e] = r
+    return r
+
+YIELD_ALSO = {int(x, 16) for x in CONFIG.get('yield_also', [])}
+UNREACHABLE = {int(x, 16) for x in CONFIG.get('unreachable', {})}
 if CONFIG.get('hand_resume'):                       # the hand ports' own resume and continuation points
-    for e in sorted(HAND):
-        if e not in INS: continue
-        for site, tgt, ret in fn_of(e).sites:
-            if yields(tgt): RESUME.add(ret); todo.append(ret)
-            elif saves(tgt): CONTINUE.add(ret); todo.append(ret)
+    for e in sorted(HAND):                          # (a continuation only where the routine keeping it can wait:
+        if e not in INS: continue                   # no loaded state finds a task inside one that cannot)
+        for site, tgt, ret in fn_of(e).sites:      # a task resumes only just after a call of Yield itself, or of
+            if ret in UNREACHABLE: continue
+            if tgt == YIELD or tgt in YIELD_ALSO:   # a routine that branches to it (yield_also)
+                RESUME.add(ret); todo.append(ret)
+            elif saves(tgt) and may_wait(tgt): CONTINUE.add(ret); todo.append(ret)
 while todo:
     e = todo.pop()
     if e in fns or e in HAND or (e in EXITS and e not in RESTART) or e in DEFER: continue
@@ -651,7 +670,7 @@ while todo:
     f = fn_of(e); fns[e] = f
     todo += [x for x in f.calls if x not in fns and x not in HAND and x not in EXITS]
     for site, tgt, ret in f.sites:
-        if yields(tgt): RESUME.add(ret); todo.append(ret)
+        if (tgt == YIELD or tgt in YIELD_ALSO) if YIELD_ALSO else yields(tgt): RESUME.add(ret); todo.append(ret)
         elif saves(tgt): CONTINUE.add(ret); todo.append(ret)
     # code addresses it stores (a task's exit handler, a continuation): called through a pointer later
     todo += [p for p, s in STORED_BY.items() if s & f.body]
@@ -726,4 +745,9 @@ total = sum(len(f.body) for f in fns.values())
 print('translated %d routines, %d instructions (shared code counted per routine) into %s' % (len(fns), total, OUT))
 if RESUME: print('  %d task resume points' % len(RESUME))
 if CONTINUE: print('  %d continuation points (returns saved in RAM)' % len(CONTINUE))
+# the list, for the hand ports that are to start there themselves (hand_resume): each point, its
+# kind, and whether it is translated here or a hand port already starts there
+with changed_only(os.path.join(OUT, 'resume_points.txt')) as f:
+    for a in sorted(RESUME | CONTINUE):
+        f.write('%06X %s %s\n' % (a, 'resume' if a in RESUME else 'continue', 'hand' if a in HAND else 'translated'))
 for u in UNSUPPORTED: print('  unsupported at %06X: %s %s (%s)' % u)

@@ -3347,6 +3347,42 @@ translated original, all of it.
 Harness results: unchanged (the new paths are the native build's): 0 mismatches over 90 runs
 (2,293,614 checked calls); replace mode clean.
 
+#### The hand ports started where a task waits, batch N3 (2026-10-20)
+
+A loaded state holds no C coroutines: each task carries on from the resume address it keeps in
+RAM, and the routines that keep their callers' return addresses in RAM (the continuations' stack
+at `$9C14`, `$A3BE`, the status screen's cells `$9630`-`$9654`, `$8CD6`, `$9F1E`) go on at those.
+Until now the native build ran the original's translated code from there. Now every waiting hand
+port can start at each of its resume and continuation addresses, as the original's code can:
+
+* Each such C function takes the address it starts at (`at`; 0 from the top) and jumps to a label
+  just after the wait or the call that the address follows; everything after a wait is read from
+  RAM, as in the original, so nothing is lost. Each address is a registered entry (`...AtXXXX`,
+  on a task pass only), which in the harness also runs where a loaded state's pass resumes there
+  (formerly the 68000's), checked by the pass comparison.
+* A helper that keeps its return address goes on, once resumed, at the address it kept: an entry
+  in its caller (`port_continue_at` and the dispatcher), so a whole chain resumes, for example the
+  door's frame, then the house's door, then the game's loop.
+* Batches: N3a the scenes' tasks (`vblank.c`, 17), N3b the game task (16), N3c the doors and the
+  room changes (32), N3d the arrivals, conversations, things received, statues and the scripts'
+  driver (36), N3e the room scripts (29), N3f the equipment and the exits (8), N3g the ending (29,
+  `objhelp.c`), N3h the title (9), N3i the status and pause screens (21), N3j the ocarina and the
+  message's command 26 (2). 199 entries.
+* `tools/m68k2c.py` writes `resume_points.txt` (each point, its kind, translated or hand) and is
+  exact for the native build: a task resumes only just after a call of Yield (`$400`) or of
+  `$40C` (`yield_also`); a continuation only where the routine keeping it can wait;
+  `unreachable` names the four points no task can be at, with the reason.
+* Test states for them: `tp-ending-mid1`-`mid6` (the credits, a scene's wait, the finale's text,
+  waits and walk, the end), `tp-status` (the status screen open, random buttons), `tp-boot150`-
+  `1000` (the Sega screen, the title, the menu, the new game's arrival and first conversation),
+  `tp-ocarina-mid` (a tune being played).
+
+Results: the native build's translated code is down to 97 routines (5,703 instructions, from
+66,667), and after loading any of the 94 states saved between frames it runs no resume point's
+translated code; the only translated entries still reached are two computed-jump targets in the
+player's states and an enemy's action (`$EC08`, `$15182`), for N5. Harness: 0 mismatches over
+103 runs (every state, 98) and 2,594,434 checked calls; replace mode clean.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

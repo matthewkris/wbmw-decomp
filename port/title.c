@@ -148,18 +148,20 @@ static void title_pad(void)
 
 /* $7042, Kttl: the opening. The logo's halves come in from either side, $20 a frame, until they
  * meet at x $80; a second later the next scene (d0 as the scheduler left it) */
-static void title_opening(void)
+static void title_opening(uint32_t at)
 {
+    switch (at) { case 0x7062: goto r7062; case 0x7076: goto r7076; case 0x7082: goto r7082; case 0x70CC: goto r70CC; }
     title_setup();
     wr16(0xFFFFC800u, 0x180);
     wr16(0xFFFFC804u, 0xFF80);
     palettes(0x72F0u);
     call(FADE_IN);
-    do wait(0x7062); while (!fade_done());
+    do { wait(0x7062); r7062: ; } while (!fade_done());
     wr16(c->a[5] + 0x40, 0x3C);
-    do wait(0x7076); while (count_down(c->a[5] + 0x40));
+    do { wait(0x7076); r7076: ; } while (count_down(c->a[5] + 0x40));
     for (;;) {
         wait(0x7082);
+r7082:
         c->a[4] = 0;
         c->d[0] = set_w(c->d[0], rd16(c->a[4] - 0x3800));
         c->d[0] = set_w(c->d[0], sub_w(&c->ccr, 0x20, c->d[0]));
@@ -177,35 +179,38 @@ static void title_opening(void)
     palettes(0x72F4u);
     wr16(c->a[5] + 0x40, 0x3C);
     call(PALETTES_NOW);
-    do wait(0x70CC); while (count_down(c->a[5] + 0x40));
+    do { wait(0x70CC); r70CC: ; } while (count_down(c->a[5] + 0x40));
     scene_end();
 }
 
 /* $718A: the title's music for $314 frames (or until the scene is left), then a fade to the
  * demo (scene -1) */
-static void title_music(void)
+static void title_music(uint32_t at)
 {
+    if (at == 0x719A) goto r719A;
+    if (at == 0x71B0) goto r71B0;
     sound(20);
     wr16(c->a[5] + 0x40, 0x314);
-    do wait(0x719A); while (count_down(c->a[5] + 0x40));
+    do { wait(0x719A); r719A: ; } while (count_down(c->a[5] + 0x40));
     sound(-2);
     call(FADE_START);
-    do wait(0x71B0); while (!fade_done());
+    do { wait(0x71B0); r71B0: ; } while (!fade_done());
     c->d[0] = 0xFFFFFFFFu; F_L(c->d[0]);
     scene_end();
 }
 
 /* $715C, Ktt2: the title fading in */
-static void title_screen(void)
+static void title_screen(uint32_t at)
 {
+    if (at == 0x7180) goto r7180;
     title_setup();
     palettes(0x72F4u);
     wr16(0xFFFFC800u, 0x80);
     wr16(0xFFFFC804u, 0x80);
     title_cursor();
     call(FADE_IN);
-    do wait(0x7180); while (!fade_done());
-    title_music();
+    do { wait(0x7180); r7180: ; } while (!fade_done());
+    title_music(0);
 }
 
 /* $713A, K_mn: the title at once (after the opening) */
@@ -216,20 +221,23 @@ static void title_shown(void)
     wr16(0xFFFFC800u, 0x80);
     wr16(0xFFFFC804u, 0x80);
     title_cursor();
-    title_music();
+    title_music(0);
 }
 
 /* $71C6, Kmnu: the menu. Without a saved game Start begins a new one; with one, up and down move
  * the cursor (y $78 a new game, $88 continue) and Start chooses. A new game resets the save's
  * buffer ($8E22). Then a fade, and scene 0 */
-static void title_menu(void)
+static void title_menu(uint32_t at)
 {
+    int fresh = 0;
+    if (at == 0x71DA) goto r71DA;
+    if (at == 0x723C) goto r723C;
     menu_setup();
     palettes(0x72F4u);
     call(PALETTES_NOW);
-    int fresh;
     for (;;) {
         wait(0x71DA);
+r71DA:
         F_W(rd16(c->a[5] + 0x42));
         if (!rd16(c->a[5] + 0x42)) {
             call(START_PRESSED);
@@ -262,7 +270,7 @@ static void title_menu(void)
     sound(-2);
     sound(38);
     call(FADE_START);
-    do wait(0x723C); while (!fade_done());
+    do { wait(0x723C); r723C: ; } while (!fade_done());
     c->d[0] = 0; F_L(0);
     scene_end();
 }
@@ -271,10 +279,21 @@ static void title_menu(void)
 /* a routine that waits for frames runs only on a task pass; reached outside one (a pass the harness
  * finished on the 68000), it goes on in the original at its own address (port/task.h, CT_WAITS) */
 #define NEEDS_PASS(self) do { if (!task_in_pass()) { port_leave_to_68k(c, (self)); return; } } while (0)
-void TitleOpening(Cpu *cpu) { c = cpu; NEEDS_PASS(0x7042); title_opening(); }   /* $7042 */
+void TitleOpening(Cpu *cpu) { c = cpu; NEEDS_PASS(0x7042); title_opening(0); }  /* $7042 */
 void TitleShown(Cpu *cpu)   { c = cpu; NEEDS_PASS(0x713A); title_shown(); }     /* $713A */
-void TitleScreen(Cpu *cpu)  { c = cpu; NEEDS_PASS(0x715C); title_screen(); }    /* $715C */
-void TitleMenu(Cpu *cpu)    { c = cpu; NEEDS_PASS(0x71C6); title_menu(); }      /* $71C6 */
+void TitleScreen(Cpu *cpu)  { c = cpu; NEEDS_PASS(0x715C); title_screen(0); }   /* $715C */
+void TitleMenu(Cpu *cpu)    { c = cpu; NEEDS_PASS(0x71C6); title_menu(0); }     /* $71C6 */
+/* batch N3h: the title's tasks started where they waited (a loaded state) */
+#define TITLE_AT(name, fn, at) void name(Cpu *cpu) { c = cpu; NEEDS_PASS(at); fn(at); }
+TITLE_AT(TitleOpeningAt7062, title_opening, 0x7062)
+TITLE_AT(TitleOpeningAt7076, title_opening, 0x7076)
+TITLE_AT(TitleOpeningAt7082, title_opening, 0x7082)
+TITLE_AT(TitleOpeningAt70CC, title_opening, 0x70CC)
+TITLE_AT(TitleScreenAt7180, title_screen, 0x7180)
+TITLE_AT(TitleMusicAt719A, title_music, 0x719A)
+TITLE_AT(TitleMusicAt71B0, title_music, 0x71B0)
+TITLE_AT(TitleMenuAt71DA, title_menu, 0x71DA)
+TITLE_AT(TitleMenuAt723C, title_menu, 0x723C)
 
 /* call_68k leaves its mark in ret: cleared, as none of these goes on elsewhere */
 #define ENTRY(name, fn) void name(Cpu *cpu) { c = cpu; fn(); c->ret = 0; }

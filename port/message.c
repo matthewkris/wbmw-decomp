@@ -947,6 +947,7 @@ static void quiz_order(void)
 }
 
 static int command_tune(void);
+static int command_tune_end(void);
 
 /* $15C8's commands: code $0B, then a number. They answer how the text goes on */
 static int command(void)
@@ -1263,8 +1264,9 @@ static void note_in(void)
 
 /* $2AAE's body, its return address `ret` kept on the RAM stack meanwhile; answers where the
  * original then jumps (the address popped) */
-static uint32_t ocarina_tune(uint32_t ret)
+static uint32_t ocarina_tune_at(uint32_t ret, uint32_t at)
 {
+    if (at == 0x2AD2) goto resumed;
     c->a[0] = sx(rd16(0xFFFF9C14u));
     wr32(c->a[0], ret); c->a[0] += 4;
     wr16(0xFFFF9C14u, (uint16_t)c->a[0]);
@@ -1275,7 +1277,8 @@ static uint32_t ocarina_tune(uint32_t ret)
         wr32(0xFFFF9ED6u, c->a[2]);
         wr16(0xFFFF9ED4u, 0x3C);
         for (;;) {
-            Cpu *me = c; task_wait_frame(me, 0x2AD2); c = me;
+            { Cpu *me = c; task_wait_frame(me, 0x2AD2); c = me; }
+resumed:
             c->d[0] = set_b(c->d[0], rd8(PAD_NEW_MSG) & 0x70); F_B(c->d[0]);
             if (c->d[0] & 0xFF) break;
             if (mem_subq_w(0xFFFF9ED4u, 1)) continue;
@@ -1298,6 +1301,8 @@ out:
     return c->a[0];
 }
 
+static uint32_t ocarina_tune(uint32_t ret) { return ocarina_tune_at(ret, 0); }
+
 /* $19D2, command 26: the tune check (the thing's, or the byte's); then jump by the first word
  * (wrong), the second (right), or on past both (no note) */
 static int command_tune(void)
@@ -1308,6 +1313,12 @@ static int command_tune(void)
     c->a[0] = sx(rd16(MSG_DEPTH));
     wr32(c->a[0] - 0x7386, c->a[2]);
     ocarina_tune(0x19EA);
+    return command_tune_end();
+}
+/* $19EA: the rest of command 26, after the tune (d0 its answer): the interpreter's return back
+ * on the stack, then the jump by the answer */
+static int command_tune_end(void)
+{
     c->a[7] -= 4; wr32(c->a[7], rd32(0xFFFF8CD6u));
     c->a[0] = sx(rd16(MSG_DEPTH));
     c->a[2] = rd32(c->a[0] - 0x7386);
@@ -1395,9 +1406,11 @@ static void inn_heal(void)
 }
 
 /* $14F4: the text from a2 until something waits; 0 when the frame's part is done, 1 handed over */
-static void msg_text(void)
+static void msg_text_at(int after_command)
 {
+    if (after_command) goto next_byte;
     for (;;) {
+next_byte:
         c->d[3] = set_b(c->d[3], rd8(c->a[2]++));
         cmp_byte(0x10, c->d[3]);
         uint8_t ch = (uint8_t)c->d[3];
@@ -1495,6 +1508,7 @@ static void msg_text(void)
         if (rd8(MSG_DELAY)) { msg_pause(); return; }
     }
 }
+static void msg_text(void) { msg_text_at(0); }
 
 /* $13BC: a frame of the open message */
 static void msg_step(void)
@@ -1562,6 +1576,25 @@ static void msg_step(void)
 }
 
 void MsgStep(Cpu *cpu) { c = cpu; handed_over = 0; msg_step(); if (!handed_over) c->ret = 0; }   /* $13BC */
+/* batch N3j: where a loaded state finds them. $2AD2: the tune resumed in its wait, then on at the
+ * address it kept ($19EA, or a statue's); $19EA: command 26's end, then the message's text on
+ * from there, and the interpreter's return as MsgStep's */
+void OcarinaTuneAt2AD2(Cpu *cpu)
+{
+    c = cpu;
+    if (!task_in_pass()) { port_leave_to_68k(c, 0x2AD2); return; }
+    port_continue_at(c, ocarina_tune_at(0, 0x2AD2), 0);
+}
+void MsgStepAt19EA(Cpu *cpu)
+{
+    c = cpu;
+    if (!task_in_pass()) { port_leave_to_68k(c, 0x19EA); return; }
+    handed_over = 0;
+    int r = command_tune_end();
+    if (r == CMD_ON) msg_text_at(1);
+    else if (r == CMD_PAUSE) msg_pause();
+    if (!handed_over) c->ret = 0;
+}
 
 /* call_68k leaves its mark in ret: cleared, as none of these goes on elsewhere */
 #define ENTRY(name, fn) void name(Cpu *cpu) { c = cpu; fn(); c->ret = 0; }
