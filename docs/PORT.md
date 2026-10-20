@@ -3257,6 +3257,21 @@ Results: 0 mismatches over the standard runs, every owner state and session and 
 Results: 0 mismatches over the standard runs, every owner state and session and the test states
 (88 runs, all complete; 2,176,705 checked calls). Replace mode: thirteen runs, no problems.
 
+#### The leftovers: a scene's switch and a loop's body, batch T77 (2026-10-20)
+
+* Registered: the scenes' switch without the display turned off (`$50E2`: the tasks reset, the
+  first system slot given the next scene, the scheduler started again at `$4BF8`; on a task
+  pass, not fuzzed as it does not return) and `CopyFields` entered at its loop's body
+  (`$17302`). The switch's first part (`$50D4`) turns the display off with `$62A`, which waits
+  for the VBlank at `$3B8`, so it stays the 68000's.
+* Looked at and left: `$24D8` is data (the item numbers' limits `$23E4` and `$245A` read) traced
+  as code; `$13578` (the next state, then its action) has no caller in the game and goes on into
+  the actions, so it cannot be fuzzed; `$1AA3C`-`$1ABD2` is part of the ending; `$8148`-`$81A8`
+  is run by no session.
+
+Results: 0 mismatches over the standard runs, every owner state and session and the test states
+(88 runs, all complete; 2,176,685 checked calls). Replace mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

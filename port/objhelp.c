@@ -183,6 +183,13 @@ static void copy_fields(void)
         wr16(c->a[2] + c->d[0], rd16(c->a[4] + c->d[0]));
     }
 }
+/* $17302: the same from its loop's body: the field d0 copied first */
+static void copy_fields_step(void)
+{
+    c->d[0] = sx(c->d[0]);
+    wr16(c->a[2] + c->d[0], rd16(c->a[4] + c->d[0]));
+    copy_fields();
+}
 /* $17418: |d0| (negative by the caller's flags) over 64 */
 static void slow_of(void)
 {
@@ -275,6 +282,7 @@ ENTRY(SwingX, swing_x)                     /* $170F4 */
 ENTRY(HopperStart, hopper_start)           /* $17118 */
 void ChainLink(Cpu *cpu) { c = cpu; int out = chain_link(); if (out) c->a[7] += 4; c->ret = 0; }   /* $17132 */
 ENTRY(CopyFields, copy_fields)             /* $1730A */
+ENTRY(CopyFieldsStep, copy_fields_step)    /* $17302 */
 ENTRY(SlowOf, slow_of)                     /* $17418 */
 ENTRY(Bounce, bounce)                      /* $17420 */
 ENTRY(AimLevel, aim_level)                 /* $174B0 */
