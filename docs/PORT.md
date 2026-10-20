@@ -3290,6 +3290,33 @@ Results: 0 mismatches over the standard runs, every owner state and session and 
 (88 runs, all complete; 2,176,685 checked calls), and 690,000 fuzz cases; the self-test finds
 every routine broken. Replace mode: thirteen runs, no problems.
 
+#### The ending, batch T79 (2026-10-20)
+
+* Registered, in `port/objhelp.c` beside the ending's helpers (T52): the ending's task
+  (`$1AA3C`: the stars, the hero and the princess's figures, the story's text and the credits
+  scrolled up to line `$820`), its script (`$1B016`, commands at `$1B076`: the six scenes of the
+  friends met, each a room, its people, a message and a fade), the finale (`$1B332`: the last
+  text, the Sega logo's rows and colours, the figure's last walk), their commands and waits
+  (`$1B250`-`$1B96C`), and the ending scene's steps already written in `port/vblank.c`
+  (`$4F58`-`$4FEE`).
+* The ending's waits that keep their caller's return address in `$A3BE` get the original's;
+  the message interpreter called from it uses a new shared `call_68k_ret` (`port/world.c`).
+  `$1B2FE` yields from a subroutine, so the original's Yield returns into the ending's code in
+  the same pass and only marks the task's resume address; the C does the same.
+* Test state `tp-ending`: `session8` one frame later with bit 3 of `$965F` set in the saved RAM
+  (what the final boss's defeat does): the game task ends, the ending scene starts and runs to
+  the title (18,500 frames). Saving it after the trigger left the scene switch (`$50D4`, the
+  68000's) part-way, and the harness then ran the ending's first frames on the 68000.
+* `tp-ending-skip`, the same state with Start pressed in the credits: the ending's end and its
+  fade (`$4FCC`, `$4FA6`). Not run: `$1B930`-`$1B94E` (a wait no code calls) and the loop of
+  `$1B2FE` (its count is never reached, in the original too).
+
+Results: 0 mismatches over the standard runs, every owner state and session and the test states
+(89 runs, all complete; 2,272,437 checked calls; `tp-ending-skip` checked alone too), with every frame of the ending run in C and checked; the self-test
+finds every routine broken that the fuzz can reach. Replace mode: no problems; its frames of the
+ending are the same as before this batch (they differ from the original's by timing, as replace
+mode does elsewhere). The native build plays the ending to the title.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

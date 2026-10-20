@@ -127,6 +127,7 @@ void VelocityAtAngle(Cpu *), ScaleVector(Cpu *), JumpTo(Cpu *), FlightTime(Cpu *
 void PlayerDead(Cpu *), PlayerDeadFall(Cpu *), PlayerFullHeal(Cpu *), PlayerRefill(Cpu *), PlayerRefillStep(Cpu *);
 void QuakeStart(Cpu *), ThunderFrame(Cpu *), ThunderStrike(Cpu *), PlayerUseItem(Cpu *), ScriptsRun(Cpu *), GameLoop(Cpu *), GameFrame(Cpu *), RoomChangeGo(Cpu *);
 void Vdp0Set10(Cpu *), Vdp0Clr10(Cpu *), Vdp0Store(Cpu *), DisplayOn(Cpu *), DisplayOff(Cpu *), Vdp1Set40(Cpu *), Vdp1Clr40(Cpu *), Vdp1Set20(Cpu *), Vdp1Clr20(Cpu *), Vdp1Set10(Cpu *), Vdp1Or(Cpu *), Vdp1Clr10(Cpu *), Vdp1And(Cpu *), Vdp1Store(Cpu *), Vdp6C(Cpu *), Vdp11Set8(Cpu *), Vdp11Clr8(Cpu *), Vdp11Clr4(Cpu *), Vdp11Set4(Cpu *), Vdp11Clr3(Cpu *), Vdp11And(Cpu *), Vdp11Set2(Cpu *), Vdp11Set3(Cpu *), Vdp11Or(Cpu *), Vdp12H32(Cpu *), Vdp12H40(Cpu *), Vdp12Clr6(Cpu *), Vdp12Mode2(Cpu *), Vdp12Mode4(Cpu *), Vdp12Set8(Cpu *), Vdp12Or(Cpu *), Vdp12Clr8(Cpu *), Vdp12And(Cpu *), Vdp12Store(Cpu *), Vdp6E(Cpu *), PlaneAReg(Cpu *), WindowReg(Cpu *), PlaneBReg(Cpu *), SpritesReg(Cpu *), HScrollReg(Cpu *), PlaneSizeReg(Cpu *), EntityOn(Cpu *), OffScreenX(Cpu *), OffScreenXAt(Cpu *), OffScreen(Cpu *), OffScreenY(Cpu *), OffScreenYAt(Cpu *), StopAll(Cpu *), StopFractions(Cpu *), StopVelocity(Cpu *), D2cSwapped(Cpu *);
+void EndMain(Cpu *), EndScript(Cpu *), EndWalkIn(Cpu *), EndMarkWait(Cpu *), EndMessage(Cpu *), EndFinale(Cpu *), EndSpriteF0(Cpu *), EndScreen(Cpu *), EndScene(Cpu *), EndLayerA(Cpu *), EndLayerB(Cpu *), EndFade(Cpu *), EndGfx(Cpu *), EndActor(Cpu *), EndCoord(Cpu *), EndRows(Cpu *), EndWaitStars(Cpu *), EndWaitCount(Cpu *), EndWaitMove(Cpu *), SceneEnding(Cpu *), SceneEndingWait(Cpu *), SceneEndingFade(Cpu *), SceneEndingEnd(Cpu *);
 void SaveUnpack(Cpu *), NibblesSpread(Cpu *), SavePack(Cpu *), NibblesJoin(Cpu *), SaveSum(Cpu *), SaveCheck(Cpu *), SaveRead(Cpu *), SaveWrite(Cpu *), SdaHigh(Cpu *), SdaLow(Cpu *), SclHigh(Cpu *), SclLow(Cpu *), I2cDelay(Cpu *), I2cReadByte(Cpu *), I2cAck(Cpu *), I2cWriteByte(Cpu *), I2cStart(Cpu *), I2cReadEnd(Cpu *), I2cStop(Cpu *), EepromRead(Cpu *), EepromWrite(Cpu *), SramRead(Cpu *), SramWrite(Cpu *);
 void Z80Load(Cpu *), Z80Reset(Cpu *), TaskStart(Cpu *), TaskEnsure(Cpu *), TasksEndNamedA0(Cpu *), TasksEndNamed(Cpu *), TaskEnd(Cpu *), TimerAdd(Cpu *), TimersFree(Cpu *), VdpInit(Cpu *), PadsInit(Cpu *), TasksClear(Cpu *), TasksReset(Cpu *), TimersClear(Cpu *), SystemTasksClear(Cpu *), UserTasksEnd(Cpu *), TaskStop(Cpu *);
 void Looks(Cpu *), LooksExtra(Cpu *), LooksBlock(Cpu *), LooksBody(Cpu *), LooksSword(Cpu *), LooksShield(Cpu *), EquipChange(Cpu *);
@@ -372,6 +373,10 @@ const PortRoutine port_routines[] = {
     {0x004D68, 0x004D9C, "SceneTitleAfter", SceneTitleAfter, CT_SP | CT_WAITS},
     {0x004DA8, 0x004DD6, "SceneMenu", SceneMenu, CT_SP | CT_WAITS},
     {0x004DE2, 0x004E5C, "SceneDemo", SceneDemo, CT_SP | CT_WAITS},
+    {0x004F58, 0x004F66, "SceneEnding", SceneEnding, CT_SP | CT_WAITS},   /* vblank.c: the ending scene's steps (batch T79) */
+    {0x004F66, 0x004FA6, "SceneEndingWait", SceneEndingWait, CT_SP | CT_WAITS},
+    {0x004FA6, 0x004FCC, "SceneEndingFade", SceneEndingFade, CT_SP | CT_WAITS},
+    {0x004FCC, 0x004FEE, "SceneEndingEnd", SceneEndingEnd, CT_SP | CT_WAITS},
     {0x005080, 0x0050CC, "SceneGame", SceneGame, CT_SP | CT_WAITS},
     {0x004362, 0x00436C, "CheckGrounded", CheckGrounded},
     {0x000EE2, 0x000EE6, "Cosine", Cosine},
@@ -1357,6 +1362,25 @@ const PortRoutine port_routines[] = {
     {0x019E88, 0x019EAE, "TurnToward", TurnToward, CT_SP | CT_NZVC},
     {0x01A1C6, 0x01A218, "Lifter", Lifter, CT_SP},
     {0x01A438, 0x01A464, "SpawnFromA394", SpawnFromA394, CT_SP | CT_NZVC},
+    {0x01AA3C, 0x01ABD2, "EndMain", EndMain, CT_SP | CT_WAITS},   /* objhelp.c: the ending's task, its script and finale (batch T79; verified by tp-ending) */
+    {0x01B016, 0x01B0A2, "EndScript", EndScript, CT_SP | CT_WAITS},
+    {0x01B250, 0x01B2FE, "EndWalkIn", EndWalkIn, CT_SP | CT_WAITS},
+    {0x01B2FE, 0x01B30A, "EndMarkWait", EndMarkWait, CT_SP},
+    {0x01B30A, 0x01B332, "EndMessage", EndMessage, CT_SP | CT_WAITS},
+    {0x01B332, 0x01B5CC, "EndFinale", EndFinale, CT_SP | CT_WAITS},
+    {0x01B5CC, 0x01B5DC, "EndSpriteF0", EndSpriteF0, CT_SP},
+    {0x01B778, 0x01B7A4, "EndScreen", EndScreen, CT_SP},
+    {0x01B7A4, 0x01B7AE, "EndScene", EndScene, CT_SP},
+    {0x01B7AE, 0x01B7B4, "EndLayerA", EndLayerA, CT_SP},
+    {0x01B7B4, 0x01B804, "EndLayerB", EndLayerB, CT_SP},
+    {0x01B804, 0x01B820, "EndFade", EndFade, CT_SP | CT_WAITS},
+    {0x01B820, 0x01B882, "EndGfx", EndGfx, CT_SP},
+    {0x01B882, 0x01B8CE, "EndActor", EndActor, CT_SP},
+    {0x01B8CE, 0x01B8DA, "EndCoord", EndCoord, CT_SP},
+    {0x01B8DA, 0x01B904, "EndRows", EndRows, CT_SP},
+    {0x01B904, 0x01B91C, "EndWaitStars", EndWaitStars, CT_SP | CT_WAITS},
+    {0x01B91C, 0x01B930, "EndWaitCount", EndWaitCount, CT_SP | CT_WAITS},
+    {0x01B950, 0x01B96C, "EndWaitMove", EndWaitMove, CT_SP | CT_WAITS},
     {0x01AD62, 0x01AD98, "EndingStars", EndingStars, CT_SP},   /* objhelp.c: the ending's helpers (its task at $1AA3C waits for a session that reaches it) */
     {0x01AD98, 0x01ADD2, "EndingSprite", EndingSprite, CT_SP},
     {0x01ADD2, 0x01AE48, "EndingStarsSetup", EndingStarsSetup, CT_SP},
