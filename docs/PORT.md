@@ -3383,6 +3383,26 @@ translated code; the only translated entries still reached are two computed-jump
 player's states and an enemy's action (`$EC08`, `$15182`), for N5. Harness: 0 mismatches over
 103 runs (every state, 98) and 2,594,434 checked calls; replace mode clean.
 
+#### No translated code in the native build, batch N5 (2026-10-20)
+
+* N5a: twelve small subroutines that sat inside registered routines' ranges (so the checklist
+  counted them) but had no C, and that the C called by address, so the original's code ran for
+  them: an enemy's shot (`$15182`), a group's companion moved (`$15C84`), a partner sent down
+  (`$15DA4`), a pair's fall (`$17B76`, `$17B7A`), tiles faded (`$17C84`), a runner's velocity and
+  looks (`$19434`, `$19468`), an item from its kind on (`$10916`), the player thrown up (`$EC08`),
+  the diver's poses (`$19D60`, `$19D64`). Ported register for register. The fuzz of `$15182`
+  reaches no real attack from random enemies (as `$133B2`'s); the sessions run all of it.
+* The original's hangs on purpose (`$1267C`, `$4922`, `$23C6`, `$1C556`, `$C2B4`: endless loops
+  where it gives up) are `machine.c`'s now: the game stuck, the frames and the interrupt going.
+* N5b: the native build compiles no translated code. Its Makefile builds `port/`, `machine.c`
+  and the host only (nothing from `work/` is needed); `machine.c`'s dispatcher has the hand
+  ports and the machine core, and an address neither has is reported. `analysis/native.json`
+  stays, to measure (the generator with it lists nothing but the dead `$C67E` now).
+
+Results: harness, 0 mismatches over 103 runs (2,594,434 checked calls) and 132,000 fuzz cases;
+replace mode clean. Native: from power-on the same frames as before; all 94 states saved between
+frames play to their end; no hang and no address without C met.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

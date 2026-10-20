@@ -5260,3 +5260,159 @@ ACTION(19026) ACTION(190C8) ACTION(190E4) ACTION(19102) ACTION(1916A)
 ACTION(19200) ACTION(192C8) ACTION(192EC)
 ACTION(19EAE) ACTION(19F00) ACTION(19F32) ACTION(19F6A) ACTION(19FE6)
 ACTION(1A026) ACTION(1A218) ACTION(1A266) ACTION(1A2E2) ACTION(1A3E4)
+
+/* ---- batch N5a: the small helpers inside the actions' code ----
+ * Subroutines (bsr targets) inside the ranges of the actions above that the C here called by
+ * address: the original's code ran for them until now. Register for register, flags too. */
+
+static void nz_b(uint32_t v) { c->ccr = (uint16_t)((c->ccr & CC_X) | (v & 0x80 ? CC_N : 0) | ((v & 0xFF) ? 0 : CC_Z)); }
+static void nz_w(uint32_t v) { c->ccr = (uint16_t)((c->ccr & CC_X) | (v & 0x8000 ? CC_N : 0) | ((v & 0xFFFF) ? 0 : CC_Z)); }
+static uint32_t sxw(uint32_t w) { return (uint32_t)(int32_t)(int16_t)w; }
+
+/* $15182: its attack ($15A28) and shot ($159FA), the shot spawned ($1A438); flipped as it is
+ * (bit 3 of -$3FFE) unless none */
+static void h_shoot(void)
+{
+    call(0x15A28);
+    call(0x159FA);
+    call(0x1A438);
+    if (c->ccr & CC_N) return;
+    uint8_t f = rd8(c->a[4] - 0x3FFE);
+    c->ccr = (uint16_t)((c->ccr & ~CC_Z) | (f & 8 ? 0 : CC_Z));
+    if (!(f & 8)) return;
+    uint8_t v = (uint8_t)(rd8(c->a[2] - 0x3FFE) | 8);
+    wr8(c->a[2] - 0x3FFE, v); nz_b(v);
+}
+/* $15C84: its group's first companion (a3 its group, a2 that one) put where it is */
+static void h_group_to_it(void)
+{
+    c->a[3] = sxw(rd16(c->a[4] - 0x2D00));
+    c->a[2] = sxw(rd16(c->a[3] + 2));
+    wr16(c->a[2] - 0x3800, rd16(c->a[4] - 0x3800));
+    uint16_t y = rd16(c->a[4] - 0x3700);
+    wr16(c->a[2] - 0x3700, y); nz_w(y);
+}
+/* $15DA4: the entity d0 (a2), if alive and not in step 6, put in step 6 */
+static void h_partner_down(void)
+{
+    c->a[2] = sxw(c->d[0]);
+    uint8_t alive = rd8(c->a[2] - 0x4000); nz_b(alive);
+    if (!(alive & 0x80)) return;
+    c->d[0] = 0x7F;
+    c->d[0] = set_b(c->d[0], c->d[0] & rd8(c->a[2] - 0x2BFF));
+    cmp_b(&c->ccr, 6, c->d[0]);
+    if ((c->d[0] & 0xFF) == 6) return;
+    wr8(c->a[2] - 0x2BFF, 6); nz_b(6);
+}
+/* $17B7A: a frame of falling (velocity applied, $40 more speed down), its timer counted; $17B76
+ * its partner's (a4 the partner from then on) */
+static void h_pair_fall_here(void)
+{
+    call(0xAB4);
+    wr16(c->a[4] - 0x35FE, (uint16_t)add_w(&c->ccr, 0x40, rd16(c->a[4] - 0x35FE)));
+    wr8(c->a[4] - 0x2800, (uint8_t)sub_b(&c->ccr, 1, rd8(c->a[4] - 0x2800)));
+}
+static void h_pair_fall(void) { c->a[4] = sxw(rd16(c->a[4] - 0x2CFE)); h_pair_fall_here(); }
+/* $17C84: while its step count (-$27FF) is under $11, a strip of its tiles (four rows of a cell
+ * at $5C00 + count*4 in video memory) faded: each row's pixels kept only where they are not 0,
+ * through a 16-byte buffer on the stack; from count 1 the strip before is cleared */
+static void h_fade_tiles(void)
+{
+    uint8_t n = rd8(c->a[4] - 0x27FF);
+    cmp_b(&c->ccr, 0x11, n);
+    if (n >= 0x11) return;
+    wr8(c->a[4] - 0x27FE, 4);
+    c->a[7] -= 16;
+    c->d[3] = 0x10000;
+    c->d[3] = set_b(c->d[3], n);
+    c->d[3] = set_w(c->d[3], c->d[3] << 2);
+    c->d[3] = set_w(c->d[3], c->d[3] + 0x5C00);
+    c->a[1] = 0xC00000;
+    if (n < 0x10) {
+        c->d[2] = c->d[3];
+        c->d[2] = set_w(c->d[2], c->d[2] & 0x3FFF);
+        c->a[0] = c->a[7];
+        c->d[6] = 3;
+        do {
+            c->d[2] = c->d[2] << 16 | c->d[2] >> 16;
+            wr32(c->a[1] + 4, c->d[2]);
+            c->d[1] = rd32(c->a[1]);
+            c->d[4] = 0xF; c->d[5] = 0;
+            do {
+                c->d[0] = c->d[1] & c->d[4];
+                if (c->d[0]) c->d[5] |= c->d[4];
+                c->d[4] <<= 4;
+            } while (c->d[4]);
+            wr32(c->a[0], c->d[5]); c->a[0] += 4;
+            c->d[2] = c->d[2] << 16 | c->d[2] >> 16;
+            c->d[2] = set_w(c->d[2], c->d[2] + 0x40);
+            c->d[6] = set_w(c->d[6], c->d[6] - 1);
+        } while ((c->d[6] & 0xFFFF) != 0xFFFF);
+        c->a[0] = c->a[7];
+        c->d[2] = c->d[3];
+        c->d[6] = 3;
+        do {
+            c->d[2] = c->d[2] << 16 | c->d[2] >> 16;
+            wr32(c->a[1] + 4, c->d[2]);
+            wr32(c->a[1], rd32(c->a[0])); c->a[0] += 4;
+            c->d[2] = c->d[2] << 16 | c->d[2] >> 16;
+            c->d[2] = set_w(c->d[2], c->d[2] + 0x40);
+            c->d[6] = set_w(c->d[6], c->d[6] - 1);
+        } while ((c->d[6] & 0xFFFF) != 0xFFFF);
+        if (!rd8(c->a[4] - 0x27FF)) goto counted;
+    }
+    c->d[0] = 0;
+    c->d[1] = 3;
+    c->d[3] = set_w(c->d[3], c->d[3] - 4);
+    do {
+        c->d[3] = c->d[3] << 16 | c->d[3] >> 16;
+        wr32(c->a[1] + 4, c->d[3]);
+        wr32(c->a[1], c->d[0]);
+        c->d[3] = c->d[3] << 16 | c->d[3] >> 16;
+        c->d[3] = set_w(c->d[3], c->d[3] + 0x40);
+        c->d[1] = set_w(c->d[1], c->d[1] - 1);
+    } while ((c->d[1] & 0xFFFF) != 0xFFFF);
+counted:
+    wr8(c->a[4] - 0x27FF, (uint8_t)add_b(&c->ccr, 1, rd8(c->a[4] - 0x27FF)));
+    c->a[7] += 16;
+}
+/* $19434: its velocity by its heading (timer & 3, the table at $19458), doubled with -$27FF */
+static void h_run_vel(void)
+{
+    c->d[0] = 3;
+    c->d[0] = set_b(c->d[0], c->d[0] & rd8(c->a[4] - 0x2800));
+    c->d[0] = set_w(c->d[0], c->d[0] << 2);
+    c->d[1] = set_w(c->d[1], rd16(0x1945A + (c->d[0] & 0xFFFF)));
+    c->d[0] = set_w(c->d[0], rd16(0x19458 + (c->d[0] & 0xFFFF)));
+    uint8_t dbl = rd8(c->a[4] - 0x27FF); nz_b(dbl);
+    if (dbl) {
+        c->d[0] = set_w(c->d[0], add_w(&c->ccr, c->d[0], c->d[0]));
+        c->d[1] = set_w(c->d[1], add_w(&c->ccr, c->d[1], c->d[1]));
+    }
+    wr16(c->a[4] - 0x3600, (uint16_t)c->d[0]);
+    wr16(c->a[4] - 0x35FE, (uint16_t)c->d[1]); nz_w(c->d[1]);
+}
+/* $19468: its facing (the table at $1948A) and animation ($19492) by its heading; SetAnim if it
+ * changed */
+static void h_run_look(void)
+{
+    c->d[0] = rd8(c->a[4] - 0x2800);
+    c->d[1] = 0xFFFFFFE7u;
+    c->d[1] = set_b(c->d[1], c->d[1] & rd8(c->a[4] - 0x3FFE));
+    c->d[1] = set_b(c->d[1], c->d[1] | rd8(0x1948A + (c->d[0] & 0xFFFF)));
+    wr8(c->a[4] - 0x3FFE, (uint8_t)c->d[1]); nz_b(c->d[1]);
+    c->d[0] = set_b(c->d[0], rd8(0x19492 + (c->d[0] & 0xFFFF)));
+    cmp_b(&c->ccr, rd8(c->a[4] - 0x3CFE), c->d[0]);
+    if ((c->d[0] & 0xFF) == rd8(c->a[4] - 0x3CFE)) return;
+    call(0x7E8);
+}
+
+#define HELPER(name, fn) void name(Cpu *cpu) { c = cpu; fn(); c->ret = 0; }
+HELPER(ActShoot, h_shoot)                  /* $15182 */
+HELPER(ActGroupToIt, h_group_to_it)        /* $15C84 */
+HELPER(ActPartnerDown, h_partner_down)     /* $15DA4 */
+HELPER(ActPairFall, h_pair_fall)           /* $17B76 */
+HELPER(ActPairFallHere, h_pair_fall_here)  /* $17B7A */
+HELPER(ActFadeTiles, h_fade_tiles)         /* $17C84 */
+HELPER(ActRunVel, h_run_vel)               /* $19434 */
+HELPER(ActRunLook, h_run_look)             /* $19468 */

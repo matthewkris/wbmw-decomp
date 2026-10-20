@@ -1278,6 +1278,30 @@ ENTRY(StepByDir, step_by_dir)              /* $19E64 */
 ENTRY(TurnToward, turn_toward)             /* $19E88 */
 ENTRY(Lifter, lifter)                      /* $1A1C6 */
 ENTRY(SpawnFromA394, spawn_from_a394)      /* $1A438 */
+/* batch N5a: two helpers the C called by address. $EC08 (in the player's states): thrown up at
+ * speed d0 (the stance bits kept, -$3100 & $75); $19D60/$19D64 (the diver's): its pose ($161E,
+ * picture $0A), the timer $218, animation 0 or 2 now ($7FC) */
+static void throw_up(void)
+{
+    uint8_t v = (uint8_t)(rd8(e(-0x3100)) & 0x75);
+    wr8(e(-0x3100), v);
+    wr16(e(-0x35FE), (uint16_t)c->d[0]);
+    c->ccr = (uint16_t)((c->ccr & CC_X) | (c->d[0] & 0x8000 ? CC_N : 0) | ((c->d[0] & 0xFFFF) ? 0 : CC_Z));
+}
+static void diver_pose(uint32_t anim)
+{
+    c->d[0] = anim;
+    wr8(e(-0x3FFE), (uint8_t)(rd8(e(-0x3FFE)) | 0x80));
+    wr16(e(-0x3D00), 0x161E);
+    wr8(e(-0x3CFD), 0x0A);
+    wr16(e(-0x2BFE), 0x218);
+    call(0x7FC);
+}
+static void diver_pose0(void) { diver_pose(0); }
+static void diver_pose2(void) { diver_pose(2); }
+ENTRY(ThrowUp, throw_up)                   /* $EC08 */
+ENTRY(DiverPose0, diver_pose0)             /* $19D60 */
+ENTRY(DiverPose2, diver_pose2)             /* $19D64 */
 
 /* ---- batch T52: the ending's helpers ----
  * The ending (its task at $1AA3C, which waits, stays the original's until a session reaches it)

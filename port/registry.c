@@ -127,6 +127,7 @@ void VelocityAtAngle(Cpu *), ScaleVector(Cpu *), JumpTo(Cpu *), FlightTime(Cpu *
 void PlayerDead(Cpu *), PlayerDeadFall(Cpu *), PlayerFullHeal(Cpu *), PlayerRefill(Cpu *), PlayerRefillStep(Cpu *);
 void QuakeStart(Cpu *), ThunderFrame(Cpu *), ThunderStrike(Cpu *), PlayerUseItem(Cpu *), ScriptsRun(Cpu *), GameLoop(Cpu *), GameFrame(Cpu *), RoomChangeGo(Cpu *);
 void Vdp0Set10(Cpu *), Vdp0Clr10(Cpu *), Vdp0Store(Cpu *), DisplayOn(Cpu *), DisplayOff(Cpu *), Vdp1Set40(Cpu *), Vdp1Clr40(Cpu *), Vdp1Set20(Cpu *), Vdp1Clr20(Cpu *), Vdp1Set10(Cpu *), Vdp1Or(Cpu *), Vdp1Clr10(Cpu *), Vdp1And(Cpu *), Vdp1Store(Cpu *), Vdp6C(Cpu *), Vdp11Set8(Cpu *), Vdp11Clr8(Cpu *), Vdp11Clr4(Cpu *), Vdp11Set4(Cpu *), Vdp11Clr3(Cpu *), Vdp11And(Cpu *), Vdp11Set2(Cpu *), Vdp11Set3(Cpu *), Vdp11Or(Cpu *), Vdp12H32(Cpu *), Vdp12H40(Cpu *), Vdp12Clr6(Cpu *), Vdp12Mode2(Cpu *), Vdp12Mode4(Cpu *), Vdp12Set8(Cpu *), Vdp12Or(Cpu *), Vdp12Clr8(Cpu *), Vdp12And(Cpu *), Vdp12Store(Cpu *), Vdp6E(Cpu *), PlaneAReg(Cpu *), WindowReg(Cpu *), PlaneBReg(Cpu *), SpritesReg(Cpu *), HScrollReg(Cpu *), PlaneSizeReg(Cpu *), EntityOn(Cpu *), OffScreenX(Cpu *), OffScreenXAt(Cpu *), OffScreen(Cpu *), OffScreenY(Cpu *), OffScreenYAt(Cpu *), StopAll(Cpu *), StopFractions(Cpu *), StopVelocity(Cpu *), D2cSwapped(Cpu *);
+void ActShoot(Cpu *), ActGroupToIt(Cpu *), ActPartnerDown(Cpu *), ActPairFall(Cpu *), ActPairFallHere(Cpu *), ActFadeTiles(Cpu *), ActRunVel(Cpu *), ActRunLook(Cpu *), SpawnItemFrom(Cpu *), ThrowUp(Cpu *), DiverPose0(Cpu *), DiverPose2(Cpu *);
 void OcarinaTuneAt2AD2(Cpu *), MsgStepAt19EA(Cpu *);
 void StatusWaitAt8062(Cpu *), SlotChooseAt79B8(Cpu *), ActionToSlotAt79FA(Cpu *), ItemToSlotAt7A52(Cpu *), ItemsChooseAt7892(Cpu *), ItemsChooseAt78C8(Cpu *), MagicChooseAt7906(Cpu *), WornBlinkAt7E2A(Cpu *), StatusFadeInAt7E9C(Cpu *), StatusFadeOutAt7EC8(Cpu *), LinePageAt764A(Cpu *), LinePageAt7662(Cpu *), LinePageAt767E(Cpu *), LinePageAt7694(Cpu *), LinePageAt769C(Cpu *), LinePageAt76A8(Cpu *), StatusScreenAt7592(Cpu *), StatusScreenAt759E(Cpu *), StatusScreenAt75D8(Cpu *), StatusScreenAt75EE(Cpu *), PauseScreenAt7F36(Cpu *);
 void TitleOpeningAt7062(Cpu *), TitleOpeningAt7076(Cpu *), TitleOpeningAt7082(Cpu *), TitleOpeningAt70CC(Cpu *), TitleScreenAt7180(Cpu *), TitleMusicAt719A(Cpu *), TitleMusicAt71B0(Cpu *), TitleMenuAt71DA(Cpu *), TitleMenuAt723C(Cpu *);
@@ -275,6 +276,18 @@ const PortRoutine port_routines[] = {
     {0x01C5A8, 0x01C5DA, "EepromWrite", EepromWrite, CT_SP | 0x7FFF | CT_NZVC},
     {0x01C5DA, 0x01C5EE, "SramRead", SramRead, CT_SP | 0x7FFF | CT_NZVC},
     {0x01C5EE, 0x01C602, "SramWrite", SramWrite, CT_SP | 0x7FFF | CT_NZVC},
+    {0x015182, 0x0151A0, "ActShoot", ActShoot, CT_SP | 0x7FFF | CT_NZVC},   /* actions.c, effects.c, objhelp.c: helpers inside other routines' ranges that the C called by address (batch N5a) */
+    {0x015C84, 0x015C9A, "ActGroupToIt", ActGroupToIt, CT_SP | 0x7FFF | CT_NZVC},
+    {0x015DA4, 0x015DC0, "ActPartnerDown", ActPartnerDown, CT_SP | 0x7FFF | CT_NZVC},
+    {0x017B76, 0x017B7A, "ActPairFall", ActPairFall, CT_SP | 0x7FFF | CT_NZVC},
+    {0x017B7A, 0x017B8A, "ActPairFallHere", ActPairFallHere, CT_SP | 0x7FFF | CT_NZVC},
+    {0x017C84, 0x017D22, "ActFadeTiles", ActFadeTiles, CT_SP | 0x7FFF | CT_NZVC},
+    {0x019434, 0x019458, "ActRunVel", ActRunVel, CT_SP | 0x7FFF | CT_NZVC},
+    {0x019468, 0x01948A, "ActRunLook", ActRunLook, CT_SP | 0x7FFF | CT_NZVC},
+    {0x010916, 0x010922, "SpawnItemFrom", SpawnItemFrom, CT_SP | 0x7FFF | CT_NZVC},
+    {0x00EC08, 0x00EC14, "ThrowUp", ThrowUp, CT_SP | 0x7FFF | CT_NZVC},
+    {0x019D60, 0x019D64, "DiverPose0", DiverPose0, CT_SP | 0x7FFF | CT_NZVC},
+    {0x019D64, 0x019D82, "DiverPose2", DiverPose2, CT_SP | 0x7FFF | CT_NZVC},
     {0x0027FA, 0x002812, "CellList", CellList, CT_SP | 0x7FFF | CT_NZVC},   /* kernhelp.c: cell lists and blocks, the animated cells, the area triggers */
     {0x002812, 0x002852, "CellFill", CellFill, CT_SP | 0x7FFF},
     {0x002852, 0x002856, "CellBlockAt", CellBlockAt, CT_SP | 0x7FFF},
