@@ -909,9 +909,11 @@ const PortRoutine port_routines[] = {
     {0x00CFD6, 0x00CFE8, "Room9Timer", Room9Timer, CT_ALL},
     {0x00CFE8, 0x00D00C, "Room10Setup", Room10Setup, CT_ALL},
     {0x00D00C, 0x00D068, "Room11Setup", Room11Setup, CT_ALL},    /* rooms.c: the rooms' scripts 11 and 12 */
+    {0x00D068, 0x00D176, "Room11Frame", Room11Frame, CT_SP | CT_WAITS},   /* batch T72: verified by the owner's sessions script11, script11b, script11c and sphinx00/01 (from script11b) */
     {0x00D176, 0x00D194, "Room11Looks", Room11Looks, CT_ALL},
     {0x00D194, 0x00D1EC, "Room12Setup", Room12Setup, CT_ALL},
     {0x00D1EC, 0x00D1FE, "Room12Blocks", Room12Blocks, CT_ALL},   /* $D068 (11 each frame) waits for a session that runs it */
+    {0x00D1FE, 0x00D352, "Room12Frame", Room12Frame, CT_SP | CT_WAITS},   /* batch T72: the owner's session script12b */
     {0x00D352, 0x00D36A, "Room12Walk", Room12Walk, CT_ALL},       /* rooms.c: the room script 12's frames ($D1FE waits for a session that runs it), 13's setup */
     {0x00D36A, 0x00D36E, "FindKind", FindKind, CT_ALL},
     {0x00D36E, 0x00D388, "FindKindD1", FindKindD1, CT_ALL},
@@ -925,6 +927,7 @@ const PortRoutine port_routines[] = {
     {0x00D6C4, 0x00D71A, "Room13Drops", Room13Drops, CT_ALL},
     {0x00D71A, 0x00D72A, "Room14Setup", Room14Setup, CT_ALL},
     {0x00D72A, 0x00D766, "Room15Setup", Room15Setup, CT_ALL},
+    {0x00D766, 0x00D87E, "Room15Frame", Room15Frame, CT_SP | CT_WAITS},   /* batch T72: the owner's session script15b */
     {0x00D87E, 0x00D894, "Room15Walk", Room15Walk, CT_ALL},       /* rooms.c: the rooms' scripts 15 and 19-23 ($D766, $DB0A wait for a session) */
     {0x00D894, 0x00D942, "Room19Frame", Room19Frame, CT_ALL},
     {0x00D942, 0x00D976, "Room19Walk", Room19Walk, CT_ALL},
@@ -936,6 +939,8 @@ const PortRoutine port_routines[] = {
     {0x00DA9A, 0x00DAC8, "Room23Setup", Room23Setup, CT_ALL},
     {0x00DAC8, 0x00DADA, "Room23Flags", Room23Flags, CT_ALL},
     {0x00DADA, 0x00DAE6, "Room23Frame", Room23Frame, CT_ALL},
+    {0x00DAE6, 0x00DB0A, "ScriptWait", ScriptWait, CT_SP | CT_WAITS},   /* batch T72 */
+    {0x00DB0A, 0x00DB36, "ScriptMessage", ScriptMessage, CT_SP | CT_WAITS},
     {0x00DB36, 0x00DB3C, "WalkStop", WalkStop, CT_ALL},
     {0x00DB3C, 0x00DBBE, "EquipChange", EquipChange, CT_SP | CT_WAITS},   /* rooms.c: the change of equipment and the player's looks */
     {0x00DBBE, 0x00DBF0, "RoomPlayer", RoomPlayer, CT_ALL},   /* rooms.c: the player placed in a room, and the companion set up */
