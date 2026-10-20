@@ -108,8 +108,8 @@ void ColourFrame(Cpu *), ColorScriptStart(Cpu *), ColorEnd(Cpu *), ColorScripts(
 void CellVram(Cpu *), PlaneAClear(Cpu *), PlaneBClear(Cpu *), WindowClear(Cpu *), ScrollClear(Cpu *), ScrollClearPair(Cpu *), DrawLayout(Cpu *), GfxTablesReset(Cpu *), TileAnimsClear(Cpu *), TileAnimsTask(Cpu *), SegaTask(Cpu *);
 void MakePartner(Cpu *), CopyToA2(Cpu *), MaybeBubble(Cpu *), BubbleInWater(Cpu *), Bubble(Cpu *), SwimMove(Cpu *), SwimLimit(Cpu *), BobToward(Cpu *), RandomState(Cpu *), GroundedWait(Cpu *), ContactAndMove(Cpu *), ShieldAndMove(Cpu *), PuffA(Cpu *), PuffB(Cpu *), SpawnDebris(Cpu *), RandomSpread(Cpu *), SlowOnGround(Cpu *), TouchedState(Cpu *), BackOff(Cpu *), TakeHit(Cpu *), HitAction(Cpu *), RandomTimer(Cpu *), RandomTimer32(Cpu *), RandomDelay(Cpu *), Range40(Cpu *), Range80(Cpu *), WallTurnReturn(Cpu *), TurnAtWall(Cpu *), BumpAwayReturn(Cpu *), BumpAway(Cpu *), FaceAway(Cpu *), BumpTurnReturn(Cpu *), BumpTurn(Cpu *), Turn(Cpu *), WalkForward(Cpu *), SetVelXFacing(Cpu *), FaceVelocity(Cpu *), VelocityToward(Cpu *), FaceAndWalk(Cpu *), FacePlayer(Cpu *), FaceEntity(Cpu *), FaceX(Cpu *), Jump(Cpu *), Hop(Cpu *), SetVelY(Cpu *), StartBlinkFrozen(Cpu *), StartBlink(Cpu *), ThrownBack(Cpu *), KnockBackAt(Cpu *), KnockBack(Cpu *), DistXToPlayer(Cpu *), DistXToEntity(Cpu *), DistYToTarget(Cpu *), DistY(Cpu *), DistYAbsTarget(Cpu *), DistYAbs(Cpu *), WallClimbAction(Cpu *), RoomAbove(Cpu *), RangeTurnReturn(Cpu *), RangeTurn(Cpu *), PastRange80(Cpu *), PastRange(Cpu *);
 void TargetFromHome(Cpu *), EdgeTurnReturn(Cpu *), EdgeTurn(Cpu *), EdgeAhead(Cpu *), GroundAhead(Cpu *), FlyFacing(Cpu *), AccelFacing(Cpu *), FallAndMove(Cpu *), EnemyMove(Cpu *), ShieldContact(Cpu *), PlayerAhead(Cpu *), ShieldHit(Cpu *), PlayerTouch(Cpu *), PlayerContactAll(Cpu *), PlayerContactShield(Cpu *), FreezeEnemies(Cpu *), Despawn(Cpu *), EnemyDefeated(Cpu *), OffscreenDespawn(Cpu *), RoomKind(Cpu *), MaxHealth(Cpu *), HealthOf(Cpu *), DamageShown(Cpu *), ScaleDamage(Cpu *), DamageEnemy(Cpu *);
-void TileAtA(Cpu *), SlopeAtFeet(Cpu *), DirOffset(Cpu *), ProbeBelowA(Cpu *), SceneSega(Cpu *), SceneTitle(Cpu *), SceneTitleShown(Cpu *), SceneTitleAfter(Cpu *), SceneMenu(Cpu *), SceneDemo(Cpu *), SceneGame(Cpu *);
-void SwingY(Cpu *), SwingX(Cpu *), HopperStart(Cpu *), ChainLink(Cpu *), CopyFields(Cpu *), SlowOf(Cpu *), Bounce(Cpu *), AimLevel(Cpu *), SoundStopUnless12(Cpu *), Sound13Unless12(Cpu *), TouchedBack(Cpu *), PairAnim(Cpu *), PairHit(Cpu *), PairTouch(Cpu *), PairHover(Cpu *), PairOnBody(Cpu *), PairAlignX(Cpu *);
+void TileAtA(Cpu *), SlopeAtFeet(Cpu *), DirOffset(Cpu *), ProbeBelowA(Cpu *), SceneSega(Cpu *), SceneTitle(Cpu *), SceneTitleShown(Cpu *), SceneTitleAfter(Cpu *), SceneMenu(Cpu *), SceneDemo(Cpu *), SceneGame(Cpu *), SceneSwitchOn(Cpu *);
+void SwingY(Cpu *), SwingX(Cpu *), HopperStart(Cpu *), ChainLink(Cpu *), CopyFields(Cpu *), CopyFieldsStep(Cpu *), SlowOf(Cpu *), Bounce(Cpu *), AimLevel(Cpu *), SoundStopUnless12(Cpu *), Sound13Unless12(Cpu *), TouchedBack(Cpu *), PairAnim(Cpu *), PairHit(Cpu *), PairTouch(Cpu *), PairHover(Cpu *), PairOnBody(Cpu *), PairAlignX(Cpu *);
 void Room16Setup(Cpu *), FloorScroll(Cpu *), Room16Frame(Cpu *), Room16Exit(Cpu *), SpawnAtOffset(Cpu *), GfxSlotsFree(Cpu *), TintTiles(Cpu *), PartnerAnim(Cpu *), PartnerMove(Cpu *), OnPartner(Cpu *), MountHit(Cpu *), MountTouch(Cpu *), PartnerGrounded(Cpu *), PartnerAtWall(Cpu *), Shake(Cpu *);
 void Room18Setup(Cpu *), Room18Frame(Cpu *), FlashColour(Cpu *), PartnerAnim2(Cpu *), PartnerFallBeside(Cpu *), BesidePartner(Cpu *), BothBlink(Cpu *), RiderHit(Cpu *), RiderTouch(Cpu *), PartnerGrounded2(Cpu *), PartnerAtWall2(Cpu *), Room17Setup(Cpu *), PartMake(Cpu *), Room17Frame(Cpu *), Wobble(Cpu *), Room17Extra(Cpu *), Room17Effects(Cpu *);
 void Room17States(Cpu *), Room17Hold(Cpu *), Room17Parts(Cpu *), Room17Beaten(Cpu *), Room17Head(Cpu *), Room17Debris(Cpu *), TouchAhead(Cpu *), DirAnim(Cpu *), AtTarget(Cpu *), StepByDir(Cpu *), TurnToward(Cpu *), Lifter(Cpu *), SpawnFromA394(Cpu *);
@@ -383,6 +383,7 @@ const PortRoutine port_routines[] = {
     {0x00501C, 0x005036, "DemoStart", DemoStart, CT_SP},
     {0x005036, 0x00505C, "RecordStep", RecordStep, CT_SP},
     {0x00505C, 0x00507C, "DemoStep", DemoStep, CT_SP},
+    {0x0050E2, 0x005106, "SceneSwitchOn", SceneSwitchOn, CT_SP | CT_WAITS},   /* batch T77: to the scheduler ($4BF8), not fuzzed; $50D4 before it turns the display off ($62A, which waits for the VBlank at $3B8): the 68000's */
     {0x005106, 0x005124, "TasksStart", TasksStart, CT_SP},
     {0x005124, 0x005132, "Clear9996", Clear9996, CT_SP},
     {0x005132, 0x00513C, "SoundStop25", SoundStop25, CT_SP},
@@ -1273,6 +1274,7 @@ const PortRoutine port_routines[] = {
     {0x0170F4, 0x017118, "SwingX", SwingX, CT_SP},
     {0x017118, 0x017132, "HopperStart", HopperStart, CT_SP},
     {0x017132, 0x01729A, "ChainLink", ChainLink, CT_SP},
+    {0x017302, 0x01730A, "CopyFieldsStep", CopyFieldsStep, CT_SP},   /* batch T77: CopyFields from its loop's body */
     {0x01730A, 0x017310, "CopyFields", CopyFields, CT_SP},
     {0x017418, 0x017420, "SlowOf", SlowOf, CT_SP | CT_D0},
     {0x017420, 0x01743C, "Bounce", Bounce, CT_SP},

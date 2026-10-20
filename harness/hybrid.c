@@ -1519,6 +1519,7 @@ int hybrid_fuzz(const char *name, long count)
                 m68k_set_reg(M68K_REG_D0, (rnd() << 16) | 2 * (rnd() % 5));
             }
             if (!strcmp(name, "CopyFields")) { m68k_set_reg(M68K_REG_A0, 0x172CE); m68k_set_reg(M68K_REG_A2, other); }
+            if (!strcmp(name, "CopyFieldsStep")) { m68k_set_reg(M68K_REG_A0, 0x172D0); m68k_set_reg(M68K_REG_A2, other); m68k_set_reg(M68K_REG_D0, (rnd() << 16) | bus_read16(0x172CE)); }   /* batch T77: the list's first field in d0 */
             if (!strncmp(name, "Ending", 6) || !strncmp(name, "Text", 4) || !strncmp(name, "VdpRow", 6) || !strcmp(name, "StrLen")) {
                 /* batch T52, the ending: its text and credits from their starts, the counters about their steps */
                 ram[0xA39C] = (uint8_t)(rnd() % 2 ? 0 : 0x80);

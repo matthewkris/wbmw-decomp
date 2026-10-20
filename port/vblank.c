@@ -1144,6 +1144,23 @@ static void scene_game(void)
     port_continue_at(c, 0x50D4, 0);
 }
 
+/* $50E2: to the scene a1 names: the tasks reset, then the first system slot ($8048) given the
+ * scene's name, its resume address (the record after the name) and d0, and the scheduler
+ * started again ($4BF8). ($50D4 before it clears the palettes and turns the display off, $62A,
+ * which waits for the VBlank at $3B8: it stays the 68000's.) */
+static void scene_switch(void)
+{
+    c->a[7] -= 4; wr32(c->a[7], c->a[1]);
+    call(0x4B6A);
+    c->a[1] = rd32(c->a[7]); c->a[7] += 4;
+    c->a[0] = 0xFFFF8048u;
+    wr32(c->a[0] + 4, rd32(c->a[1])); c->a[1] += 4;
+    wr32(c->a[0] + 0xC, c->a[1]);
+    wr16(c->a[0] + 0x40, (uint16_t)c->d[0]);
+    wr16(c->a[0], 0x8000);
+    port_continue_at(c, 0x4BF8, 0);
+}
+
 void SceneSega(Cpu *cpu)        { c = cpu; NEEDS_PASS(0x4CC8); scene_sega(); }          /* $4CC8 */
 void SceneTitle(Cpu *cpu)       { c = cpu; NEEDS_PASS(0x4D18); scene_title(); }         /* $4D18 */
 void SceneTitleShown(Cpu *cpu)  { c = cpu; NEEDS_PASS(0x4D56); scene_title_shown(); }   /* $4D56 */
@@ -1156,3 +1173,4 @@ void SceneEndingWait(Cpu *cpu)  { c = cpu; NEEDS_PASS(0x4F66); scene_ending_wait
 void SceneEndingFade(Cpu *cpu)  { c = cpu; NEEDS_PASS(0x4FA6); scene_ending_fade(); }   /* $4FA6 */
 void SceneEndingEnd(Cpu *cpu)   { c = cpu; NEEDS_PASS(0x4FCC); scene_ending_end(); c->ret = 0; }   /* $4FCC */
 void SceneGame(Cpu *cpu)        { c = cpu; NEEDS_PASS(0x5080); scene_game(); }          /* $5080 */
+void SceneSwitchOn(Cpu *cpu)    { c = cpu; NEEDS_PASS(0x50E2); scene_switch(); }        /* $50E2 */
