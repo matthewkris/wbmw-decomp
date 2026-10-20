@@ -1,9 +1,9 @@
 /* The native build: Wonder Boy in Monster World as C, without a 68000 emulator.
  *
  * The game's code is the hand-written C of port/ (the hand ports) and machine.c (the machine
- * core: reset, frame loop, scheduler, frame wait, interrupt); work/gen_native (tools/m68k2c.py
- * with analysis/native.json) translates only what has no C yet. This file is the host: it plays
- * the part of the console around that code. The memory map, the save EEPROM, the controller and the VDP (video) are the
+ * core: reset, frame loop, scheduler, frame wait, interrupt, hangs); none of the original's code
+ * is translated or emulated. This file is the host: it plays the part of the console around
+ * that code. The memory map, the save EEPROM, the controller and the VDP (video) are the
  * harness's own (harness/bus.c, harness/vdp.c), and so is the sound (harness/sound.c: the Z80
  * running the game's sound driver, the YM2612 and the SN76489), one frame of it at each poll point.
  *
@@ -70,24 +70,6 @@ void task_reset(void);                          /* port/task.c */
 int machine_run(Cpu *c, uint32_t pc);             /* native/machine.c: the machine core */
 void machine_isr(Cpu *c);
 
-/* the watchdog of the generated code: in the native build a call only ends at a poll point,
- * so it is reset every frame; it fires if a frame never comes */
-uint32_t rt_ring[16]; unsigned rt_ring_i; unsigned long rt_steps, rt_limit = 100000000;
-void rt_stuck(void)
-{
-    fprintf(stderr, "wbmw: STUCK: the game looped %lu times without waiting for a frame; recent branch targets:", rt_steps);
-    for (unsigned i = 0; i < 16; i++) fprintf(stderr, " %06X", (unsigned)rt_ring[(rt_ring_i + i) & 15]);
-    fprintf(stderr, "\n");
-    exit(3);
-}
-
-extern const PortRoutine gen_routines[];
-extern const int gen_routine_count;
-static const PortRoutine *entry(uint32_t a)
-{
-    for (int i = 0; i < gen_routine_count; i++) if (gen_routines[i].addr == a) return &gen_routines[i];
-    return NULL;
-}
 
 /* ---- frames: drawing, showing, input, the interrupt ---- */
 static int frame, frames_max, png_every, headless, scale;            /* scale 0: fit the screen */
@@ -402,7 +384,6 @@ static void window_frame(void)
 static void frame_done(void)
 {
     frame++;
-    rt_steps = 0;                                   /* the watchdog counts within a frame */
     if (headless) {
         if (png_every && frame % png_every == 0) {
             char path[1024]; snprintf(path, sizeof path, "%s/frame_%05d.png", out_dir, frame);
@@ -492,12 +473,10 @@ void rt_slice(Cpu *c, uint32_t next)
         rt_budget = SLICE;
         if (!level) level = take_irq(c, next);
     }
-    if (level) {                                    /* run the handler from its vector */
-        static const PortRoutine *handler[8];
-        uint32_t v = rd32((uint32_t)(24 + level) * 4) & 0xFFFFFF;
-        if (!handler[level] && !(handler[level] = entry(v))) { fprintf(stderr, "wbmw: no handler at %06X\n", (unsigned)v); exit(4); }
+    if (level) {                                    /* the handler: only the VBlank's is ever enabled */
+        if (level != 6) { fprintf(stderr, "wbmw: interrupt level %d, which the game never enables\n", level); exit(4); }
         uint32_t ret = c->ret;
-        handler[level]->fn(c);                      /* ends in rte: SR (with the mask) and PC popped */
+        machine_isr(c);                             /* ends in rte: SR (with the mask) and PC popped */
         c->ret = ret;
     }
 }

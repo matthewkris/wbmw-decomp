@@ -169,3 +169,10 @@ static void place(Cpu *c)
 
 void SpawnItem(Cpu *c)   { spawn(c, 0); }
 void SpawnItemAt(Cpu *c) { spawn(c, 1); }
+/* $10916 (batch N5a): from the kind's test on, d6 as the caller left it (the item rain's own
+ * entry, and a room script's) */
+void SpawnItemFrom(Cpu *c)
+{
+    if ((uint16_t)c->d[0] >= 0x1000) big_item(c);
+    else place(c);
+}

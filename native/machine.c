@@ -12,9 +12,8 @@
  * Every task pass runs on port/task.c's coroutines (TaskCallSystem and TaskCallUser, the
  * scheduler's two `jsr (a0)`), so the hand ports that wait for frames run as in the harness.
  *
- * Calls by address (rt_dispatch) go to the hand ports (port/registry.c) and these; what neither
- * has is left to the translated code (work/gen_native, its own dispatcher renamed gen_dispatch)
- * and counted, until there is none. */
+ * Calls by address (rt_dispatch) go to the hand ports (port/registry.c) and these. There is no
+ * other code: an address neither has goes back up (rt_leave, c->ret) and is reported. */
 #include <stdio.h>
 #include <stdlib.h>
 #include "../port/world.h"
@@ -23,7 +22,6 @@
 
 void rt_poll(Cpu *c, uint32_t at);                  /* the host: a frame, at a wait for VBlank */
 void rt_set_sr(Cpu *c, uint16_t sr);
-int gen_dispatch(Cpu *c, uint32_t target);          /* the translated code's (work/gen_native) */
 void TaskCallSystem(Cpu *c);
 void TaskCallUser(Cpu *c);
 
@@ -33,25 +31,6 @@ static void push32(uint32_t v) { c->a[7] -= 4; wr32(c->a[7], v); }
 
 #define RESTART     0x4BF8u
 #define HANG        0x4CB4u
-
-/* ---- the translated code still in use, counted (WBMW_GEN_STATS=1 prints it at exit) ---- */
-#define GEN_MAX 512
-static struct { uint32_t addr; unsigned long n; } gen_used[GEN_MAX];
-static int gen_used_n;
-static void gen_count(uint32_t t)
-{
-    int i = 0;
-    while (i < gen_used_n && gen_used[i].addr != t) i++;
-    if (i == gen_used_n && gen_used_n < GEN_MAX) { gen_used[i].addr = t; gen_used_n++; }
-    if (i < gen_used_n) gen_used[i].n++;
-}
-static void gen_report(void)
-{
-    if (!getenv("WBMW_GEN_STATS")) return;
-    fprintf(stderr, "translated code entered at %d addresses:", gen_used_n);
-    for (int i = 0; i < gen_used_n; i++) fprintf(stderr, " %06X(%lu)", (unsigned)gen_used[i].addr, gen_used[i].n);
-    fprintf(stderr, "\n");
-}
 
 /* ---- the hand ports by address ---- */
 static const PortRoutine **by_addr;
@@ -67,7 +46,6 @@ static const PortRoutine *hand(uint32_t a)
         by_addr = malloc(sizeof *by_addr * (size_t)port_routine_count);
         for (int i = 0; i < port_routine_count; i++) by_addr[by_addr_n++] = &port_routines[i];
         qsort(by_addr, (size_t)by_addr_n, sizeof *by_addr, cmp_addr);
-        atexit(gen_report);
     }
     int lo = 0, hi = by_addr_n - 1;
     while (lo <= hi) {
@@ -327,6 +305,19 @@ static void inn_sleep(void)
     port_continue_at(c, 0x8EB4, 0);
 }
 
+/* the original's hangs, where it stops on purpose (an endless loop): an enemy kind with no
+ * graphics ($1267C), a room kind out of range ($4922), no free tile animation ($23C6), the save
+ * EEPROM not answering ($1C556), a thing received with no effect ($C2B4). The game is stuck
+ * there; the frames and the interrupt still come, as on the console */
+static void hang(uint32_t at)
+{
+    fprintf(stderr, "wbmw: the game hangs at $%06X, as the original does there\n", (unsigned)at);
+    for (;;) {
+        wr8(0xFFFF8006u, rd8(0xFFFF8006u) & 0xFE);
+        while (!(rd8(0xFFFF8006u) & 1)) rt_poll(c, at);
+    }
+}
+
 int rt_dispatch(Cpu *cpu, uint32_t t)
 {
     t &= 0xFFFFFF;
@@ -339,9 +330,9 @@ int rt_dispatch(Cpu *cpu, uint32_t t)
     case 0x3B8: frame_wait(); c->ret = 0; break;
     case 0x50D4: cpu->ret = 0; scene_switch_off(); break;
     case 0xC262: cpu->ret = 0; inn_sleep(); break;
+    case 0x1267C: case 0x4922: case 0x23C6: case 0x1C556: case 0xC2B4: hang(t); break;
     default:
         c = outer;
-        if (gen_dispatch(cpu, t)) { gen_count(t); return 1; }
         return 0;
     }
     c = outer;
