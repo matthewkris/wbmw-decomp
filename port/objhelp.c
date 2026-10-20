@@ -1475,3 +1475,517 @@ ENTRY(VdpRowWindow, vdp_row_window)        /* $1AFDC */
 ENTRY(VdpRowB, vdp_row_b)                  /* $1AFE8 */
 ENTRY(VdpRowAt, vdp_row_at)                /* $1AFEA */
 ENTRY(StrLen, str_len)                     /* $1B004 */
+
+/* ---- batch T79: the ending ----
+ * One task, the ending scene's ($4F58): the stars and the story's text scrolled up with the
+ * credits ($1AA3C), then a script ($1B016, its commands at $1B076 from $1B0A2: scenes of the
+ * friends met, each a room, its people and a message, a fade), then the finale ($1B332): the
+ * last words, the Sega logo's colours, the end, and on to $4F66. Its waits that keep their
+ * caller's return address in $A3BE ($1B250, $1B30A, $1B804, $1B904, $1B91C, $1B950) are given the
+ * original's, as rooms.c does for the continuations' stack.
+ *
+ * $1B2FE yields from a subroutine: the original's Yield ($400) then returns to its caller in the
+ * same pass, so it only marks the task's resume address ($1B302), which the next real wait
+ * overwrites. Here too. */
+
+#define END_COUNT    0xFFFFA3ACu    /* word: frames to wait */
+#define END_ACTOR    0xFFFFA3B0u    /* word: the entity a wait moves */
+#define END_SCRIPT   0xFFFFA3B2u    /* long: the script's place */
+#define END_ROWS     0xFFFFA3B6u    /* long: the logo's rows */
+#define END_TEXT     0xFFFFA3BAu    /* long: the story's text */
+#define END_RET      0xFFFFA3BEu    /* long: a wait's return address */
+
+void call_68k_ret(Cpu *t, uint32_t addr, uint32_t ret);
+
+/* the task waits for the next frame, the original's Yield at its return address */
+static void end_wait(uint32_t resume) { Cpu *me = c; task_wait_frame(me, resume); c = me; }
+/* $1B2FE's Yield from a subroutine: the resume address marked, back to the caller at once */
+static void end_mark(uint32_t resume)
+{
+    c->a[5] = sx(rd16(0xFFFF8A4Cu));
+    c->a[0] = resume;
+    wr32(c->a[5] + 0xC, resume);
+}
+static void sprite_at(uint32_t rec, uint32_t d0w, uint32_t d1, uint32_t d2)   /* lea, move.w, moveq, moveq; bsr $1AD98 */
+{
+    c->a[0] = rec; c->d[0] = set_w(c->d[0], d0w); c->d[1] = d1; c->d[2] = d2;
+    ending_sprite();
+}
+
+/* $1B91C: $A3AC frames; $1B904 the same plus one, with the stars; $1B950 plus one, the entity
+ * $A3B0 moved each frame. ret: where the original goes on ($A3BE) */
+static void end_wait_count(uint32_t ret)
+{
+    wr32(END_RET, ret);
+    do end_wait(0x1B924); while (wr16(END_COUNT, (uint16_t)(rd16(END_COUNT) - 1)), rd16(END_COUNT));
+    c->a[0] = rd32(END_RET);
+}
+static void end_wait_stars(uint32_t ret)
+{
+    wr32(END_RET, ret);
+    for (;;) {
+        end_wait(0x1B90C);
+        ending_stars();
+        uint16_t n = rd16(END_COUNT); wr16(END_COUNT, (uint16_t)(n - 1));
+        if (!n) break;                                  /* bcc: until it passes 0 */
+    }
+    c->a[0] = rd32(END_RET);
+}
+static void end_wait_move(uint32_t ret)
+{
+    wr32(END_RET, ret);
+    for (;;) {
+        end_wait(0x1B958);
+        c->a[4] = sx(rd16(END_ACTOR));
+        call(0xAB4);
+        uint16_t n = rd16(END_COUNT); wr16(END_COUNT, (uint16_t)(n - 1));
+        if (!n) break;
+    }
+    c->a[0] = rd32(END_RET);
+}
+/* $1B804: a fade out, waited for */
+static void end_fade(uint32_t ret)
+{
+    wr32(END_RET, ret);
+    call(0x5842);
+    do end_wait(0x1B812); while (!(rd8(0xFFFF8C56u) & 0x10));
+    c->a[0] = rd32(END_RET);
+}
+/* $1B30A: the scene's message ($7A + $A3A6, its window by $2002), run to its end */
+static void end_message(uint32_t ret)
+{
+    wr32(END_RET, ret);
+    c->d[0] = set_w(c->d[0], rd16(0xFFFFA3A6u) + 0x7A);
+    call(0x2002);
+    wr16(0xFFFFA3A6u, (uint16_t)(rd16(0xFFFFA3A6u) + 1));
+    do {
+        end_wait(0x1B322);
+        call_68k_ret(c, 0x13BC, 0x1B326);
+    } while (rd8(0xFFFF8CA4u) & 0x80);
+    c->a[0] = rd32(END_RET);
+}
+/* $1B2FE: see above; its count ($A3AC) is not reached */
+static void end_mark_wait(void) { end_mark(0x1B302); }
+/* $1B250: the last scene's figure ($5C0's graphics in entity 4) walks in from the top for 11
+ * frames, then turns ($16) */
+static void end_walk_in(uint32_t ret)
+{
+    wr32(END_RET, ret);
+    c->d[0] = set_w(c->d[0], 0xB80); c->d[2] = set_w(c->d[2], 0x20); c->d[1] = set_w(c->d[1], 0xC1C);
+    call(0x22A8);
+    wr16(0xFFFF8E64u, 0x50);
+    call(0x22F0);
+    c->a[4] = 4;
+    call(0xA36);
+    wr8(c->a[4] - 0x3FFD, 0);
+    wr16(c->a[4] - 0x3800, 0x48);
+    wr16(c->a[4] - 0x3700, 0xFF00);
+    wr16(c->a[4] - 0x3DFE, 0x5C0);
+    wr16(c->a[4] - 0x3D00, 0);
+    wr8(c->a[4] - 0x3CFD, 2);
+    wr16(c->a[4] - 0x3E00, 4);
+    wr32(c->a[4] - 0x3600, 0x2000);
+    c->d[0] = 0x1C; call(0x7E8);
+    wr8(c->a[4] - 0x4000, 0xC0);
+    wr16(END_COUNT, 0xB);
+    wr16(END_ACTOR, 4);
+    do {
+        end_wait(0x1B2C4);
+        c->a[4] = sx(rd16(END_ACTOR));
+        call(0xAD6);
+        wr16(END_COUNT, (uint16_t)(rd16(END_COUNT) - 1));
+    } while (rd16(END_COUNT));
+    call(0x7F4);
+    wr16(END_COUNT, 3);
+    c->a[7] -= 4; wr32(c->a[7], 0x1B2DE); end_mark_wait(); c->a[7] += 4;
+    c->a[4] = 4;
+    wr16(c->a[4] - 0x3DFE, 0);
+    c->d[0] = 0x16; call(0x7E8);
+    c->a[7] -= 4; wr32(c->a[7], 0x1B2EE); end_mark_wait(); c->a[7] += 4;
+    c->a[4] = 4;
+    c->d[0] = 0; call(0x7FC);
+    c->a[0] = rd32(END_RET);
+}
+
+/* $1B778: the screen cleared ($5188), the ending's graphics slots ($1B796) and palettes */
+static void end_screen(void)
+{
+    call(0x5188);
+    c->a[0] = 0x1B796; call(0x234C);
+    call(0x22F0);
+    c->a[0] = 0x1B792; call(0x135C);
+}
+/* $1B7A4: the scene's room ($96D6, by $A3A6) */
+static void end_scene(void) { c->d[0] = set_w(c->d[0], rd16(0xFFFFA3A6u)); call(0x96D6); }
+/* $1B7AE, $1B7B4: plane A's or B's map cleared and drawn from the script's word and four bytes */
+static void end_layer(uint32_t layer)
+{
+    c->a[3] = layer;
+    c->a[0] = rd32(END_SCRIPT);
+    c->d[3] = set_w(c->d[3], rd16(c->a[0])); c->a[0] += 2;
+    c->d[0] = set_w(c->d[0], 0x3FF);
+    c->d[1] = 0x40000003u;
+    c->a[1] = 0xC00000;
+    if (c->d[3] & 0x2000) c->d[1] = 0x60000003u;
+    wr32(0xC00004, c->d[1]);
+    do { wr32(0xC00000, 0x80208020u); c->d[0] = set_w(c->d[0], c->d[0] - 1); } while ((c->d[0] & 0xFFFF) != 0xFFFF);
+    c->d[4] = rd8(c->a[0]); c->a[0]++;
+    c->d[5] = rd8(c->a[0]); c->a[0]++;
+    c->d[6] = rd8(c->a[0]); c->a[0]++;
+    c->d[7] = rd8(c->a[0]); c->a[0]++;
+    wr32(END_SCRIPT, c->a[0]);
+    call(0xA2EE);
+}
+static void end_layer_a(void) { end_layer(0xFFFF9754u); }
+static void end_layer_b(void) { end_layer(0xFFFF97D4u); }
+/* $1B820: graphics slots by the scene ($1B830, by $A3AE) */
+static void end_gfx(void)
+{
+    c->a[0] = 0x1B830;
+    c->d[0] = set_w(c->d[0], rd16(0xFFFFA3AEu));
+    c->a[0] += sx(rd16(c->a[0] + sx(c->d[0])));
+    call(0x234C);
+}
+/* $1B8CE: a coordinate: the script's byte * 2 - $80 */
+static void end_coord(void)
+{
+    c->d[0] = rd8(c->a[0]); c->a[0]++;
+    c->d[0] = set_w(c->d[0], (c->d[0] << 1) - 0x80);
+}
+/* $1B882: a person (entity d1) placed from the script: its kind, place, looks and animation */
+static void end_actor(void)
+{
+    c->a[0] = rd32(END_SCRIPT);
+    c->a[4] = sx(c->d[1]);
+    call(0xA36);
+    wr8(c->a[4] - 0x3FFE, rd8(c->a[0])); c->a[0]++;
+    end_coord(); wr16(c->a[4] - 0x3800, (uint16_t)c->d[0]);
+    end_coord(); wr16(c->a[4] - 0x3700, (uint16_t)c->d[0]);
+    wr8(c->a[4] - 0x3D00, rd8(c->a[0])); c->a[0]++;
+    wr8(c->a[4] - 0x3CFF, rd8(c->a[0])); c->a[0]++;
+    wr8(c->a[4] - 0x3CFD, rd8(c->a[0])); c->a[0]++;
+    wr16(c->a[4] - 0x3E00, 4);
+    c->d[0] = set_b(c->d[0], rd8(c->a[0])); c->a[0]++;
+    c->d[1] = 0;
+    wr16(c->a[4] - 0x39FE, 0);
+    c->d[1] = rd8(c->a[0]); c->a[0]++;
+    c->d[1] = set_w(c->d[1], c->d[1] << 4);
+    wr16(c->a[4] - 0x3DFE, (uint16_t)c->d[1]);
+    wr32(END_SCRIPT, c->a[0]);
+    call(0x7E8);
+    wr8(c->a[4] - 0x4000, 0xC0);
+}
+/* $1B8DA: two more rows of the logo ($A3B6) at row $A3A3 of the window, columns 14 and 15 */
+static void end_rows(void)
+{
+    c->d[2] = 1;
+    c->a[0] = rd32(END_ROWS);
+    c->d[1] = 0;
+    c->d[0] = 0xE;
+    c->d[1] = set_b(c->d[1], rd8(0xFFFFA3A3u));
+    do {
+        vdp_row_at();
+        wr16(0xC00000, rd16(c->a[0])); c->a[0] += 2;
+        c->d[0] = 0xE;
+        c->d[0] = set_w(c->d[0], c->d[0] + 1);
+        c->d[2] = set_w(c->d[2], c->d[2] - 1);
+    } while ((c->d[2] & 0xFFFF) != 0xFFFF);
+    wr8(0xFFFFA3A3u, (uint8_t)(rd8(0xFFFFA3A3u) + 2));
+    wr32(END_ROWS, c->a[0]);
+}
+/* $1B5CC: the figure in entity $F0 from the record a0, its frame d2 */
+static void end_sprite_f0(void)
+{
+    wr8(0xFFFFC0F0u, 0);
+    c->d[0] = set_w(c->d[0], 0xF0);
+    c->d[1] = 0;
+    ending_sprite();
+}
+
+static void end_finale(void);
+/* $1B016: the script: a word under $8000 waits so many frames, a command byte and its byte
+ * else ($FF: the finale) */
+static void end_script(void)
+{
+    c->d[0] = 0x16; call(0x366);
+    wr16(0xFFFFA3A6u, 0);
+    wr16(0xFFFFA3AEu, 0);
+    wr32(END_SCRIPT, 0x1B0A2);
+    for (;;) {
+        c->a[0] = rd32(END_SCRIPT);
+        c->d[0] = rd8(c->a[0]); c->a[0]++;
+        if (!(c->d[0] & 0x80)) {
+            c->d[0] = set_w(c->d[0], c->d[0] << 8);
+            c->d[0] = set_b(c->d[0], rd8(c->a[0])); c->a[0]++;
+            wr16(END_COUNT, (uint16_t)c->d[0]);
+            wr32(END_SCRIPT, c->a[0]);
+            do end_wait(0x1B046); while (wr16(END_COUNT, (uint16_t)(rd16(END_COUNT) - 1)), rd16(END_COUNT));
+            continue;
+        }
+        if ((c->d[0] & 0xFF) == 0xFF) { end_finale(); return; }
+        c->d[0] = set_b(c->d[0], c->d[0] & 0xF);
+        if ((c->d[0] & 0xFF) == 8) wr16(0xFFFFA3AEu, (uint16_t)(rd16(0xFFFFA3AEu) + 2));
+        c->d[1] = rd8(c->a[0]); c->a[0]++;
+        wr32(END_SCRIPT, c->a[0]);
+        c->d[0] = set_w(c->d[0], c->d[0] << 2);
+        c->a[1] = rd32(0x1B076 + (c->d[0] & 0xFFFF));
+        switch (c->a[1]) {                              /* jsr (a1): back at $1B074 */
+        case 0x1B7A4: end_scene(); break;
+        case 0x1B7AE: end_layer_a(); break;
+        case 0x1B7B4: end_layer_b(); break;
+        case 0x1B804: end_fade(0x1B074); break;
+        case 0x1B882: end_actor(); break;
+        case 0x1B820: end_gfx(); break;
+        case 0x1B30A: end_message(0x1B074); break;
+        case 0x1B250: end_walk_in(0x1B074); break;
+        default: call(c->a[1]); break;
+        }
+    }
+}
+
+/* $1B332: the finale: the screen again, the story's last text scrolled in and out, the Sega
+ * logo's rows and colours, the figure's last poses, then the end ($A3A4 cleared) and $4F66 */
+static void end_finale(void)
+{
+    end_screen();
+    wr8(0xFFFFA39Cu, 0xFF);
+    ending_stars_setup();
+    c->a[0] = 0x1B96C; wr32(END_TEXT, c->a[0]);
+    c->d[0] = 0xC; vdp_row_window();
+    c->d[4] = 0xF;
+    do { ending_text_row(); c->d[4] = set_w(c->d[4], c->d[4] - 1); } while ((c->d[4] & 0xFFFF) != 0xFFFF);
+    call(0x581A);
+    wr16(END_COUNT, 0xA4);
+    end_wait_count(0x1B366);
+    wr16(0xFFFFA3AAu, 0);
+    wr8(0xFFFFA39Eu, 0x1E);
+    for (;;) {
+        end_wait(0x1B374);
+        ending_stars();
+        wr16(0xFFFFA3AAu, (uint16_t)(rd16(0xFFFFA3AAu) - 1));
+        if (rd16(0xFFFFA3AAu) == 0xFF30) break;
+        text_up();
+        if (!(c->d[7] & 0x8000)) {
+            c->d[0] = set_b(c->d[0], rd8(0xFFFFA39Eu));
+            vdp_row_window();
+            c->d[5] = 0x1F; call(0x875C);
+        }
+        wr8(0xFFFF8006u, rd8(0xFFFF8006u) | 8);
+        wr16(0xFFFF8AB4u, rd16(0xFFFFA3AAu));
+    }
+    wr16(END_COUNT, 0x12C);
+    end_wait_stars(0x1B3B8);
+    c->a[0] = 0x1B61A; wr32(END_ROWS, c->a[0]);
+    wr8(0xFFFFA3A3u, 0);
+    do end_rows(); while (rd8(0xFFFFA3A3u) < 0x40);
+    wr16(END_COUNT, 0x168);
+    end_wait_count(0x1B3DA);
+    wr8(0xFFFFA3A3u, 0);
+    c->a[0] = 0x1B75A; c->d[2] = 0; end_sprite_f0();
+    c->d[0] = 0x14; call(0x5658);
+    wr8(0xFFFFC0F0u, rd8(0xFFFFC0F0u) | 0x20);
+    wr32(END_SCRIPT, 0x1B5DC);
+    for (;;) {                                          /* $1B3FE: the figure's moves */
+        c->a[4] = 0xF0;
+        c->a[0] = rd32(END_SCRIPT);
+        c->d[0] = set_w(c->d[0], rd16(c->a[0])); c->a[0] += 2;
+        if (!(c->d[0] & 0x8000)) {                      /* a move: frames, then its velocity */
+            wr16(END_COUNT, (uint16_t)c->d[0]);
+            wr16(c->a[4] - 0x3600, rd16(c->a[0])); c->a[0] += 2;
+            wr16(c->a[4] - 0x35FE, rd16(c->a[0])); c->a[0] += 2;
+            wr32(END_SCRIPT, c->a[0]);
+            wr16(END_ACTOR, 0xF0);
+            end_wait_move(0x1B424);
+            continue;
+        }
+        c->d[6] = 0;
+        c->d[6] = set_b(c->d[6], c->d[0]);
+        c->d[0] = set_w(c->d[0], (c->d[0] & 0xFFFF) >> 8);
+        c->d[0] = set_w(c->d[0], c->d[0] & 0xF);
+        uint16_t op = (uint16_t)c->d[0];
+        if (op == 0) {                                  /* $1B4A4: a pose; $FF: the logo's colours */
+            wr32(END_SCRIPT, c->a[0]);
+            c->a[0] = 0x1B764; c->d[2] = 4; end_sprite_f0();
+            if ((c->d[6] & 0xFF) != 0xFF) { wr16(END_COUNT, (uint16_t)c->d[6]); end_wait_count(0x1B542); continue; }
+            wr16(END_COUNT, 7);
+            end_wait_count(0x1B4C4);
+            wr8(0xFFFFC0F0u, rd8(0xFFFFC0F0u) | 0x20);
+            c->a[0] = 0x1B71A;
+            c->d[1] = set_w(c->d[1], 0x16);
+            c->d[0] = 2;
+            wr8(0xFFFFA3A3u, 2);
+            c->d[2] = 3;
+            do {
+                vdp_row_at();
+                c->d[5] = 7;
+                do { wr16(0xC00000, rd16(c->a[0])); c->a[0] += 2; c->d[5] = set_w(c->d[5], c->d[5] - 1); } while ((c->d[5] & 0xFFFF) != 0xFFFF);
+                wr8(0xFFFFA3A3u, (uint8_t)(rd8(0xFFFFA3A3u) + 1));
+                c->d[0] = rd8(0xFFFFA3A3u);
+                c->d[2] = set_w(c->d[2], c->d[2] - 1);
+            } while ((c->d[2] & 0xFFFF) != 0xFFFF);
+            wr8(0xFFFFA39Du, 0x18);
+            wr16(END_ACTOR, 3);
+            do {
+                wr16(END_COUNT, 0x14);
+                end_wait_count(0x1B50E);
+                c->d[1] = set_b(c->d[1], rd8(0xFFFFA39Du));
+                c->d[0] = 3;
+                vdp_row_at();
+                wr32(0xC00000, 0x80488041u);
+                wr8(0xFFFFA39Du, (uint8_t)(rd8(0xFFFFA39Du) + 4));
+                wr16(END_ACTOR, (uint16_t)(rd16(END_ACTOR) - 1));
+            } while (rd16(END_ACTOR));
+            wr8(0xFFFFC0F0u, rd8(0xFFFFC0F0u) & ~0x20);
+            wr16(END_COUNT, 0x29);
+            end_wait_count(0x1B542);
+            continue;
+        }
+        if (op == 3) { wr32(END_SCRIPT, c->a[0]); wr8(0xFFFFC0F2u, 0x80); continue; }
+        if (op == 5) {                                  /* $1B554: the logo's rows blanked */
+            wr32(END_SCRIPT, c->a[0]);
+            c->d[1] = set_w(c->d[1], 0x16);
+            c->d[0] = 2;
+            wr8(0xFFFFA3A3u, 2);
+            c->d[2] = 3;
+            do {
+                vdp_row_at();
+                c->d[5] = 7;
+                do { wr16(0xC00000, 0x8000); c->d[5] = set_w(c->d[5], c->d[5] - 1); } while ((c->d[5] & 0xFFFF) != 0xFFFF);
+                wr8(0xFFFFA3A3u, (uint8_t)(rd8(0xFFFFA3A3u) + 1));
+                c->d[0] = rd8(0xFFFFA3A3u);
+                c->d[2] = set_w(c->d[2], c->d[2] - 1);
+            } while ((c->d[2] & 0xFFFF) != 0xFFFF);
+            continue;
+        }
+        if (op == 6) { wr32(END_SCRIPT, c->a[0]); wr8(0xFFFFC0F0u, rd8(0xFFFFC0F0u) & ~0x20); continue; }
+        if (op == 2) {                                  /* $1B596: the last pose, five seconds of stars, the end */
+            wr32(END_SCRIPT, c->a[0]);
+            c->a[0] = 0x1B76E; c->d[2] = 6; end_sprite_f0();
+            wr16(END_COUNT, (uint16_t)c->d[6]);
+            end_wait_count(0x1B5AA);
+            wr8(0xFFFFC0F0u, 0);
+            wr16(END_COUNT, 0x12C);
+            do {
+                end_wait(0x1B5B8);
+                ending_stars();
+                wr16(END_COUNT, (uint16_t)(rd16(END_COUNT) - 1));
+            } while (rd16(END_COUNT));
+            wr8(0xFFFFA3A4u, 0);
+            port_continue_at(c, 0x4F66, 0);
+            return;
+        }
+        wr32(END_SCRIPT, c->a[0]);                      /* else: a walk, its frames and velocity */
+        wr8(0xFFFFC0F2u, 0x88);
+        if (!(c->d[6] & 0xFFFF)) continue;
+        wr16(END_COUNT, rd16(c->a[0])); c->a[0] += 2;
+        wr16(c->a[4] - 0x3600, rd16(c->a[0])); c->a[0] += 2;
+        wr16(c->a[4] - 0x35FE, rd16(c->a[0])); c->a[0] += 2;
+        wr32(END_SCRIPT, c->a[0]);
+        wr8(0xFFFFA3A3u, 0);
+        for (;;) {                                      /* $1B474: and the logo's rows as it passes */
+            end_wait(0x1B478);
+            c->a[4] = 0xF0;
+            c->d[7] = set_w(c->d[7], rd16(c->a[4] - 0x3800));
+            call(0xAB4);
+            wr16(END_COUNT, (uint16_t)(rd16(END_COUNT) - 1));
+            if (!rd16(END_COUNT)) break;
+            if (c->d[7] & 0x8000) continue;
+            c->d[7] = set_w(c->d[7], c->d[7] & 7);
+            if (c->d[7] & 0xFFFF) continue;
+            if (rd16(0xFFFFC8F0u) >= 0xF0) continue;
+            end_rows();
+        }
+    }
+}
+
+/* $1AA3C: the ending's task: the screen, the stars, the hero and the princess's figures moved in
+ * ($1AACE, $1AAD8), then the story's text and the credits scrolled up together until line $820,
+ * the hero walked off, a fade, then the script */
+static void end_main(void)
+{
+    wr8(0xFFFFA39Cu, 0);
+    end_screen();
+    ending_stars_setup();
+    sprite_at(0x1AACE, 0xF0, 0, 0);
+    sprite_at(0x1AAD8, 0xF4, 2, 4);
+    call(0x581A);
+    wr16(END_COUNT, 0x10);
+    end_wait_count(0x1AA78);
+    wr8(0xFFFFC0F4u, 0);
+    sprite_at(0x1AAD8, 0xF4, 0, 0);
+    wr16(END_COUNT, 0x80);
+    wr16(END_ACTOR, 0xF4);
+    end_wait_move(0x1AA9C);
+    wr8(0xFFFFC0F0u, 0);
+    wr8(0xFFFFC0F4u, 0);
+    sprite_at(0x1AACE, 0xF0, 2, 2);
+    wr16(END_COUNT, 0x48);
+    end_wait_count(0x1AABE);
+    wr8(0xFFFFC0F0u, 0);
+    c->d[0] = 1;
+    wr8(0xFFFFA39Fu, 1); wr8(0xFFFFA3A0u, 1);
+    wr16(0xFFFFA3A8u, 0); wr16(0xFFFFA3AAu, 0);
+    wr8(0xFFFFA3A1u, 0); wr8(0xFFFFA3A2u, 0);
+    c->d[0] = 0x1D;
+    wr8(0xFFFFA39Du, 0x1D); wr8(0xFFFFA39Eu, 0x1D);
+    c->a[0] = 0x1ABD2; wr32(END_ROWS, c->a[0]);
+    c->a[0] = 0x1B96C; wr32(END_TEXT, c->a[0]);
+    wr8(0xFFFFA3A4u, 0xFF);
+    for (;;) {
+        end_wait(0x1AB28);
+        ending_stars();
+        uint8_t h = rd8(0xFFFFA3A1u); wr8(0xFFFFA3A1u, (uint8_t)(h + 0x80));
+        if (h & 0x80) {                                 /* every other frame: the credits */
+            ending_credits_step();
+            wr16(0xFFFFA3A8u, (uint16_t)(rd16(0xFFFFA3A8u) + 1));
+            wr8(0xFFFF8006u, rd8(0xFFFF8006u) | 8);
+            wr16(0xFFFF8A8Cu, rd16(0xFFFFA3A8u));
+            if (rd16(0xFFFFA3A8u) == 0x820) break;
+        }
+        if (rd8(0xFFFFA3A2u)) continue;
+        text_down();
+        if (c->d[7] & 0xFFFF) ending_text_next();
+        wr16(0xFFFFA3AAu, (uint16_t)(rd16(0xFFFFA3AAu) + 1));
+        wr8(0xFFFF8006u, rd8(0xFFFF8006u) | 8);
+        wr16(0xFFFF8AB4u, rd16(0xFFFFA3AAu));
+    }
+    sprite_at(0x1AAE2, 0xF0, 0, 2);
+    do {
+        end_wait(0x1AB8C);
+        c->a[4] = 0xF0;
+        call(0xAD6);
+    } while ((int16_t)(rd16(c->a[4] - 0x3700) - 0x68) < 0);
+    wr8(0xFFFFC0F0u, 0);
+    sprite_at(0x1AAD8, 0xF0, 0, 6);
+    wr16(END_COUNT, 0x80);
+    end_wait_count(0x1ABBA);
+    c->d[0] = 0xFFFFFFFAu; call(0x366);
+    end_fade(0x1ABC4);
+    wr16(END_COUNT, 0x80);
+    end_wait_count(0x1ABCE);
+    end_script();
+}
+
+/* the entries: those that wait run on a task pass only; those that keep a return address take
+ * it from the stack and go on there (a0), as the original's jmp (a0) */
+#define END_NEEDS_PASS(self) do { if (!task_in_pass()) { port_leave_to_68k(c, (self)); return; } } while (0)
+#define END_KEEPS(name, fn, self) void name(Cpu *cpu) { c = cpu; END_NEEDS_PASS(self); uint32_t r = rd32(c->a[7]); c->a[7] += 4; fn(r); port_continue_at(c, c->a[0], 0); }
+END_KEEPS(EndWaitCount, end_wait_count, 0x1B91C)  /* $1B91C */
+END_KEEPS(EndWaitStars, end_wait_stars, 0x1B904)  /* $1B904 */
+END_KEEPS(EndWaitMove, end_wait_move, 0x1B950)    /* $1B950 */
+END_KEEPS(EndFade, end_fade, 0x1B804)             /* $1B804 */
+END_KEEPS(EndMessage, end_message, 0x1B30A)       /* $1B30A */
+END_KEEPS(EndWalkIn, end_walk_in, 0x1B250)        /* $1B250 */
+void EndMain(Cpu *cpu)   { c = cpu; END_NEEDS_PASS(0x1AA3C); end_main(); }      /* $1AA3C: it ends at $4F66 */
+void EndScript(Cpu *cpu) { c = cpu; END_NEEDS_PASS(0x1B016); end_script(); }    /* $1B016 */
+void EndFinale(Cpu *cpu) { c = cpu; END_NEEDS_PASS(0x1B332); end_finale(); }    /* $1B332 */
+ENTRY(EndMarkWait, end_mark_wait)          /* $1B2FE */
+ENTRY(EndScreen, end_screen)               /* $1B778 */
+ENTRY(EndScene, end_scene)                 /* $1B7A4 */
+ENTRY(EndLayerA, end_layer_a)              /* $1B7AE */
+ENTRY(EndLayerB, end_layer_b)              /* $1B7B4 */
+ENTRY(EndGfx, end_gfx)                     /* $1B820 */
+ENTRY(EndActor, end_actor)                 /* $1B882 */
+ENTRY(EndCoord, end_coord)                 /* $1B8CE */
+ENTRY(EndRows, end_rows)                   /* $1B8DA */
+ENTRY(EndSpriteF0, end_sprite_f0)          /* $1B5CC */

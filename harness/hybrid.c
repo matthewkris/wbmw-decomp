@@ -2018,6 +2018,24 @@ int hybrid_fuzz(const char *name, long count)
             bus_write8(0x200001, 3); bus_write8(0x200001, 2); bus_write8(0x200001, 0);
             m68k_set_reg(M68K_REG_D0, rnd() & ~3u);
         }
+        char key79[40]; snprintf(key79, sizeof key79, "|%s|", name);
+        if (!strncmp(name, "End", 3) && strstr("|EndScene|EndLayerA|EndLayerB|EndGfx|EndActor|EndRows|EndSpriteF0|EndCoord|", key79) ) {
+            /* batch T79: the ending's commands with the script's own arguments */
+            static const uint32_t layer_a[] = { 0x1B0A8, 0x1B0FC, 0x1B13C, 0x1B190, 0x1B1D0, 0x1B224 };
+            static const uint32_t layer_b[] = { 0x1B0B0, 0x1B104, 0x1B144, 0x1B198, 0x1B1D8, 0x1B22C };
+            static const uint32_t actor[] = { 0x1B0BA, 0x1B0C4, 0x1B0CE, 0x1B0D8, 0x1B0E2, 0x1B10E, 0x1B118, 0x1B122, 0x1B14E, 0x1B158, 0x1B162,
+                                              0x1B16C, 0x1B176, 0x1B1A2, 0x1B1AC, 0x1B1B6, 0x1B1E2, 0x1B1EC, 0x1B1F6, 0x1B200, 0x1B20A, 0x1B236 };
+            static const uint32_t poses[] = { 0x1B75A, 0x1B764, 0x1B76E };
+            put_word(0xA3A6, rnd() % 6);
+            put_word(0xA3AE, 2 * (rnd() % 7));
+            if (!strcmp(name, "EndLayerA")) put_long(0xA3B2, layer_a[rnd() % 6]);
+            if (!strcmp(name, "EndLayerB")) put_long(0xA3B2, layer_b[rnd() % 6]);
+            if (!strcmp(name, "EndActor")) { put_long(0xA3B2, actor[rnd() % 22]); m68k_set_reg(M68K_REG_D1, 4 * (rnd() % 5)); }
+            put_long(0xA3B6, 0x1B61A + 4 * (rnd() % 32));
+            ram[0xA3A3] = (uint8_t)(2 * (rnd() % 32));
+            if (!strcmp(name, "EndSpriteF0")) { m68k_set_reg(M68K_REG_A0, poses[rnd() % 3]); m68k_set_reg(M68K_REG_D2, 2 * (rnd() % 4)); }
+            if (!strcmp(name, "EndCoord")) m68k_set_reg(M68K_REG_A0, 0x1B0BA + rnd() % 0x180);
+        }
         if (!strcmp(name, "ScrollClearPair")) {
             m68k_set_reg(M68K_REG_A0, 0xFF2400); m68k_set_reg(M68K_REG_A1, 0xFF2600);
             m68k_set_reg(M68K_REG_D1, (rnd() << 16) | rnd() % 0x80);

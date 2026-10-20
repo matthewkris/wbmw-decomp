@@ -21,6 +21,7 @@ uint16_t world_type_at_pixel(Ent e, int16_t x, int16_t y);
  * in and come out through t, whose a7 must be a real stack. Stops the program if the routine does
  * not come back (it never should for the routines called this way). */
 void call_68k(Cpu *t, uint32_t addr);
+void call_68k_ret(Cpu *t, uint32_t addr, uint32_t ret);   /* for a routine that keeps its return address */
 
 /* $48C4, DespawnIfOffscreen, for the enemy in a4 (objects.c): the original returns past its
  * caller when it removes the enemy; this answers 1 then, and the caller must return */
