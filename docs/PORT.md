@@ -3164,6 +3164,28 @@ Results: 0 mismatches over the standard runs, every owner state and session and 
 (76 runs, all complete; 1,972,235 checked calls), all 46 instructions of `$CA66` covered by play.
 Replace mode: thirteen runs, no problems.
 
+#### Room scripts 11, 12 and 15, batch T72: registered from the owner's sessions (2026-10-20)
+
+* Registered (they wait: on a task pass only): room script 11's frame (`$D068`, the Sphinx's
+  game), 12's (`$D1FE`), 15's (`$D766`) and their helpers `$DAE6` (frames waited) and `$DB0A`
+  (a message run). Every room script's part that waits is now C.
+* Sessions: `script12b` from `tp-script12b` (`session8` with game flag `$39` cleared, room flag
+  `$11` set after the load), `script15b` from `tp-script15b` (`session8` with item `$3A`, given
+  by `CALL_D0=3A --call Give`, a new harness option), the Sphinx's `script11`-`script11c`, and
+  two derived from `script11b`: `sphinx00` and `sphinx01`, its state at frame 480,900 with the
+  result `$8CD3` set to 0 or 1 and its buttons from there, for the two losing outcomes (the
+  gold and hearts, or the hearts, gone).
+* Coverage: run as the original, the sessions cover every instruction of the five. The
+  acceptance counts a routine that waits only where the original runs it, so with `$D068` C it
+  shows 62/75: the losing outcomes now run as C. Their ends match the original's (hearts, gold;
+  only timing counters differ in replace mode, as in any session), with 0 mismatches.
+* Fuzzing `$DB0A` (off a pass it hands over to the original) leaves the harness's check of the
+  `OpenWindow` call inside it unfinished at the original's wait (`$DB18`): flagged by the
+  acceptance, an artefact of fuzzing a routine that waits, not a mismatch.
+
+Results: 0 mismatches over the standard runs, every owner state and session and the test states
+(84 runs, all complete; 2,112,769 checked calls). Replace mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

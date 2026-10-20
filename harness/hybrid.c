@@ -687,6 +687,7 @@ int hybrid_call(const char *name)
         if (strcmp(r->name, name)) continue;
         Cpu saved, c; get_cpu(&saved); c = saved;
         c.a[7] -= 4; wr32(c.a[7], 0);              /* a return address for a generated routine's rts */
+        if (getenv("CALL_D0")) c.d[0] = (uint32_t)strtoul(getenv("CALL_D0"), NULL, 16);   /* --call's d0, as a hex env var */
         r->fn(&c);
         set_cpu(&saved);
         fprintf(stderr, "called %s ($%06X)\n", name, (unsigned)r->addr);
