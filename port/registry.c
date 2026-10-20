@@ -837,14 +837,15 @@ const PortRoutine port_routines[] = {
     {0x00BD52, 0x00BD9A, "DoorClose", DoorClose, CT_SP | CT_WAITS},
     {0x00BD9A, 0x00BDB0, "RoomLeave", RoomLeave, CT_ALL},
     {0x00BDB0, 0x00BDC0, "SeqExit", SeqExit, CT_SP | CT_WAITS},   /* verified by the session7 recordings */
-    {0x00BDDE, 0x00BE50, "SeqDoor", SeqDoor, CT_SP | CT_WAITS},   /* the sequences wait for frames: checked by the task passes, not fuzzed ($BDC0 and $BF80 wait for a session that runs them) */
+    {0x00BDDE, 0x00BE50, "SeqDoor", SeqDoor, CT_SP | CT_WAITS},   /* the sequences wait for frames: checked by the task passes, not fuzzed ($BDC0 waits for a session that runs it) */
     {0x00BE50, 0x00BE6C, "SeqWarp", SeqWarp, CT_SP | CT_WAITS},
     {0x00BE6C, 0x00BEF2, "SeqInside", SeqInside, CT_SP | CT_WAITS},
     {0x00BEF2, 0x00BF80, "SeqOutside", SeqOutside, CT_SP | CT_WAITS},
+    {0x00BF80, 0x00C0C2, "SeqHouse", SeqHouse, CT_SP | CT_WAITS},   /* batch T75 */
     {0x00C0C2, 0x00C128, "WalkInSetup", WalkInSetup, CT_ALL},
     {0x00C128, 0x00C152, "FrameWait", FrameWait, CT_SP | CT_WAITS},
     {0x00C152, 0x00C184, "FrameRestart", FrameRestart, CT_SP | CT_WAITS},
-    {0x00C184, 0x00C1E0, "SeqWalkIn", SeqWalkIn, CT_SP | CT_WAITS},   /* arriving in a room: those that wait are checked by the task passes, not fuzzed ($C614, $C67E, $C6F6 wait for a session that runs them) */
+    {0x00C184, 0x00C1E0, "SeqWalkIn", SeqWalkIn, CT_SP | CT_WAITS},   /* arriving in a room: those that wait are checked by the task passes, not fuzzed ($C67E: no start point has its kind, so the game never runs it) */
     {0x00C1E0, 0x00C1E8, "WalkLeft", WalkLeft, CT_ALL},
     {0x00C572, 0x00C5D2, "DoorAtPlayer", DoorAtPlayer, CT_SP},
     {0x00C5D2, 0x00C5F8, "FadeInWait", FadeInWait, CT_SP | CT_WAITS},
@@ -1025,6 +1026,7 @@ const PortRoutine port_routines[] = {
     {0x00C2DE, 0x00C2E6, "ReceiveOwn", ReceiveOwn, CT_ALL},
     {0x00C2E6, 0x00C2E8, "ReceiveNone", ReceiveNone, CT_ALL},
     {0x00C2E8, 0x00C31A, "ReceiveHeart", ReceiveHeart, CT_SP | CT_A0 << 4},   /* as $8AA2 (Hearts), which it ends with */
+    {0x00C31A, 0x00C376, "ReceivePalettes", ReceivePalettes, CT_SP | CT_WAITS},   /* batch T75: the lamp ($31) */
     {0x00C376, 0x00C48C, "ReceiveStep", ReceiveStep, CT_ALL},
     {0x00C48C, 0x00C572, "SeqStatue", SeqStatue, CT_SP | CT_WAITS},   /* $C31A (a thing received) waits for a session that runs them */
     {0x01090C, 0x010910, "SpawnItem", SpawnItem},                 /* effects.c: every register as the original */

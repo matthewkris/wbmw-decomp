@@ -3224,6 +3224,24 @@ Results: 0 mismatches over the standard runs, every owner state and session and 
 Results: 0 mismatches over the standard runs, every owner state and session and the test states
 (84 runs, all complete; 2,112,779 checked calls). Replace mode: thirteen runs, no problems.
 
+#### A house's door and the lamp's palettes, batch T75 (2026-10-20)
+
+* Registered (they wait: on a task pass only): a house's door (`$BF80`, room change 5: up at a
+  trigger of kind 6 opens a door, the player walks through to its pair in the same room and it
+  closes behind) and the palettes stepped for a received thing (`$C31A`, used only by the lamp,
+  item `$31`).
+* Test states: `tp-house8b` (area 8 room 8, the player put on the door in the bricks at x
+  `$1190`; its input presses up) and `tp-receive31` (the lamp dropped by
+  `CALL_D0=1031 CALL_D1=<x> CALL_D2=<y> --call DropThing`, a harness option new here, saved as
+  its sequence starts). Coverage 86/87 and 26/26: the one line left sets a kind-8 door's width,
+  which none of the house doors found has.
+* `$C67E` (arriving inside, kind 6) is left unregistered: no start point has that kind and
+  nothing else sets `$9678` to it, so the game never runs it. The kept door (`$BDC0`) waits for
+  a session (`tp-kept18c`: the boss of area 18 room 9 with 1 life left).
+
+Results: 0 mismatches over the standard runs, every owner state and session and the test states
+(87 runs, all complete; 2,164,529 checked calls). Replace mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a

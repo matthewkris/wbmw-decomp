@@ -2945,8 +2945,7 @@ void DoorClose(Cpu *cpu) { c = cpu; NEEDS_PASS(0xBD52); door_animation_68k(1); }
  * When a trigger's routine sets $9962, the game's task jumps (from its table at $91F4) to one of
  * these. They run on the task's coroutine, wait for frames at the original's resume addresses,
  * and leave as the original does: back to the game's loop ($8FFC), to the next room ($9100), or
- * to the exits' code ($F76C). $BDC0 and $BF80 are not yet registered: no session runs them
- * yet. */
+ * to the exits' code ($F76C). $BDC0 is not yet registered: no session runs it yet. */
 
 #define GAME_LOOP     0x8FFC
 #define NEXT_ROOM     0x9100
@@ -3265,8 +3264,8 @@ void FrameRestart(Cpu *cpu) { c = cpu; NEEDS_PASS(0xC152); frame_wait_68k(1); } 
  * $8F6C) to one of these: through a door (its frame closing behind), into a shop or house (its
  * picture already in), walking out of a building, or a plain fade in. Walking into a building
  * ($C184) is a room change ($9962 6). Their helpers keep their callers' return addresses on the
- * continuations' stack, as the original's do. $C614, $C67E and $C6F6 are not yet registered: no
- * session runs them yet. */
+ * continuations' stack, as the original's do. $C67E is not registered: no start point has its
+ * kind (6), so the game never runs it. */
 
 static void push_cont(uint32_t ret)
 {

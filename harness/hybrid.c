@@ -688,6 +688,8 @@ int hybrid_call(const char *name)
         Cpu saved, c; get_cpu(&saved); c = saved;
         c.a[7] -= 4; wr32(c.a[7], 0);              /* a return address for a generated routine's rts */
         if (getenv("CALL_D0")) c.d[0] = (uint32_t)strtoul(getenv("CALL_D0"), NULL, 16);   /* --call's d0, as a hex env var */
+        if (getenv("CALL_D1")) c.d[1] = (uint32_t)strtoul(getenv("CALL_D1"), NULL, 16);   /* and d1, d2 (a place, for DropThing) */
+        if (getenv("CALL_D2")) c.d[2] = (uint32_t)strtoul(getenv("CALL_D2"), NULL, 16);
         r->fn(&c);
         set_cpu(&saved);
         fprintf(stderr, "called %s ($%06X)\n", name, (unsigned)r->addr);
