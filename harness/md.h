@@ -70,6 +70,7 @@ void md_power_on(void);
 void md_run_frame(void);
 int eeprom_load(const char *path);
 int eeprom_save(const char *path);
+void eeprom_capture(uint8_t out[136]);   /* its 128 bytes and its serial state, for the shadow check */
 int md_save_state(const char *path, int frame);
 int md_load_state(const char *path, int *frame);
 const uint8_t *md_snapshot(size_t *n);          /* points into a buffer reused by the next call */

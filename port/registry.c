@@ -127,6 +127,7 @@ void VelocityAtAngle(Cpu *), ScaleVector(Cpu *), JumpTo(Cpu *), FlightTime(Cpu *
 void PlayerDead(Cpu *), PlayerDeadFall(Cpu *), PlayerFullHeal(Cpu *), PlayerRefill(Cpu *), PlayerRefillStep(Cpu *);
 void QuakeStart(Cpu *), ThunderFrame(Cpu *), ThunderStrike(Cpu *), PlayerUseItem(Cpu *), ScriptsRun(Cpu *), GameLoop(Cpu *), GameFrame(Cpu *), RoomChangeGo(Cpu *);
 void Vdp0Set10(Cpu *), Vdp0Clr10(Cpu *), Vdp0Store(Cpu *), DisplayOn(Cpu *), DisplayOff(Cpu *), Vdp1Set40(Cpu *), Vdp1Clr40(Cpu *), Vdp1Set20(Cpu *), Vdp1Clr20(Cpu *), Vdp1Set10(Cpu *), Vdp1Or(Cpu *), Vdp1Clr10(Cpu *), Vdp1And(Cpu *), Vdp1Store(Cpu *), Vdp6C(Cpu *), Vdp11Set8(Cpu *), Vdp11Clr8(Cpu *), Vdp11Clr4(Cpu *), Vdp11Set4(Cpu *), Vdp11Clr3(Cpu *), Vdp11And(Cpu *), Vdp11Set2(Cpu *), Vdp11Set3(Cpu *), Vdp11Or(Cpu *), Vdp12H32(Cpu *), Vdp12H40(Cpu *), Vdp12Clr6(Cpu *), Vdp12Mode2(Cpu *), Vdp12Mode4(Cpu *), Vdp12Set8(Cpu *), Vdp12Or(Cpu *), Vdp12Clr8(Cpu *), Vdp12And(Cpu *), Vdp12Store(Cpu *), Vdp6E(Cpu *), PlaneAReg(Cpu *), WindowReg(Cpu *), PlaneBReg(Cpu *), SpritesReg(Cpu *), HScrollReg(Cpu *), PlaneSizeReg(Cpu *), EntityOn(Cpu *), OffScreenX(Cpu *), OffScreenXAt(Cpu *), OffScreen(Cpu *), OffScreenY(Cpu *), OffScreenYAt(Cpu *), StopAll(Cpu *), StopFractions(Cpu *), StopVelocity(Cpu *), D2cSwapped(Cpu *);
+void SaveUnpack(Cpu *), NibblesSpread(Cpu *), SavePack(Cpu *), NibblesJoin(Cpu *), SaveSum(Cpu *), SaveCheck(Cpu *), SaveRead(Cpu *), SaveWrite(Cpu *), SdaHigh(Cpu *), SdaLow(Cpu *), SclHigh(Cpu *), SclLow(Cpu *), I2cDelay(Cpu *), I2cReadByte(Cpu *), I2cAck(Cpu *), I2cWriteByte(Cpu *), I2cStart(Cpu *), I2cReadEnd(Cpu *), I2cStop(Cpu *), EepromRead(Cpu *), EepromWrite(Cpu *), SramRead(Cpu *), SramWrite(Cpu *);
 void Z80Load(Cpu *), Z80Reset(Cpu *), TaskStart(Cpu *), TaskEnsure(Cpu *), TasksEndNamedA0(Cpu *), TasksEndNamed(Cpu *), TaskEnd(Cpu *), TimerAdd(Cpu *), TimersFree(Cpu *), VdpInit(Cpu *), PadsInit(Cpu *), TasksClear(Cpu *), TasksReset(Cpu *), TimersClear(Cpu *), SystemTasksClear(Cpu *), UserTasksEnd(Cpu *), TaskStop(Cpu *);
 void Looks(Cpu *), LooksExtra(Cpu *), LooksBlock(Cpu *), LooksBody(Cpu *), LooksSword(Cpu *), LooksShield(Cpu *), EquipChange(Cpu *);
 void HudPanel(Cpu *), GoldLabel(Cpu *), ThreeLabels(Cpu *), DigitsOut(Cpu *), ItemsChoose(Cpu *), MagicChoose(Cpu *), SlotChoose(Cpu *), ActionToSlot(Cpu *),
@@ -240,6 +241,29 @@ const PortRoutine port_routines[] = {
     {0x004B82, 0x004B96, "SystemTasksClear", SystemTasksClear, CT_SP | 0x7FFF},
     {0x004B96, 0x004BBC, "UserTasksEnd", UserTasksEnd, CT_SP | 0x7FFF},
     {0x004CA8, 0x004CB4, "TaskStop", TaskStop, CT_SP | 0x7FFF},
+    {0x01C254, 0x01C320, "SaveUnpack", SaveUnpack, CT_SP | 0x7FFF | CT_NZVC},   /* kernhelp.c: the saved game, its checksum, the serial EEPROM (batch T78) */
+    {0x01C320, 0x01C330, "NibblesSpread", NibblesSpread, CT_SP | 0x7FFF | CT_NZVC},
+    {0x01C330, 0x01C40A, "SavePack", SavePack, CT_SP | 0x7FFF | CT_NZVC},
+    {0x01C40A, 0x01C416, "NibblesJoin", NibblesJoin, CT_SP | 0x7FFF | CT_NZVC},
+    {0x01C416, 0x01C430, "SaveSum", SaveSum, CT_SP | 0x7FFF | CT_NZVC},
+    {0x01C430, 0x01C478, "SaveCheck", SaveCheck, CT_SP | 0x7FFF | CT_NZVC},
+    {0x01C478, 0x01C494, "SaveRead", SaveRead, CT_SP | 0x7FFF | CT_NZVC},
+    {0x01C494, 0x01C4AC, "SaveWrite", SaveWrite, CT_SP | 0x7FFF | CT_NZVC},
+    {0x01C4AC, 0x01C4B8, "SdaHigh", SdaHigh, CT_SP | 0x7FFF | CT_NZVC},
+    {0x01C4B8, 0x01C4C4, "SdaLow", SdaLow, CT_SP | 0x7FFF | CT_NZVC},
+    {0x01C4C4, 0x01C4D0, "SclHigh", SclHigh, CT_SP | 0x7FFF | CT_NZVC},
+    {0x01C4D0, 0x01C4DE, "SclLow", SclLow, CT_SP | 0x7FFF | CT_NZVC},
+    {0x01C4DE, 0x01C4F0, "I2cDelay", I2cDelay, CT_SP | 0x7FFF | CT_NZVC},
+    {0x01C4F0, 0x01C50E, "I2cReadByte", I2cReadByte, CT_SP | 0x7FFF | CT_NZVC},
+    {0x01C50E, 0x01C51A, "I2cAck", I2cAck, CT_SP | 0x7FFF | CT_NZVC},
+    {0x01C51A, 0x01C55A, "I2cWriteByte", I2cWriteByte, CT_SP | 0x7FFF | CT_NZVC},
+    {0x01C55A, 0x01C572, "I2cStart", I2cStart, CT_SP | 0x7FFF | CT_NZVC},
+    {0x01C572, 0x01C57E, "I2cReadEnd", I2cReadEnd, CT_SP | 0x7FFF | CT_NZVC},
+    {0x01C57E, 0x01C58A, "I2cStop", I2cStop, CT_SP | 0x7FFF | CT_NZVC},
+    {0x01C58A, 0x01C5A8, "EepromRead", EepromRead, CT_SP | 0x7FFF | CT_NZVC},
+    {0x01C5A8, 0x01C5DA, "EepromWrite", EepromWrite, CT_SP | 0x7FFF | CT_NZVC},
+    {0x01C5DA, 0x01C5EE, "SramRead", SramRead, CT_SP | 0x7FFF | CT_NZVC},
+    {0x01C5EE, 0x01C602, "SramWrite", SramWrite, CT_SP | 0x7FFF | CT_NZVC},
     {0x0027FA, 0x002812, "CellList", CellList, CT_SP | 0x7FFF | CT_NZVC},   /* kernhelp.c: cell lists and blocks, the animated cells, the area triggers */
     {0x002812, 0x002852, "CellFill", CellFill, CT_SP | 0x7FFF},
     {0x002852, 0x002856, "CellBlockAt", CellBlockAt, CT_SP | 0x7FFF},

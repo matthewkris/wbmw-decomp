@@ -3272,6 +3272,24 @@ Results: 0 mismatches over the standard runs, every owner state and session and 
 Results: 0 mismatches over the standard runs, every owner state and session and the test states
 (88 runs, all complete; 2,176,685 checked calls). Replace mode: thirteen runs, no problems.
 
+#### The saved game, batch T78 (2026-10-20)
+
+* Registered, in `port/kernhelp.c`, instruction for instruction (every register and flag): the
+  save unpacked into the game (`$1C254`) and packed from it (`$1C330`) with their digit helpers,
+  the checksum (`$1C416`) and the check of a save read at the title (`$1C430`), the 64 bytes
+  read and written (`$1C478`, `$1C494`), the serial EEPROM's lines, bytes, starts, stops and
+  pages (`$1C4AC`-`$1C5D8`) and the cartridge RAM's alternative (`$1C5DA`, `$1C5EE`; this
+  ROM's header, `$1B3`, picks the EEPROM, so only the fuzz runs them).
+* The harness now compares the EEPROM too (its 128 bytes and its serial state) after each
+  checked call: a port that wrote the chip differently would otherwise pass.
+* Not run: the original's hang when a byte is not acknowledged (`$1C552`-`$1C558`); the C goes on
+  to that same loop. The native build continues a save from the title as the original does.
+* Also: `docs/IDEAS.md` has the owner's new request, zooming in during conversations.
+
+Results: 0 mismatches over the standard runs, every owner state and session and the test states
+(88 runs, all complete; 2,176,685 checked calls), and 690,000 fuzz cases; the self-test finds
+every routine broken. Replace mode: thirteen runs, no problems.
+
 #### What translating tasks needed (`tools/m68k2c.py`, `analysis/translate.json`)
 
 * **Resume points**: `"yield": "000400"`. A routine yields if it is `Yield`, or reaches it by a
