@@ -136,8 +136,8 @@ so Start stays the game's own: it opens the item screen.
 
 * **Show FPS, Full screen, Whole pixels** (every pixel the same size), **Widescreen**, **Talk
   zoom**, **Enemy health** (the health bars and damage numbers), **Sound**: on or off. Widescreen
-  is a test for now: the picture is 16:9, and the first areas of the game fill it; everywhere else
-  the normal picture is centred with black sides. See `docs/WIDESCREEN.md`.
+  is a test for now: the picture is 16:9, and most rooms fill it; one-screen rooms, houses and
+  shops keep the normal picture, centred with black sides. See `docs/WIDESCREEN.md`.
 * **Controls**: a key and a controller input for each button, plus quick save and quick load.
   Choose one and press Enter (A on a controller), then press the new key or button; on the
   controller side, a stick direction or a trigger works too. A key already used elsewhere swaps
