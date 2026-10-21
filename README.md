@@ -93,11 +93,14 @@ them, or beside them). MSYS2 isn't needed to run the game.
 | A / B / C | Z / X / C |
 | Start | Enter |
 
-A game controller works too (SDL's standard mapping).
+A game controller works too (SDL's standard mapping): the D-pad, then the pad's X / A / B as
+the Genesis/Mega Drive's A / B / C, and Start as Start. The **Back/Select** button (View on Xbox,
+Share/Create on PlayStation, Minus on Switch) opens the menu, so Start stays the game's own (it
+opens the item screen).
 
 | Key | Does |
 |---|---|
-| Esc | Opens the menu (Show FPS, Exit game). The game pauses while it's open |
+| Esc (controller: Back/Select) | Opens the menu (Show FPS, Exit game). The game pauses while it's open |
 | F11 or Alt+Enter | Switches between full screen and a window |
 | F3 | Shows or hides the frame rate |
 | F2 / F4 | Save state / load state (`wbmw.state`) |
