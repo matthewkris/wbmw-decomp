@@ -619,10 +619,16 @@ static int kind_max(int kind)
     return t + 3 * (uint32_t)kind < rom_size ? rom[t + 3 * kind] * 32 : 0;
 }
 
+/* what the bars and numbers go under: the window's lines (the HUD, and a "Found ..." box under
+ * it) and an open message's box with its pointer's row */
+static int hit_window_lines;
+static SDL_Rect hit_box;
+
 /* a pixel blended over the picture by a (0-256) */
 static void blend_px(int x, int y, uint32_t c, int a)
 {
-    if (x < 0 || x >= frame_width || y < 0 || y >= ACTIVE_LINES) return;
+    if (x < 0 || x >= frame_width || y < hit_window_lines || y >= ACTIVE_LINES) return;
+    if (x >= hit_box.x && x < hit_box.x + hit_box.w && y >= hit_box.y && y < hit_box.y + hit_box.h) return;
     uint32_t b = frame_rgb[y][x];
     uint32_t r = ((b >> 16 & 255) * (256 - a) + (c >> 16 & 255) * a) >> 8;
     uint32_t g = ((b >> 8 & 255) * (256 - a) + (c >> 8 & 255) * a) >> 8;
@@ -654,6 +660,13 @@ static void hits_frame(void)
     uint32_t player = 0xFFFF0000u + (ram[0x9EEE] << 8 | ram[0x9EEF]);
     int pad = (frame_width - 256) / 2;
     int cam_x = ram[0x8B34] << 8 | ram[0x8B35], cam_y = ram[0x8B36] << 8 | ram[0x8B37];
+    hit_window_lines = vdp_reg[18] & 0x80 ? 0 : (vdp_reg[18] & 0x1F) * 8;   /* a window from the top */
+    hit_box = (SDL_Rect){0, 0, 0, 0};
+    if (ram[0x8CA4] & 0x80) {
+        int col = ram[0x8D92] << 8 | ram[0x8D93], row = ram[0x8D94] << 8 | ram[0x8D95];
+        int w = ram[0x8D96] << 8 | ram[0x8D97], h = ram[0x8D98] << 8 | ram[0x8D99];
+        hit_box = (SDL_Rect){pad + col * 8, 64 + row * 8 - 8, w * 8, h * 8 + 8};
+    }
     for (int k = 0; k < HIT_SLOTS; k++) {
         uint32_t o = 0xFFFF0000u + 4 * (uint32_t)k;
         int hp = rd16(o - 0x2600), max = kind_max(rd8(o - 0x2BFD));
@@ -685,7 +698,7 @@ static void hits_frame(void)
         int sx = pad + (int16_t)(popup[i].x - cam_x - 128);
         int sy = (int16_t)(popup[i].y - cam_y - 128) - popup[i].age / 3;
         int a = popup[i].age > 40 ? (60 - popup[i].age) * 256 / 20 : 256;
-        if (sy >= 64) draw_number(sx, sy, popup[i].value, popup[i].killing ? 0xFFD860 : 0xFFFFFF, a);   /* not over the HUD */
+        draw_number(sx, sy, popup[i].value, popup[i].killing ? 0xFFD860 : 0xFFFFFF, a);
         if (++popup[i].age > 60) popup[i].age = 0;
     }
 }
