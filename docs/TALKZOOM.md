@@ -23,8 +23,11 @@ window): the game's code and RAM are untouched, so the harness's comparisons are
   64 lines), `$8D96` × `$8D98` tiles; on plane A at `$8D9A`, `$8D9C` (scrolled).
 * The zoom eases in (to at most 1.5×) about an anchor between Wonder Boy and the speaker, at
   Wonder Boy's feet, so the two grow upward. The HUD slides up out of the picture and the box
-  with it, by 64 lines, so the scene has the whole height; the zoom is as large as keeps their
-  heads (about 28 lines above their feet) below the box. The box and its pointer stay at their
+  with it, as far as the zoomed play field reaches (all 64 lines from 1.4× up), so the scene
+  takes the height; the zoom is as large as keeps their heads (about 28 lines above their feet)
+  below the box. Only the play field's lines (64 down) are ever shown: the lines the HUD covers
+  have nothing of the scene (plane B, and in widescreen the band's purple sides), so near the top
+  the scene is moved up a little rather than show them (`zoom_layout`). The box and its pointer stay at their
   own size, the pointer moved over the speaker as the zoom moves him. When the conversation
   ends, it all eases back.
 * The box is drawn into plane A, so the zoomed scene cannot be the frame itself (the box would

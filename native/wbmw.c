@@ -373,16 +373,15 @@ static void draw_text_centred(int y, const char *s, uint32_t color) { draw_text(
  * speaking, at their feet. The message's box and its pointer (the two tiles over the speaker in
  * the row above the box, from the message's data) stay at their own size, the pointer moved
  * over the speaker as the zoom moves him; the HUD slides up out of the picture, and the box with
- * it by the HUD's 64 lines, so the scene has the whole height and the two fit under the box.
+ * it, by as much as the zoomed play field needs (zoom_layout), so the two fit under the box.
  * The box is drawn into plane A, so the zoomed scene is a second picture rendered with plane A's
  * map as it was before the box opened (kept each frame until then): no box in it. */
 static struct {
     float z, ax, ay;                                /* the zoom now, its anchor (picture pixels) */
-    float slide;                                    /* 0-1: how far the HUD and the box are moved up */
     int on;                                         /* a conversation, and where its box is */
     SDL_Rect box;
     int pointer_x, pointer_w;                       /* the pointer's place over the box, or w 0 */
-} zoom = {1, 0, 0, 0, 0, {0, 0, 0, 0}, 0, 0};
+} zoom = {1, 0, 0, 0, {0, 0, 0, 0}, 0, 0};
 #define ZOOM_MAX 1.5f
 #define ZOOM_HUD 64                                 /* the HUD's lines, never zoomed */
 #define ZOOM_BODY 28                                /* a character's height above its feet, about */
@@ -455,6 +454,21 @@ static void box_build(int px, int py, int w, int h)
         }
 }
 
+/* For zoom z about the anchor's line ay: how far the HUD and the box move up, and where the
+ * zoomed scene's top goes (dy), so that only the play field's lines (64 down) are ever shown,
+ * never those the HUD covers (nothing of the scene is drawn there: plane B, and in widescreen the
+ * band's sides). The HUD moves up as far as the zoomed field reaches, at most its 64 lines; past
+ * that the scene keeps its anchor as near as the field allows. */
+static void zoom_layout(float z, float ay, float *up, float *dy)
+{
+    *up = (ACTIVE_LINES - ZOOM_HUD) * (z - 1);
+    if (*up > ZOOM_HUD) *up = ZOOM_HUD;
+    float hi = ZOOM_HUD - *up - ZOOM_HUD * z;       /* the field's first line at the top shown, or above */
+    float lo = ACTIVE_LINES - ACTIVE_LINES * z;     /* its last line at the bottom, or below */
+    float d = ay * (1 - z);
+    *dy = d > hi ? hi : d < lo ? lo : d;
+}
+
 static void zoom_update(void)
 {
     int pad = (frame_width - 256) / 2;              /* the game's 256 in the picture (widescreen) */
@@ -504,8 +518,12 @@ static void zoom_update(void)
         }
         if (speaker > 0) {
             float ax = (wx + sx) / 2.0f, ay = (float)wy;
-            float room = (ay - (zoom.box.y + zoom.box.h - ZOOM_HUD) - 2) / (float)ZOOM_BODY;   /* the heads below the box, moved up */
-            zt = room < 1 ? 1 : room > ZOOM_MAX ? ZOOM_MAX : room;
+            for (zt = ZOOM_MAX; zt > 1; zt -= 0.02f) {  /* the largest zoom with the heads below the box */
+                float up, dy;
+                zoom_layout(zt, ay, &up, &dy);
+                if (ay * zt + dy - ZOOM_BODY * zt >= zoom.box.y + zoom.box.h - up + 2) break;
+            }
+            if (zt < 1) zt = 1;
             if (zoom.z < 1.01f) { zoom.ax = ax; zoom.ay = ay; }        /* starting: from where they are */
             zoom.ax += (ax - zoom.ax) * 0.2f; zoom.ay += (ay - zoom.ay) * 0.2f;
             zoom.on = 1;
@@ -513,9 +531,6 @@ static void zoom_update(void)
     }
     zoom.z += (zt - zoom.z) * 0.12f;                /* eased in and out over about half a second */
     if (fabsf(zoom.z - 1) < 0.005f && zt == 1) zoom.z = 1;
-    float st = zoom.on && zt > 1 ? 1.0f : 0.0f;
-    zoom.slide += (st - zoom.slide) * 0.12f;
-    if (fabsf(zoom.slide - st) < 0.005f) zoom.slide = st;
     zoom_scene = 0;
     if (zoom.z > 1 && zoom.on && zoom_plane_ok) zoom_render_scene();   /* after the box closes, the frame is the scene */
 }
@@ -526,11 +541,12 @@ static void present_frame(int zoomed)
     SDL_Rect src = {0, 0, frame_width, ACTIVE_LINES};              /* only the width the game uses */
     SDL_RenderSetLogicalSize(ren, frame_width, ACTIVE_LINES);
     SDL_RenderClear(ren); SDL_RenderCopy(ren, tex, &src, NULL);
-    if (zoomed && (zoom.z > 1 || zoom.slide > 0)) {
-        float z = zoom.z, up = zoom.slide * ZOOM_HUD;
+    if (zoomed && zoom.z > 1) {
+        float z = zoom.z, up, dy;
+        zoom_layout(z, zoom.ay, &up, &dy);
         int top = (int)(ZOOM_HUD - up);
         SDL_Rect field = {0, top, frame_width, ACTIVE_LINES - top};
-        SDL_FRect dst = {zoom.ax * (1 - z), zoom.ay * (1 - z), frame_width * z, ACTIVE_LINES * z};
+        SDL_FRect dst = {zoom.ax * (1 - z), dy, frame_width * z, ACTIVE_LINES * z};
         if (zoom_scene) SDL_UpdateTexture(tex_zoom, NULL, &zoom_rgb[0][0], FRAME_STRIDE * 4);
         SDL_RenderSetClipRect(ren, &field);
         SDL_RenderCopyF(ren, zoom_scene ? tex_zoom : tex, &src, &dst);
