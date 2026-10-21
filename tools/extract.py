@@ -15,18 +15,40 @@ never committed):
   text/messages.txt     every message, readable, codes as {TAGS}, phrases expanded
   text/messages.json    the same parsed (characters, codes, commands, phrase references)
   text/phrases.txt, text/windows.json
+  sprites/animations.json  the animation sets, groups and animations (frames, durations,
+                        commands) and every sprite mapping (its pieces)
+  sprites/player.png    Shion's animations, a row each
+  sprites/enemies/enemy_TTTT.png  each enemy type's animations, as the rooms load it;
+                        sprites/enemies/enemies.json says which room it is drawn with
+  sprites/rooms/areaAA_roomRR.png  every room with its enemies at their spawn points
   sound/z80_driver.bin  the Z80 sound driver; sound/z80_data.bin what follows it (not decoded yet)
 
 This first step only writes the data out so that it can be looked at and its decoding checked;
-the game still reads the ROM. The decoders are tools/gfx.py, tools/rooms.py and tools/text.py.
+the game still reads the ROM. The decoders are tools/gfx.py, tools/rooms.py, tools/text.py and
+tools/sprites.py.
 """
 import sys, os, json, hashlib, argparse
 sys.path.insert(0, os.path.dirname(__file__))
-import gfx, rooms, text
+import gfx, rooms, text, sprites
 
 EXPECTED_SHA1 = '87a968f773c7e807e647c0737132457b06b78276'
 Z80_DRIVER = (0x098000, 0x099A77)            # docs/NOTES.md, the memory map
 Z80_DATA = (0x099A77, 0x09F777)
+
+def sheet(d, rows, tile, colours, base=0):
+    """animations as rows of frames, each cell as large as the largest frame (bosses included)"""
+    x0 = y0 = 0; x1 = y1 = 8
+    for _, fr in rows:
+        for _, m in fr:
+            for w, h, tw, x, y in sprites.mapping(d, m):
+                x0, y0, x1, y1 = min(x0, x), min(y0, y), max(x1, x + 8 * w), max(y1, y + 8 * h)
+    CW, CH = x1 - x0 + 8, y1 - y0 + 8
+    cols = max([len(fr) for _, fr in rows] + [1])
+    img = [[(32, 32, 48)] * (cols * CW) for _ in range(max(len(rows), 1) * CH)]
+    for ri, (_, fr) in enumerate(rows):
+        for ci, (_, m) in enumerate(fr):
+            sprites.draw(img, ci * CW + 4 - x0, ri * CH + 4 - y0, sprites.mapping(d, m), tile, colours, base)
+    return img
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('rom'); ap.add_argument('out', nargs='?', default='assets')
@@ -85,7 +107,49 @@ def main():
     json.dump({str(w): text.window(d, w) for w in windows}, open(path('text', 'windows.json'), 'w'), indent=1)
     unknown = sum(m['text'].count('{x') for m in msgs)
     checks['text'] = dict(messages=len(msgs), phrase_tables=[len(t) for t in phrases], windows=len(windows),
-                          characters_outside_ascii=unknown)
+                          unnamed_glyphs=unknown)
+
+    # sprites: the animation data; Shion; every enemy type the rooms load; the rooms with them
+    T = sprites.tree(d)
+    anims, maps, bad = {}, {}, 0
+    for st, groups in T.items():
+        for g, al in groups.items():
+            for an, a in al.items():
+                try:
+                    fr, cmds = sprites.script(d, a)
+                    for _, m in fr: maps.setdefault('%06X' % m, sprites.mapping(d, m))
+                    anims['%02X.%02X.%02X' % (st, g, an)] = dict(address='%06X' % a, commands=cmds,
+                                                               frames=[dict(duration=t, mapping='%06X' % m) for t, m in fr])
+                except Exception as e:
+                    print('animation %02X.%02X.%02X: %s' % (st, g, an, e)); bad += 1
+    json.dump(dict(animations=anims, mappings={k: [dict(width=w, height=h, tile='%04X' % t, x=x, y=y) for w, h, t, x, y in v]
+                                             for k, v in maps.items()}), open(path('sprites', 'animations.json'), 'w'), indent=1)
+    tile, colours = sprites.player_vram(d, 2, 0)
+    rows = [((g, a), sprites.script(d, p)[0]) for g, al in T[0].items() for a, p in al.items()]
+    rooms.write(path('sprites', 'player.png'), sheet(d, rows, tile, colours))
+    seen, index = {}, {}
+    for r in allrooms:
+        for c in r['script']:
+            if c['command'] != 'enemies': continue
+            for t in sprites.placements(d, c['args'][0])[0]: seen.setdefault(t, (r['area'], r['room']))
+    skipped = 0
+    for t, (area, room) in sorted(seen.items()):
+        try: st, g, ids = sprites.enemy(d, t)
+        except ValueError: skipped += 1; continue          # category 2: its own layout, not decoded yet
+        al = T.get(st, {}).get(g, {})
+        if not al: skipped += 1; continue
+        first = 48 - len(ids)                             # $125C4: its graphics just below slot 48
+        tile, colours = sprites.vram(d, area, room, (first, ids))
+        rows = [(a, sprites.script(d, p)[0]) for a, p in al.items()]
+        rooms.write(path('sprites', 'enemies', 'enemy_%04X.png' % t), sheet(d, rows, tile, colours, first * 32))
+        index['%04X' % t] = dict(set=st, group=g, graphics=ids, area=area, room=room, animations=len(al))
+    json.dump(index, open(path('sprites', 'enemies', 'enemies.json'), 'w'), indent=1)
+    if not A.no_rooms:
+        for r in allrooms:
+            rooms.write(path('sprites', 'rooms', 'area%02d_room%02d.png' % (r['area'], r['room'])),
+                        sprites.room_with_enemies(d, r['area'], r['room'], T))
+    checks['sprites'] = dict(sets=len(T), animations=len(anims), mappings=len(maps), problems=bad,
+                             enemy_types=len(index), enemy_types_not_drawn=skipped)
 
     # sound: as it is, not decoded yet
     open(path('sound', 'z80_driver.bin'), 'wb').write(d[Z80_DRIVER[0]:Z80_DRIVER[1]])

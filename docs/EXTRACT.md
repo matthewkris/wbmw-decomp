@@ -10,8 +10,8 @@ not use these files yet.
 
     python tools/extract.py "rom/Wonder Boy in Monster World (USA, Europe).md"
 
-writes `assets/` (about 950 files, 6 MB, half a minute; `--no-rooms` skips drawing the rooms and
-takes a few seconds). `assets/` is in `.gitignore`: the files are the game's data, as much as the
+writes `assets/` (about 1,200 files, 9 MB, a minute or so; `--no-rooms` skips drawing the rooms
+and takes a few seconds). `assets/` is in `.gitignore`: the files are the game's data, as much as the
 ROM is, and are never committed.
 
 ## What it writes
@@ -27,6 +27,10 @@ ROM is, and are never committed.
 | `text/messages.txt`, `messages.json` | the 131 messages: readable, and parsed | $1CC14 (`tools/text.py`) |
 | `text/phrases.txt` | the phrases messages share (4 tables) | $1CC10 |
 | `text/windows.json` | the message windows' places and sizes | $1CC18 |
+| `sprites/animations.json` | the 12 animation sets: groups, animations (frames, durations, commands), and the 962 sprite mappings piece by piece | $A0000 (`tools/sprites.py`) |
+| `sprites/player.png` | Shion's animations, a row each | |
+| `sprites/enemies/enemy_TTTT.png`, `enemies.json` | each of the 100 enemy types the rooms load, its animations drawn with the graphics and palettes of the first room it appears in | the enemy types at $1BC0E |
+| `sprites/rooms/areaAA_roomRR.png` | every room with its enemies at their spawn points | |
 | `sound/z80_driver.bin`, `z80_data.bin` | the Z80 sound driver and what follows it, as they are | $98000 |
 
 ## The checks
@@ -35,7 +39,10 @@ ROM is, and are never committed.
   entries are empty slots): `problems: 0`.
 * Rooms: all 170 rooms of the 19 areas parse, and every map decodes: `problems: 0`.
 * Text: all 131 messages decode to their end. Each holds every branch of what one character can
-  say (jumps on flags, things owned, choices), up to where the next message begins.
+  say (jumps on flags, things owned, choices), up to where the next message begins (the last, up
+  to the phrases' tables). Every character is named (`unnamed_glyphs: 0`).
+* Sprites: all 774 animations and their 962 mappings parse: `problems: 0`; all 100 enemy types the
+  rooms load are drawn.
 
 ## The text
 
@@ -44,13 +51,23 @@ tile numbers), `$0C`-`$0F` and a byte insert a phrase (a word or a few the messa
 `$00`-`$0B` are codes, `$0B` followed by one of 51 commands with its arguments (port/message.c,
 `command`). In `messages.txt` the codes and commands are `{TAGS}` (`{MORE}` waits for a button,
 `{IF_FLAG 54 187}` jumps 187 bytes on when game flag 54 is set, `{GIVE 255}` gives the thing named
-before) and the phrases are written out; `messages.json` keeps them as numbers. 299 characters
-are outside ASCII: the font's other glyphs (arrows, marks, the quiz's letters), written `{xNN}`.
+before, `{CHOICE 3 8 n}` a choice of two whose second answer's text is n bytes on) and the
+phrases are written out; `messages.json` keeps them as numbers. The font's glyphs outside ASCII
+(read through the graphics slots at $96BC, the font being in VRAM's first blocks) are named:
+`$10`-`$12` the quiz's Ⓐ Ⓑ Ⓒ, `$13`-`$18` marks, `$19`-`$1F` Roman numerals, `$A0`-`$FD` kana left
+from the Japanese release (`$FE`/`$FF` put ゛ or ゜ over the next one); `$7F`-`$9F` are pieces of
+pictures and `$C0`-`$C5`, `$D0` icons, left as `{xNN}` (one phrase is made of them).
+
+## Known gaps
+
+* Enemies are drawn with the palettes of the first room they appear in. Bosses load palettes of
+  their own when they appear (the Myconid's sheet has its shapes right and its colours wrong).
+* The enemies' category 2 types (spawners with their own layouts) are not decoded; none of the
+  rooms' lists needs them for drawing so far.
 
 ## Next
 
-* Name the glyphs outside ASCII from the font (blocks 0-5), so the text reads fully.
-* Sprites and their animations (`tools/sprites.py` already reads them) as sheets and JSON.
+* The bosses' own palettes, for their sheets.
 * Decode the music and sound effects (the Z80 driver's data): the format is not known yet.
 * Then the other way: build the same data back from the files and check it matches the ROM byte
   for byte, before the game reads anything from them.

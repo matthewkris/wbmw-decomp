@@ -20,9 +20,10 @@ import sys, struct, argparse
 DIR = 0x1CC00
 CODES = {0: ('END', 0), 1: ('ATTR', 1), 2: ('NL', 0), 3: ('SPEED', 1), 4: ('SPACES', 1), 5: ('MORE', 0),
          6: ('JUMP', 'w'), 7: ('NOSKIP', 0), 8: ('SKIP', 0), 9: ('NLINDENT', 0), 10: ('INDENT', 1)}
-# command number: (name, argument bytes; 'j' a jump word); from port/message.c's command()
+# command number: (name, argument bytes; 'j' a jump word); from port/message.c's command(). A
+# choice's word comes after its two columns: the jump to the second answer's text ($13BC)
 COMMANDS = {
-    0: ('PART_END', ''), 1: ('THING_PHRASE', 'b'), 2: ('CHOICE', 'bb'), 3: ('IF_GOLD_SHORT', 'j'),
+    0: ('PART_END', ''), 1: ('THING_PHRASE', 'b'), 2: ('CHOICE', 'bbj'), 3: ('IF_GOLD_SHORT', 'j'),
     4: ('PRICE', 'b'), 5: ('AMOUNT', ''), 6: ('THING_NAME', ''), 7: ('PAY', ''), 8: ('GIVE', 'b'),
     9: ('SPEAKER_GONE', ''), 10: ('THING', 'b'), 11: ('CALL_1C494', ''), 12: ('END_RESTART', ''),
     13: ('END_FADE', ''), 14: ('SET_965E', 'b'), 15: ('AMOUNT_TABLE', 'b'), 16: ('NO_GOLD', ''),
@@ -73,8 +74,17 @@ def phrase_tables(d):
         out.append(lst)
     return out
 
+# The font's glyphs outside ASCII (tiles $10-$1F and $A0-$FD, read from the font through the
+# graphics slots at $96BC): the quiz's letters, marks, Roman numerals, then kana from the
+# Japanese release. $7F-$9F are pieces of pictures and $C0-$C5, $D0 icons: left as {xNN}.
+GLYPHS = dict(zip(range(0x10, 0x20), 'ⒶⒷⒸ▲◪▔▏✕✦ⅠⅡⅢⅤⅩⅬⅯ'))
+GLYPHS.update(zip(range(0xA0, 0xC0), 'たちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわん゛゜'))
+GLYPHS.update(zip(range(0xC6, 0xD0), 'ヲァィゥェォャュョッ'))
+GLYPHS.update(zip(range(0xD1, 0xFE), 'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワン'))
+MARKS = {0xFE: '゛', 0xFF: '゜'}                   # $FE, $FF: the mark over the next character
+
 def char(b):
-    return chr(b) if 0x20 <= b < 0x7F else '{x%02X}' % b
+    return chr(b) if 0x20 <= b < 0x7F else GLYPHS.get(b, '{x%02X}' % b)
 
 def decode(d, a, end=None, phrases=None, depth=0, stop_at_end=True):
     """the text at a as (rendered string, parsed list, end address); up to the END code (or end)"""
@@ -84,7 +94,7 @@ def decode(d, a, end=None, phrases=None, depth=0, stop_at_end=True):
         if b >= 0x10:
             if b >= 0xFE:
                 mark, b = b, d[a]; a += 1
-                out.append('{MARK%02X}' % mark + char(b)); parsed.append(('char', mark, b))
+                out.append(char(b) + MARKS[mark]); parsed.append(('char', mark, b))
             else:
                 out.append(char(b)); parsed.append(('char', b))
         elif b >= 0x0C:
@@ -123,15 +133,17 @@ def decode(d, a, end=None, phrases=None, depth=0, stop_at_end=True):
     return ''.join(out), parsed, a
 
 def all_messages(d):
-    """every message decoded, each up to the next message's text (jumps can reach past an END)"""
+    """every message decoded, each up to the next message's text (jumps can reach past an END);
+    the last one up to the next table (the phrases' tables follow the messages)"""
     tab = messages_table(d)
     phrases = phrase_tables(d)
+    tb = be32(d, DIR + 0x10) & 0xFFFFFF
+    tables = [tb] + [be32(d, tb + 4 * k) & 0xFFFFFF for k in range(4)] + [be32(d, DIR + 0x18) & 0xFFFFFF]
     starts = sorted(set(a for _, a in tab))
-    nxt = dict(zip(starts, starts[1:] + [None]))
+    nxt = dict(zip(starts, starts[1:] + [min([t for t in tables if t > starts[-1]] or [None])]))
     out = []
     for n, (w, a) in enumerate(tab):
-        end = nxt[a] or a + 4096
-        text, parsed, stop = decode(d, a, end, phrases, stop_at_end=False)
+        text, parsed, stop = decode(d, a, nxt[a], phrases, stop_at_end=nxt[a] is None)
         out.append(dict(number=n, window=w, address=a, end=stop, text=text, parsed=parsed))
     return out, phrases
 
