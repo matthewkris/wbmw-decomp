@@ -50,14 +50,14 @@ the like) must still exit without asking.
 
 ### Enemy health and damage numbers (asked 2026-10-11): done
 
-Done 2026-10-21 as the menu's **Enemy health** (off by default): the damage of each hit rises
+Done 2026-10-21 as the menu's **Enemy health** (on by default): the damage of each hit rises
 from the enemy as a number (gold for the killing blow), and a bar over it shows the health it
 has left, for two seconds after a hit. All in the host. See `docs/ENEMYHEALTH.md`. Not done: a
 place in the HUD for it (the bar over the enemy turned out to be enough so far); bosses not tried.
 
 ### Zoom in during character interactions (asked 2026-10-20): done (experimental)
 
-Done 2026-10-21 as the menu's **Talk zoom** (off by default): in a conversation with an ordinary
+Done 2026-10-21 as the menu's **Talk zoom** (on by default): in a conversation with an ordinary
 character the scene eases in on Wonder Boy and the speaker, the HUD and the box slid up, the box
 kept at its own size; not for bosses or the Sphinx (asked by the owner). All in the host. See
 `docs/TALKZOOM.md`. Open: more conversations tried (shops, people outdoors); whether 1.5 is the

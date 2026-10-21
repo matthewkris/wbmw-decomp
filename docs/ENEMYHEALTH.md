@@ -1,8 +1,8 @@
 # Enemy health
 
 The native build can show the damage each hit does and how much health an enemy has left
-(menu: **Enemy health**, `--enemy-health`, or `enemy_health=1` in `wbmw.ini`). It is off by
-default. It is drawn by the host over the finished picture (`hits_frame` in `native/wbmw.c`):
+(menu: **Enemy health**; `--no-enemy-health` or `enemy_health=0` in `wbmw.ini` turns it off). It
+is on by default. It is drawn by the host over the finished picture (`hits_frame` in `native/wbmw.c`):
 the game's code and RAM are untouched.
 
 ## What it shows

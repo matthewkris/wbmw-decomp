@@ -2,7 +2,7 @@
 
 The native build can show the game 400 pixels wide (16:9 at the game's 224 lines) instead of
 256: 72 more pixels at each side. It is an option (menu: **Widescreen**, `--widescreen`, or
-`widescreen=1` in `wbmw.ini`), off by default. For now only a few rooms use the extra width; the
+`widescreen=0` in `wbmw.ini` turns it off), on by default. For now only a few rooms use the extra width; the
 rest show the normal picture centred with black sides.
 
 ## How the game draws, and what changes
