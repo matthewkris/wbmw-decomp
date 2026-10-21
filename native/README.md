@@ -20,7 +20,7 @@ This makes `work/native/wbmw.exe` (and copies `SDL2.dll` next to it).
 ## Run
 
     work/native/wbmw [ROM] [--windowed] [--scale N] [--save FILE] [--integer-scale] [--fps] [--mute]
-                           [--state FILE] [--load]
+                           [--state FILE] [--load] [--config FILE]
 
 plays, full screen unless `--windowed` is given. Without ROM, it looks for `rom/Wonder Boy in Monster World (USA, Europe).md`
 in the current folder, next to the program, and in the repository (`../../rom/` from
@@ -38,11 +38,26 @@ The save EEPROM is read from FILE at start and written at exit (default `wbmw.sa
 * **F3** toggles a frame-rate display in the top right corner (`--fps` starts with it on); the
   window title always shows the rate. The game itself always runs 60 frames a second of game
   time; the display tells whether the PC keeps up.
-* **Esc** opens the menu over the picture: **Show FPS** (on/off) and **Exit game**, which asks
-  "Exit the game?" (No first). Up/Down choose, Enter (or Z, Space) selects, Esc goes back or
-  resumes. On a controller, **Back/Select** (View, Share/Create, Minus) opens it, as the Genesis
-  pad has no such button and Start stays the game's (the item screen); in the menu the D-pad
-  chooses, A selects, and B, Start or Back/Select go back. Closing the window asks the same
+* **Esc** opens the menu over the picture: **Show FPS**, **Full screen**, **Whole pixels** and
+  **Sound** (on/off), **Controls**, and **Exit game**, which asks "Exit the game?" (No first).
+  Up/Down choose, Enter (or Z, Space) selects, Esc goes back or resumes. On a controller,
+  **Back/Select** (View, Share/Create, Minus) opens it, as the Genesis pad has no such button and
+  Start stays the game's (the item screen); in the menu the D-pad (or left stick) chooses, A
+  selects, and B, Start or Back/Select go back. The menu's own keys never change.
+* **Controls** binds a key and a controller input to each of the game's buttons and to quick save
+  and quick load (F2 and F4 by default; nothing on the controller). Enter (A) on a cell waits five
+  seconds for the new key, or for a button, stick direction or trigger; one used by another action
+  swaps with it; Delete (Y) clears a cell. Esc, Back/Select, F11, F3 and Home cannot be bound.
+  Buttons are by position (SDL's layout, with `SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS` off, so a
+  Nintendo pad is read like the others). **Left stick moves** makes the stick a D-pad too.
+* The settings are kept in `wbmw.ini` next to the program (`--config FILE` for another), written
+  when the menu closes or the game exits after a change. The command line overrides a setting for
+  one run without changing the file; headless runs (`--frames`) do not read it.
+* Quick load happens at the frame loop's own frame wait, like a save: only there is the C on the
+  main stack (a wait inside a task pass is on that pass's fiber). The jump back to `main` is GCC's
+  `__builtin_longjmp`: MinGW's `longjmp` unwinds the Windows way and fails once fibers are in use
+  (it crashed with STATUS_BAD_STACK). A message ("STATE SAVED", "STATE LOADED", "NO STATE TO
+  LOAD") shows at the bottom of the picture. Closing the window asks the same
   question. The game is frozen while the menu is open (no frames, no sound), and buttons still
   held when it closes reach the game only after they are released.
 * Testing the menu without a person: `WBMW_MENU_KEYS="escape return down ..."` presses those keys

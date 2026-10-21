@@ -20,7 +20,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <setjmp.h>
+#include <ctype.h>
 #include "../harness/md.h"
 #include "../port/m68k_rt.h"
 
@@ -32,6 +32,7 @@
 static const char *state_path;
 static int save_pending;
 static const char *save_to;
+static const char *toast; static int toast_frames;   /* a short message over the picture (window only) */
 
 static void request_load(const char *path);
 static void maybe_save(Cpu *c, uint32_t pc);
@@ -104,7 +105,7 @@ static uint8_t buttons_at(int fr)
 static SDL_Window *win; static SDL_Renderer *ren; static SDL_Texture *tex; static SDL_GameController *gc;
 static Uint64 next_tick;
 static int fullscreen = 1, integer_scale, show_fps;   /* full screen unless --windowed */
-static const char *TITLE = "Wonder Boy in Monster World (native)  (arrows, Z/X/C, Enter; F11 full screen, F3 fps, Esc menu)";
+static const char *TITLE = "Wonder Boy in Monster World (native)  (Esc: menu, F11: full screen)";
 
 /* frames shown per second, measured over each second */
 static Uint64 fps_start; static int fps_frames; static double fps;
@@ -137,10 +138,180 @@ static void set_fullscreen(int on)
     SDL_ShowCursor(on ? SDL_DISABLE : SDL_ENABLE);
 }
 
+/* ---- controls and settings: the bindings, wbmw.ini ---- */
+
+/* the game's buttons, in the bit order of pad_buttons, then the host's own */
+enum { ACT_UP, ACT_DOWN, ACT_LEFT, ACT_RIGHT, ACT_B, ACT_C, ACT_A, ACT_START, ACT_SAVE, ACT_LOAD, ACTIONS };
+static const char *const ACT_NAME[ACTIONS] = {"UP", "DOWN", "LEFT", "RIGHT", "B", "C", "A", "START", "QUICK SAVE", "QUICK LOAD"};
+static const char *const ACT_INI[ACTIONS] = {"up", "down", "left", "right", "b", "c", "a", "start", "save", "load"};
+
+/* each action has a key and a controller input: a button (SDL's number), a side of an axis
+ * (PAD_AXIS + axis * 2, + 1 for its negative side: a stick's direction, a trigger) or none */
+#define PAD_NONE (-1)
+#define PAD_AXIS 64
+#define AXIS_ON 16000                               /* how far a stick or trigger counts as pressed */
+static SDL_Scancode key_bind[ACTIONS];
+static int pad_bind[ACTIONS], stick_moves;          /* stick_moves: the left stick works as the D-pad too */
+static const SDL_Scancode KEY_DEFAULT[ACTIONS] = {
+    SDL_SCANCODE_UP, SDL_SCANCODE_DOWN, SDL_SCANCODE_LEFT, SDL_SCANCODE_RIGHT,
+    SDL_SCANCODE_X, SDL_SCANCODE_C, SDL_SCANCODE_Z, SDL_SCANCODE_RETURN, SDL_SCANCODE_F2, SDL_SCANCODE_F4};
+static const int PAD_DEFAULT[ACTIONS] = {       /* quick load is unbound, so that no stray press loses progress */
+    SDL_CONTROLLER_BUTTON_DPAD_UP, SDL_CONTROLLER_BUTTON_DPAD_DOWN, SDL_CONTROLLER_BUTTON_DPAD_LEFT,
+    SDL_CONTROLLER_BUTTON_DPAD_RIGHT, SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_B, SDL_CONTROLLER_BUTTON_X,
+    SDL_CONTROLLER_BUTTON_START, PAD_NONE, PAD_NONE};
+
+static void controls_default(void)
+{
+    memcpy(key_bind, KEY_DEFAULT, sizeof key_bind);
+    memcpy(pad_bind, PAD_DEFAULT, sizeof pad_bind);
+    stick_moves = 1;
+}
+
+/* a key or input already used by another action goes to it in exchange */
+static void bind_key(int a, SDL_Scancode k)
+{
+    for (int o = 0; o < ACTIONS; o++) if (o != a && key_bind[o] == k) key_bind[o] = key_bind[a];
+    key_bind[a] = k;
+}
+
+static void bind_pad(int a, int p)
+{
+    for (int o = 0; o < ACTIONS; o++) if (o != a && pad_bind[o] == p) pad_bind[o] = pad_bind[a];
+    pad_bind[a] = p;
+}
+
+static int key_down(const Uint8 *k, SDL_Scancode s)
+{
+    if (s == SDL_SCANCODE_UNKNOWN || !k[s]) return 0;
+    return !(s == SDL_SCANCODE_RETURN && (SDL_GetModState() & KMOD_ALT));    /* Alt+Enter is full screen */
+}
+
+static int pad_down(int p)
+{
+    if (!gc || p == PAD_NONE) return 0;
+    if (p < PAD_AXIS) return SDL_GameControllerGetButton(gc, (SDL_GameControllerButton)p);
+    int v = SDL_GameControllerGetAxis(gc, (SDL_GameControllerAxis)((p - PAD_AXIS) / 2));
+    return (p - PAD_AXIS) & 1 ? v < -AXIS_ON : v > AXIS_ON;
+}
+
+/* names for the menu, at most 13 characters: keys by SDL's names, controller buttons by where
+ * they are (SDL's standard layout), as each make of pad labels them its own way */
+static const char *key_label(SDL_Scancode s)
+{
+    static char out[24];
+    const char *n = s == SDL_SCANCODE_UNKNOWN ? "" : SDL_GetScancodeName(s);
+    if (!*n) return "-";
+    if (!strncmp(n, "Keypad ", 7)) snprintf(out, sizeof out, "KP %s", n + 7);
+    else snprintf(out, sizeof out, "%s", n);
+    for (char *c = out; *c; c++) *c = (char)toupper((unsigned char)*c);
+    out[11] = 0;                                    /* the column's width */
+    return out;
+}
+
+static const char *pad_label(int p)
+{
+    static const char *const BUTTON[] = {"FACE DOWN", "FACE RIGHT", "FACE LEFT", "FACE UP", "SELECT", "HOME", "START",
+        "L STICK BTN", "R STICK BTN", "L SHOULDER", "R SHOULDER", "D-PAD UP", "D-PAD DOWN", "D-PAD LEFT", "D-PAD RIGHT"};
+    static const char *const AXIS[6][2] = {{"L STICK RIGHT", "L STICK LEFT"}, {"L STICK DOWN", "L STICK UP"},
+        {"R STICK RIGHT", "R STICK LEFT"}, {"R STICK DOWN", "R STICK UP"}, {"L TRIGGER", "L TRIGGER"}, {"R TRIGGER", "R TRIGGER"}};
+    static char out[16];
+    if (p == PAD_NONE) return "-";
+    if (p >= PAD_AXIS) return (p - PAD_AXIS) / 2 < 6 ? AXIS[(p - PAD_AXIS) / 2][(p - PAD_AXIS) & 1] : "AXIS";
+    if (p < (int)(sizeof BUTTON / sizeof *BUTTON)) return BUTTON[p];
+    snprintf(out, sizeof out, "BUTTON %d", p);
+    return out;
+}
+
+/* wbmw.ini: what the player chose in the menu (and with F11, F3). The command line can override
+ * a setting for one run without changing the file: cfg is what the file holds. */
+static struct { int fullscreen, show_fps, integer_scale, mute; } cfg = {1, 0, 0, 0};
+static char ini_path[4096];
+static int ini_dirty;
+
+static void toggle_fullscreen(void) { set_fullscreen(!fullscreen); cfg.fullscreen = fullscreen; ini_dirty = 1; }
+static void toggle_fps(void) { show_fps = cfg.show_fps = !show_fps; ini_dirty = 1; }
+
+/* controller inputs in the file by SDL's names, an axis with its side: "a", "dpup", "-lefty", "none" */
+static void pad_name(int p, char *out, size_t n)
+{
+    const char *s = p == PAD_NONE ? NULL : p >= PAD_AXIS ? SDL_GameControllerGetStringForAxis((SDL_GameControllerAxis)((p - PAD_AXIS) / 2))
+                                                         : SDL_GameControllerGetStringForButton((SDL_GameControllerButton)p);
+    if (!s) snprintf(out, n, "none");
+    else if (p >= PAD_AXIS) snprintf(out, n, "%c%s", (p - PAD_AXIS) & 1 ? '-' : '+', s);
+    else snprintf(out, n, "%s", s);
+}
+
+static int pad_parse(const char *s)
+{
+    if (*s == '+' || *s == '-') {
+        int ax = SDL_GameControllerGetAxisFromString(s + 1);
+        return ax < 0 ? PAD_NONE : PAD_AXIS + ax * 2 + (*s == '-');
+    }
+    int b = SDL_GameControllerGetButtonFromString(s);
+    return b < 0 ? PAD_NONE : b;
+}
+
+static void settings_save(void)
+{
+    ini_dirty = 0;
+    if (!ini_path[0]) return;
+    FILE *f = fopen(ini_path, "w");
+    if (!f) { fprintf(stderr, "wbmw: cannot write the settings to %s\n", ini_path); return; }
+    fprintf(f, "# Wonder Boy in Monster World (native): settings, written by the game's menu (Esc).\n"
+               "# Keys by SDL's names; controller inputs by SDL's, an axis with + or - before it; none: unbound.\n");
+    fprintf(f, "fullscreen=%d\nshow_fps=%d\ninteger_scale=%d\nmute=%d\nstick_moves=%d\n",
+            cfg.fullscreen, cfg.show_fps, cfg.integer_scale, cfg.mute, stick_moves);
+    for (int a = 0; a < ACTIONS; a++) {
+        char pad[64]; pad_name(pad_bind[a], pad, sizeof pad);
+        const char *key = key_bind[a] == SDL_SCANCODE_UNKNOWN ? "" : SDL_GetScancodeName(key_bind[a]);
+        fprintf(f, "key.%s=%s\npad.%s=%s\n", ACT_INI[a], *key ? key : "none", ACT_INI[a], pad);
+    }
+    fclose(f);
+}
+
+/* read before the command line; the file is next to the program unless --config names one */
+static void settings_open(const char *path)
+{
+    controls_default();
+    if (path) snprintf(ini_path, sizeof ini_path, "%s", path);
+    else { char *base = SDL_GetBasePath(); snprintf(ini_path, sizeof ini_path, "%swbmw.ini", base ? base : ""); SDL_free(base); }
+    FILE *f = fopen(ini_path, "r");
+    if (f) {
+        char line[256];
+        while (fgets(line, sizeof line, f)) {
+            char *v = strchr(line, '=');
+            if (line[0] == '#' || !v) continue;
+            *v++ = 0; v[strcspn(v, "\r\n")] = 0;
+            if (!strcmp(line, "fullscreen")) cfg.fullscreen = atoi(v);
+            else if (!strcmp(line, "show_fps")) cfg.show_fps = atoi(v);
+            else if (!strcmp(line, "integer_scale")) cfg.integer_scale = atoi(v);
+            else if (!strcmp(line, "mute")) cfg.mute = atoi(v);
+            else if (!strcmp(line, "stick_moves")) stick_moves = atoi(v);
+            else for (int a = 0; a < ACTIONS; a++) {
+                if (!strncmp(line, "key.", 4) && !strcmp(line + 4, ACT_INI[a]))
+                    key_bind[a] = strcmp(v, "none") ? SDL_GetScancodeFromName(v) : SDL_SCANCODE_UNKNOWN;
+                if (!strncmp(line, "pad.", 4) && !strcmp(line + 4, ACT_INI[a])) pad_bind[a] = pad_parse(v);
+            }
+        }
+        fclose(f);
+    }
+    fullscreen = cfg.fullscreen; show_fps = cfg.show_fps; integer_scale = cfg.integer_scale; mute = cfg.mute;
+}
+
+/* a controller plugged in (or there at the start) or pulled out: the first one plays */
+static void controller_event(const SDL_Event *e)
+{
+    if (e->type == SDL_CONTROLLERDEVICEADDED && !gc) gc = SDL_GameControllerOpen(e->cdevice.which);
+    if (e->type == SDL_CONTROLLERDEVICEREMOVED && gc && e->cdevice.which == SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(gc))) {
+        SDL_GameControllerClose(gc); gc = NULL;
+        for (int i = 0; i < SDL_NumJoysticks() && !gc; i++) if (SDL_IsGameController(i)) gc = SDL_GameControllerOpen(i);
+    }
+}
+
 /* ---- the menu (Esc): drawn by the host over the frozen game, which never knows ---- */
 
 /* a 5x7 font: A-Z, 0-9 and a little punctuation; each row is 5 bits, the top bit leftmost */
-static const char FONT7_CHARS[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:?>-./";
+static const char FONT7_CHARS[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:?>-./[];,'=+\\`()";
 static const uint8_t FONT7[][7] = {
     {14,17,17,31,17,17,17}, {30,17,17,30,17,17,30}, {14,17,16,16,16,17,14}, {30,17,17,17,17,17,30},
     {31,16,16,30,16,16,31}, {31,16,16,30,16,16,16}, {14,17,16,23,17,17,15}, {17,17,17,31,17,17,17},
@@ -154,6 +325,9 @@ static const uint8_t FONT7[][7] = {
     {14,17,17,14,17,17,14}, {14,17,17,15,1,2,12},
     {0,12,12,0,12,12,0},    {14,17,1,2,4,0,4},      {8,4,2,1,2,4,8},        {0,0,0,31,0,0,0},
     {0,0,0,0,0,12,12},      {1,1,2,4,8,16,16},
+    {14,8,8,8,8,8,14},      {14,2,2,2,2,2,14},      {0,12,12,0,12,4,8},     {0,0,0,0,12,4,8},
+    {4,4,8,0,0,0,0},        {0,0,31,0,31,0,0},      {0,4,4,31,4,4,0},       {16,16,8,4,2,1,1},
+    {8,4,2,0,0,0,0},        {2,4,8,8,8,4,2},        {8,4,2,2,2,4,8},
 };
 
 static void draw_text(int x, int y, const char *s, uint32_t color)
@@ -179,35 +353,176 @@ static void present(void)
 
 enum { MENU_WHITE = 0xFFFFFF, MENU_GREY = 0x8890A0, MENU_GOLD = 0xFFD860, MENU_BOX = 0x101830 };
 
-/* the picture darkened, a box, and either the options or the exit question */
-static void draw_menu(int item, int asking, int yes)
+static void draw_box(int x0, int y0, int w, int h)
+{
+    for (int y = y0; y < y0 + h; y++) for (int x = x0; x < x0 + w; x++)
+        frame_rgb[y][x] = (y == y0 || y == y0 + h - 1 || x == x0 || x == x0 + w - 1) ? MENU_GREY : MENU_BOX;
+}
+
+/* the message at the bottom of the picture ("STATE SAVED") */
+static void draw_toast(void)
+{
+    int w = (int)strlen(toast) * 6 + 9, h = 15, x0 = frame_width / 2 - w / 2, y0 = ACTIVE_LINES - h - 8;
+    draw_box(x0, y0, w, h);
+    draw_text(x0 + 5, y0 + 4, toast, MENU_WHITE);
+}
+
+/* the menu's screens: the main one, the exit question, the controls, and the controls waiting
+ * for a press (capture) */
+enum { SCR_MAIN, SCR_ASK, SCR_CONTROLS, SCR_CAPTURE };
+enum { MI_FPS, MI_FULL, MI_PIXELS, MI_SOUND, MI_CONTROLS, MI_EXIT, MAIN_N };
+static const char *const MAIN_ITEM[MAIN_N] = {"SHOW FPS", "FULL SCREEN", "WHOLE PIXELS", "SOUND", "CONTROLS", "EXIT GAME"};
+static const int CTRL_ROW[ACTIONS] = {ACT_UP, ACT_DOWN, ACT_LEFT, ACT_RIGHT, ACT_A, ACT_B, ACT_C, ACT_START, ACT_SAVE, ACT_LOAD};
+enum { CR_STICK = ACTIONS, CR_RESET, CR_BACK, CTRL_N };   /* the controls' rows after the actions */
+enum { COL_KEY = 80, COL_PAD = 152 };              /* the controls' columns, from the box's left */
+#define CAPTURE_WAIT 330                            /* menu passes (15 ms) to wait for a press: 5 s */
+typedef struct { int screen, item, yes, row, col, wait; } Menu;
+
+/* the picture darkened, a box, and the screen */
+static void draw_menu(const Menu *m)
 {
     for (int y = 0; y < ACTIVE_LINES; y++) for (int x = 0; x < frame_width; x++)
         frame_rgb[y][x] = (frame_rgb[y][x] >> 2) & 0x3F3F3F;
-    int w = 150, h = 74, x0 = frame_width / 2 - w / 2, y0 = ACTIVE_LINES / 2 - h / 2;
-    for (int y = y0; y < y0 + h; y++) for (int x = x0; x < x0 + w; x++)
-        frame_rgb[y][x] = (y == y0 || y == y0 + h - 1 || x == x0 || x == x0 + w - 1) ? MENU_GREY : MENU_BOX;
-    if (!asking) {
+    if (m->screen == SCR_MAIN) {
+        int w = 150, h = 44 + MAIN_N * 14, x0 = frame_width / 2 - w / 2, y0 = ACTIVE_LINES / 2 - h / 2;
+        draw_box(x0, y0, w, h);
         draw_text_centred(y0 + 8, "PAUSED", MENU_WHITE);
-        static const char *items[2] = {"SHOW FPS", "EXIT GAME"};
-        for (int i = 0; i < 2; i++) {
-            uint32_t col = i == item ? MENU_GOLD : MENU_WHITE;
-            int y = y0 + 26 + i * 14;
-            if (i == item) draw_text(x0 + 12, y, ">", col);
-            draw_text(x0 + 24, y, items[i], col);
-            if (i == 0) draw_text(x0 + w - 12 - 18, y, show_fps ? "ON" : "OFF", col);
+        for (int i = 0; i < MAIN_N; i++) {
+            uint32_t col = i == m->item ? MENU_GOLD : MENU_WHITE;
+            int y = y0 + 24 + i * 14;
+            int on = i == MI_FPS ? show_fps : i == MI_FULL ? fullscreen : i == MI_PIXELS ? integer_scale : i == MI_SOUND ? !mute : -1;
+            if (i == m->item) draw_text(x0 + 12, y, ">", col);
+            draw_text(x0 + 24, y, MAIN_ITEM[i], col);
+            if (on >= 0) draw_text(x0 + w - 12 - 18, y, on ? "ON" : "OFF", col);
         }
         draw_text_centred(y0 + h - 14, gc ? "ESC/SELECT: RESUME" : "ESC: RESUME", MENU_GREY);
-    } else {
+    } else if (m->screen == SCR_ASK) {
+        int w = 150, h = 74, x0 = frame_width / 2 - w / 2, y0 = ACTIVE_LINES / 2 - h / 2;
+        draw_box(x0, y0, w, h);
         draw_text_centred(y0 + 12, "EXIT THE GAME?", MENU_WHITE);
         int y = y0 + 34, cx = frame_width / 2;
-        draw_text(cx - 40, y, yes ? " NO" : ">NO", yes ? MENU_WHITE : MENU_GOLD);
-        draw_text(cx + 16, y, yes ? ">YES" : " YES", yes ? MENU_GOLD : MENU_WHITE);
+        draw_text(cx - 40, y, m->yes ? " NO" : ">NO", m->yes ? MENU_WHITE : MENU_GOLD);
+        draw_text(cx + 16, y, m->yes ? ">YES" : " YES", m->yes ? MENU_GOLD : MENU_WHITE);
         draw_text_centred(y0 + h - 14, gc ? "ESC/SELECT: BACK" : "ESC: BACK", MENU_GREY);
+    } else {
+        int w = 236, h = 56 + CTRL_N * 11, x0 = frame_width / 2 - w / 2, y0 = ACTIVE_LINES / 2 - h / 2;
+        draw_box(x0, y0, w, h);
+        draw_text_centred(y0 + 6, "CONTROLS", MENU_WHITE);
+        draw_text(x0 + COL_KEY, y0 + 18, "KEYBOARD", MENU_GREY);
+        draw_text(x0 + COL_PAD, y0 + 18, "CONTROLLER", MENU_GREY);
+        for (int r = 0; r < CTRL_N; r++) {
+            int y = y0 + 30 + r * 11, sel = r == m->row;
+            uint32_t col = sel ? MENU_GOLD : MENU_WHITE;
+            if (sel) draw_text(x0 + 6, y, ">", col);
+            if (r < ACTIONS) {
+                int a = CTRL_ROW[r];
+                draw_text(x0 + 14, y, ACT_NAME[a], col);
+                for (int c = 0; c < 2; c++) {
+                    int here = sel && m->col == c;
+                    const char *t = here && m->screen == SCR_CAPTURE ? "PRESS..." : c ? pad_label(pad_bind[a]) : key_label(key_bind[a]);
+                    draw_text(x0 + (c ? COL_PAD : COL_KEY), y, t, here ? MENU_GOLD : MENU_WHITE);
+                }
+            } else if (r == CR_STICK) {
+                draw_text(x0 + 14, y, "LEFT STICK MOVES", col);
+                draw_text(x0 + COL_PAD, y, stick_moves ? "ON" : "OFF", col);
+            } else draw_text(x0 + 14, y, r == CR_RESET ? "RESET TO DEFAULTS" : "BACK", col);
+        }
+        if (m->screen == SCR_CAPTURE) {
+            draw_text_centred(y0 + h - 24, m->col ? "PRESS A BUTTON, OR MOVE A STICK" : "PRESS A KEY", MENU_GOLD);
+            draw_text_centred(y0 + h - 13, gc ? "ESC/SELECT: CANCEL" : "ESC: CANCEL", MENU_GREY);
+        } else {
+            draw_text_centred(y0 + h - 24, gc ? "ENTER/A: CHANGE   DEL/Y: CLEAR" : "ENTER: CHANGE   DEL: CLEAR", MENU_GREY);
+            draw_text_centred(y0 + h - 13, gc ? "ESC/B: BACK" : "ESC: BACK", MENU_GREY);
+        }
     }
 }
 
-/* Run the menu until it closes; the game is frozen meanwhile (no frames, no sound time).
+/* the left stick past AXIS_ON: up, down, left, right; the menu moves when it gets there */
+static int stick_was[4];
+
+static void stick_edges(int axis, int v, int *lo_edge, int *hi_edge)
+{
+    if (axis != SDL_CONTROLLER_AXIS_LEFTX && axis != SDL_CONTROLLER_AXIS_LEFTY) return;
+    int *was = &stick_was[axis == SDL_CONTROLLER_AXIS_LEFTY ? 0 : 2], lo = v < -AXIS_ON, hi = v > AXIS_ON;
+    if (lo_edge) *lo_edge = lo && !was[0];
+    if (hi_edge) *hi_edge = hi && !was[1];
+    was[0] = lo; was[1] = hi;
+}
+
+/* the controls waiting for a press for the chosen cell: a key for the keyboard's column; a
+ * button, a stick's direction or a trigger for the controller's. Esc and Back/Select cancel;
+ * the host's own keys (F11, F3, Alt+Enter) and the Home button are not taken. */
+static void capture(Menu *m, const SDL_Event *e)
+{
+    int a = CTRL_ROW[m->row];
+    if (e->type == SDL_KEYDOWN && !e->key.repeat) {
+        SDL_Keycode key = e->key.keysym.sym; SDL_Scancode sc = e->key.keysym.scancode;
+        if (key == SDLK_ESCAPE) m->screen = SCR_CONTROLS;
+        else if (m->col == 0 && sc != SDL_SCANCODE_UNKNOWN && key != SDLK_F11 && key != SDLK_F3
+                 && !(key == SDLK_RETURN && (e->key.keysym.mod & KMOD_ALT))) {
+            bind_key(a, sc); ini_dirty = 1; m->screen = SCR_CONTROLS;
+        }
+    }
+    if (e->type == SDL_CONTROLLERBUTTONDOWN) {
+        int b = e->cbutton.button;
+        if (b == SDL_CONTROLLER_BUTTON_BACK) m->screen = SCR_CONTROLS;
+        else if (m->col == 1 && b != SDL_CONTROLLER_BUTTON_GUIDE) { bind_pad(a, b); ini_dirty = 1; m->screen = SCR_CONTROLS; }
+    }
+    if (e->type == SDL_CONTROLLERAXISMOTION) {
+        int ax = e->caxis.axis, v = e->caxis.value;
+        stick_edges(ax, v, NULL, NULL);             /* so that the stick held does not move the menu after */
+        if (m->col == 1 && (v > 24000 || v < -24000)) { bind_pad(a, PAD_AXIS + ax * 2 + (v < 0)); ini_dirty = 1; m->screen = SCR_CONTROLS; }
+    }
+}
+
+/* one input on a screen of the menu: 0 to resume, 1 to exit the game, -1 to stay */
+static int menu_step(Menu *m, int only_asking, int up, int down, int left, int right, int ok, int back, int clear)
+{
+    switch (m->screen) {
+    case SCR_MAIN:
+        if (up) m->item = (m->item + MAIN_N - 1) % MAIN_N;
+        if (down) m->item = (m->item + 1) % MAIN_N;
+        if (ok || left || right) switch (m->item) {
+            case MI_FPS: toggle_fps(); break;
+            case MI_FULL: toggle_fullscreen(); break;
+            case MI_PIXELS:
+                integer_scale = cfg.integer_scale = !integer_scale; ini_dirty = 1;
+                SDL_RenderSetIntegerScale(ren, integer_scale ? SDL_TRUE : SDL_FALSE);
+                break;
+            case MI_SOUND: mute = cfg.mute = !mute; ini_dirty = 1; break;
+            case MI_CONTROLS: if (ok) { m->screen = SCR_CONTROLS; m->row = 0; m->col = 0; } break;
+            case MI_EXIT: if (ok) { m->screen = SCR_ASK; m->yes = 0; } break;
+        }
+        if (back) return 0;
+        break;
+    case SCR_ASK:
+        if (up || down || left || right) m->yes ^= 1;
+        if (ok && m->yes) return 1;
+        if ((ok && !m->yes) || back) {
+            if (only_asking) return 0;
+            m->screen = SCR_MAIN;
+        }
+        break;
+    case SCR_CONTROLS:
+        if (up) m->row = (m->row + CTRL_N - 1) % CTRL_N;
+        if (down) m->row = (m->row + 1) % CTRL_N;
+        if (m->row < ACTIONS) {
+            int a = CTRL_ROW[m->row];
+            if (left || right) m->col ^= 1;
+            if (ok) { m->screen = SCR_CAPTURE; m->wait = CAPTURE_WAIT; }
+            if (clear) { if (m->col) pad_bind[a] = PAD_NONE; else key_bind[a] = SDL_SCANCODE_UNKNOWN; ini_dirty = 1; }
+        } else if (m->row == CR_STICK && (ok || left || right)) { stick_moves = !stick_moves; ini_dirty = 1; }
+        else if (m->row == CR_RESET && ok) { controls_default(); ini_dirty = 1; }
+        else if (m->row == CR_BACK && ok) m->screen = SCR_MAIN;
+        if (back) m->screen = SCR_MAIN;
+        break;
+    }
+    return -1;
+}
+
+/* Run the menu until it closes; the game is frozen meanwhile (no frames, no sound time). The
+ * menu itself always answers to the arrows, Enter and Esc, and on a controller to the D-pad (or
+ * left stick), A and B, whatever the game's controls are.
  * asking: start at the exit question (closing the window). Returns 1 to exit the game. */
 static void menu_test_keys(void);
 
@@ -215,53 +530,52 @@ static int menu(int asking)
 {
     static uint32_t saved[ACTIVE_LINES][320];
     memcpy(saved, frame_rgb, sizeof saved);
-    int item = 0, yes = 0, only_asking = asking;
-    for (;;) {
+    Menu m = {asking ? SCR_ASK : SCR_MAIN, 0, 0, 0, 0, 0};
+    int only_asking = asking, result = -1;
+    while (result < 0) {
         SDL_Event e;
-        while (SDL_PollEvent(&e)) {
-            int up = 0, down = 0, side = 0, ok = 0, back = 0;
-            if (e.type == SDL_QUIT) { asking = 1; yes = 0; }
+        while (result < 0 && SDL_PollEvent(&e)) {
+            int up = 0, down = 0, left = 0, right = 0, ok = 0, back = 0, clear = 0;
+            controller_event(&e);
+            if (m.screen == SCR_CAPTURE) { capture(&m, &e); continue; }
+            if (e.type == SDL_QUIT) { m.screen = SCR_ASK; m.yes = 0; }
             if (e.type == SDL_KEYDOWN) {
                 SDL_Keycode key = e.key.keysym.sym;
                 if (key == SDLK_F11 || (key == SDLK_RETURN && (e.key.keysym.mod & KMOD_ALT))) {
-                    if (!e.key.repeat) set_fullscreen(!fullscreen);
+                    if (!e.key.repeat) toggle_fullscreen();
                     continue;
                 }
-                if (key == SDLK_F3 && !e.key.repeat) show_fps = !show_fps;
-                up = key == SDLK_UP; down = key == SDLK_DOWN; side = key == SDLK_LEFT || key == SDLK_RIGHT;
+                if (key == SDLK_F3 && !e.key.repeat) toggle_fps();
+                up = key == SDLK_UP; down = key == SDLK_DOWN; left = key == SDLK_LEFT; right = key == SDLK_RIGHT;
                 ok = !e.key.repeat && (key == SDLK_RETURN || key == SDLK_KP_ENTER || key == SDLK_SPACE || key == SDLK_z);
                 back = !e.key.repeat && (key == SDLK_ESCAPE || key == SDLK_x);
+                clear = !e.key.repeat && (key == SDLK_DELETE || key == SDLK_BACKSPACE);
             }
             if (e.type == SDL_CONTROLLERBUTTONDOWN) {
                 int b = e.cbutton.button;
                 up = b == SDL_CONTROLLER_BUTTON_DPAD_UP; down = b == SDL_CONTROLLER_BUTTON_DPAD_DOWN;
-                side = b == SDL_CONTROLLER_BUTTON_DPAD_LEFT || b == SDL_CONTROLLER_BUTTON_DPAD_RIGHT;
+                left = b == SDL_CONTROLLER_BUTTON_DPAD_LEFT; right = b == SDL_CONTROLLER_BUTTON_DPAD_RIGHT;
                 ok = b == SDL_CONTROLLER_BUTTON_A;
                 back = b == SDL_CONTROLLER_BUTTON_B || b == SDL_CONTROLLER_BUTTON_START || b == SDL_CONTROLLER_BUTTON_BACK;
+                clear = b == SDL_CONTROLLER_BUTTON_Y;
             }
-            if (e.type == SDL_CONTROLLERDEVICEADDED && !gc) gc = SDL_GameControllerOpen(e.cdevice.which);
-            if (!asking) {
-                if (up || down) item ^= 1;
-                if (ok && item == 0) show_fps = !show_fps;
-                if (ok && item == 1) { asking = 1; yes = 0; }
-                if (back) { memcpy(frame_rgb, saved, sizeof saved); return 0; }
-            } else {
-                if (up || down || side) yes ^= 1;
-                if (ok && yes) return 1;
-                if ((ok && !yes) || back) {
-                    if (only_asking) { memcpy(frame_rgb, saved, sizeof saved); return 0; }
-                    asking = 0;
-                }
-            }
+            if (e.type == SDL_CONTROLLERAXISMOTION)
+                stick_edges(e.caxis.axis, e.caxis.value, e.caxis.axis == SDL_CONTROLLER_AXIS_LEFTY ? &up : &left,
+                            e.caxis.axis == SDL_CONTROLLER_AXIS_LEFTY ? &down : &right);
+            result = menu_step(&m, only_asking, up, down, left, right, ok, back, clear);
         }
+        if (result >= 0) break;
+        if (m.screen == SCR_CAPTURE && --m.wait <= 0) m.screen = SCR_CONTROLS;   /* nothing pressed */
         memcpy(frame_rgb, saved, sizeof saved);
-        draw_menu(item, asking, yes);
+        draw_menu(&m);
         if (show_fps) draw_fps();
         present();
         const char *shots = getenv("WBMW_MENU_SHOTS");   /* testing: each screen of the menu as a PNG */
         if (shots) {
-            static int n, last = -1;
-            int state = item | asking << 1 | yes << 2 | show_fps << 3;
+            static int n; static unsigned last = ~0u;
+            unsigned state = (unsigned)(m.screen | m.item << 2 | m.yes << 5 | m.row << 6 | m.col << 10 | show_fps << 11
+                                        | fullscreen << 12 | integer_scale << 13 | mute << 14 | stick_moves << 15);
+            for (int a = 0; a < ACTIONS; a++) state = state * 31 + (unsigned)key_bind[a] * 7 + (unsigned)(pad_bind[a] + 1);
             if (state != last) {
                 char path[1024]; snprintf(path, sizeof path, "%s/menu_%02d.png", shots, n++);
                 png_write_rgb(path, &frame_rgb[0][0], frame_width, ACTIVE_LINES, 320);
@@ -271,6 +585,9 @@ static int menu(int asking)
         menu_test_keys();
         SDL_Delay(15);
     }
+    memcpy(frame_rgb, saved, sizeof saved);
+    if (ini_dirty) settings_save();
+    return result;
 }
 
 /* testing: WBMW_MENU_KEYS="escape return down ..." (SDL key names) are pressed one per frame
@@ -286,7 +603,7 @@ static void menu_test_keys(void)
     name[n] = 0;
     if (!n) return;
     SDL_Event e = {0};
-    e.type = SDL_KEYDOWN; e.key.keysym.sym = SDL_GetKeyFromName(name);
+    e.type = SDL_KEYDOWN; e.key.keysym.sym = SDL_GetKeyFromName(name); e.key.keysym.scancode = SDL_GetScancodeFromKey(e.key.keysym.sym);
     SDL_PushEvent(&e);
 }
 
@@ -295,6 +612,7 @@ static uint8_t held_over;
 
 static void window_open(void)
 {
+    SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, "0");   /* buttons by position, on every make of pad */
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0) { fprintf(stderr, "SDL: %s\n", SDL_GetError()); exit(1); }
     /* the game is 256 pixels wide almost everywhere (a few screens are 320): size the window for
      * 256, at the largest whole scale up to 3 that fits the screen */
@@ -316,16 +634,19 @@ static void window_open(void)
 static void quit(int code)
 {
     if (eeprom_save(save_path) == 0) fprintf(stderr, "saved save data to %s\n", save_path);
+    if (ini_dirty) settings_save();
     SDL_Quit();
     exit(code);
 }
 
-/* show the frame, keep 60 Hz, read the keyboard and controller */
+/* show the frame, keep 60 Hz, read the keyboard and controller (through the bindings) */
+static void quick_save(void) { save_pending = frame; save_to = state_path; }   /* at the next frame wait */
+
 static void window_frame(void)
 {
     SDL_Event e;
     menu_test_keys();
-    int open_menu = -1;                             /* 0: the menu, 1: straight to the exit question */
+    int open_menu = -1, load = 0;                   /* open_menu 0: the menu, 1: straight to the exit question */
     while (SDL_PollEvent(&e)) {
         if (e.type == SDL_QUIT) open_menu = 1;
         if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE && !e.key.repeat) open_menu = 0;
@@ -333,14 +654,22 @@ static void window_frame(void)
          * have: Start stays the game's */
         if (e.type == SDL_CONTROLLERBUTTONDOWN && e.cbutton.button == SDL_CONTROLLER_BUTTON_BACK) open_menu = 0;
         if (e.type == SDL_KEYDOWN && !e.key.repeat) {
-            SDL_Keycode key = e.key.keysym.sym;
-            if (key == SDLK_F11 || (key == SDLK_RETURN && (e.key.keysym.mod & KMOD_ALT))) set_fullscreen(!fullscreen);
-            if (key == SDLK_F3) show_fps = !show_fps;
-            if (key == SDLK_F2) { save_pending = frame; save_to = state_path; }   /* at the next frame wait */
-            if (key == SDLK_F4) request_load(state_path);
+            SDL_Keycode key = e.key.keysym.sym; SDL_Scancode sc = e.key.keysym.scancode;
+            if (key == SDLK_F11 || (key == SDLK_RETURN && (e.key.keysym.mod & KMOD_ALT))) toggle_fullscreen();
+            else if (key == SDLK_F3) toggle_fps();
+            else if (sc != SDL_SCANCODE_UNKNOWN && sc == key_bind[ACT_SAVE]) quick_save();
+            else if (sc != SDL_SCANCODE_UNKNOWN && sc == key_bind[ACT_LOAD]) load = 1;
         }
-        if (e.type == SDL_CONTROLLERDEVICEADDED && !gc) gc = SDL_GameControllerOpen(e.cdevice.which);
+        controller_event(&e);
     }
+    {                                               /* the controller's quick save and load, when pressed */
+        static int was_save, was_load;
+        int sv = pad_down(pad_bind[ACT_SAVE]), ld = pad_down(pad_bind[ACT_LOAD]);
+        if (sv && !was_save) quick_save();
+        if (ld && !was_load) load = 1;
+        was_save = sv; was_load = ld;
+    }
+    if (load) request_load(state_path);
     if (open_menu >= 0) {
         if (menu(open_menu)) quit(0);
         Uint64 now = SDL_GetPerformanceCounter();   /* carry on as if no time had passed */
@@ -349,20 +678,10 @@ static void window_frame(void)
     }
     const Uint8 *k = SDL_GetKeyboardState(NULL);
     uint8_t b = 0;
-    b |= k[SDL_SCANCODE_UP] ? 1 : 0;    b |= k[SDL_SCANCODE_DOWN] ? 2 : 0;
-    b |= k[SDL_SCANCODE_LEFT] ? 4 : 0;  b |= k[SDL_SCANCODE_RIGHT] ? 8 : 0;
-    b |= k[SDL_SCANCODE_X] ? 16 : 0;    b |= k[SDL_SCANCODE_C] ? 32 : 0;
-    b |= k[SDL_SCANCODE_Z] ? 64 : 0;
-    b |= k[SDL_SCANCODE_RETURN] && !(SDL_GetModState() & KMOD_ALT) ? 128 : 0;   /* Alt+Enter is full screen */
-    if (gc) {
-        b |= SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_DPAD_UP) ? 1 : 0;
-        b |= SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_DPAD_DOWN) ? 2 : 0;
-        b |= SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_DPAD_LEFT) ? 4 : 0;
-        b |= SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_DPAD_RIGHT) ? 8 : 0;
-        b |= SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_A) ? 16 : 0;
-        b |= SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_B) ? 32 : 0;
-        b |= SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_X) ? 64 : 0;
-        b |= SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_START) ? 128 : 0;
+    for (int a = 0; a < ACT_SAVE; a++) if (key_down(k, key_bind[a]) || pad_down(pad_bind[a])) b |= (uint8_t)(1 << a);
+    if (gc && stick_moves) {
+        int x = SDL_GameControllerGetAxis(gc, SDL_CONTROLLER_AXIS_LEFTX), y = SDL_GameControllerGetAxis(gc, SDL_CONTROLLER_AXIS_LEFTY);
+        b |= (uint8_t)((y < -AXIS_ON ? 1 : 0) | (y > AXIS_ON ? 2 : 0) | (x < -AXIS_ON ? 4 : 0) | (x > AXIS_ON ? 8 : 0));
     }
     held_over &= b;                                 /* released: the game sees it again */
     pad_buttons = b & (uint8_t)~held_over;
@@ -375,6 +694,7 @@ static void window_frame(void)
         SDL_SetWindowTitle(win, title);
     }
     if (show_fps) draw_fps();
+    if (toast_frames > 0) { toast_frames--; draw_toast(); }
     present();
     next_tick += (Uint64)(freq / 59.922);
     Uint64 now = SDL_GetPerformanceCounter();
@@ -493,7 +813,10 @@ void rt_slice(Cpu *c, uint32_t next)
 static const char *state_path = "wbmw.state";   /* F2 saves here, F4 and --load load it */
 static int save_pending = -1;                       /* the frame from which to save, or -1 */
 
-static jmp_buf restart;
+/* GCC's own setjmp and longjmp: they only restore the registers. MinGW's longjmp unwinds the
+ * stack the Windows way (SEH), which fails (STATUS_BAD_STACK) once the thread runs fibers
+ * (port/coro.c), as it does from the first task pass on. */
+static void *restart[5];
 static Cpu *the_cpu;
 static uint32_t resume_pc;
 
@@ -536,6 +859,7 @@ static int save_state(const char *path, Cpu *c, uint32_t pc)
     fclose(f);
     if (state_failed) { fprintf(stderr, "%s: writing failed\n", path); return -1; }
     fprintf(stderr, "saved state at frame %d to %s\n", frame, path);
+    toast = "STATE SAVED"; toast_frames = 90;
     return 0;
 }
 
@@ -562,22 +886,29 @@ static int load_state(const char *path, Cpu *c, uint32_t *pc)
     if (timing) { line = 0; slice = 0; start_line(); vdp_line_cycle = 0; rt_budget = SLICE; rt_irq_check = 1; }
     else { vdp_line = 0; vdp_set_vblank(0); }       /* untimed code runs at line 0 */
     fprintf(stderr, "loaded state from %s (frame %d)\n", path, frame);
+    toast = "STATE LOADED"; toast_frames = 90;
     return 0;
 }
 
-/* a frame boundary with the game at `pc` (the next instruction): save if asked and possible */
+/* load (F4): at the frame loop's own frame wait, like a save. Only there is the C on the main
+ * stack: a wait inside a task pass runs on that pass's coroutine (port/coro.c, a fiber), and
+ * jumping from there to main's stack crashes. */
+static const char *load_pending;
+static void request_load(const char *path) { load_pending = path; }
+
+/* a frame boundary with the game at `pc` (the next instruction): save or load if asked and
+ * possible. A load abandons the C call stack and starts the code at the state's PC (main). */
 static void maybe_save(Cpu *c, uint32_t pc)
 {
+    if (load_pending && resumable(c, pc)) {
+        const char *path = load_pending;
+        load_pending = NULL;
+        if (load_state(path, the_cpu, &pc) == 0) { resume_pc = pc; __builtin_longjmp(restart, 1); }
+        toast = "NO STATE TO LOAD"; toast_frames = 90;
+    }
     if (save_pending < 0 || frame < save_pending || !resumable(c, pc)) return;
     save_state(save_to, c, pc);
     save_pending = -1;
-}
-
-/* load: abandon the C call stack and start the code at the state's PC (main) */
-static void request_load(const char *path)
-{
-    uint32_t pc;
-    if (load_state(path, the_cpu, &pc) == 0) { resume_pc = pc; longjmp(restart, 1); }
 }
 
 /* Called by the generated code at a poll point. Without timing, a wait for VBlank ($3DC, $C262)
@@ -672,6 +1003,16 @@ int main(int argc, char **argv)
 {
     const char *rom_path = NULL, *input = NULL, *load_path = NULL;
     const char *state_path_ptr = "\x01";            /* --load: the --state file, whatever it ends up being */
+#ifndef WBMW_HEADLESS_ONLY
+    {                                               /* the settings file first: the command line overrides it */
+        const char *config = NULL; int plays = 1;
+        for (int i = 1; i < argc; i++) {
+            if (!strcmp(argv[i], "--frames")) plays = 0;
+            if (!strcmp(argv[i], "--config") && i + 1 < argc) config = argv[i + 1];
+        }
+        if (plays) settings_open(config);
+    }
+#endif
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--frames") && i + 1 < argc) { frames_max = atoi(argv[++i]); headless = 1; }
         else if (!strcmp(argv[i], "--png-every") && i + 1 < argc) png_every = atoi(argv[++i]);
@@ -689,6 +1030,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--save-state-at") && i + 2 < argc) { save_pending = atoi(argv[++i]); save_to = argv[++i]; }
         else if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--save") && i + 1 < argc) save_path = argv[++i];
+        else if (!strcmp(argv[i], "--config") && i + 1 < argc) i++;
 #ifndef WBMW_HEADLESS_ONLY
         else if (!strcmp(argv[i], "--fullscreen")) fullscreen = 1;
         else if (!strcmp(argv[i], "--windowed")) fullscreen = 0;
@@ -699,7 +1041,7 @@ int main(int argc, char **argv)
     }
     if (!rom_path) rom_path = find_rom(argv[0]);
     if (!rom_path) {
-        fprintf(stderr, "usage: wbmw [ROM] [--windowed] [--scale N] [--save FILE] [--integer-scale] [--fps] [--mute]\n"
+        fprintf(stderr, "usage: wbmw [ROM] [--windowed] [--scale N] [--save FILE] [--integer-scale] [--fps] [--mute] [--config FILE]\n"
                         "       wbmw ROM --frames N [--png-every K] [--out DIR] [--input FILE] [--wav FILE]\n"
                         "                [--frame-log FILE] [--input-game FILE] [--dump-at N DIR]\n"
                         "       states: [--state FILE] [--load] [--load-state FILE] [--save-state-at N FILE]; F2 saves, F4 loads\n");
@@ -753,6 +1095,6 @@ int main(int argc, char **argv)
         if (load_state(load_path, &c, &pc)) return 1;
         if (headless && !framelog_input_active()) pad_buttons = buttons_at(frame + 1);
     }
-    if (setjmp(restart)) pc = resume_pc;             /* a state was loaded (F4) */
+    if (__builtin_setjmp(restart)) pc = resume_pc;             /* a state was loaded (F4) */
     return machine_run(&c, pc);                      /* from reset, or the state's frame wait */
 }

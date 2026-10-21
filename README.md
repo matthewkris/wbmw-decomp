@@ -87,38 +87,59 @@ them, or beside them). MSYS2 isn't needed to run the game.
 
 ### Controls
 
-| Genesis/Mega Drive | Keyboard |
-|---|---|
-| D-pad | Arrow keys |
-| A / B / C | Z / X / C |
-| Start | Enter |
+These are the defaults. You can change all of them in the menu (**Esc → Controls**).
 
-A game controller works too (SDL's standard mapping): the D-pad, then the pad's X / A / B as
-the Genesis/Mega Drive's A / B / C, and Start as Start. The **Back/Select** button (View on Xbox,
-Share/Create on PlayStation, Minus on Switch) opens the menu, so Start stays the game's own (it
-opens the item screen).
+| Genesis/Mega Drive | Keyboard | Controller |
+|---|---|---|
+| D-pad | Arrow keys | D-pad (and the left stick) |
+| A / B / C | Z / X / C | Left / bottom / right face button (X / A / B on an Xbox pad) |
+| Start | Enter | Start |
+| *Quick save / load* | F2 / F4 | *not set* |
+
+Controller buttons are named by position, because each make of pad labels them differently
+(the Switch's A is where the Xbox's B is).
 
 | Key | Does |
 |---|---|
-| Esc (controller: Back/Select) | Opens the menu (Show FPS, Exit game). The game pauses while it's open |
+| Esc (controller: Back/Select) | Opens the menu. The game pauses while it's open |
 | F11 or Alt+Enter | Switches between full screen and a window |
 | F3 | Shows or hides the frame rate |
-| F2 / F4 | Save state / load state (`wbmw.state`) |
 
-The game's own save, kept on the cartridge's EEPROM, is written to `wbmw.sav` in the current folder
-when you exit. Use `--save FILE` to use a different file.
+Back/Select is View on Xbox, Share/Create on PlayStation and Minus on Switch. It opens the menu,
+so Start stays the game's own: it opens the item screen.
+
+### The menu
+
+* **Show FPS, Full screen, Whole pixels** (every pixel the same size), **Sound**: on or off.
+* **Controls**: a key and a controller input for each button, plus quick save and quick load.
+  Choose one and press Enter (A on a controller), then press the new key or button; on the
+  controller side, a stick direction or a trigger works too. A key already used elsewhere swaps
+  places with the old one. Delete (Y on a controller) clears one. **Left stick moves** turns the
+  stick's movement on or off, and **Reset to defaults** puts everything back.
+* **Exit game** asks first.
+
+The menu itself always works with the arrow keys, Enter and Esc, and on a controller with the
+D-pad, A and B, whatever you set the game's controls to.
+
+Your settings are saved in `wbmw.ini` next to `wbmw.exe`. Command-line options override them for
+one run without changing the file. Delete the file to go back to the defaults.
+
+Quick save stores the game in `wbmw.state` and quick load returns to it. A message at the bottom
+of the screen confirms each one. The game's own save, kept on the cartridge's EEPROM, is written
+to `wbmw.sav` in the current folder when you exit. Use `--save FILE` for a different file.
 
 ### Options
 
 ```
-wbmw [ROM] [--windowed] [--scale N] [--integer-scale] [--fps] [--mute] [--save FILE] [--state FILE] [--load]
+wbmw [ROM] [--windowed] [--scale N] [--integer-scale] [--fps] [--mute] [--save FILE] [--state FILE] [--load] [--config FILE]
 ```
 
 * `--windowed`: start in a window instead of full screen. `--scale N` sets the window's size, N
   times 256×224.
 * `--integer-scale`: scale only by whole numbers, so every pixel is the same size.
 * `--fps`: show the frame rate from the start. `--mute`: no sound.
-* `--state FILE`: the file F2 and F4 use. `--load`: load it at start.
+* `--state FILE`: the file quick save and quick load use. `--load`: load it at start.
+* `--config FILE`: use this settings file instead of `wbmw.ini`.
 
 `native/README.md` has the rest, including headless runs and frame logs for testing.
 
