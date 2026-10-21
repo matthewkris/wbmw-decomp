@@ -423,7 +423,7 @@ static void draw_menu(const Menu *m)
                     draw_text(x0 + (c ? COL_PAD : COL_KEY), y, t, here ? MENU_GOLD : MENU_WHITE);
                 }
             } else if (r == CR_STICK) {
-                draw_text(x0 + 14, y, "LEFT STICK MOVES", col);
+                draw_text(x0 + 14, y, "LEFT STICK AS D-PAD", col);
                 draw_text(x0 + COL_PAD, y, stick_moves ? "ON" : "OFF", col);
             } else draw_text(x0 + 14, y, r == CR_RESET ? "RESET TO DEFAULTS" : "BACK", col);
         }

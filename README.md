@@ -114,8 +114,9 @@ so Start stays the game's own: it opens the item screen.
 * **Controls**: a key and a controller input for each button, plus quick save and quick load.
   Choose one and press Enter (A on a controller), then press the new key or button; on the
   controller side, a stick direction or a trigger works too. A key already used elsewhere swaps
-  places with the old one. Delete (Y on a controller) clears one. **Left stick moves** turns the
-  stick's movement on or off, and **Reset to defaults** puts everything back.
+  places with the old one. Delete (Y on a controller) clears one. **Left stick as D-pad** lets
+  the stick move you too (turn it off if your stick drifts, or to use its directions for
+  something else), and **Reset to defaults** puts everything back.
 * **Exit game** asks first.
 
 The menu itself always works with the arrow keys, Enter and Esc, and on a controller with the

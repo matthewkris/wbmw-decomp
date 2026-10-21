@@ -49,7 +49,7 @@ The save EEPROM is read from FILE at start and written at exit (default `wbmw.sa
   seconds for the new key, or for a button, stick direction or trigger; one used by another action
   swaps with it; Delete (Y) clears a cell. Esc, Back/Select, F11, F3 and Home cannot be bound.
   Buttons are by position (SDL's layout, with `SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS` off, so a
-  Nintendo pad is read like the others). **Left stick moves** makes the stick a D-pad too.
+  Nintendo pad is read like the others). **Left stick as D-pad** makes the stick move the player too.
 * The settings are kept in `wbmw.ini` next to the program (`--config FILE` for another), written
   when the menu closes or the game exits after a change. The command line overrides a setting for
   one run without changing the file; headless runs (`--frames`) do not read it.
