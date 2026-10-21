@@ -161,3 +161,178 @@ def chunk_end(d, p):
             if bits & 1: filled[i] = True; left -= 1
             bits >>= 1
     return q + (left * 10 + 7) // 8
+
+# ---- the lists the room scripts point at besides the maps: event lists (command 5), spawn
+# lists (8), graphics slot lists (2), tile animations (4), cell animations (11), and the data
+# their items point at. Each is read item by item as its interpreter reads it; a list with jumps
+# goes on past an end while a jump points further on. An item keeps its code and its arguments
+# by type: 'b' a byte, 'w' a word, 'j' a jump (a word: its target is its place plus it), 'o' an
+# offset to data elsewhere (a word, the same way; 0 none), 'l' a long, 'n' a count byte. ----
+
+def _args(d, p, fmt):
+    vals, refs = [], []
+    for f in fmt:
+        if f in 'bn': vals.append(d[p]); p += 1
+        elif f == 'w': vals.append(be16(d, p)); p += 2
+        elif f in 'jo':
+            v = sw(d, p); vals.append(v)
+            if f == 'j' or v: refs.append((f, p + v))
+            p += 2
+        elif f == 'l': vals.append(be32(d, p)); p += 4
+    return vals, refs, p
+
+def _put(fmt, vals):
+    out = bytearray()
+    for f, v in zip(fmt, vals):
+        if f in 'bn': out.append(v)
+        elif f == 'l': out += struct.pack('>I', v)
+        else: out += w16(v)
+    return bytes(out)
+
+def flow_parse(d, start, step, limit=4096):
+    """a list read by step(d, p) -> (item, next p, refs, ends); it goes on past an end while a
+    jump targets further on. refs: ('j', target) jumps, (kind, address) data elsewhere"""
+    p, items, reach, data = start, [], start, []
+    while p < start + limit:
+        item, q, refs, ends = step(d, p)
+        items.append(item)
+        for f, t in refs:
+            if f == 'j': reach = max(reach, t)
+            else: data.append((f, t))
+        p = q
+        if ends and reach < p: break
+    return items, p, data
+
+def flow_encode(items, fmt):
+    """fmt(item) -> its arguments' format"""
+    out = bytearray()
+    for it in items:
+        if 'words' in it: out += b''.join(w16(v) for v in it['words']); continue
+        out.append(it['code']); out += _put(fmt(it), it['args'])
+    return bytes(out)
+
+# the room's event list ($996C: $ABBE as it loads, $A3D8 each frame)
+EVENT_SIZES = [5, 5, 5, 7, 2, 3, 4, 3, 3, 4, 2, 0, 7, 6, 1, 0]          # $A480, by the event's low nibble
+EVENT_CMDS = {0xE0: 'b', 0xE2: 'b', 0xE3: 'b', 0xE8: 'bbbbbbbbb', 0xE9: 'o', 0xEA: 'bbbbbb', 0xEB: 'bbbbw',
+              0xEC: 'bbo', 0xF6: 'bj', 0xF7: 'j', 0xF8: 'bj', 0xF9: 'bj', 0xFA: 'b', 0xFB: 'b', 0xFC: 'bj', 0xFE: 'j'}
+
+def event_fmt(it):
+    c = it['code']
+    if c < 0xC0: return 'bbbbbo' if c & 0xF == 12 else 'b' * EVENT_SIZES[c & 0xF]   # 12: an item list at its offset
+    if c == 0xFD: return 'bbj' if len(it['args']) == 3 else 'bbbj'                   # (its kind negative: no flag byte)
+    return EVENT_CMDS.get(c, '')
+
+def _event_step(d, p):
+    c = d[p]
+    fmt = ('bbj' if d[p + 2] & 0x80 else 'bbbj') if c == 0xFD else event_fmt(dict(code=c, args=[]))
+    vals, refs, q = _args(d, p + 1, fmt)
+    kind = 'items' if c < 0xC0 else 'cells' if c == 0xE9 else 'picture' if c == 0xEC else None
+    refs = [(f if f == 'j' else kind, t) for f, t in refs]
+    return dict(code=c, args=vals), q, refs, c in (0xFF, 0xFE)
+
+def event_list_parse(d, a):
+    return flow_parse(d, a, _event_step)
+
+# what event lists point at: a cell list ($27FA: cell, x, y words to a negative word), a
+# picture ($2856: width, height, then the cells), an item list (bytes to $FF: $29B4)
+def cell_list_parse(d, a):
+    words, p = [], a
+    while True:
+        w = be16(d, p); words.append(w); p += 2
+        if w & 0x8000: return words, p
+        words += [be16(d, p), be16(d, p + 2)]; p += 4
+
+def picture_parse(d, a):
+    w, h = d[a], d[a + 1]
+    return dict(width=w, height=h, cells=[be16(d, a + 2 + 2 * i) for i in range(w * h)]), a + 2 + 2 * w * h
+
+def picture_encode(pic):
+    return bytes([pic['width'], pic['height']]) + b''.join(w16(v) for v in pic['cells'])
+
+def item_list_parse(d, a):
+    p = a
+    while d[p] != 0xFF: p += 1
+    return list(d[a:p + 1]), p + 1
+
+# the room's spawn list ($A11E: $12848): the kinds to load (words to a negative one, not in a boss
+# room), then spawn points (a kind 0-15 and its fields) and commands ($F8-$FE), $FF the end
+PLACE = 'www'                                       # its enemy's kind, x, y
+SPAWN_KINDS = {0: 'b' + PLACE, 1: 'bbb' + PLACE, 2: 'bbb' + PLACE, 3: 'bbbbb' + PLACE, 4: 'bw' + PLACE,
+               5: 'bo' + PLACE, 7: 'b' + PLACE, 8: 'b' + PLACE, 9: 'b' + PLACE, 10: 'bw', 11: 'bbbl' + PLACE,
+               12: 'b' + PLACE, 14: 'bow', 15: 'bwwbb' + PLACE}
+SPAWN_CMDS = {0xF8: 'bj', 0xF9: 'bj', 0xFA: 'b', 0xFB: 'b', 0xFC: 'bj', 0xFD: 'b', 0xFE: 'bj'}
+
+def spawn_fmt(it):
+    c = it['code']
+    if c == 6: return 'n' + 'b' * (6 * it['args'][0])                   # the chests: n records of 6 bytes
+    if c == 13: return 'bnb' + 'w' * it['args'][1] + PLACE                # a group: n words
+    return SPAWN_KINDS.get(c) or SPAWN_CMDS.get(c, '')
+
+def _spawn_step(d, p):
+    c = d[p]
+    if c == 6: fmt = 'n' + 'b' * (6 * d[p + 1])
+    elif c == 13: fmt = 'bnb' + 'w' * d[p + 2] + PLACE
+    else: fmt = spawn_fmt(dict(code=c, args=[]))
+    vals, refs, q = _args(d, p + 1, fmt)
+    refs = [(f if f == 'j' else 'path' if c == 5 else 'waves', t) for f, t in refs]
+    return dict(code=c, args=vals), q, refs, c in (0xFF, 0xFE)
+
+def spawn_list_parse(d, a, kinds=True):
+    p, words = a, []
+    if kinds:
+        while True:
+            w = be16(d, p); words.append(w); p += 2
+            if w & 0x8000: break
+    items, end, data = flow_parse(d, p, _spawn_step)
+    return ([dict(words=words)] if kinds else []) + items, end, data
+
+# a graphics slot list ($234C, rooms.gfx_slots): $80-$BF a slot, $C0 the next, $C1-$F7 a run of
+# blocks (a word), $F8-$FE empty slots, under $80 a block (two bytes), $FF the end
+def slots_parse(d, a):
+    items, p = [], a
+    while True:
+        b = d[p]
+        if b < 0x80: items.append(dict(block=be16(d, p))); p += 2; continue
+        if 0xC1 <= b < 0xF8: items.append(dict(code=b, args=[be16(d, p + 1)])); p += 3; continue
+        items.append(dict(code=b, args=[])); p += 1
+        if b == 0xFF: return items, p
+
+def slots_encode(items):
+    out = bytearray()
+    for it in items:
+        if 'block' in it: out += w16(it['block'])
+        else: out.append(it['code']); out += b''.join(w16(v) for v in it['args'])
+    return bytes(out)
+
+# a tile animation ($23A6, run by $6EAC): its VRAM word, then words: 0 the end, $8000 again from
+# the start, $80xx a jump (an offset word; $8001 only once), else a frame (count and time, tile)
+def tile_anim_parse(d, a):
+    words, p, reach = [be16(d, a)], a + 2, a
+    while True:
+        w = be16(d, p); words.append(w); p += 2
+        if w == 0 or w == 0x8000:
+            if reach < p: return words, p
+            continue
+        words.append(be16(d, p))
+        if w & 0x8000: reach = max(reach, p + sw(d, p))
+        p += 2
+        if w & 0x8000 and w != 0x8001 and reach < p: return words, p
+
+# a cell animation ($2974, run by $28AC): 0 the end, $FF the frame's end, $FD a flag, $FE a jump,
+# $FA a count, $FB back to it, $FC the plane swapped, else a frame: its time, then (cell, dx, dy)
+# to a negative word
+def cell_anim_parse(d, a):
+    p, reach = a, a
+    while True:
+        k = d[p]; p += 1
+        if k == 0:
+            if reach < p: return list(d[a:p]), p
+            continue
+        if k == 0xFE:
+            reach = max(reach, p + sw(d, p)); p += 2
+            if reach < p: return list(d[a:p]), p
+            continue
+        if k == 0xFA: p += 1; continue
+        if k >= 0xFB: continue
+        while not d[p] & 0x80: p += 4
+        p += 2

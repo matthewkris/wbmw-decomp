@@ -28,6 +28,10 @@ ROM is, and are never committed.
 | `rooms/areaAA_roomRR.png` | every room's map, drawn with its own graphics and palettes | |
 | `rooms/maps.json` | every layer's map as data: its block table (4 tile words and an attribute a block) and its chunks (16 x 12 block numbers a place on the map) | the layers' data ($9F6A, $A068) |
 | `rooms/shared_blocks.json` | the three block tables every room shares | the directory's table 1 |
+| `rooms/lists.json` | the other lists room scripts point at: 199 event lists (exits, doors, things, jumps on flags), 139 spawn lists (the enemies), 71 graphics slot lists, 33 tile animations; and the 60 pictures and 9 item lists they point at | room commands 2, 4, 5, 8, 11 |
+| `rooms/scenes.json` | the ending's six scenes: each one's layers, palette and graphics | the directory's table 7 ($96D6) |
+| `rooms/house_pictures.json` | the 29 houses' and shops' pictures: place and size, frame, triggers, things | the directory's table 2 ($B986) |
+| `graphics/extra_NNN.bin` | the 6 raw tiles after each of the 20 raw blocks, which `CopyRawTiles` copies with it (the shields) | |
 | `text/messages.txt`, `messages.json` | the 131 messages: readable, and parsed | $1CC14 (`tools/text.py`) |
 | `text/phrases.txt`, `phrases.json` | the phrases messages share (4 tables) | $1CC10 |
 | `text/windows.json` | the message windows' places and sizes | $1CC18 |
@@ -70,7 +74,10 @@ terminator's value, a command's arguments). Everything must match:
 | Animation tree | 225 tables | from `layout.json` |
 | Sound | 2 | as they are (not understood yet: the music's format is still unknown) |
 | Graphics | 768 blocks | compressed: compared by content with the port's own decompressor (`wbmw --verify-graphics assets`, `DecodeGfxBlock` $6BC4) |
-| Room block tables, layer maps | 201, 238 | compressed: compared by content with the port's own unpackers (`wbmw --unpack-list`, `UnpackBlocks` $9F6A and `UnpackLayerMap` $A068) |
+| Room block tables, layer maps | 201, 238 | compressed: compared by content with the port's own unpackers (`wbmw --unpack-list`, `UnpackBlocks` $9F6A and `UnpackLayerMap` $A068); the ending's scenes use rooms' layers |
+| The rooms' lists | 199 event lists, 139 spawn lists, 71 slot lists, 33 tile animations, 60 pictures, 9 item lists | encoded back from `lists.json`; each read as its interpreter reads it (the event lists by $ABBE and $A3D8, the spawn lists by $12848, ...), and a code the interpreter does not know is counted as a sign of a misread list: none |
+| Scenes, houses' pictures | 6, 29 records | from their fields (the houses' records partly as they are: not every field is named) |
+| Extra raw tiles | 20 x 192 bytes | as they are |
 
 The port's decoders were verified against the original's code in the harness, and the Python
 decoders were written apart from them: two decoders agreeing on every block and every map. (The
@@ -81,17 +88,17 @@ At the end `rebuild.py` counts which of the ROM's bytes the checks cover:
 
 | ROM | Bytes |
 |---|---|
-| built back byte for byte | 81,698 |
-| checked by content (graphics, the rooms' maps) | 424,954 |
+| built back byte for byte | 103,120 |
+| checked by content (graphics, the rooms' maps) | 440,535 |
 | padding ($FF) | 140,320 |
 | the 68000 code and the tables in it ($0-$1C601) | 113,506 |
-| data not covered yet | 41,854 |
+| data not covered yet | 4,945 |
 
-So about 92% of the data is shown to come back from the files. What is not yet: the lists the
-room scripts point at besides the maps (graphics slot lists, animated-tile streams, enemy
-placements, objects, `ptr_996C`), a few of the directory's blocks (the largest, slot 7 at $22460,
-4.9 KB), the unknown block at $40000, and the tables inside the code region (the enemy types at
-$1BC0E, for one), which the C port reads as data.
+So about 99% of the data outside the code region is shown to come back from the files. What is
+not yet: the directory's table 0 (1.1 KB at $224C0, word offsets), bits around some event lists
+(1.7 KB), the paths and waves some spawn points point at (0.8 KB), the directory's tables 3 (the
+music by area and room) and 4, and the tables inside the code region (the enemy types at $1BC0E,
+the palettes at $599C are covered, others not), which the C port reads as data.
 
 ## The text
 
@@ -118,6 +125,5 @@ pictures and `$C0`-`$C5`, `$D0` icons, left as `{xNN}` (one phrase is made of th
 
 * The bosses' own palettes, for their sheets.
 * Decode the music and sound effects (the Z80 driver's data): the format is not known yet.
-* The rest of the data: the room scripts' other lists, the directory's remaining blocks, the
-  tables in the code region (rebuild.py lists the largest parts not covered).
+* The last 1% (rebuild.py lists the largest parts not covered), and the tables in the code region.
 * Then the game reads its data from the files.

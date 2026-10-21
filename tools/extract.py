@@ -15,6 +15,14 @@ never committed):
   rooms/maps.json       every layer's map as data: its own block table (4 tile words and an
                         attribute a block) and its chunks (16 x 12 block numbers a place)
   rooms/shared_blocks.json  the three block tables every room shares
+  rooms/lists.json      the other lists room scripts point at: event lists (exits, doors, things,
+                        jumps on flags), spawn lists (the enemies), graphics slot lists, tile and
+                        cell animations, and the cell lists, pictures and item lists they point at
+  rooms/scenes.json     the ending's scenes (the directory's table 7): each scene's two layers'
+                        maps, palette and graphics slot list
+  rooms/house_pictures.json  the houses' and shops' pictures (the directory's table 2): place and
+                        size, the frame's picture, the triggers' event list, the things' spawn list
+  graphics/extra_NNN.bin  the 6 raw tiles after a raw block, which CopyRawTiles ($22A8) copies with it
   layout.json           the tables that point at the data: the data directory, the phrase
                         tables' bases, the animation tree's offset tables
   graphics/table.json   the graphics table ($41000): each block's format and address
@@ -56,6 +64,90 @@ def sheet(d, rows, tile, colours, base=0):
             sprites.draw(img, ci * CW + 4 - x0, ri * CH + 4 - y0, sprites.mapping(d, m), tile, colours, base)
     return img
 
+def dir_tables(d, maps, block_table):
+    """the ending's scenes (table 7, $96D6: 16 bytes a scene; the six run up to the first record
+    whose longs are not the ROM's addresses: another table follows) and the houses' pictures
+    (table 2, $B986: 16 bytes a picture, up to the first data any of them points at).
+    The scenes' layers are added to maps (as area -1) so that they are checked like the rooms'"""
+    be32, be16, sw = rooms.be32, rooms.be16, rooms.sw
+    t7 = be32(d, rooms.DIR + 0x1C) & 0xFFFFFF
+    scenes, n = [], 0
+    while all(be32(d, t7 + 16 * n + k) < len(d) for k in (0, 4, 12)):
+        r = t7 + 16 * n
+        a, b, slots = be32(d, r), be32(d, r + 4), be32(d, r + 12)
+        scenes.append(dict(address='%06X' % r, layer_a='%06X' % a, layer_b='%06X' % b, palette=be16(d, r + 8),
+                           word_8B56=be16(d, r + 10), slots='%06X' % slots, raw=d[r:r + 16].hex()))
+        layers = []
+        for plane, src in (('A', a), ('B', b)):
+            cmap, _ = rooms.layer_map(d, src)
+            layers.append(dict(plane=plane, src='%06X' % src, blocks_at='%06X' % (src + sw(d, src)),
+                               blocks=block_table(src + sw(d, src)), places={str(k): v for k, v in cmap.items()}))
+        maps.append(dict(area=-1, room=n, layers=layers))
+        n += 1
+    t2 = be32(d, rooms.DIR + 8) & 0xFFFFFF
+    recs, n, first = [], 0, None
+    while first is None or t2 + 16 * n < first:
+        r = t2 + 16 * n
+        spawn, events, pic = sw(d, r + 8), sw(d, r + 12), sw(d, r + 14)
+        first = min(x for x in (t2 + events, t2 + pic, t2 + spawn if spawn else None, first) if x)
+        recs.append(dict(address='%06X' % r, raw=d[r:r + 16].hex(), spawns='%06X' % (t2 + spawn) if spawn else None,
+                         events='%06X' % (t2 + events), picture='%06X' % (t2 + pic)))
+        n += 1
+    return scenes, dict(table='%06X' % t2, records=recs)
+
+def room_lists(d, allrooms, extra=()):
+    """every list the room scripts point at (by address), and what those point at; with the
+    number of codes their interpreters do not know (a sign of a misread list)"""
+    out = {k: {} for k in ('events', 'spawns', 'slots', 'tile_anims', 'cell_anims', 'cell_lists', 'pictures', 'item_lists')}
+    odd = 0
+    def ptr(r, a):
+        return a['long'] & 0xFFFFFF if a['flag'] else rooms.area_base(d, r['area']) + a['offset']
+    def sub(kind, a):
+        nonlocal odd
+        key = '%06X' % a
+        if kind == 'cells': w, e = assetfmt.cell_list_parse(d, a); out['cell_lists'][key] = dict(words=w, end='%06X' % e)
+        elif kind == 'picture': v, e = assetfmt.picture_parse(d, a); out['pictures'][key] = dict(v, end='%06X' % e)
+        elif kind == 'items': v, e = assetfmt.item_list_parse(d, a); out['item_lists'][key] = dict(bytes=v, end='%06X' % e)
+    for kind, a in extra:                          # from the directory's tables
+        key = '%06X' % a
+        if kind == 'events' and key not in out['events']:
+            items, end, data = assetfmt.event_list_parse(d, a)
+            out['events'][key] = dict(items=items, end='%06X' % end, data=['%s %06X' % (k, t) for k, t in data])
+            for k, t in data: sub(k, t)
+        elif kind == 'spawns' and key not in out['spawns']:
+            items, end, data = assetfmt.spawn_list_parse(d, a)
+            if any('code' in x and not (x['code'] < 16 or 0xF8 <= x['code']) for x in items):
+                items, end, data = assetfmt.spawn_list_parse(d, a, kinds=False)
+            out['spawns'][key] = dict(items=items, end='%06X' % end, data=['%s %06X' % (k, t) for k, t in data])
+        elif kind == 'picture': sub('picture', a)
+        elif kind == 'slots' and key not in out['slots']:
+            items, end = assetfmt.slots_parse(d, a); out['slots'][key] = dict(items=items, end='%06X' % end)
+    for r in allrooms:
+        for it in r['items']:
+            c = it.get('code')
+            if c in (2, 4, 5, 8, 0x0B) and 'args' in it:
+                a = ptr(r, it['args'][0]); key = '%06X' % a
+                if c == 5 and key not in out['events']:
+                    items, end, data = assetfmt.event_list_parse(d, a)
+                    odd += sum(1 for x in items if 0xE0 <= x['code'] < 0xFF and x['code'] not in assetfmt.EVENT_CMDS and x['code'] != 0xFD)
+                    out['events'][key] = dict(items=items, end='%06X' % end, data=['%s %06X' % (k, t) for k, t in data])
+                    for k, t in data: sub(k, t)
+                elif c == 8 and key not in out['spawns']:
+                    items, end, data = assetfmt.spawn_list_parse(d, a)
+                    bad = sum(1 for x in items if 'code' in x and not (x['code'] < 16 or 0xF8 <= x['code']))
+                    if bad:                         # a boss room's: no kinds to load first
+                        items, end, data = assetfmt.spawn_list_parse(d, a, kinds=False)
+                        bad = sum(1 for x in items if 'code' in x and not (x['code'] < 16 or 0xF8 <= x['code']))
+                    odd += bad
+                    out['spawns'][key] = dict(items=items, end='%06X' % end, data=['%s %06X' % (k, t) for k, t in data])
+                elif c == 2 and key not in out['slots']:
+                    items, end = assetfmt.slots_parse(d, a); out['slots'][key] = dict(items=items, end='%06X' % end)
+                elif c == 4 and key not in out['tile_anims']:
+                    w, end = assetfmt.tile_anim_parse(d, a); out['tile_anims'][key] = dict(words=w, end='%06X' % end)
+                elif c == 0x0B and key not in out['cell_anims']:
+                    b, end = assetfmt.cell_anim_parse(d, a); out['cell_anims'][key] = dict(bytes=b, end='%06X' % end)
+    return out, odd
+
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('rom'); ap.add_argument('out', nargs='?', default='assets')
     ap.add_argument('--no-rooms', action='store_true', help='skip drawing the rooms (the slow part)')
@@ -75,6 +167,10 @@ def main():
     for i, b in enumerate(blocks): open(path('graphics', 'block_%03d.bin' % i), 'wb').write(b)
     gfx.png(path('graphics', 'sheet.png'), blocks)
     json.dump(['%08X' % e for e in gfx.table(d)], open(path('graphics', 'table.json'), 'w'), indent=0)
+    for i, e in enumerate(gfx.table(d)):           # raw blocks: 6 more tiles follow, read by $22A8
+        if e != 0xFFFFFFFF and e >> 24 & 1:
+            a = (e & 0xFFFFFF) + gfx.BLOCK
+            open(path('graphics', 'extra_%03d.bin' % i), 'wb').write(d[a:a + 192])
     checks['graphics'] = dict(blocks=len(blocks), problems=bad)
 
     # palettes
@@ -117,7 +213,17 @@ def main():
                                blocks_at='%06X' % (src + rooms.sw(d, src)), blocks=block_table(src + rooms.sw(d, src)),
                                places={str(k): v for k, v in cmap.items()}))
         maps.append(dict(area=r['area'], room=r['room'], layers=layers))
-    json.dump(maps, open(path('rooms', 'maps.json'), 'w'))
+    scenes, pics = dir_tables(d, maps, block_table)
+    json.dump(scenes, open(path('rooms', 'scenes.json'), 'w'))
+    json.dump(pics, open(path('rooms', 'house_pictures.json'), 'w'), indent=0)
+    json.dump(maps, open(path('rooms', 'maps.json'), 'w'))   # with the scenes' layers too
+    checks['scenes'] = dict(scenes=len(scenes), house_pictures=len(pics['records']))
+    extra = [(k, int(x[k], 16)) for x in pics['records'] for k in ('events', 'spawns') if x[k]]
+    extra += [('picture', int(x['picture'], 16)) for x in pics['records']]
+    extra += [('slots', int(x['slots'], 16)) for x in scenes]
+    lists, odd = room_lists(d, allrooms, extra)
+    json.dump(lists, open(path('rooms', 'lists.json'), 'w'), indent=0)
+    checks['room lists'] = dict({k: len(v) for k, v in lists.items()}, unknown_codes=odd)
     tl = rooms.be32(d, rooms.DIR + 4)
     shared = [rooms.be32(d, tl + 4 * k) & 0xFFFFFF for k in range(3)]
     json.dump([dict(address='%06X' % a, blocks=block_table(a)) for a in shared], open(path('rooms', 'shared_blocks.json'), 'w'))

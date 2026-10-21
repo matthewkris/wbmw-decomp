@@ -87,7 +87,7 @@ that is off by default, with the normal view still checked against the original.
 drawn maps), all the text and the sound data's raw bytes into `assets/` (git-ignored), with the
 decoders' checks; the game does not use them yet. `tools/rebuild.py` checks them against the
 ROM: the structured data built back byte for byte, the compressed data (graphics, room maps)
-by content against the port's decoders; about 92% of the data covered so far. See
+by content against the port's decoders; about 99% of the data covered so far. See
 `docs/EXTRACT.md` for what comes next.
 
 Today the C reads the game's data straight from the ROM image as it plays, at the same addresses
