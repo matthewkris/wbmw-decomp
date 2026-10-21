@@ -498,6 +498,16 @@ static void box_tile(int x0, int y0, uint16_t name)
     }
 }
 
+/* whether the message drew plane A's tile at na: it differs from the map kept from before the box
+ * (the row above the box holds the scenery's tiles there, the top of a building, where there is
+ * no pointer) */
+static int box_drew(unsigned na)
+{
+    unsigned size, base = plane_a(&size);
+    if (na < base || na + 1 >= base + size) return 0;
+    return vram[na] != zoom_plane[na - base] || vram[na + 1] != zoom_plane[na + 1 - base];
+}
+
 static void box_build(int px, int py, int w, int h)
 {
     static const int dim[4] = {32, 64, 32, 128};
@@ -506,7 +516,14 @@ static void box_build(int px, int py, int w, int h)
     for (int j = -1; j < h; j++)                    /* the row above: the pointer */
         for (int i = 0; i < w; i++) {
             unsigned na = (base + ((unsigned)((py + j) & (ph - 1)) * pw + ((px + i) & (pw - 1))) * 2) & 0xFFFF;
-            box_tile(zoom.box.x + i * 8, zoom.box.y + j * 8, (uint16_t)(vram[na] << 8 | vram[na + 1]));
+            int x0 = zoom.box.x + i * 8, y0 = zoom.box.y + j * 8;
+            if (j < 0 && !box_drew(na)) {           /* the scenery, not the pointer: transparent */
+                for (int y = y0; y < y0 + 8; y++)
+                    for (int x = x0; x < x0 + 8; x++)
+                        if (x >= 0 && x < FRAME_STRIDE && y >= 0 && y < ACTIVE_LINES) box_rgb[y][x] = 0;
+                continue;
+            }
+            box_tile(x0, y0, (uint16_t)(vram[na] << 8 | vram[na + 1]));
         }
 }
 
@@ -541,12 +558,12 @@ static void zoom_update(void)
         int w = ram[0x8D96] << 8 | ram[0x8D97], h = ram[0x8D98] << 8 | ram[0x8D99];
         int px = ram[0x8D9A] << 8 | ram[0x8D9B], py = ram[0x8D9C] << 8 | ram[0x8D9D];
         zoom.box = (SDL_Rect){pad + col * 8, ZOOM_HUD + row * 8, w * 8, h * 8};
-        /* the pointer: the tiles drawn in plane A's row above the box */
+        /* the pointer: the tiles the message drew in plane A's row above the box */
         unsigned base = (vdp_reg[2] & 0x38) << 10;
         int first = -1, last = -1;
         for (int i = 0; i < w && w < 64; i++) {
             unsigned na = (base + (((py - 1) & 31) * 64 + ((px + i) & 63)) * 2) & 0xFFFF;
-            if (vram[na] | vram[na + 1]) { if (first < 0) first = i; last = i; }
+            if ((vram[na] | vram[na + 1]) && box_drew(na)) { if (first < 0) first = i; last = i; }
         }
         zoom.pointer_w = first < 0 ? 0 : (last - first + 1) * 8;
         zoom.pointer_x = first < 0 ? 0 : zoom.box.x + first * 8;
@@ -581,11 +598,11 @@ static void zoom_update(void)
             }
             if (zt < 1) zt = 1;
             if (zoom.z < 1.01f) { zoom.ax = ax; zoom.ay = ay; }        /* starting: from where they are */
-            zoom.ax += (ax - zoom.ax) * 0.2f; zoom.ay += (ay - zoom.ay) * 0.2f;
+            zoom.ax += (ax - zoom.ax) * 0.1f; zoom.ay += (ay - zoom.ay) * 0.1f;
             zoom.on = 1;
         }
     }
-    zoom.z += (zt - zoom.z) * 0.12f;                /* eased in and out over about half a second */
+    zoom.z += (zt - zoom.z) * 0.06f;                /* eased in and out over about a second */
     if (fabsf(zoom.z - 1) < 0.005f && zt == 1) zoom.z = 1;
     zoom_scene = 0;
     if (zoom.z > 1 && zoom.on && zoom_plane_ok) zoom_render_scene();   /* after the box closes, the frame is the scene */
