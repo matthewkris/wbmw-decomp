@@ -39,8 +39,9 @@ On top of the original game. They are all on by default; each can be turned off 
 **You need your own dump of the cartridge.** This repository contains only source code, tools and
 notes. It contains no ROM, no graphics, maps, text, music or sound, and no file made from the ROM:
 
-* `rom/` (where you put your dump) and `work/` (everything built or extracted from it) are listed in
-  `.gitignore`. So are save files (`*.sav`) and save states (`*.state`).
+* `rom/` (where you put your dump), `work/` (everything built from it) and `assets/` (the data
+  `tools/extract.py` writes out of it) are listed in `.gitignore`. So are save files (`*.sav`)
+  and save states (`*.state`).
 * When the game runs, it reads all of its data (graphics, maps, text, music, sound, and the Z80
   sound driver) from your ROM file. The C code holds only the game's logic, with a few small numeric tables (jump targets,
   lookup tables) as part of that logic.
@@ -203,6 +204,9 @@ How the port was made, and how to check it against the original:
   Europe).md"` writes the code/data map to `work/`. Running `make` at the repository root rebuilds
   the ROM from generated assembly (it needs vasm's `vasmm68k_mot`) and checks that it's
   byte-identical.
+* `tools/extract.py "rom/Wonder Boy in Monster World (USA, Europe).md"` writes the game's data out
+  of your ROM into `assets/` (graphics, palettes, every room's map, all the text; git-ignored, as
+  the ROM is): the first step towards the game loading its data from files. See `docs/EXTRACT.md`.
 * Documentation: `docs/NOTES.md` (what the game does), `docs/PORT.md` (the port and how each routine
   is verified), `docs/PROCESS.md` (the process as a whole) and `native/README.md` (the native
   build).

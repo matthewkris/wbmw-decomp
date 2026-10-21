@@ -83,6 +83,10 @@ that is off by default, with the normal view still checked against the original.
 
 ### Extract the assets from the ROM once (asked 2026-10-21)
 
+**Started (2026-10-21):** `tools/extract.py` writes the graphics, palettes, rooms (scripts and
+drawn maps), all the text and the sound data's raw bytes into `assets/` (git-ignored), with the
+decoders' checks; the game does not use them yet. See `docs/EXTRACT.md` for what comes next.
+
 Today the C reads the game's data straight from the ROM image as it plays, at the same addresses
 the cartridge has (graphics, maps, text, palettes, music, the Z80 sound driver). Instead, a
 one-time step could unpack the ROM into ordinary files, and the game would load those.
