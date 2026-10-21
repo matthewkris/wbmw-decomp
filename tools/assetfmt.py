@@ -127,3 +127,37 @@ def text_encode(parsed):
                 elif f == 'Q':
                     for _ in range(text.QUIZ_JUMPS): out += w16(next(v))
     return bytes(out)
+
+# ---- where the rooms' compressed data ends, for counting what the checks cover ----
+
+def blocks_end(d, a3):
+    """the end of a block table ($9F6A): the nibbles, then each block's bytes"""
+    n = be16(d, a3); a3 += 2
+    if n == 0: return a3
+    a2 = a3 + (n + 1) // 2
+    for i in range(n):
+        code = d[a3 + i // 2] >> (0 if i & 1 else 4) & 0xF
+        if code == 0: continue
+        m = code ^ 0xF
+        a2 += (0 if m & 8 else 1) + 2 + {0: 6, 1: 0, 2: 2, 3: 3}.get(m & 7, 3)
+    return a2
+
+def chunk_end(d, p):
+    """the end of a chunk's data ($A0F4): the bytes it reads from the ROM, up to a zero-run
+    stream (the rest is read from what that stream expands to)"""
+    left, q = 192, p
+    c = d[q]; q += 1
+    if c & 0x80:                                    # $A1C4: a count, a mask's length, the mask, the bytes kept
+        total, nmask = d[q], d[q + 1]
+        zeros = sum(bin(d[q + 2 + i]).count('1') for i in range(nmask))
+        return q + 2 + nmask + total - zeros
+    filled = [False] * 192
+    for _ in range(c):
+        q += 2; nb = 0
+        for i in range(192):
+            if filled[i]: continue
+            if nb == 0: bits = d[q]; q += 1; nb = 8
+            nb -= 1
+            if bits & 1: filled[i] = True; left -= 1
+            bits >>= 1
+    return q + (left * 10 + 7) // 8

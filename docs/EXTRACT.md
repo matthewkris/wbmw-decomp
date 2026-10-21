@@ -19,13 +19,17 @@ ROM is, and are never committed.
 | Path | What | From |
 |---|---|---|
 | `manifest.json` | the ROM's name, size and SHA-1, the decoders' checks | |
+| `layout.json` | the tables that point at the data: the data directory, the phrase tables' bases, the animation tree's offset tables | $1CC00, $1CC10, $A0000 |
 | `graphics/block_NNN.bin` | the 768 blocks of 32 tiles (1,024 bytes of VRAM data each), decoded | the table at $41000 (`tools/gfx.py`) |
 | `graphics/sheet.png` | all of them, a row of 32 tiles a block, in grey levels | |
+| `graphics/table.json` | the graphics table: each block's format and address | $41000 |
 | `palettes/palettes.json`, `swatches.png` | the 160 palette records, 16 colours each | $599C |
 | `rooms/rooms.json` | every room's script: layers, graphics, palettes, objects | the area blocks (`tools/rooms.py`) |
 | `rooms/areaAA_roomRR.png` | every room's map, drawn with its own graphics and palettes | |
+| `rooms/maps.json` | every layer's map as data: its block table (4 tile words and an attribute a block) and its chunks (16 x 12 block numbers a place on the map) | the layers' data ($9F6A, $A068) |
+| `rooms/shared_blocks.json` | the three block tables every room shares | the directory's table 1 |
 | `text/messages.txt`, `messages.json` | the 131 messages: readable, and parsed | $1CC14 (`tools/text.py`) |
-| `text/phrases.txt` | the phrases messages share (4 tables) | $1CC10 |
+| `text/phrases.txt`, `phrases.json` | the phrases messages share (4 tables) | $1CC10 |
 | `text/windows.json` | the message windows' places and sizes | $1CC18 |
 | `sprites/animations.json` | the 12 animation sets: groups, animations (frames, durations, commands), and the 962 sprite mappings piece by piece | $A0000 (`tools/sprites.py`) |
 | `sprites/player.png` | Shion's animations, a row each | |
@@ -48,25 +52,46 @@ ROM is, and are never committed.
 
     python tools/rebuild.py "rom/Wonder Boy in Monster World (USA, Europe).md"
 
-reads the files back and builds the ROM's bytes from them. Each format has a parse and an encode
-in `tools/assetfmt.py`, side by side; the JSON keeps whatever the bytes need (a pointer's form, a
+reads the files back and checks them against the ROM (it needs the native build for the
+compressed data: `make -C native`). Each structured format has a parse and an encode in
+`tools/assetfmt.py`, side by side; the JSON keeps whatever the bytes need (a pointer's form, a
 terminator's value, a command's arguments). Everything must match:
 
-| Data | Pieces | Bytes | How |
-|---|---|---|---|
-| Messages | 131 | 12,973 | encoded from `messages.json`'s parsed form |
-| Phrases | 356 | 5,472 | from `phrases.json` |
-| Palettes | 160 | 2,720 | from `palettes.json`'s colour words |
-| Room scripts | 170 | 7,398 | from `rooms.json`'s items |
-| Animation scripts | 774 | 6,808 | from `animations.json` |
-| Sprite mappings | 964 | 12,264 | from `animations.json` |
-| Sound | 2 | 30,583 | as they are |
-| Graphics | 768 blocks | 786,432 decoded | compressed: the decoded blocks are compared with the port's own decompressor (`wbmw --verify-graphics assets`, `DecodeGfxBlock` $6BC4, which the harness verified against the original's): two decoders written apart agree |
+| Data | Pieces | How |
+|---|---|---|
+| Messages, phrases | 131, 356 | encoded back from the parsed text: byte for byte |
+| Palettes | 160 | from the colour words |
+| Room scripts | 170 | from `rooms.json`'s items |
+| Animation scripts, sprite mappings | 774, 964 | from `animations.json` |
+| Data directory | 27 longs | from `layout.json` |
+| Graphics table | 768 longs | from `graphics/table.json` |
+| Message, window and phrase tables | | from the messages' windows and addresses, `windows.json`, the phrases' addresses |
+| Areas' room tables | 19 | from the rooms' addresses |
+| Animation tree | 225 tables | from `layout.json` |
+| Sound | 2 | as they are (not understood yet: the music's format is still unknown) |
+| Graphics | 768 blocks | compressed: compared by content with the port's own decompressor (`wbmw --verify-graphics assets`, `DecodeGfxBlock` $6BC4) |
+| Room block tables, layer maps | 201, 238 | compressed: compared by content with the port's own unpackers (`wbmw --unpack-list`, `UnpackBlocks` $9F6A and `UnpackLayerMap` $A068) |
 
-Not built back yet: the room maps (compressed; the decoded maps are not written as data yet, only
-drawn), and the tables that point at the data (the message and phrase tables, the graphics table
-at $41000, the area blocks' room offsets, the animation tree's offset tables), which `rebuild.py`
-takes from the ROM's layout for now.
+The port's decoders were verified against the original's code in the harness, and the Python
+decoders were written apart from them: two decoders agreeing on every block and every map. (The
+compressed data is not packed back to the same bytes: that would need the original packer. The
+game will read the decoded data instead.)
+
+At the end `rebuild.py` counts which of the ROM's bytes the checks cover:
+
+| ROM | Bytes |
+|---|---|
+| built back byte for byte | 81,698 |
+| checked by content (graphics, the rooms' maps) | 424,954 |
+| padding ($FF) | 140,320 |
+| the 68000 code and the tables in it ($0-$1C601) | 113,506 |
+| data not covered yet | 41,854 |
+
+So about 92% of the data is shown to come back from the files. What is not yet: the lists the
+room scripts point at besides the maps (graphics slot lists, animated-tile streams, enemy
+placements, objects, `ptr_996C`), a few of the directory's blocks (the largest, slot 7 at $22460,
+4.9 KB), the unknown block at $40000, and the tables inside the code region (the enemy types at
+$1BC0E, for one), which the C port reads as data.
 
 ## The text
 
@@ -93,6 +118,6 @@ pictures and `$C0`-`$C5`, `$D0` icons, left as `{xNN}` (one phrase is made of th
 
 * The bosses' own palettes, for their sheets.
 * Decode the music and sound effects (the Z80 driver's data): the format is not known yet.
-* The room maps as data (block tables and cells), checked against the port's unpackers ($9F6A,
-  $A068); the pointer tables built back too.
+* The rest of the data: the room scripts' other lists, the directory's remaining blocks, the
+  tables in the code region (rebuild.py lists the largest parts not covered).
 * Then the game reads its data from the files.

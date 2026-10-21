@@ -12,6 +12,12 @@ never committed):
   palettes/swatches.png
   rooms/rooms.json      every room's script (layers, graphics, palettes, objects and so on)
   rooms/areaAA_roomRR.png  every room's map, drawn with its own graphics and palettes
+  rooms/maps.json       every layer's map as data: its own block table (4 tile words and an
+                        attribute a block) and its chunks (16 x 12 block numbers a place)
+  rooms/shared_blocks.json  the three block tables every room shares
+  layout.json           the tables that point at the data: the data directory, the phrase
+                        tables' bases, the animation tree's offset tables
+  graphics/table.json   the graphics table ($41000): each block's format and address
   text/messages.txt     every message, readable, codes as {TAGS}, phrases expanded
   text/messages.json    the same parsed (characters, codes, commands, phrase references)
   text/phrases.txt, text/windows.json
@@ -68,6 +74,7 @@ def main():
     blocks, bad = gfx.check(d)
     for i, b in enumerate(blocks): open(path('graphics', 'block_%03d.bin' % i), 'wb').write(b)
     gfx.png(path('graphics', 'sheet.png'), blocks)
+    json.dump(['%08X' % e for e in gfx.table(d)], open(path('graphics', 'table.json'), 'w'), indent=0)
     checks['graphics'] = dict(blocks=len(blocks), problems=bad)
 
     # palettes
@@ -93,6 +100,27 @@ def main():
             except Exception as e:
                 print('area %d room %d: %s' % (area, room, e)); bad += 1
     json.dump(allrooms, open(path('rooms', 'rooms.json'), 'w'), indent=1)
+    def block_table(t):
+        """a block table ($9F6A) decoded: [4 tile words, attribute] a block, None for an empty one"""
+        t3 = {}
+        rooms.blocks(d, t, t3)
+        return [t3[i][0] + [t3[i][1]] if i in t3 else None for i in range(rooms.be16(d, t))]
+    maps = []
+    for r in allrooms:
+        layers = []
+        for it in r['items']:
+            if 'kind' not in it: continue
+            a1 = rooms.area_base(d, r['area'])
+            src = a1 + it['offset'] if 'offset' in it else it['long'] & 0xFFFFFF
+            cmap, _ = rooms.layer_map(d, src)
+            layers.append(dict(plane='B' if it['code'] & 1 else 'A', src='%06X' % src,
+                               blocks_at='%06X' % (src + rooms.sw(d, src)), blocks=block_table(src + rooms.sw(d, src)),
+                               places={str(k): v for k, v in cmap.items()}))
+        maps.append(dict(area=r['area'], room=r['room'], layers=layers))
+    json.dump(maps, open(path('rooms', 'maps.json'), 'w'))
+    tl = rooms.be32(d, rooms.DIR + 4)
+    shared = [rooms.be32(d, tl + 4 * k) & 0xFFFFFF for k in range(3)]
+    json.dump([dict(address='%06X' % a, blocks=block_table(a)) for a in shared], open(path('rooms', 'shared_blocks.json'), 'w'))
     checks['rooms'] = dict(areas=19, rooms=len(allrooms), problems=bad, drawn=not A.no_rooms)
 
     # text
@@ -167,6 +195,16 @@ def main():
     open(path('sound', 'z80_driver.bin'), 'wb').write(d[Z80_DRIVER[0]:Z80_DRIVER[1]])
     open(path('sound', 'z80_data.bin'), 'wb').write(d[Z80_DATA[0]:Z80_DATA[1]])
     checks['sound'] = dict(driver_bytes=Z80_DRIVER[1] - Z80_DRIVER[0], data_bytes=Z80_DATA[1] - Z80_DATA[0], decoded=False)
+
+    # the tables that point at the data
+    l1 = [sprites.sw(d, sprites.ANIM + o) for o in range(0, sprites.sw(d, sprites.ANIM), 2)]
+    l2 = sprites.packed_tables(d, l1)
+    l3 = sprites.packed_tables(d, [v for t in l2.values() for v in t])
+    tb = rooms.be32(d, rooms.DIR + 0x10) & 0xFFFFFF
+    json.dump(dict(directory=['%08X' % rooms.be32(d, rooms.DIR + 4 * i) for i in range(27)],
+                   phrase_tables=['%08X' % rooms.be32(d, tb + 4 * k) for k in range(4)],
+                   anim_level1=l1, anim_level2={str(k): v for k, v in l2.items()}, anim_level3={str(k): v for k, v in l3.items()}),
+              open(path('layout.json'), 'w'), indent=1)
 
     manifest = dict(rom=os.path.basename(A.rom), size=len(d), sha1=sha1, expected_sha1=EXPECTED_SHA1,
                     checks=checks, files=len(files) + 1)
