@@ -53,6 +53,31 @@ def main():
     for f, a in (('z80_driver.bin', 0x098000), ('z80_data.bin', 0x099A77)):
         check('sound ' + f, [(a, open(os.path.join(A.assets, 'sound', f), 'rb').read())])
 
+    # the lists the room scripts point at, and what those point at
+    LS = J('rooms', 'lists.json')
+    w16s = lambda ws: b''.join(struct.pack('>H', v) for v in ws)
+    enc = dict(events=lambda v: assetfmt.flow_encode(v['items'], assetfmt.event_fmt),
+               spawns=lambda v: assetfmt.flow_encode(v['items'], assetfmt.spawn_fmt),
+               slots=lambda v: assetfmt.slots_encode(v['items']), tile_anims=lambda v: w16s(v['words']),
+               cell_anims=lambda v: bytes(v['bytes']), cell_lists=lambda v: w16s(v['words']),
+               pictures=assetfmt.picture_encode, item_lists=lambda v: bytes(v['bytes']))
+    for kind, f in enc.items():
+        check('room ' + kind.replace('_', ' '), [(int(a, 16), f(v)) for a, v in LS[kind].items()])
+
+    # the ending's scenes (from their fields) and the houses' pictures (their records as they are:
+    # some fields are not named yet); the extra raw tiles after the raw graphics blocks
+    sc = J('rooms', 'scenes.json')
+    check('scene records', [(int(x['address'], 16), struct.pack('>IIHHI', int(x['layer_a'], 16), int(x['layer_b'], 16),
+                                                                 x['palette'], x['word_8B56'], int(x['slots'], 16))) for x in sc])
+    hp = J('rooms', 'house_pictures.json')
+    check('house picture records', [(int(x['address'], 16), bytes.fromhex(x['raw'])) for x in hp['records']])
+    ex = []
+    for i, e in enumerate(J('graphics', 'table.json')):
+        e = int(e, 16)
+        if e != 0xFFFFFFFF and e >> 24 & 1:
+            ex.append(((e & 0xFFFFFF) + gfx.BLOCK, open(os.path.join(A.assets, 'graphics', 'extra_%03d.bin' % i), 'rb').read()))
+    check('extra raw tiles', ex)
+
     # the tables that point at the data, from the files (the layout's own addresses: the data
     # directory at $1CC00, the graphics table at $41000, the animation data at $A0000)
     L = J('layout.json')
@@ -101,8 +126,8 @@ def main():
                     offs = src + struct.unpack_from('>h', d, src + 2)[0]
                     q = src + 4
                     while d[q] < 0x80:
-                        num = d[q + 1]; mark(offs + 2 * num, 2, 2)
-                        c = src + struct.unpack_from('>h', d, offs + 2 * num)[0]
+                        num = d[q + 1]; mark(offs + num, 2, 2)          # (a byte offset into the chunks' table)
+                        c = src + struct.unpack_from('>h', d, offs + num)[0]
                         mark(c, assetfmt.chunk_end(d, c) - c, 2); q += 2
                     mark(src, q + 1 - src, 2)
     else:
