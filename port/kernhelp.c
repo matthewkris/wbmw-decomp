@@ -734,10 +734,11 @@ static void plane_size_reg(void)
 /* $A1A: the entity in use and drawn, its animation cleared ($A20) */
 static void entity_on(void) { wr16(c->a[4] - 0x4000, 0xC000); call(0xA20); }
 /* $BC6 (its x) and $BD0 (d0, half width d2): off the screen across, $20 of margin: d0 -1, else 0;
- * $BF4 and $BFE the same for y; $BEE both */
-static void off_screen(uint32_t camera, uint16_t size)
+ * $BF4 and $BFE the same for y; $BEE both. Widescreen: across, the screen is the wider view. */
+static void off_screen(uint32_t camera, uint16_t size, int wide)
 {
-    c->d[0] = set_w(c->d[0], c->d[0] - rd16(camera));
+    c->d[0] = set_w(c->d[0], c->d[0] - (rd16(camera) - wide));
+    size = (uint16_t)(size + 2 * wide);
     c->d[1] = set_w(c->d[1], c->d[0]);
     c->d[1] = set_w(c->d[1], c->d[1] + c->d[2]);
     c->d[1] = set_w(c->d[1], c->d[1] + 0x20);
@@ -748,8 +749,8 @@ static void off_screen(uint32_t camera, uint16_t size)
     }
     c->d[0] = 0xFFFFFFFFu; F_L(c->d[0]);
 }
-static void off_x_at(void) { off_screen(0xFFFF9758u, 0x140); }                 /* $BD0 */
-static void off_y_at(void) { off_screen(0xFFFF975Au, 0xE0); }                  /* $BFE */
+static void off_x_at(void) { off_screen(0xFFFF9758u, 0x140, port_wide_now()); }   /* $BD0 */
+static void off_y_at(void) { off_screen(0xFFFF975Au, 0xE0, 0); }                    /* $BFE */
 static void off_x(void)                                                         /* $BC6 */
 {
     c->d[0] = set_w(c->d[0], rd16(c->a[4] - 0x3800));

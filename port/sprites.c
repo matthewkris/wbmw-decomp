@@ -12,6 +12,7 @@
 #define SEXT(w) ((uint32_t)(int32_t)(int16_t)((w) & 0xFFFF))
 
 void UpdateAnim(Cpu *c);
+int port_wide_now(void);            /* rooms.c: widescreen's pixels beyond each side here, or 0 (world.h) */
 
 /* AddEntitySprites ($54C4): append the pieces of entity a4's mapping to the table at a3,
  * placed relative to the camera, flipped by the entity's flip bits, tile base added (unless
@@ -55,8 +56,8 @@ void AddEntitySprites(Cpu *c)
         cmp_w(&cc, rd16(0xFF8B2E), d5);
         if (!(cc & CC_C)) continue;                                         /* off the right */
         d0 = set_w(d0, add_w(&cc, d5, d0));
-        cmp_w(&cc, 0x80, d0);
-        if (cc & CC_C) continue;                                            /* off the left */
+        cmp_w(&cc, (uint16_t)(0x80 - port_wide_now()), d0);
+        if (cc & CC_C) continue;                                            /* off the left (widescreen: of the wider view) */
         d6 = set_w(d6, lsl_n(&cc, d6, 2, 16));
         d0 = set_w(d0, d6); cc = tst_w(cc, d0);
         d0 = set_w(d0, d0 & 0x18); cc = tst_w(cc, d0);
@@ -133,7 +134,7 @@ next:
         c->a[4] += 4;                                                       /* $5410 */
         cmp_l(&cc, 0x100, c->a[4]);
     } while (cc & CC_C);
-    wr16(0xFF8B2E, 0x180); wr16(0xFF8B28, 0x80); wr16(0xFF8B2A, 0x160);
+    wr16(0xFF8B2E, (uint16_t)(0x180 + port_wide_now())); wr16(0xFF8B28, 0x80); wr16(0xFF8B2A, 0x160);   /* widescreen: the right of the wider view */
     wr8(0xFF8B30, 0); wr8(0xFF8B31, 0x40); cc = tst_b(cc, 0x40);
     c->a[3] = 0x00FF2800; c->a[2] = 0xFFFF8B08;
     wr8(0xFF8B32, 2); wr8(0xFF8B33, 0x10); cc = tst_b(cc, 0x10);

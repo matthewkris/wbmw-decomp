@@ -31,9 +31,11 @@ int world_despawn_offscreen(Cpu *c);
  * original's). port_wide_px: pixels the host shows beyond each side of the 256; port_wide_room:
  * whether the room (area, number: $FF9668, $FF9669) is drawn for it, the host's choice. Where
  * both say so, rooms.c draws the layers' columns for the wider view and keeps the view inside
- * their maps (docs/WIDESCREEN.md). */
+ * their maps, sprites.c draws what is in it, and kernhelp.c's off-screen tests count it as the
+ * screen, so things appear, wake and go away at its edges (docs/WIDESCREEN.md). */
 extern int port_wide_px;
 extern int (*port_wide_room)(int area, int room);
+int port_wide_now(void);            /* rooms.c: port_wide_px where the room allows it, else 0 */
 
 /* Leave a rewritten routine the way the original does when it jumps away instead of returning
  * (into code not rewritten yet, e.g. one that resets the stack and yields): the caller carries on
