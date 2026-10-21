@@ -77,6 +77,7 @@ void machine_isr(Cpu *c);
 static int frame, frames_max, png_every, headless, scale;            /* scale 0: fit the screen */
 static const char *out_dir = ".", *save_path = "wbmw.sav", *wav_path;
 static int mute;
+static int enemy_health;                            /* the damage numbers and health bars (Enemy health) */
 
 /* widescreen: the picture 400 wide (16:9 at 224 lines), 72 pixels past each side of the game's
  * 256. Only the rooms below show the game there (port/rooms.c draws their plane A wider and
@@ -244,7 +245,7 @@ static const char *pad_label(int p)
 
 /* wbmw.ini: what the player chose in the menu (and with F11, F3). The command line can override
  * a setting for one run without changing the file: cfg is what the file holds. */
-static struct { int fullscreen, show_fps, integer_scale, mute, widescreen, talk_zoom; } cfg = {1, 0, 0, 0, 0, 0};
+static struct { int fullscreen, show_fps, integer_scale, mute, widescreen, talk_zoom, enemy_health; } cfg = {1, 0, 0, 0, 0, 0, 0};
 static char ini_path[4096];
 static int ini_dirty;
 
@@ -279,8 +280,8 @@ static void settings_save(void)
     if (!f) { fprintf(stderr, "wbmw: cannot write the settings to %s\n", ini_path); return; }
     fprintf(f, "# Wonder Boy in Monster World (native): settings, written by the game's menu (Esc).\n"
                "# Keys by SDL's names; controller inputs by SDL's, an axis with + or - before it; none: unbound.\n");
-    fprintf(f, "fullscreen=%d\nshow_fps=%d\ninteger_scale=%d\nmute=%d\nwidescreen=%d\ntalk_zoom=%d\nstick_moves=%d\n",
-            cfg.fullscreen, cfg.show_fps, cfg.integer_scale, cfg.mute, cfg.widescreen, cfg.talk_zoom, stick_moves);
+    fprintf(f, "fullscreen=%d\nshow_fps=%d\ninteger_scale=%d\nmute=%d\nwidescreen=%d\ntalk_zoom=%d\nenemy_health=%d\nstick_moves=%d\n",
+            cfg.fullscreen, cfg.show_fps, cfg.integer_scale, cfg.mute, cfg.widescreen, cfg.talk_zoom, cfg.enemy_health, stick_moves);
     for (int a = 0; a < ACTIONS; a++) {
         char pad[64]; pad_name(pad_bind[a], pad, sizeof pad);
         const char *key = key_bind[a] == SDL_SCANCODE_UNKNOWN ? "" : SDL_GetScancodeName(key_bind[a]);
@@ -308,6 +309,7 @@ static void settings_open(const char *path)
             else if (!strcmp(line, "mute")) cfg.mute = atoi(v);
             else if (!strcmp(line, "widescreen")) cfg.widescreen = atoi(v);
             else if (!strcmp(line, "talk_zoom")) cfg.talk_zoom = atoi(v);
+            else if (!strcmp(line, "enemy_health")) cfg.enemy_health = atoi(v);
             else if (!strcmp(line, "stick_moves")) stick_moves = atoi(v);
             else for (int a = 0; a < ACTIONS; a++) {
                 if (!strncmp(line, "key.", 4) && !strcmp(line + 4, ACT_INI[a]))
@@ -318,7 +320,7 @@ static void settings_open(const char *path)
         fclose(f);
     }
     fullscreen = cfg.fullscreen; show_fps = cfg.show_fps; integer_scale = cfg.integer_scale; mute = cfg.mute;
-    widescreen = cfg.widescreen; talk_zoom = cfg.talk_zoom;
+    widescreen = cfg.widescreen; talk_zoom = cfg.talk_zoom; enemy_health = cfg.enemy_health;
 }
 
 /* a controller plugged in (or there at the start) or pulled out: the first one plays */
@@ -598,11 +600,101 @@ static void draw_toast(void)
     draw_text(x0 + 5, y0 + 4, toast, MENU_WHITE);
 }
 
+/* ---- Enemy health: the damage numbers and the health bars, drawn over the finished picture
+ * (docs/ENEMYHEALTH.md) ----
+ * Each frame the host compares each enemy's health (-$2600) with the frame before: a drop is
+ * damage, shown as a number rising from above it and fading, and its health is shown as a bar
+ * over it for two seconds. Enemies are the entities of category 0 (-$2BFE, as the game's own
+ * $4948 has it), not Wonder Boy; their maximum is their kind's (-$2BFD) in the table $4928 reads.
+ * The game never knows. */
+#define HIT_SLOTS 64
+#define POPUPS 24
+static struct { int hp, until; } hit_track[HIT_SLOTS];
+static struct { int x, y, value, age, killing; } popup[POPUPS];   /* x, y: in the world (plane A's pixels) */
+static int hits_started;
+
+static int kind_max(int kind)
+{
+    uint32_t t = 0x1BA6C + (uint32_t)(int16_t)(rom[0x1BA6C] << 8 | rom[0x1BA6D]);
+    return t + 3 * (uint32_t)kind < rom_size ? rom[t + 3 * kind] * 32 : 0;
+}
+
+/* a pixel blended over the picture by a (0-256) */
+static void blend_px(int x, int y, uint32_t c, int a)
+{
+    if (x < 0 || x >= frame_width || y < 0 || y >= ACTIVE_LINES) return;
+    uint32_t b = frame_rgb[y][x];
+    uint32_t r = ((b >> 16 & 255) * (256 - a) + (c >> 16 & 255) * a) >> 8;
+    uint32_t g = ((b >> 8 & 255) * (256 - a) + (c >> 8 & 255) * a) >> 8;
+    uint32_t l = ((b & 255) * (256 - a) + (c & 255) * a) >> 8;
+    frame_rgb[y][x] = r << 16 | g << 8 | l;
+}
+
+/* digits in the 5x7 font with a black outline, centred on x, faded by a */
+static void draw_number(int cx, int y, int value, uint32_t color, int a)
+{
+    char t[12]; snprintf(t, sizeof t, "%d", value);
+    int x0 = cx - (int)strlen(t) * 3;
+    for (int pass = 0; pass < 2; pass++)
+        for (int i = 0; t[i]; i++) {
+            const char *k = strchr(FONT7_CHARS, t[i]);
+            if (!k) continue;
+            for (int r = 0; r < 7; r++) for (int col = 0; col < 5; col++) {
+                if (!(FONT7[k - FONT7_CHARS][r] >> (4 - col) & 1)) continue;
+                int X = x0 + i * 6 + col, Y = y + r;
+                if (pass == 0) { for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) blend_px(X + dx, Y + dy, 0, a); }
+                else blend_px(X, Y, color, a);
+            }
+        }
+}
+
+static void hits_frame(void)
+{
+    if (!enemy_health || (vdp_reg[12] & 1) || !(vdp_reg[1] & 0x40)) { hits_started = 0; return; }
+    uint32_t player = 0xFFFF0000u + (ram[0x9EEE] << 8 | ram[0x9EEF]);
+    int pad = (frame_width - 256) / 2;
+    int cam_x = ram[0x8B34] << 8 | ram[0x8B35], cam_y = ram[0x8B36] << 8 | ram[0x8B37];
+    for (int k = 0; k < HIT_SLOTS; k++) {
+        uint32_t o = 0xFFFF0000u + 4 * (uint32_t)k;
+        int hp = rd16(o - 0x2600), max = kind_max(rd8(o - 0x2BFD));
+        if (!(rd8(o - 0x4000) & 0x80) || o == player || rd8(o - 0x2BFE) || !max || hp > max) { hit_track[k].hp = -1; continue; }
+        if (hits_started && hit_track[k].hp > hp) {   /* hurt: its number, and its bar for 2 seconds */
+            for (int i = 0; i < POPUPS; i++) if (!popup[i].age) {
+                popup[i].x = rd16(o - 0x3800); popup[i].y = rd16(o - 0x3700) - 2 * rd8(o - 0x34FD) - 10;
+                popup[i].value = hit_track[k].hp - hp; popup[i].age = 1; popup[i].killing = !hp;
+                break;
+            }
+            hit_track[k].until = frame + 120;
+        }
+        hit_track[k].hp = hp;
+        if (hp && hit_track[k].until > frame && !(rd8(o - 0x4000) & 4)) {   /* the bar, unless hidden */
+            int sx = pad + (int16_t)(rd16(o - 0x3800) - cam_x - 128);
+            int sy = (int16_t)(rd16(o - 0x3700) - cam_y - 128) - 2 * rd8(o - 0x34FD) - 6;
+            int w = 20, fill = (hp * w + max - 1) / max;
+            uint32_t col = hp * 3 > max * 2 ? 0x40E040 : hp * 3 > max ? 0xF0D020 : 0xF04030;
+            int a = hit_track[k].until - frame < 20 ? (hit_track[k].until - frame) * 256 / 20 : 256;
+            for (int y = -1; y <= 3; y++) for (int x = -1; x <= w; x++) {
+                int edge = y < 0 || y > 2 || x < 0 || x >= w;
+                blend_px(sx - w / 2 + x, sy + y, edge ? 0x000000 : x < fill ? col : 0x303030, a);
+            }
+        }
+    }
+    hits_started = 1;
+    for (int i = 0; i < POPUPS; i++) {             /* the numbers: up 20 pixels in 60 frames, the last 20 fading */
+        if (!popup[i].age) continue;
+        int sx = pad + (int16_t)(popup[i].x - cam_x - 128);
+        int sy = (int16_t)(popup[i].y - cam_y - 128) - popup[i].age / 3;
+        int a = popup[i].age > 40 ? (60 - popup[i].age) * 256 / 20 : 256;
+        if (sy >= 64) draw_number(sx, sy, popup[i].value, popup[i].killing ? 0xFFD860 : 0xFFFFFF, a);   /* not over the HUD */
+        if (++popup[i].age > 60) popup[i].age = 0;
+    }
+}
+
 /* the menu's screens: the main one, the exit question, the controls, and the controls waiting
  * for a press (capture) */
 enum { SCR_MAIN, SCR_ASK, SCR_CONTROLS, SCR_CAPTURE };
-enum { MI_FPS, MI_FULL, MI_PIXELS, MI_WIDE, MI_ZOOM, MI_SOUND, MI_CONTROLS, MI_EXIT, MAIN_N };
-static const char *const MAIN_ITEM[MAIN_N] = {"SHOW FPS", "FULL SCREEN", "WHOLE PIXELS", "WIDESCREEN", "TALK ZOOM", "SOUND", "CONTROLS", "EXIT GAME"};
+enum { MI_FPS, MI_FULL, MI_PIXELS, MI_WIDE, MI_ZOOM, MI_HEALTH, MI_SOUND, MI_CONTROLS, MI_EXIT, MAIN_N };
+static const char *const MAIN_ITEM[MAIN_N] = {"SHOW FPS", "FULL SCREEN", "WHOLE PIXELS", "WIDESCREEN", "TALK ZOOM", "ENEMY HEALTH", "SOUND", "CONTROLS", "EXIT GAME"};
 static const int CTRL_ROW[ACTIONS] = {ACT_UP, ACT_DOWN, ACT_LEFT, ACT_RIGHT, ACT_A, ACT_B, ACT_C, ACT_START, ACT_SAVE, ACT_LOAD};
 enum { CR_STICK = ACTIONS, CR_RESET, CR_BACK, CTRL_N };   /* the controls' rows after the actions */
 enum { COL_KEY = 80, COL_PAD = 152 };              /* the controls' columns, from the box's left */
@@ -621,7 +713,7 @@ static void draw_menu(const Menu *m)
         for (int i = 0; i < MAIN_N; i++) {
             uint32_t col = i == m->item ? MENU_GOLD : MENU_WHITE;
             int y = y0 + 24 + i * 14;
-            int on = i == MI_FPS ? show_fps : i == MI_FULL ? fullscreen : i == MI_PIXELS ? integer_scale : i == MI_WIDE ? widescreen : i == MI_ZOOM ? talk_zoom : i == MI_SOUND ? !mute : -1;
+            int on = i == MI_FPS ? show_fps : i == MI_FULL ? fullscreen : i == MI_PIXELS ? integer_scale : i == MI_WIDE ? widescreen : i == MI_ZOOM ? talk_zoom : i == MI_HEALTH ? enemy_health : i == MI_SOUND ? !mute : -1;
             if (i == m->item) draw_text(x0 + 12, y, ">", col);
             draw_text(x0 + 24, y, MAIN_ITEM[i], col);
             if (on >= 0) draw_text(x0 + w - 12 - 18, y, on ? "ON" : "OFF", col);
@@ -722,6 +814,7 @@ static int menu_step(Menu *m, int only_asking, int up, int down, int left, int r
                 break;
             case MI_WIDE: widescreen = cfg.widescreen = !widescreen; wide_apply(); ini_dirty = 1; break;
             case MI_ZOOM: talk_zoom = cfg.talk_zoom = !talk_zoom; ini_dirty = 1; break;
+            case MI_HEALTH: enemy_health = cfg.enemy_health = !enemy_health; ini_dirty = 1; break;
             case MI_SOUND: mute = cfg.mute = !mute; ini_dirty = 1; break;
             case MI_CONTROLS: if (ok) { m->screen = SCR_CONTROLS; m->row = 0; m->col = 0; } break;
             case MI_EXIT: if (ok) { m->screen = SCR_ASK; m->yes = 0; } break;
@@ -946,6 +1039,9 @@ static void window_frame(void)
 static void frame_done(void)
 {
     frame++;
+#ifndef WBMW_HEADLESS_ONLY
+    hits_frame();                                   /* Enemy health, drawn over the picture */
+#endif
     if (headless) {
         if (png_every && frame % png_every == 0) {
             char path[1024]; snprintf(path, sizeof path, "%s/frame_%05d.png", out_dir, frame);
@@ -1268,6 +1364,8 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--mute")) mute = 1;
         else if (!strcmp(argv[i], "--widescreen")) widescreen = 1;
         else if (!strcmp(argv[i], "--no-widescreen")) widescreen = 0;
+        else if (!strcmp(argv[i], "--enemy-health")) enemy_health = 1;
+        else if (!strcmp(argv[i], "--no-enemy-health")) enemy_health = 0;
         else if (!strcmp(argv[i], "--timing")) fprintf(stderr, "wbmw: --timing counts the translated code's cycles; the hand-written code has none, so it is off\n");
         else if (!strcmp(argv[i], "--state") && i + 1 < argc) state_path = argv[++i];
         else if (!strcmp(argv[i], "--load")) load_path = state_path_ptr;
@@ -1288,7 +1386,7 @@ int main(int argc, char **argv)
     }
     if (!rom_path) rom_path = find_rom(argv[0]);
     if (!rom_path) {
-        fprintf(stderr, "usage: wbmw [ROM] [--windowed] [--widescreen] [--scale N] [--save FILE] [--integer-scale] [--fps] [--mute] [--talk-zoom] [--config FILE]\n"
+        fprintf(stderr, "usage: wbmw [ROM] [--windowed] [--widescreen] [--scale N] [--save FILE] [--integer-scale] [--fps] [--mute] [--talk-zoom] [--enemy-health] [--config FILE]\n"
                         "       wbmw ROM --frames N [--png-every K] [--out DIR] [--input FILE] [--wav FILE]\n"
                         "                [--frame-log FILE] [--input-game FILE] [--dump-at N DIR]\n"
                         "       states: [--state FILE] [--load] [--load-state FILE] [--save-state-at N FILE]; F2 saves, F4 loads\n");
