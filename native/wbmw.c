@@ -197,13 +197,13 @@ static void draw_menu(int item, int asking, int yes)
             draw_text(x0 + 24, y, items[i], col);
             if (i == 0) draw_text(x0 + w - 12 - 18, y, show_fps ? "ON" : "OFF", col);
         }
-        draw_text_centred(y0 + h - 14, "ESC: RESUME", MENU_GREY);
+        draw_text_centred(y0 + h - 14, gc ? "ESC/SELECT: RESUME" : "ESC: RESUME", MENU_GREY);
     } else {
         draw_text_centred(y0 + 12, "EXIT THE GAME?", MENU_WHITE);
         int y = y0 + 34, cx = frame_width / 2;
         draw_text(cx - 40, y, yes ? " NO" : ">NO", yes ? MENU_WHITE : MENU_GOLD);
         draw_text(cx + 16, y, yes ? ">YES" : " YES", yes ? MENU_GOLD : MENU_WHITE);
-        draw_text_centred(y0 + h - 14, "ESC: BACK", MENU_GREY);
+        draw_text_centred(y0 + h - 14, gc ? "ESC/SELECT: BACK" : "ESC: BACK", MENU_GREY);
     }
 }
 
@@ -237,7 +237,7 @@ static int menu(int asking)
                 up = b == SDL_CONTROLLER_BUTTON_DPAD_UP; down = b == SDL_CONTROLLER_BUTTON_DPAD_DOWN;
                 side = b == SDL_CONTROLLER_BUTTON_DPAD_LEFT || b == SDL_CONTROLLER_BUTTON_DPAD_RIGHT;
                 ok = b == SDL_CONTROLLER_BUTTON_A;
-                back = b == SDL_CONTROLLER_BUTTON_B || b == SDL_CONTROLLER_BUTTON_START;
+                back = b == SDL_CONTROLLER_BUTTON_B || b == SDL_CONTROLLER_BUTTON_START || b == SDL_CONTROLLER_BUTTON_BACK;
             }
             if (e.type == SDL_CONTROLLERDEVICEADDED && !gc) gc = SDL_GameControllerOpen(e.cdevice.which);
             if (!asking) {
@@ -329,6 +329,9 @@ static void window_frame(void)
     while (SDL_PollEvent(&e)) {
         if (e.type == SDL_QUIT) open_menu = 1;
         if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE && !e.key.repeat) open_menu = 0;
+        /* on a controller, Back/Select (View, Share/Create, Minus), which the Genesis pad does not
+         * have: Start stays the game's */
+        if (e.type == SDL_CONTROLLERBUTTONDOWN && e.cbutton.button == SDL_CONTROLLER_BUTTON_BACK) open_menu = 0;
         if (e.type == SDL_KEYDOWN && !e.key.repeat) {
             SDL_Keycode key = e.key.keysym.sym;
             if (key == SDLK_F11 || (key == SDLK_RETURN && (e.key.keysym.mod & KMOD_ALT))) set_fullscreen(!fullscreen);

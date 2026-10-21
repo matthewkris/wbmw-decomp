@@ -40,7 +40,9 @@ The save EEPROM is read from FILE at start and written at exit (default `wbmw.sa
   time; the display tells whether the PC keeps up.
 * **Esc** opens the menu over the picture: **Show FPS** (on/off) and **Exit game**, which asks
   "Exit the game?" (No first). Up/Down choose, Enter (or Z, Space) selects, Esc goes back or
-  resumes; on a controller the D-pad, A, and B or Start. Closing the window asks the same
+  resumes. On a controller, **Back/Select** (View, Share/Create, Minus) opens it, as the Genesis
+  pad has no such button and Start stays the game's (the item screen); in the menu the D-pad
+  chooses, A selects, and B, Start or Back/Select go back. Closing the window asks the same
   question. The game is frozen while the menu is open (no frames, no sound), and buttons still
   held when it closes reach the game only after they are released.
 * Testing the menu without a person: `WBMW_MENU_KEYS="escape return down ..."` presses those keys
