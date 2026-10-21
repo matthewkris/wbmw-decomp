@@ -208,9 +208,12 @@ static void draw_plane(uint8_t *out, unsigned base, int line, int lo, int hi, in
 }
 
 /* the window on this line, where it is in the game's width; *from, *to: the picture x where plane
- * A is not drawn. A window that reaches an edge of the game's picture reaches the same edge of
- * a wide one too, as nothing of plane A shows beside it then (the HUD's band shows plane B and
- * sprites at its sides, as through its own gaps). */
+ * A is not drawn. On the HUD's own lines (the top 64) a window that reaches an edge of the game's
+ * picture reaches the same edge of a wide one too, as plane A never shows there (the band shows
+ * plane B and sprites at its sides, as through its own gaps). Lines the window takes beyond them
+ * for a while (a message under the HUD, "Found 5 GOLD.") are the play field's, so their sides
+ * show plane A as usual. */
+#define HUD_LINES 64
 static void draw_window(uint8_t *out, int line, int width, int lo, int hi, int pad, int *from, int *to)
 {
     int h40 = vdp_reg[12] & 1;
@@ -231,8 +234,9 @@ static void draw_window(uint8_t *out, int line, int width, int lo, int hi, int p
         tile_pixel_row(name, line & 7, row);
         out[x + pad] = row[x & 7];
     }
-    *from = f == 0 ? lo : f + pad;
-    *to = t == width ? hi : t + pad;
+    int sides = line < HUD_LINES;
+    *from = f == 0 && sides ? lo : f + pad;
+    *to = t == width && sides ? hi : t + pad;
 }
 
 /* Sprites on one line, in link order, with the hardware's limits: at most 16 sprites and 256
