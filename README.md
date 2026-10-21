@@ -30,8 +30,9 @@ On top of the original game. They are all on by default; each can be turned off 
 * **Talk zoom (experimental)**: during a conversation with an ordinary character, the view eases
   in on Wonder Boy and the one he is talking to, with the text box kept at its own size. See
   `docs/TALKZOOM.md`.
-* **Widescreen (experimental)**: a 16:9 picture. For now only the first areas of the game fill
-  it; everywhere else the original picture is shown with black sides. See
+* **Widescreen (experimental)**: a 16:9 picture. Most rooms fill it (115 of the 170, those
+  whose maps are wide enough); one-screen rooms, houses and shops keep the original picture with
+  black sides. See
   `docs/WIDESCREEN.md`.
 
 ## No ROM data is in this repository

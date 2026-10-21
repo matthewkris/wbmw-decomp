@@ -80,16 +80,51 @@ static int mute;
 static int enemy_health;                            /* the damage numbers and health bars (Enemy health) */
 
 /* widescreen: the picture 400 wide (16:9 at 224 lines), 72 pixels past each side of the game's
- * 256. Only the rooms below show the game there (port/rooms.c draws their plane A wider and
- * keeps the view inside them); elsewhere those sides are black. docs/WIDESCREEN.md. */
+ * 256. Only the rooms wide_room() allows show the game there (port/rooms.c draws their layers
+ * wider and keeps the view inside them); elsewhere those sides are black. docs/WIDESCREEN.md. */
 #define WIDE_PX 72
 extern int port_wide_px;                        /* port/rooms.c (port/world.h) */
 extern int (*port_wide_room)(int area, int room);
 static int widescreen;
+/* Whether a room's layers allow it, from its script in the ROM (the area blocks at the data
+ * directory's slots 8-26; the commands as $93C4 reads them): plane A following the camera across
+ * and drawn as screens (its kind 0 or 2: $94CC) and at least two screens wide; plane B repeated
+ * (kinds 3, 4, 5, 7: one screen, drawn whole) or, drawn as screens, two screens wide too. A
+ * narrower layer, or one that stays put, would show what is beyond its map at the sides. */
+static int layers_wide(int area, int room)
+{
+    static const signed char args[0x15] = {   /* the commands' argument bytes; -1 a pointer (a flag byte, then a long or a word) */
+        7, 7, -1, 3, -1, -1, 1, 5, -1, 1, 1, -3, 1, 1, 1, 3, 9, 9, 1, 9, 9};
+    uint32_t a1 = rd32(0x1CC00 + 4 * (8 + (uint32_t)area)) & 0xFFFFFF;
+    if (rd16(a1) / 2 <= (unsigned)room) return 0;
+    uint32_t p = a1 + (uint32_t)(int16_t)rd16(a1 + 2 * (uint32_t)room);
+    int a_ok = 0, b_ok = 1;
+    for (int guard = 0; guard < 64; guard++) {
+        uint8_t c = rd8(p++);
+        if (c == 0xFF) break;
+        if (c > 0x14) return 0;
+        if (c <= 1 || c == 0x10 || c == 0x11) {     /* a layer: kind, width, height (screens), word, its data */
+            uint8_t kind = rd8(p), w = rd8(p + 1);
+            if (c & 1) b_ok = kind == 3 || kind == 4 || kind == 5 || kind == 7 || ((kind == 0 || kind == 2) && w >= 2);
+            else a_ok = (kind == 0 || kind == 2) && w >= 2;
+        }
+        int n = args[c];
+        if (n == -1) n = rd8(p) ? 5 : 3;            /* a pointer */
+        else if (n == -3) n = (rd8(p) ? 5 : 3) + 2; /* command 11: a pointer and two bytes */
+        p += (uint32_t)n;
+    }
+    return a_ok && b_ok;
+}
+
+/* the rooms shown wide: every room whose layers allow it, but not area 15 (its moving floor is
+ * placed from the screen's edge, $18C8C) nor a boss's room ($9659 bit 4: its spawn points run
+ * four at a time; the fights are made for the 256) */
 static int wide_room(int area, int room)
 {
-    if (area == 1) return room <= 4;                /* after the opening: the side-scrolling rooms */
-    return area == 2 && room <= 2;                  /* the first village (0), the forest path east of it (2), the field (1) */
+    static signed char known[19][64];               /* 0 not yet, 1 yes, -1 no */
+    if (area < 0 || area >= 19 || room < 0 || room >= 64 || area == 15) return 0;
+    if (!known[area][room]) known[area][room] = layers_wide(area, room) ? 1 : -1;
+    return known[area][room] > 0 && !(ram[0x9659] & 0x10);
 }
 static void wide_apply(void)
 {
