@@ -70,25 +70,13 @@ What it involves:
   messages, so the HP display either takes a small spot of its own (e.g. beside the gold) or
   is drawn as a small bar near the enemy instead. Decide by trying both.
 
-### Zoom in during character interactions (asked 2026-10-20)
+### Zoom in during character interactions (asked 2026-10-20): done (experimental)
 
-When the player talks to someone (a shopkeeper, a villager, the Sphinx and so on), the view
-zooms in on the two of them, and zooms back out when the conversation ends.
-
-What it involves:
-
-* Knowing when a conversation is on: the game's own state says so (the conversation sequence,
-  room change 7/8 at `$C1E8`, and the message window's flag while the interpreter at `$13BC`
-  runs), so the host can read it from RAM without changing the game.
-* Where to zoom: on the player (`$9EEE`) and the person spoken to, placed on screen through the
-  camera (`$9758`/`$975A`), with a short smooth zoom in and out instead of a cut.
-* Done by the host, like the FPS counter: it scales and crops the finished picture, so the game
-  and the comparisons with the original are untouched. An option in the settings menu turns it
-  on and off (off by default).
-* The catch: the message window and the HUD are part of the same picture (the window plane), so
-  a plain crop would cut or enlarge the text too. Either zoom only the play field and keep the
-  rows of the HUD and the message window at their normal size, or have the host draw the
-  playfield planes and the window plane separately. Decide by trying.
+Done 2026-10-21 as the menu's **Talk zoom** (off by default): in a conversation with an ordinary
+character the scene eases in on Wonder Boy and the speaker, the HUD and the box slid up, the box
+kept at its own size; not for bosses or the Sphinx (asked by the owner). All in the host. See
+`docs/TALKZOOM.md`. Open: more conversations tried (shops, people outdoors); whether 1.5 is the
+right zoom; a conversation open when a state is loaded is not zoomed.
 
 ### Wide screen (asked 2026-10-10)
 
