@@ -10,7 +10,9 @@ window): the game's code and RAM are untouched, so the harness's comparisons are
 * **A conversation:** the sequence `$C1E8` sets `$9659` bit 3 while it runs, and its message is
   open while `$8CA4` bit 7 is set. Signs and the "Found ..." boxes are not conversations.
 * **With an ordinary character.** The speaker is the character under the box's pointer (two
-  tiles in plane A's row above the box, drawn from the message's data over the one speaking),
+  tiles in plane A's row above the box, drawn from the message's data over the one speaking; only
+  tiles that differ from the map kept from before the box count, as the scenery has tiles in that
+  row too: the top of Purapril's temple, at first taken for a 96-pixel pointer aimed at no one),
   or, for a box without a pointer, the person nearest Wonder Boy (within 64 pixels, at least 24
   tall by its size, so not Priscilla). No zoom when there is none (the Sphinx is drawn in the
   background), or when the speaker is taller than 48 pixels (a boss: they fill the screen as it
@@ -21,7 +23,8 @@ window): the game's code and RAM are untouched, so the harness's comparisons are
 
 * The box: the message's window, at column `$8D92`, row `$8D94` (counted from below the HUD's
   64 lines), `$8D96` × `$8D98` tiles; on plane A at `$8D9A`, `$8D9C` (scrolled).
-* The zoom eases in (to at most 1.5×) about an anchor between Wonder Boy and the speaker, at
+* The zoom eases in over about a second (6% of the way each frame; at first 12%, which felt
+  hurried), to at most 1.5×, about an anchor between Wonder Boy and the speaker, at
   Wonder Boy's feet, so the two grow upward. The HUD slides up out of the picture and the box
   with it, as far as the zoomed play field reaches (all 64 lines from 1.4× up), so the scene
   takes the height; the zoom is as large as keeps their heads (about 28 lines above their feet)
