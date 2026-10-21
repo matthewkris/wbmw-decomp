@@ -93,3 +93,32 @@ edges, and the HUD and text boxes are placed for 256 pixels. A wider view means 
 game's own logic (map copying, spawn and removal ranges, camera, HUD), so it can no longer be
 compared byte for byte with the original. It belongs after the idiomatic rewrite, as an option
 that is off by default, with the normal view still checked against the original.
+
+### Extract the assets from the ROM once (asked 2026-10-21)
+
+Today the C reads the game's data straight from the ROM image as it plays, at the same addresses
+the cartridge has (graphics, maps, text, palettes, music, the Z80 sound driver). Instead, a
+one-time step could unpack the ROM into ordinary files, and the game would load those.
+
+* **What it gives:** assets that can be looked at and changed (tiles and sprites as PNG, maps and
+  text as JSON or text, palettes), so mods, translations and redrawn graphics become possible.
+  After extracting, the ROM itself is no longer needed to play.
+* **The extracted files are still the game's data:** they go in a git-ignored folder (`assets/`,
+  say) and are never committed, the same as `rom/` and `work/`. The README's steps become
+  "add your ROM, run the extractor once, play".
+* **What it involves:**
+  * Knowing the format of every kind of data and where each piece is. Much of it is packed
+    (the room blocks and maps unpacked at `$9F6A`/`$A068`, the compressed graphics), and the C
+    ports already decode those formats, so the extractor can reuse them. `work/map.json`
+    (the code/data map) lists the data regions to start from.
+  * Changing the C to load from the extracted files instead of reading ROM addresses. That
+    means going through every ROM read in `port/` and the tables of addresses that point into
+    the data. It is a big change, and the comparisons with the original stop working for any
+    routine whose data access changes. So it comes after the idiomatic rewrite, with a check
+    that the extracted files, packed back up, give the same bytes as the ROM.
+  * Sound: the music and effects can be extracted as data, but they are commands for the game's
+    Z80 driver, which still runs from the ROM's code. Taking the ROM out completely needs that
+    driver rewritten in C too.
+* **A cheap first step:** an extractor that only writes viewable copies (PNG sheets of the
+  tiles, the maps, the text) without the game using them, to see the formats and check the
+  decoding.
