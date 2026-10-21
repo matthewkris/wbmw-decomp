@@ -245,7 +245,9 @@ static const char *pad_label(int p)
 
 /* wbmw.ini: what the player chose in the menu (and with F11, F3). The command line can override
  * a setting for one run without changing the file: cfg is what the file holds. */
-static struct { int fullscreen, show_fps, integer_scale, mute, widescreen, talk_zoom, enemy_health; } cfg = {1, 0, 0, 0, 0, 0, 0};
+/* the added features (widescreen, talk zoom, enemy health) on unless turned off; headless runs
+ * never read the file, so they stay the original's unless their flags say otherwise */
+static struct { int fullscreen, show_fps, integer_scale, mute, widescreen, talk_zoom, enemy_health; } cfg = {1, 0, 0, 0, 1, 1, 1};
 static char ini_path[4096];
 static int ini_dirty;
 

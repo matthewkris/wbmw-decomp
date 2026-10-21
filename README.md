@@ -12,7 +12,8 @@ the SN76489).
 
 ## Added features
 
-On top of the original game:
+On top of the original game. They are all on by default; each can be turned off in the menu
+(Esc), and the setting is kept.
 
 * **Pause menu** (Esc, or Back/Select on a controller) with a confirmation before exiting.
 * **Custom controls**: set a key and a controller button, stick direction or trigger for each game
@@ -22,8 +23,10 @@ On top of the original game:
 * **Quick save and load** of the whole game state, with an on-screen confirmation.
 * **Full screen** by default, with window mode and whole-pixel scaling.
 * **Frame rate display.**
-* **Enemy health**: the damage each hit does rises from the enemy, and a small bar over it shows
-  the health it has left. See `docs/ENEMYHEALTH.md`.
+* **Enemy health bars and damage numbers**: when you hit an enemy, the damage rises from it as a
+  number (gold for the blow that defeats it), and a small bar over it shows the health it has
+  left for two seconds: green, then yellow below two thirds, red below one third. Bosses have
+  them too. They stay under the text boxes and the status bar. See `docs/ENEMYHEALTH.md`.
 * **Talk zoom (experimental)**: during a conversation with an ordinary character, the view eases
   in on Wonder Boy and the one he is talking to, with the text box kept at its own size. See
   `docs/TALKZOOM.md`.
@@ -130,9 +133,9 @@ so Start stays the game's own: it opens the item screen.
 ### The menu
 
 * **Show FPS, Full screen, Whole pixels** (every pixel the same size), **Widescreen**, **Talk
-  zoom**, **Enemy health**, **Sound**: on or off. Widescreen is a test for now: the picture is 16:9, and the first village and the
-  areas next to it fill it; everywhere else the normal picture is centred with black sides. See
-  `docs/WIDESCREEN.md`.
+  zoom**, **Enemy health** (the health bars and damage numbers), **Sound**: on or off. Widescreen
+  is a test for now: the picture is 16:9, and the first areas of the game fill it; everywhere else
+  the normal picture is centred with black sides. See `docs/WIDESCREEN.md`.
 * **Controls**: a key and a controller input for each button, plus quick save and quick load.
   Choose one and press Enter (A on a controller), then press the new key or button; on the
   controller side, a stick direction or a trigger works too. A key already used elsewhere swaps
@@ -160,9 +163,8 @@ wbmw [ROM] [--windowed] [--widescreen] [--talk-zoom] [--enemy-health] [--scale N
 * `--windowed`: start in a window instead of full screen. `--scale N` sets the window's size, N
   times 256×224.
 * `--integer-scale`: scale only by whole numbers, so every pixel is the same size.
-* `--widescreen`: turn widescreen on (`--no-widescreen` turns it off) for this run. `--talk-zoom`
-  and `--no-talk-zoom` do the same for the talk zoom, `--enemy-health` and `--no-enemy-health` for
-  the enemy health.
+* `--no-widescreen`, `--no-talk-zoom`, `--no-enemy-health`: turn that feature off for this run
+  (`--widescreen`, `--talk-zoom` and `--enemy-health` turn it on).
 * `--fps`: show the frame rate from the start. `--mute`: no sound.
 * `--state FILE`: the file quick save and quick load use. `--load`: load it at start.
 * `--config FILE`: use this settings file instead of `wbmw.ini`.

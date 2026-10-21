@@ -1,8 +1,8 @@
 # Talk zoom
 
 The native build can zoom in on Wonder Boy and the one he is talking to while a conversation
-runs (menu: **Talk zoom**, `--talk-zoom`, or `talk_zoom=1` in `wbmw.ini`). It is off by default,
-and experimental. It is all done in the host (`native/wbmw.c`, as the picture goes to the
+runs (menu: **Talk zoom**; `--no-talk-zoom` or `talk_zoom=0` in `wbmw.ini` turns it off). It is on
+by default, and experimental. It is all done in the host (`native/wbmw.c`, as the picture goes to the
 window): the game's code and RAM are untouched, so the harness's comparisons are unaffected.
 
 ## When
