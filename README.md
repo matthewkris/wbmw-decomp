@@ -1,11 +1,12 @@
-# Wonder Boy in Monster World (Genesis) — C port
+# Wonder Boy in Monster World (Genesis/Mega Drive) — C port
 
-A port of the Sega Genesis / Mega Drive game *Wonder Boy in Monster World* to hand-written C.
+A port of the Sega Genesis/Mega Drive game *Wonder Boy in Monster World* to hand-written C (the
+console was sold as the Genesis in North America and the Mega Drive in Europe and elsewhere).
 It runs natively with SDL2. The game's 68000 program is not emulated: every routine was rewritten by
 hand, then checked against the original in a reference harness (shadow runs, fuzzing, coverage).
 The game is playable from start to finish.
 
-One part is still emulated: sound. On the Genesis, the music and sound effects are played by a
+One part is still emulated: sound. On the Genesis/Mega Drive, the music and sound effects are played by a
 small program on the console's second CPU, a Z80. The port loads that driver from your ROM and runs
 it on an emulated Z80, which drives emulated sound chips (ymfm for the YM2612, plus the SN76489).
 
@@ -86,7 +87,7 @@ them, or beside them). MSYS2 isn't needed to run the game.
 
 ### Controls
 
-| Genesis | Keyboard |
+| Genesis/Mega Drive | Keyboard |
 |---|---|
 | D-pad | Arrow keys |
 | A / B / C | Z / X / C |
