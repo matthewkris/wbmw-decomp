@@ -29,8 +29,13 @@ window): the game's code and RAM are untouched, so the harness's comparisons are
   ends, it all eases back.
 * The box is drawn into plane A, so the zoomed scene cannot be the frame itself (the box would
   be zoomed too). The host keeps plane A's map each frame while there is no conversation, and
-  while zoomed renders the scene a second time with that map: the scene without the box. A
-  state loaded mid-conversation has no such map, so that conversation is not zoomed.
+  while zoomed renders the scene a second time with that map, and without the window (the HUD's
+  band, whose lines the zoom brings into the picture: they must be the scenery's): the scene
+  without the box. A state loaded mid-conversation has no such map, so that conversation is not
+  zoomed.
+* The box and its pointer are drawn over it from their own tiles (plane A's, decoded with the
+  palette), their transparent pixels left transparent. A copy of the picture there would bring
+  the unzoomed scene with them, around the frame's corners and the pointer.
 * The zoom is drawn by SDL at the window's resolution, so it is smooth.
 
 ## Testing
