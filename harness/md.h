@@ -46,8 +46,10 @@ extern uint32_t frame_rgb[240][FRAME_STRIDE];
 extern int frame_width;
 /* widescreen (the native build; 0 in the harness): vdp_pad pixels shown at each side of the H32
  * picture, which stays 256 + 2 * vdp_pad wide in H40 too (black sides there); vdp_pad_fill: the
- * game fills them (the room allows it), else they are black */
-extern int vdp_pad, vdp_pad_fill;
+ * game fills them (the room allows it), else they are black; vdp_band_top: in a filled picture,
+ * the first of the HUD's lines whose sides show the scene (the map is drawn there), the lines
+ * above it black at the sides (64, the default: the whole band) */
+extern int vdp_pad, vdp_pad_fill, vdp_band_top;
 void vdp_reset(void);
 void vdp_write_ctrl(uint16_t w);
 void vdp_write_data(uint16_t w);

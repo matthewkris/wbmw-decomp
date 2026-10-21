@@ -13,7 +13,7 @@ uint16_t cram[64], vsram[40];
 int vdp_line, vdp_line_cycle;
 uint32_t frame_rgb[240][FRAME_STRIDE];
 int frame_width = 320;
-int vdp_pad, vdp_pad_fill;
+int vdp_pad, vdp_pad_fill, vdp_band_top = 64;
 
 static int pending, code;
 static unsigned addr;
@@ -208,11 +208,11 @@ static void draw_plane(uint8_t *out, unsigned base, int line, int lo, int hi, in
 }
 
 /* the window on this line, where it is in the game's width; *from, *to: the picture x where plane
- * A is not drawn. On the HUD's own lines (the top 64) a window that reaches an edge of the game's
- * picture reaches the same edge of a wide one too, as plane A never shows there (the band shows
- * plane B and sprites at its sides, as through its own gaps). Lines the window takes beyond them
- * for a while (a message under the HUD, "Found 5 GOLD.") are the play field's, so their sides
- * show plane A as usual. */
+ * A is not drawn. On the HUD's own lines (the top 64) above vdp_band_top a window that reaches an
+ * edge of the game's picture reaches the same edge of a wide one too (those sides are black:
+ * vdp_render_line). From vdp_band_top down the map is drawn beside the HUD, and lines the window
+ * takes beyond the 64 for a while (a message under the HUD, "Found 5 GOLD.") are the play
+ * field's: their sides show plane A as usual. */
 #define HUD_LINES 64
 static void draw_window(uint8_t *out, int line, int width, int lo, int hi, int pad, int *from, int *to)
 {
@@ -234,7 +234,7 @@ static void draw_window(uint8_t *out, int line, int width, int lo, int hi, int p
         tile_pixel_row(name, line & 7, row);
         out[x + pad] = row[x & 7];
     }
-    int sides = line < HUD_LINES;
+    int sides = line < HUD_LINES && line < vdp_band_top;
     *from = f == 0 && sides ? lo : f + pad;
     *to = t == width && sides ? hi : t + pad;
 }
@@ -289,6 +289,7 @@ void vdp_render_line(int line)
     int pad = vdp_pad ? (256 + 2 * vdp_pad - width) / 2 : 0;
     int fill = vdp_pad_fill && width == 256;
     int lo = fill ? 0 : pad, hi = fill ? width + 2 * pad : pad + width;   /* the picture x drawn */
+    int bar = fill && line < HUD_LINES && line < vdp_band_top;   /* the band's sides black: no map above it */
     int total = width + 2 * pad;
     frame_width = total;
     uint32_t bg = rgb(cram[vdp_reg[7] & 0x3F]);
@@ -304,6 +305,7 @@ void vdp_render_line(int line)
     draw_sprites(lay_s, line, lo, hi, pad, width);
     for (int x = 0; x < total; x++) {
         if (x < lo || x >= hi) { frame_rgb[line][x] = 0; continue; }   /* the sides of a picture not wide */
+        if (bar && (x < pad || x >= pad + width)) { frame_rgb[line][x] = 0; continue; }
         uint8_t a = lay_a[x], b = lay_b[x], s = lay_s[x], c = 0;
         /* priority order, front to back: S hi, A hi, B hi, S lo, A lo, B lo */
         if (s & 0x40) c = s; else if (a & 0x40) c = a; else if (b & 0x40) c = b;
