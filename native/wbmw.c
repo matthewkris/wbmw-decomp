@@ -126,6 +126,23 @@ static int wide_room(int area, int room)
     if (!known[area][room]) known[area][room] = layers_wide(area, room) ? 1 : -1;
     return known[area][room] > 0 && !(ram[0x9659] & 0x10);
 }
+/* each frame: whether the room is shown wide, and how much of the HUD's band beside it shows the
+ * map. In a wide room port/rooms.c draws each layer's rows up to 64 lines above the play field, as
+ * far as its map's top; above the lowest of those tops (of the layers drawn as screens: $C, the
+ * first row drawn, in 64s of 16 lines; a repeated layer, $33 = 2, fills the plane) the band's
+ * sides are black, as the HUD covers the scene there in the original. */
+static void wide_frame(void)
+{
+    vdp_pad_fill = widescreen && wide_room(ram[0x9668], ram[0x9669]);
+    int top = 0;
+    for (int k = 0; k < 2 && vdp_pad_fill; k++) {
+        const uint8_t *l = &ram[k ? 0x97D4 : 0x9754];
+        if (l[0x33] == 2) continue;
+        int y = l[6] << 8 | l[7], first = (l[0xC] << 8 | l[0xD]) >> 2, t = 64 - (y - first);
+        if (t > top) top = t;
+    }
+    vdp_band_top = top < 0 ? 0 : top > 64 ? 64 : top;
+}
 static void wide_apply(void)
 {
     port_wide_px = vdp_pad = widescreen ? WIDE_PX : 0;
@@ -1154,7 +1171,7 @@ static void start_line(void)
         vdp_set_vblank(1); vdp_set_vint_pending(1);
         if (vdp_vint_enabled()) vint_pending = 1;
     }
-    if (line == 0) { vdp_set_vblank(0); hcount = vdp_hint_counter_reload(); }
+    if (line == 0) { vdp_set_vblank(0); hcount = vdp_hint_counter_reload(); wide_frame(); }
 }
 
 static void end_line(void)
@@ -1314,7 +1331,7 @@ void rt_poll(Cpu *c, uint32_t at)
     }
     if (ram[0x8006] & 1) return;                    /* the interrupt already came this frame */
     maybe_save(c, at);                              /* the game waits for VBlank: a state can be taken */
-    vdp_pad_fill = widescreen && wide_room(ram[0x9668], ram[0x9669]);
+    wide_frame();
     for (int l = 0; l < ACTIVE_LINES; l++) { vdp_line = l; vdp_render_line(l); }
     vdp_line = 0;                                   /* the game's own time runs at line 0 */
     for (int l = 0; l < LINES_PER_FRAME; l++) sound_run_line(l == ACTIVE_LINES);   /* a frame of sound */

@@ -1079,8 +1079,23 @@ static void columns_strip(void)     /* $99C8: one screen wide, repeated: the map
     put16m(c->a[3] + 0x44, 32);
     put16m(c->a[3] + 0xA, 32);
 }
+/* widescreen: the rows of the play field (its 160 lines from the y) and of the 64 lines beside the
+ * HUD above it, down to the map's top: [*lo, *hi) */
+static void rows_wide(int *lo, int *hi)
+{
+    int y = rd16(c->a[3] + 6), top = y - 64 < 0x1000 ? 0x1000 : y - 64;
+    *lo = top >> 4; *hi = ((y + 159) >> 4) + 1;
+}
 static void rows_screens(void)      /* $99F6: the rows shown, from the y */
 {
+    if (wide_layer()) {
+        int lo, hi;
+        rows_wide(&lo, &hi);
+        put16m(c->a[3] + 0xC, (uint16_t)(lo << 6));
+        c->d[0] = set_w(c->d[0], (uint16_t)((hi - lo) << 6));
+        put16m(c->a[3] + 0xE, (uint16_t)((hi - lo) << 6));
+        return;
+    }
     c->d[0] = set_w(c->d[0], rd16(c->a[3] + 6)); F_W(c->d[0]);
     c->d[1] = set_w(c->d[1], c->d[0]); F_W(c->d[0]);
     and_w(0, 0xFFF0);
@@ -1591,9 +1606,36 @@ static void columns_in(void)
     unlk();
 }
 
+/* widescreen: the rows of rows_wide not drawn yet, below then above, keeping at most the plane's
+ * 16 ($C: the first, $E: how many, both in 64s) */
+static void rows_in_wide(void)
+{
+    link(-6);
+    int lo, hi;
+    rows_wide(&lo, &hi);
+    int first = rd16(c->a[3] + 0xC) >> 6, n = rd16(c->a[3] + 0xE) >> 6;
+    while (first + n < hi) {
+        c->d[7] = set_w(c->d[7], (uint16_t)((first + n) << 6));
+        push32(0x9E9A); draw_row(); c->a[7] += 4;
+        n++;
+    }
+    if (n > 16) { first += n - 16; n = 16; }
+    while (lo < first) {
+        first--;
+        c->d[7] = set_w(c->d[7], (uint16_t)(first << 6));
+        push32(0x9ED4); draw_row(); c->a[7] += 4;
+        n++;
+    }
+    if (n > 16) n = 16;
+    put16m(c->a[3] + 0xC, (uint16_t)(first << 6));
+    put16m(c->a[3] + 0xE, (uint16_t)(n << 6));
+    unlk();
+}
+
 /* $9E60: the rows that scrolled into view drawn (down, or up), up to $400 kept ($C, $E) */
 static void rows_in(void)
 {
+    if (wide_layer()) { rows_in_wide(); return; }
     link(-6);
     c->d[0] = set_w(c->d[0], rd16(c->a[3] + 6)); F_W(c->d[0]);
     c->d[2] = set_w(c->d[2], c->d[0]); F_W(c->d[0]);
