@@ -92,10 +92,14 @@ What it involves:
 
 ### Wide screen (asked 2026-10-10)
 
-**Started (2026-10-21), stages 1 and 2 done:** a 16:9 picture (400 pixels), the menu's Widescreen
-option, the scenery drawn wider in the first village and the two areas beside it, black sides
-elsewhere; sprites drawn and enemies created and removed at the wider edges. Next: more rooms.
-See `docs/WIDESCREEN.md`. The original assessment:
+**Started (2026-10-21), stages 1 and 2 done, paused there by the owner (experimental):** a 16:9
+picture (400 pixels), the menu's Widescreen option, the scenery drawn wider in area 1 rooms 0-4
+(after the opening) and area 2 rooms 0-2 (the first village and the areas beside it), black sides
+elsewhere; sprites drawn and enemies created and removed at the wider edges; fixes for the
+message under the HUD and for the layers stopping together. When it is taken up again: try area
+1 rooms 0 and 1 (not seen yet), then area 1 rooms 5-7 (taller rooms of another kind), then the
+following areas a few rooms at a time, with the owner's save states for anything odd. See
+`docs/WIDESCREEN.md`. The original assessment:
 
 Possible, but a project of its own. The game is written for a 256-pixel view: scenery is copied
 into video memory just past the visible edges, objects are created and removed at the screen
