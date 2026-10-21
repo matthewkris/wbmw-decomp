@@ -29,6 +29,10 @@ never committed):
   text/messages.txt     every message, readable, codes as {TAGS}, phrases expanded
   text/messages.json    the same parsed (characters, codes, commands, phrase references)
   text/phrases.txt, text/windows.json
+  text/fragments.json   texts messages jump to that lie outside them (after the phrases)
+  rooms/start_points.json  where the player starts in a room after a door, an exit or a new game
+                        (the directory's table 0, $A37E): area, room, kind, place, a word
+  rooms/music.json      the music of each area's rooms (the directory's table 3, $92D4)
   sprites/animations.json  the animation sets, groups and animations (frames, durations,
                         commands) and every sprite mapping (its pieces)
   sprites/player.png    Shion's animations, a row each
@@ -214,6 +218,18 @@ def main():
                                places={str(k): v for k, v in cmap.items()}))
         maps.append(dict(area=r['area'], room=r['room'], layers=layers))
     scenes, pics = dir_tables(d, maps, block_table)
+    # the start points (table 0: word offsets to 8-byte records; its count, a word, just before it)
+    t0 = rooms.be32(d, rooms.DIR) & 0xFFFFFF
+    n0 = rooms.be16(d, t0) // 2
+    offs = [rooms.sw(d, t0 + 2 * i) for i in range(n0)]
+    json.dump(dict(table='%06X' % t0, count_before=rooms.be16(d, t0 - 2), offsets=offs,
+                   points={str(o): dict(area=d[t0 + o], room=d[t0 + o + 1], kind=rooms.be16(d, t0 + o + 2), x=d[t0 + o + 4],
+                                        y=d[t0 + o + 5], word=rooms.be16(d, t0 + o + 6)) for o in sorted(set(offs))}),
+              open(path('rooms', 'start_points.json'), 'w'), indent=0)
+    # the rooms' music (table 3: a word offset an area to a byte a room)
+    t3 = rooms.be32(d, rooms.DIR + 0xC) & 0xFFFFFF
+    json.dump(dict(table='%06X' % t3, areas=[dict(offset=rooms.sw(d, t3 + 2 * a), music=list(d[t3 + rooms.sw(d, t3 + 2 * a):
+              t3 + rooms.sw(d, t3 + 2 * a) + rooms.room_count(d, a)])) for a in range(19)]), open(path('rooms', 'music.json'), 'w'), indent=0)
     json.dump(scenes, open(path('rooms', 'scenes.json'), 'w'))
     json.dump(pics, open(path('rooms', 'house_pictures.json'), 'w'), indent=0)
     json.dump(maps, open(path('rooms', 'maps.json'), 'w'))   # with the scenes' layers too
@@ -245,10 +261,13 @@ def main():
     with open(path('text', 'phrases.txt'), 'w', encoding='utf-8') as f:
         for k, lst in enumerate(phrases):
             for j, a in enumerate(lst): f.write('%d.%d $%06X %r\n' % (k, j, a, text.decode(d, a, phrases=phrases)[0]))
+    frags = text.fragments(d, msgs, phrases)
+    json.dump([dict(address='%06X' % f['address'], end='%06X' % f['end'], text=f['text'], parsed=f['parsed']) for f in frags],
+              open(path('text', 'fragments.json'), 'w'), indent=1)
     windows = sorted(set(m['window'] for m in msgs))
     json.dump({str(w): text.window(d, w) for w in windows}, open(path('text', 'windows.json'), 'w'), indent=1)
     unknown = sum(m['text'].count('{x') for m in msgs)
-    checks['text'] = dict(messages=len(msgs), phrase_tables=[len(t) for t in phrases], windows=len(windows),
+    checks['text'] = dict(messages=len(msgs), phrase_tables=[len(t) for t in phrases], windows=len(windows), fragments=len(frags),
                           unnamed_glyphs=unknown)
 
     # sprites: the animation data; Shion; every enemy type the rooms load; the rooms with them

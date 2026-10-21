@@ -1,7 +1,7 @@
 """Check that the files tools/extract.py wrote hold all of the ROM's data: build the ROM's bytes
 back from them and compare (docs/EXTRACT.md).
 
-Usage: rebuild.py ROM [ASSETS]
+Usage: rebuild.py ROM [ASSETS] [--reads FILE]
 
 The structured data is encoded back from the JSON (tools/assetfmt.py) and must match the ROM
 byte for byte: the text (messages and phrases), the palettes, the room scripts, the animation
@@ -11,6 +11,10 @@ tree). The compressed data is checked by content against the port's own decoders
 harness verified against the original's: the graphics (wbmw --verify-graphics) and the rooms'
 block tables and layer maps (wbmw --unpack-list). The raw parts (the sound) are compared as they
 are. At the end, how much of the ROM the checks cover, and the largest parts they do not.
+
+--reads FILE (from the native build's --rom-reads, over as much play as can be had) compares what
+the game reads with what the checks cover: the bytes it reads that no file holds yet. In the
+native build no 68000 code runs, so a read in the code region ($0-$1C601) is a table read as data.
 """
 import sys, os, json, struct, argparse, subprocess, tempfile
 sys.path.insert(0, os.path.dirname(__file__))
@@ -18,6 +22,7 @@ import assetfmt, gfx, sprites
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('rom'); ap.add_argument('assets', nargs='?', default='assets')
+    ap.add_argument('--reads', help="the native build's --rom-reads map")
     A = ap.parse_args()
     d = open(A.rom, 'rb').read()
     J = lambda *p: json.load(open(os.path.join(A.assets, *p), encoding='utf-8'))
@@ -43,6 +48,7 @@ def main():
     check('messages', [(int(m['address'], 16), assetfmt.text_encode(m['parsed'])) for m in msgs])
     ph = J('text', 'phrases.json')
     check('phrases', [(int(p['address'], 16), assetfmt.text_encode(p['parsed'])) for p in ph])
+    check('text fragments', [(int(f['address'], 16), assetfmt.text_encode(f['parsed'])) for f in J('text', 'fragments.json')])
     pals = J('palettes', 'palettes.json')
     check('palettes', [(gfx.PALETTES + 17 * p['number'], assetfmt.palette_encode([int(w, 16) for w in p['words']])) for p in pals])
     rms = J('rooms', 'rooms.json')
@@ -71,6 +77,13 @@ def main():
                                                                  x['palette'], x['word_8B56'], int(x['slots'], 16))) for x in sc])
     hp = J('rooms', 'house_pictures.json')
     check('house picture records', [(int(x['address'], 16), bytes.fromhex(x['raw'])) for x in hp['records']])
+    sp = J('rooms', 'start_points.json'); t0 = int(sp['table'], 16)
+    check('start points', [(t0 - 2, struct.pack('>H', sp['count_before']) + b''.join(struct.pack('>h', o) for o in sp['offsets']))]
+          + [(t0 + int(o), bytes([v['area'], v['room']]) + struct.pack('>H', v['kind']) + bytes([v['x'], v['y']]) + struct.pack('>H', v['word']))
+             for o, v in sp['points'].items()])
+    mu = J('rooms', 'music.json'); t3 = int(mu['table'], 16)
+    check('room music', [(t3, b''.join(struct.pack('>h', a['offset']) for a in mu['areas']))]
+          + [(t3 + a['offset'], bytes(a['music'])) for a in mu['areas']])
     ex = []
     for i, e in enumerate(J('graphics', 'table.json')):
         e = int(e, 16)
@@ -147,6 +160,23 @@ def main():
                               code_and_its_tables_not_covered=sum(min(n, CODE - a) for n, a in gaps if a < CODE),
                               data_not_covered=sum(n for n, _ in data_gaps))
     print('largest data not covered:', ', '.join('$%06X (%d bytes)' % (a, n) for n, a in sorted(data_gaps, reverse=True)[:10]))
+
+    if A.reads:
+        rd = open(A.reads, 'rb').read()
+        runs = []                                   # read, not covered: (length, start)
+        i = 0
+        while i < len(d):
+            if rd[i] and not covered[i]:
+                j = i
+                while j < len(d) and rd[j] and not covered[j]: j += 1
+                runs.append((j - i, i)); i = j
+            else: i += 1
+        code = [(n, a) for n, a in runs if a < CODE]; data = [(n, a) for n, a in runs if a >= CODE]
+        report['reads'] = dict(bytes_read=sum(1 for b in rd if b), read_and_covered=sum(1 for i in range(len(d)) if rd[i] and covered[i]),
+                               read_not_covered_code_region=sum(n for n, _ in code), read_not_covered_data=sum(n for n, _ in data),
+                               covered_never_read=sum(1 for i in range(len(d)) if covered[i] and not rd[i]))
+        print('read, not covered, in the code region (tables):', ', '.join('$%06X (%d)' % (a, n) for n, a in sorted(code, reverse=True)[:16]))
+        print('read, not covered, data:', ', '.join('$%06X (%d)' % (a, n) for n, a in sorted(data, reverse=True)[:12]))
 
     print(json.dumps(report, indent=1))
     print('everything matches' if not bad_total else '%d pieces differ' % bad_total)

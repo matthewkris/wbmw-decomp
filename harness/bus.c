@@ -109,12 +109,19 @@ void bus_reset(void)
     pad_data = 0x40; pad_ctrl = 0;
 }
 
+/* the ROM's bytes read (when set: the native build's --rom-reads; one byte a ROM byte) */
+uint8_t *bus_rom_reads;
+
 /* ---- the map ---- */
 unsigned int bus_read8(unsigned int a)
 {
     a &= 0xFFFFFF;
     if (a == 0x200001) return eeprom_read();
-    if (a < 0x400000) return a < rom_size ? rom[a] : 0xFF;
+    if (a < 0x400000) {
+        if (a >= rom_size) return 0xFF;
+        if (bus_rom_reads) bus_rom_reads[a] = 1;
+        return rom[a];
+    }
     if (a >= 0xE00000) return ram[a & 0xFFFF];
     if (a >= 0xA00000 && a < 0xA10000) return (a & 0x7FFF) < 0x2000 ? zram[a & 0x1FFF] : 0;
     switch (a) {
@@ -147,7 +154,11 @@ static uint16_t timing(uint16_t live)
 unsigned int bus_read16(unsigned int a)
 {
     a &= 0xFFFFFE;
-    if (a < 0x400000 && a != 0x200000) return a + 1 < rom_size ? rom[a] << 8 | rom[a + 1] : 0xFFFF;
+    if (a < 0x400000 && a != 0x200000) {
+        if (a + 1 >= rom_size) return 0xFFFF;
+        if (bus_rom_reads) bus_rom_reads[a] = bus_rom_reads[a + 1] = 1;
+        return rom[a] << 8 | rom[a + 1];
+    }
     if (a >= 0xE00000) return ram[a & 0xFFFF] << 8 | ram[(a + 1) & 0xFFFF];
     if (a >= 0xC00000 && a < 0xC00020) {
         switch (a & 0x1C) {
