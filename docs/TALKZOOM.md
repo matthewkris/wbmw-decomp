@@ -1,0 +1,41 @@
+# Talk zoom
+
+The native build can zoom in on Wonder Boy and the one he is talking to while a conversation
+runs (menu: **Talk zoom**, `--talk-zoom`, or `talk_zoom=1` in `wbmw.ini`). It is off by default,
+and experimental. It is all done in the host (`native/wbmw.c`, as the picture goes to the
+window): the game's code and RAM are untouched, so the harness's comparisons are unaffected.
+
+## When
+
+* **A conversation:** the sequence `$C1E8` sets `$9659` bit 3 while it runs, and its message is
+  open while `$8CA4` bit 7 is set. Signs and the "Found ..." boxes are not conversations.
+* **With an ordinary character.** The speaker is the character under the box's pointer (two
+  tiles in plane A's row above the box, drawn from the message's data over the one speaking),
+  or, for a box without a pointer, the person nearest Wonder Boy (within 64 pixels, at least 24
+  tall by its size, so not Priscilla). No zoom when there is none (the Sphinx is drawn in the
+  background), or when the speaker is taller than 48 pixels (a boss: they fill the screen as it
+  is). A character's size is its `-$34FD` (half its height).
+* Not in H40 screens, and not for a conversation already open when a state is loaded (see below).
+
+## How
+
+* The box: the message's window, at column `$8D92`, row `$8D94` (counted from below the HUD's
+  64 lines), `$8D96` × `$8D98` tiles; on plane A at `$8D9A`, `$8D9C` (scrolled).
+* The zoom eases in (to at most 1.5×) about an anchor between Wonder Boy and the speaker, at
+  Wonder Boy's feet, so the two grow upward. The HUD slides up out of the picture and the box
+  with it, by 64 lines, so the scene has the whole height; the zoom is as large as keeps their
+  heads (about 28 lines above their feet) below the box. The box and its pointer stay at their
+  own size, the pointer moved over the speaker as the zoom moves him. When the conversation
+  ends, it all eases back.
+* The box is drawn into plane A, so the zoomed scene cannot be the frame itself (the box would
+  be zoomed too). The host keeps plane A's map each frame while there is no conversation, and
+  while zoomed renders the scene a second time with that map: the scene without the box. A
+  state loaded mid-conversation has no such map, so that conversation is not zoomed.
+* The zoom is drawn by SDL at the window's resolution, so it is smooth.
+
+## Testing
+
+`--input FILE` works in a window too (with the keyboard and controller), and
+`WBMW_SHOT_EVERY=N WBMW_SHOT_EVERY_DIR=DIR` writes the window's own picture every N frames. Tried:
+the girl in the village's house (no pointer: zoomed in and back out), the Sphinx (not zoomed),
+and the inn from a state loaded mid-conversation (not zoomed, as above).

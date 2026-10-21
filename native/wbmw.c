@@ -21,6 +21,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <math.h>
 #include "../harness/md.h"
 #include "../port/m68k_rt.h"
 
@@ -123,6 +124,7 @@ static uint8_t buttons_at(int fr)
 static SDL_Window *win; static SDL_Renderer *ren; static SDL_Texture *tex; static SDL_GameController *gc;
 static Uint64 next_tick;
 static int fullscreen = 1, integer_scale, show_fps;   /* full screen unless --windowed */
+static int talk_zoom;                                  /* the zoom during conversations (Talk zoom) */
 static const char *TITLE = "Wonder Boy in Monster World (native)  (Esc: menu, F11: full screen)";
 
 /* frames shown per second, measured over each second */
@@ -242,7 +244,7 @@ static const char *pad_label(int p)
 
 /* wbmw.ini: what the player chose in the menu (and with F11, F3). The command line can override
  * a setting for one run without changing the file: cfg is what the file holds. */
-static struct { int fullscreen, show_fps, integer_scale, mute, widescreen; } cfg = {1, 0, 0, 0, 0};
+static struct { int fullscreen, show_fps, integer_scale, mute, widescreen, talk_zoom; } cfg = {1, 0, 0, 0, 0, 0};
 static char ini_path[4096];
 static int ini_dirty;
 
@@ -277,8 +279,8 @@ static void settings_save(void)
     if (!f) { fprintf(stderr, "wbmw: cannot write the settings to %s\n", ini_path); return; }
     fprintf(f, "# Wonder Boy in Monster World (native): settings, written by the game's menu (Esc).\n"
                "# Keys by SDL's names; controller inputs by SDL's, an axis with + or - before it; none: unbound.\n");
-    fprintf(f, "fullscreen=%d\nshow_fps=%d\ninteger_scale=%d\nmute=%d\nwidescreen=%d\nstick_moves=%d\n",
-            cfg.fullscreen, cfg.show_fps, cfg.integer_scale, cfg.mute, cfg.widescreen, stick_moves);
+    fprintf(f, "fullscreen=%d\nshow_fps=%d\ninteger_scale=%d\nmute=%d\nwidescreen=%d\ntalk_zoom=%d\nstick_moves=%d\n",
+            cfg.fullscreen, cfg.show_fps, cfg.integer_scale, cfg.mute, cfg.widescreen, cfg.talk_zoom, stick_moves);
     for (int a = 0; a < ACTIONS; a++) {
         char pad[64]; pad_name(pad_bind[a], pad, sizeof pad);
         const char *key = key_bind[a] == SDL_SCANCODE_UNKNOWN ? "" : SDL_GetScancodeName(key_bind[a]);
@@ -305,6 +307,7 @@ static void settings_open(const char *path)
             else if (!strcmp(line, "integer_scale")) cfg.integer_scale = atoi(v);
             else if (!strcmp(line, "mute")) cfg.mute = atoi(v);
             else if (!strcmp(line, "widescreen")) cfg.widescreen = atoi(v);
+            else if (!strcmp(line, "talk_zoom")) cfg.talk_zoom = atoi(v);
             else if (!strcmp(line, "stick_moves")) stick_moves = atoi(v);
             else for (int a = 0; a < ACTIONS; a++) {
                 if (!strncmp(line, "key.", 4) && !strcmp(line + 4, ACT_INI[a]))
@@ -315,7 +318,7 @@ static void settings_open(const char *path)
         fclose(f);
     }
     fullscreen = cfg.fullscreen; show_fps = cfg.show_fps; integer_scale = cfg.integer_scale; mute = cfg.mute;
-    widescreen = cfg.widescreen;
+    widescreen = cfg.widescreen; talk_zoom = cfg.talk_zoom;
 }
 
 /* a controller plugged in (or there at the start) or pulled out: the first one plays */
@@ -363,13 +366,164 @@ static void draw_text(int x, int y, const char *s, uint32_t color)
 
 static void draw_text_centred(int y, const char *s, uint32_t color) { draw_text(frame_width / 2 - (int)strlen(s) * 3, y, s, color); }
 
-static void present(void)
+/* ---- the zoom during conversations (Talk zoom): done here, as the picture goes to the
+ * window, so the game never knows (docs/TALKZOOM.md) ----
+ * A conversation ($C1E8) sets $9659 bit 3 while it runs, and its message is open while $8CA4
+ * bit 7 is set. The scene is then drawn larger about an anchor between Wonder Boy and the one
+ * speaking, at their feet. The message's box and its pointer (the two tiles over the speaker in
+ * the row above the box, from the message's data) stay at their own size, the pointer moved
+ * over the speaker as the zoom moves him; the HUD slides up out of the picture, and the box with
+ * it by the HUD's 64 lines, so the scene has the whole height and the two fit under the box.
+ * The box is drawn into plane A, so the zoomed scene is a second picture rendered with plane A's
+ * map as it was before the box opened (kept each frame until then): no box in it. */
+static struct {
+    float z, ax, ay;                                /* the zoom now, its anchor (picture pixels) */
+    float slide;                                    /* 0-1: how far the HUD and the box are moved up */
+    int on;                                         /* a conversation, and where its box is */
+    SDL_Rect box;
+    int pointer_x, pointer_w;                       /* the pointer's place over the box, or w 0 */
+} zoom = {1, 0, 0, 0, 0, {0, 0, 0, 0}, 0, 0};
+#define ZOOM_MAX 1.5f
+#define ZOOM_HUD 64                                 /* the HUD's lines, never zoomed */
+#define ZOOM_BODY 28                                /* a character's height above its feet, about */
+#define ZOOM_TALLEST 48                            /* a speaker taller than this is a boss: no zoom */
+#define ZOOM_PERSON 24                             /* the smallest speaker found without a pointer */
+static uint8_t zoom_plane[0x2000];                  /* plane A's map before the box, and whether kept */
+static int zoom_plane_ok, zoom_scene;               /* zoom_scene: zoom_rgb holds the scene without the box */
+static uint32_t zoom_rgb[ACTIVE_LINES][FRAME_STRIDE];
+static SDL_Texture *tex_zoom;
+
+static unsigned plane_a(unsigned *size)
+{
+    static const int dim[4] = {32, 64, 32, 128};
+    *size = (unsigned)(dim[vdp_reg[16] & 3] * dim[(vdp_reg[16] >> 4) & 3] * 2);
+    if (*size > sizeof zoom_plane) *size = sizeof zoom_plane;
+    return (vdp_reg[2] & 0x38) << 10;
+}
+
+/* the scene again, with plane A's map from before the box */
+static void zoom_render_scene(void)
+{
+    static uint8_t keep[0x2000];
+    static uint32_t saved[ACTIVE_LINES][FRAME_STRIDE];
+    unsigned size, base = plane_a(&size);
+    if (base + size > sizeof vram) { zoom_scene = 0; return; }
+    memcpy(keep, vram + base, size); memcpy(vram + base, zoom_plane, size);
+    memcpy(saved, frame_rgb, sizeof saved);
+    for (int l = 0; l < ACTIVE_LINES; l++) vdp_render_line(l);
+    memcpy(zoom_rgb, frame_rgb, sizeof zoom_rgb);
+    memcpy(frame_rgb, saved, sizeof saved); memcpy(vram + base, keep, size);
+    zoom_scene = 1;
+}
+
+static void zoom_update(void)
+{
+    int pad = (frame_width - 256) / 2;              /* the game's 256 in the picture (widescreen) */
+    int talking = talk_zoom && (ram[0x9659] & 8) && (ram[0x8CA4] & 0x80) && !(vdp_reg[12] & 1);
+    float zt = 1;
+    zoom.on = 0;
+    if (!talking) {                                 /* plane A's map while there is no box */
+        unsigned size, base = plane_a(&size);
+        zoom_plane_ok = base + size <= sizeof vram;
+        if (zoom_plane_ok) memcpy(zoom_plane, vram + base, size);
+    }
+    if (talking && zoom_plane_ok) {                 /* (no map from before the box: a state loaded mid-conversation) */
+        int col = ram[0x8D92] << 8 | ram[0x8D93], row = ram[0x8D94] << 8 | ram[0x8D95];
+        int w = ram[0x8D96] << 8 | ram[0x8D97], h = ram[0x8D98] << 8 | ram[0x8D99];
+        int px = ram[0x8D9A] << 8 | ram[0x8D9B], py = ram[0x8D9C] << 8 | ram[0x8D9D];
+        zoom.box = (SDL_Rect){pad + col * 8, ZOOM_HUD + row * 8, w * 8, h * 8};
+        /* the pointer: the tiles drawn in plane A's row above the box */
+        unsigned base = (vdp_reg[2] & 0x38) << 10;
+        int first = -1, last = -1;
+        for (int i = 0; i < w && w < 64; i++) {
+            unsigned na = (base + (((py - 1) & 31) * 64 + ((px + i) & 63)) * 2) & 0xFFFF;
+            if (vram[na] | vram[na + 1]) { if (first < 0) first = i; last = i; }
+        }
+        zoom.pointer_w = first < 0 ? 0 : (last - first + 1) * 8;
+        zoom.pointer_x = first < 0 ? 0 : zoom.box.x + first * 8;
+        /* Wonder Boy ($9EEE) and the speaker, under the pointer: the anchor between them, at
+         * Wonder Boy's feet; the zoom as large as leaves the two below the box */
+        uint32_t e = 0xFFFF0000u + (ram[0x9EEE] << 8 | ram[0x9EEF]);
+        int cam_x = ram[0x8B34] << 8 | ram[0x8B35], cam_y = ram[0x8B36] << 8 | ram[0x8B37];
+        int wx = pad + (int16_t)(rd16(e - 0x3800) - cam_x - 128), wy = (int16_t)(rd16(e - 0x3700) - cam_y - 128);
+        /* the speaker: the character nearest under the pointer, or with no pointer (a box may
+         * have none) the person nearest Wonder Boy: an entity in use, not him, placed by the
+         * camera, and without a pointer at least person-sized (so not Priscilla, nor a fire).
+         * Only ordinary characters are zoomed: with none there (the Sphinx is drawn in the
+         * background, a message may have no speaker) or a big one (a boss, taller than
+         * ZOOM_TALLEST by its size, -$34FD being half its height), not */
+        int sx = 0, speaker = 0;
+        int centre = zoom.pointer_w ? zoom.pointer_x + zoom.pointer_w / 2 : wx, best = zoom.pointer_w ? 24 : 64;
+        for (uint32_t k = 0; k < 0x100; k += 4) {
+            uint32_t o = 0xFFFF0000u + k;
+            if (o == e || !(rd8(o - 0x4000) & 0x80) || rd16(o - 0x3E00)) continue;
+            int half = rd8(o - 0x34FD);
+            if (!zoom.pointer_w && half < ZOOM_PERSON / 2) continue;
+            int ox = pad + (int16_t)(rd16(o - 0x3800) - cam_x - 128), d = abs(ox - centre);
+            if (d < best) { best = d; sx = ox; speaker = 2 * half <= ZOOM_TALLEST ? 1 : -1; }
+        }
+        if (speaker > 0) {
+            float ax = (wx + sx) / 2.0f, ay = (float)wy;
+            float room = (ay - (zoom.box.y + zoom.box.h - ZOOM_HUD) - 2) / (float)ZOOM_BODY;   /* the heads below the box, moved up */
+            zt = room < 1 ? 1 : room > ZOOM_MAX ? ZOOM_MAX : room;
+            if (zoom.z < 1.01f) { zoom.ax = ax; zoom.ay = ay; }        /* starting: from where they are */
+            zoom.ax += (ax - zoom.ax) * 0.2f; zoom.ay += (ay - zoom.ay) * 0.2f;
+            zoom.on = 1;
+        }
+    }
+    zoom.z += (zt - zoom.z) * 0.12f;                /* eased in and out over about half a second */
+    if (fabsf(zoom.z - 1) < 0.005f && zt == 1) zoom.z = 1;
+    float st = zoom.on && zt > 1 ? 1.0f : 0.0f;
+    zoom.slide += (st - zoom.slide) * 0.12f;
+    if (fabsf(zoom.slide - st) < 0.005f) zoom.slide = st;
+    zoom_scene = 0;
+    if (zoom.z > 1 && zoom.on && zoom_plane_ok) zoom_render_scene();   /* after the box closes, the frame is the scene */
+}
+
+static void present_frame(int zoomed)
 {
     SDL_UpdateTexture(tex, NULL, &frame_rgb[0][0], FRAME_STRIDE * 4);
     SDL_Rect src = {0, 0, frame_width, ACTIVE_LINES};              /* only the width the game uses */
     SDL_RenderSetLogicalSize(ren, frame_width, ACTIVE_LINES);
-    SDL_RenderClear(ren); SDL_RenderCopy(ren, tex, &src, NULL); SDL_RenderPresent(ren);
+    SDL_RenderClear(ren); SDL_RenderCopy(ren, tex, &src, NULL);
+    if (zoomed && (zoom.z > 1 || zoom.slide > 0)) {
+        float z = zoom.z, up = zoom.slide * ZOOM_HUD;
+        int top = (int)(ZOOM_HUD - up);
+        SDL_Rect field = {0, top, frame_width, ACTIVE_LINES - top};
+        SDL_FRect dst = {zoom.ax * (1 - z), zoom.ay * (1 - z), frame_width * z, ACTIVE_LINES * z};
+        if (zoom_scene) SDL_UpdateTexture(tex_zoom, NULL, &zoom_rgb[0][0], FRAME_STRIDE * 4);
+        SDL_RenderSetClipRect(ren, &field);
+        SDL_RenderCopyF(ren, zoom_scene ? tex_zoom : tex, &src, &dst);
+        SDL_RenderSetClipRect(ren, NULL);
+        SDL_Rect hud = {0, 0, frame_width, ZOOM_HUD};                    /* the HUD, slid up */
+        SDL_FRect hud_to = {0, -up, (float)frame_width, ZOOM_HUD};
+        SDL_RenderCopyF(ren, tex, &hud, &hud_to);
+        if (zoom.on) {                              /* the box and its pointer at their own size, slid up */
+            SDL_FRect box_to = {(float)zoom.box.x, zoom.box.y - up, (float)zoom.box.w, (float)zoom.box.h};
+            SDL_RenderCopyF(ren, tex, &zoom.box, &box_to);
+            if (zoom.pointer_w) {
+                SDL_Rect p = {zoom.pointer_x, zoom.box.y - 8, zoom.pointer_w, 8};
+                float centre = zoom.ax + (p.x + p.w / 2.0f - zoom.ax) * z;   /* over the speaker, zoomed */
+                SDL_FRect q = {centre - p.w / 2.0f, p.y - up, (float)p.w, 8};
+                if (q.x < zoom.box.x + 8) q.x = (float)zoom.box.x + 8;
+                if (q.x > zoom.box.x + zoom.box.w - 8 - p.w) q.x = (float)(zoom.box.x + zoom.box.w - 8 - p.w);
+                SDL_RenderCopyF(ren, tex, &p, &q);
+            }
+        }
+    }
+    SDL_RenderPresent(ren);
+    const char *dir = getenv("WBMW_SHOT_EVERY_DIR"); const char *every = getenv("WBMW_SHOT_EVERY");
+    if (dir && every && atoi(every) > 0 && zoomed && frame % atoi(every) == 0) {   /* testing: the window's own picture */
+        int w, h; SDL_GetRendererOutputSize(ren, &w, &h);
+        uint32_t *px = malloc((size_t)w * h * 4);
+        if (px && SDL_RenderReadPixels(ren, NULL, SDL_PIXELFORMAT_ARGB8888, px, w * 4) == 0) {
+            char path[1024]; snprintf(path, sizeof path, "%s/window_%05d.png", dir, frame);
+            png_write_rgb(path, px, w, h, w);
+        }
+        free(px);
+    }
 }
+static void present(void) { present_frame(0); }
 
 enum { MENU_WHITE = 0xFFFFFF, MENU_GREY = 0x8890A0, MENU_GOLD = 0xFFD860, MENU_BOX = 0x101830 };
 
@@ -390,8 +544,8 @@ static void draw_toast(void)
 /* the menu's screens: the main one, the exit question, the controls, and the controls waiting
  * for a press (capture) */
 enum { SCR_MAIN, SCR_ASK, SCR_CONTROLS, SCR_CAPTURE };
-enum { MI_FPS, MI_FULL, MI_PIXELS, MI_WIDE, MI_SOUND, MI_CONTROLS, MI_EXIT, MAIN_N };
-static const char *const MAIN_ITEM[MAIN_N] = {"SHOW FPS", "FULL SCREEN", "WHOLE PIXELS", "WIDESCREEN", "SOUND", "CONTROLS", "EXIT GAME"};
+enum { MI_FPS, MI_FULL, MI_PIXELS, MI_WIDE, MI_ZOOM, MI_SOUND, MI_CONTROLS, MI_EXIT, MAIN_N };
+static const char *const MAIN_ITEM[MAIN_N] = {"SHOW FPS", "FULL SCREEN", "WHOLE PIXELS", "WIDESCREEN", "TALK ZOOM", "SOUND", "CONTROLS", "EXIT GAME"};
 static const int CTRL_ROW[ACTIONS] = {ACT_UP, ACT_DOWN, ACT_LEFT, ACT_RIGHT, ACT_A, ACT_B, ACT_C, ACT_START, ACT_SAVE, ACT_LOAD};
 enum { CR_STICK = ACTIONS, CR_RESET, CR_BACK, CTRL_N };   /* the controls' rows after the actions */
 enum { COL_KEY = 80, COL_PAD = 152 };              /* the controls' columns, from the box's left */
@@ -410,7 +564,7 @@ static void draw_menu(const Menu *m)
         for (int i = 0; i < MAIN_N; i++) {
             uint32_t col = i == m->item ? MENU_GOLD : MENU_WHITE;
             int y = y0 + 24 + i * 14;
-            int on = i == MI_FPS ? show_fps : i == MI_FULL ? fullscreen : i == MI_PIXELS ? integer_scale : i == MI_WIDE ? widescreen : i == MI_SOUND ? !mute : -1;
+            int on = i == MI_FPS ? show_fps : i == MI_FULL ? fullscreen : i == MI_PIXELS ? integer_scale : i == MI_WIDE ? widescreen : i == MI_ZOOM ? talk_zoom : i == MI_SOUND ? !mute : -1;
             if (i == m->item) draw_text(x0 + 12, y, ">", col);
             draw_text(x0 + 24, y, MAIN_ITEM[i], col);
             if (on >= 0) draw_text(x0 + w - 12 - 18, y, on ? "ON" : "OFF", col);
@@ -510,6 +664,7 @@ static int menu_step(Menu *m, int only_asking, int up, int down, int left, int r
                 SDL_RenderSetIntegerScale(ren, integer_scale ? SDL_TRUE : SDL_FALSE);
                 break;
             case MI_WIDE: widescreen = cfg.widescreen = !widescreen; wide_apply(); ini_dirty = 1; break;
+            case MI_ZOOM: talk_zoom = cfg.talk_zoom = !talk_zoom; ini_dirty = 1; break;
             case MI_SOUND: mute = cfg.mute = !mute; ini_dirty = 1; break;
             case MI_CONTROLS: if (ok) { m->screen = SCR_CONTROLS; m->row = 0; m->col = 0; } break;
             case MI_EXIT: if (ok) { m->screen = SCR_ASK; m->yes = 0; } break;
@@ -650,6 +805,7 @@ static void window_open(void)
     if (fullscreen) set_fullscreen(1);
     fps_start = SDL_GetPerformanceCounter();
     tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, FRAME_STRIDE, 224);
+    tex_zoom = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, FRAME_STRIDE, 224);
     next_tick = SDL_GetPerformanceCounter();
 }
 
@@ -705,6 +861,7 @@ static void window_frame(void)
         int x = SDL_GameControllerGetAxis(gc, SDL_CONTROLLER_AXIS_LEFTX), y = SDL_GameControllerGetAxis(gc, SDL_CONTROLLER_AXIS_LEFTY);
         b |= (uint8_t)((y < -AXIS_ON ? 1 : 0) | (y > AXIS_ON ? 2 : 0) | (x < -AXIS_ON ? 4 : 0) | (x > AXIS_ON ? 8 : 0));
     }
+    if (script_n) b |= buttons_at(frame + 1);       /* testing: --input works in a window too */
     held_over &= b;                                 /* released: the game sees it again */
     pad_buttons = b & (uint8_t)~held_over;
     Uint64 freq = SDL_GetPerformanceFrequency(), t = SDL_GetPerformanceCounter();
@@ -717,7 +874,8 @@ static void window_frame(void)
     }
     if (show_fps) draw_fps();
     if (toast_frames > 0) { toast_frames--; draw_toast(); }
-    present();
+    zoom_update();
+    present_frame(1);
     next_tick += (Uint64)(freq / 59.922);
     Uint64 now = SDL_GetPerformanceCounter();
     if (now < next_tick) SDL_Delay((Uint32)((next_tick - now) * 1000 / freq));
@@ -909,6 +1067,9 @@ static int load_state(const char *path, Cpu *c, uint32_t *pc)
     else { vdp_line = 0; vdp_set_vblank(0); }       /* untimed code runs at line 0 */
     fprintf(stderr, "loaded state from %s (frame %d)\n", path, frame);
     toast = "STATE LOADED"; toast_frames = 90;
+#ifndef WBMW_HEADLESS_ONLY
+    zoom_plane_ok = 0;                              /* the talk zoom's map from before a box is another scene's */
+#endif
     return 0;
 }
 
@@ -1059,6 +1220,8 @@ int main(int argc, char **argv)
 #ifndef WBMW_HEADLESS_ONLY
         else if (!strcmp(argv[i], "--fullscreen")) fullscreen = 1;
         else if (!strcmp(argv[i], "--windowed")) fullscreen = 0;
+        else if (!strcmp(argv[i], "--talk-zoom")) talk_zoom = 1;
+        else if (!strcmp(argv[i], "--no-talk-zoom")) talk_zoom = 0;
         else if (!strcmp(argv[i], "--integer-scale")) integer_scale = 1;
         else if (!strcmp(argv[i], "--fps")) show_fps = 1;
 #endif
@@ -1066,7 +1229,7 @@ int main(int argc, char **argv)
     }
     if (!rom_path) rom_path = find_rom(argv[0]);
     if (!rom_path) {
-        fprintf(stderr, "usage: wbmw [ROM] [--windowed] [--widescreen] [--scale N] [--save FILE] [--integer-scale] [--fps] [--mute] [--config FILE]\n"
+        fprintf(stderr, "usage: wbmw [ROM] [--windowed] [--widescreen] [--scale N] [--save FILE] [--integer-scale] [--fps] [--mute] [--talk-zoom] [--config FILE]\n"
                         "       wbmw ROM --frames N [--png-every K] [--out DIR] [--input FILE] [--wav FILE]\n"
                         "                [--frame-log FILE] [--input-game FILE] [--dump-at N DIR]\n"
                         "       states: [--state FILE] [--load] [--load-state FILE] [--save-state-at N FILE]; F2 saves, F4 loads\n");

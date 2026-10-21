@@ -22,6 +22,9 @@ On top of the original game:
 * **Quick save and load** of the whole game state, with an on-screen confirmation.
 * **Full screen** by default, with window mode and whole-pixel scaling.
 * **Frame rate display.**
+* **Talk zoom (experimental)**: during a conversation with an ordinary character, the view eases
+  in on Wonder Boy and the one he is talking to, with the text box kept at its own size. See
+  `docs/TALKZOOM.md`.
 * **Widescreen (experimental)**: a 16:9 picture. For now only the first areas of the game fill
   it; everywhere else the original picture is shown with black sides. See
   `docs/WIDESCREEN.md`.
@@ -124,8 +127,8 @@ so Start stays the game's own: it opens the item screen.
 
 ### The menu
 
-* **Show FPS, Full screen, Whole pixels** (every pixel the same size), **Widescreen**, **Sound**:
-  on or off. Widescreen is a test for now: the picture is 16:9, and the first village and the
+* **Show FPS, Full screen, Whole pixels** (every pixel the same size), **Widescreen**, **Talk
+  zoom**, **Sound**: on or off. Widescreen is a test for now: the picture is 16:9, and the first village and the
   areas next to it fill it; everywhere else the normal picture is centred with black sides. See
   `docs/WIDESCREEN.md`.
 * **Controls**: a key and a controller input for each button, plus quick save and quick load.
@@ -149,13 +152,14 @@ to `wbmw.sav` in the current folder when you exit. Use `--save FILE` for a diffe
 ### Options
 
 ```
-wbmw [ROM] [--windowed] [--widescreen] [--scale N] [--integer-scale] [--fps] [--mute] [--save FILE] [--state FILE] [--load] [--config FILE]
+wbmw [ROM] [--windowed] [--widescreen] [--talk-zoom] [--scale N] [--integer-scale] [--fps] [--mute] [--save FILE] [--state FILE] [--load] [--config FILE]
 ```
 
 * `--windowed`: start in a window instead of full screen. `--scale N` sets the window's size, N
   times 256×224.
 * `--integer-scale`: scale only by whole numbers, so every pixel is the same size.
-* `--widescreen`: turn widescreen on (`--no-widescreen` turns it off) for this run.
+* `--widescreen`: turn widescreen on (`--no-widescreen` turns it off) for this run. `--talk-zoom`
+  and `--no-talk-zoom` do the same for the talk zoom.
 * `--fps`: show the frame rate from the start. `--mute`: no sound.
 * `--state FILE`: the file quick save and quick load use. `--load`: load it at start.
 * `--config FILE`: use this settings file instead of `wbmw.ini`.

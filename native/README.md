@@ -54,6 +54,10 @@ The save EEPROM is read from FILE at start and written at exit (default `wbmw.sa
   the extra 72 at each side in the rooms `wide_room()` allows, black sides elsewhere
   (`docs/WIDESCREEN.md`). With it off, nothing changes: the build is the original's frame for
   frame.
+* **Talk zoom** (`--talk-zoom`): during a conversation with an ordinary character, the host zooms
+  the scene in on the two, the HUD and the box slid up (`docs/TALKZOOM.md`). For testing it,
+  `--input FILE` works in a window too, and `WBMW_SHOT_EVERY=N WBMW_SHOT_EVERY_DIR=DIR` writes the
+  window's own picture every N frames.
 * The settings are kept in `wbmw.ini` next to the program (`--config FILE` for another), written
   when the menu closes or the game exits after a change. The command line overrides a setting for
   one run without changing the file; headless runs (`--frames`) do not read it.
