@@ -19,7 +19,21 @@ anything else. It holds every address and structural fact found so far.
 
 ## Where things stand
 
-Done:
+**Status (2026-10-21): the port is finished.** The native build (`native/`, `work/native/wbmw.exe`)
+is the game as hand-written C only: `port/` (every routine of the game, each verified against the
+original in the harness: shadow runs, fuzzing, coverage, self-test) and `native/machine.c` (the
+machine core), around the host's video, sound, save chip and controller. It contains no
+translated or emulated code of the original (batches N1-N5 in `docs/PORT.md`). It plays from
+power-on and from every save state taken between frames. The harness's checklist
+(`left.py`-style: registered ranges over traced code) reads 99.1%; what it does not count is the
+machine core (C in the native build, the 68000's in the harness by design), dead code (`$C67E`,
+`$1B930`, `$13578`) and one data byte (`$24D8`).
+
+Open, all optional: a timing model for the C (`--timing` is off: it counted the translated
+code's cycles; without it the native build plays like the harness's replace mode, never slowing
+down); the owner playing the native build at length. The history below is kept as it was.
+
+Done (the early stages):
 
 - ROM identified and verified (details below).
 - A recursive-descent tracer (`tools/trace.py`) that separates code from data in the code region
@@ -69,7 +83,7 @@ Done:
 - A first survey of the engine: task scheduler, entity layout, hardware access, sound and save
   interfaces, data directory, graphics table and its formats. All in `docs/NOTES.md`.
 
-Not done, in the order I would do it:
+Not done (the early plan; items 4 and 5 are done, see the status above):
 
 1. **Decode the rest of the room data**: objects (room command 07: doors, chests, signs), the
    remaining room commands and spawner layouts, enemy category 2. The other directory blocks
