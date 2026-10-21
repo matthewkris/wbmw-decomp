@@ -29,7 +29,7 @@ tools/sprites.py.
 """
 import sys, os, json, hashlib, argparse
 sys.path.insert(0, os.path.dirname(__file__))
-import gfx, rooms, text, sprites
+import gfx, rooms, text, sprites, assetfmt
 
 EXPECTED_SHA1 = '87a968f773c7e807e647c0737132457b06b78276'
 Z80_DRIVER = (0x098000, 0x099A77)            # docs/NOTES.md, the memory map
@@ -85,7 +85,9 @@ def main():
                 script = rooms.room_script(d, area, room)
                 for cmd, a in script:
                     if cmd == 'layer': rooms.layer_map(d, a['src'])
-                allrooms.append(dict(area=area, room=room, script=[dict(command=c, args=a) for c, a in script]))
+                start, items, end = assetfmt.room_script_parse(d, area, room)
+                allrooms.append(dict(area=area, room=room, address='%06X' % start, items=items,
+                                     script=[dict(command=c, args=a) for c, a in script]))
                 if not A.no_rooms:
                     rooms.write(path('rooms', 'area%02d_room%02d.png' % (area, room)), rooms.render(d, area, room)[0])
             except Exception as e:
@@ -98,8 +100,14 @@ def main():
     with open(path('text', 'messages.txt'), 'w', encoding='utf-8') as f:
         for m in msgs:
             f.write('--- message %d (window %d, at $%06X)\n%s\n\n' % (m['number'], m['window'], m['address'], m['text']))
-    json.dump([dict(number=m['number'], window=m['window'], address='%06X' % m['address'], text=m['text'],
-                    parsed=m['parsed']) for m in msgs], open(path('text', 'messages.json'), 'w'), indent=1)
+    json.dump([dict(number=m['number'], window=m['window'], address='%06X' % m['address'], end='%06X' % m['end'],
+                    text=m['text'], parsed=m['parsed']) for m in msgs], open(path('text', 'messages.json'), 'w'), indent=1)
+    plist = []
+    for k, lst in enumerate(phrases):
+        for j, a in enumerate(lst):
+            t, parsed, end = text.decode(d, a)
+            plist.append(dict(table=k, number=j, address='%06X' % a, end='%06X' % end, text=t, parsed=parsed))
+    json.dump(plist, open(path('text', 'phrases.json'), 'w'), indent=1)
     with open(path('text', 'phrases.txt'), 'w', encoding='utf-8') as f:
         for k, lst in enumerate(phrases):
             for j, a in enumerate(lst): f.write('%d.%d $%06X %r\n' % (k, j, a, text.decode(d, a, phrases=phrases)[0]))
@@ -116,14 +124,18 @@ def main():
         for g, al in groups.items():
             for an, a in al.items():
                 try:
-                    fr, cmds = sprites.script(d, a)
-                    for _, m in fr: maps.setdefault('%06X' % m, sprites.mapping(d, m))
-                    anims['%02X.%02X.%02X' % (st, g, an)] = dict(address='%06X' % a, commands=cmds,
-                                                               frames=[dict(duration=t, mapping='%06X' % m) for t, m in fr])
+                    start, items, end = assetfmt.anim_parse(d, a)
+                    for it in items:
+                        if 'mapping' in it:
+                            m = sprites.ANIM + it['mapping']
+                            if '%06X' % m not in maps:
+                                ms, mp, me = assetfmt.mapping_parse(d, m)
+                                for q in mp['pieces']: q['width'], q['height'] = (q['size'] >> 2 & 3) + 1, (q['size'] & 3) + 1
+                                maps['%06X' % m] = dict(mp, address='%06X' % m)
+                    anims['%02X.%02X.%02X' % (st, g, an)] = dict(address='%06X' % a, items=items)
                 except Exception as e:
                     print('animation %02X.%02X.%02X: %s' % (st, g, an, e)); bad += 1
-    json.dump(dict(animations=anims, mappings={k: [dict(width=w, height=h, tile='%04X' % t, x=x, y=y) for w, h, t, x, y in v]
-                                             for k, v in maps.items()}), open(path('sprites', 'animations.json'), 'w'), indent=1)
+    json.dump(dict(animations=anims, mappings=maps), open(path('sprites', 'animations.json'), 'w'), indent=1)
     tile, colours = sprites.player_vram(d, 2, 0)
     rows = [((g, a), sprites.script(d, p)[0]) for g, al in T[0].items() for a, p in al.items()]
     rooms.write(path('sprites', 'player.png'), sheet(d, rows, tile, colours))

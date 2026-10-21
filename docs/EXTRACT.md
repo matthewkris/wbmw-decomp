@@ -44,6 +44,30 @@ ROM is, and are never committed.
 * Sprites: all 774 animations and their 962 mappings parse: `problems: 0`; all 100 enemy types the
   rooms load are drawn.
 
+## Building it back: are the files complete?
+
+    python tools/rebuild.py "rom/Wonder Boy in Monster World (USA, Europe).md"
+
+reads the files back and builds the ROM's bytes from them. Each format has a parse and an encode
+in `tools/assetfmt.py`, side by side; the JSON keeps whatever the bytes need (a pointer's form, a
+terminator's value, a command's arguments). Everything must match:
+
+| Data | Pieces | Bytes | How |
+|---|---|---|---|
+| Messages | 131 | 12,973 | encoded from `messages.json`'s parsed form |
+| Phrases | 356 | 5,472 | from `phrases.json` |
+| Palettes | 160 | 2,720 | from `palettes.json`'s colour words |
+| Room scripts | 170 | 7,398 | from `rooms.json`'s items |
+| Animation scripts | 774 | 6,808 | from `animations.json` |
+| Sprite mappings | 964 | 12,264 | from `animations.json` |
+| Sound | 2 | 30,583 | as they are |
+| Graphics | 768 blocks | 786,432 decoded | compressed: the decoded blocks are compared with the port's own decompressor (`wbmw --verify-graphics assets`, `DecodeGfxBlock` $6BC4, which the harness verified against the original's): two decoders written apart agree |
+
+Not built back yet: the room maps (compressed; the decoded maps are not written as data yet, only
+drawn), and the tables that point at the data (the message and phrase tables, the graphics table
+at $41000, the area blocks' room offsets, the animation tree's offset tables), which `rebuild.py`
+takes from the ROM's layout for now.
+
 ## The text
 
 Messages are bytes: `$10` and up are characters (ASCII for the Latin letters; they are the font's
@@ -69,5 +93,6 @@ pictures and `$C0`-`$C5`, `$D0` icons, left as `{xNN}` (one phrase is made of th
 
 * The bosses' own palettes, for their sheets.
 * Decode the music and sound effects (the Z80 driver's data): the format is not known yet.
-* Then the other way: build the same data back from the files and check it matches the ROM byte
-  for byte, before the game reads anything from them.
+* The room maps as data (block tables and cells), checked against the port's unpackers ($9F6A,
+  $A068); the pointer tables built back too.
+* Then the game reads its data from the files.

@@ -1353,9 +1353,32 @@ static const char *find_rom(const char *argv0)
     return NULL;
 }
 
+/* --verify-graphics DIR: the 768 graphics blocks decoded by the port's DecodeGfxBlock ($6BC4,
+ * verified against the original's in the harness) compared with the files tools/extract.py wrote
+ * (DIR/graphics/block_NNN.bin): its Python decoder checked by an independent one (docs/EXTRACT.md) */
+void DecodeGfxBlock(Cpu *c);
+static int verify_graphics_blocks(const char *dir)
+{
+    int bad = 0, missing = 0;
+    for (int i = 0; i < 768; i++) {
+        char path[4200]; snprintf(path, sizeof path, "%s/graphics/block_%03d.bin", dir, i);
+        uint8_t file[1024];
+        FILE *f = fopen(path, "rb");
+        if (!f || fread(file, 1, sizeof file, f) != sizeof file) { missing++; if (f) fclose(f); continue; }
+        fclose(f);
+        Cpu c; memset(&c, 0, sizeof c);
+        c.d[0] = (uint32_t)i; c.a[1] = 0xFFFF2D00u; c.a[7] = 0xFFFF0C00u;
+        wr32(c.a[7] - 4, 0); c.a[7] -= 4;           /* a return address, as a jsr leaves */
+        DecodeGfxBlock(&c);
+        if (memcmp(&ram[0x2D00], file, sizeof file)) { if (bad < 5) fprintf(stderr, "block %d differs\n", i); bad++; }
+    }
+    printf("graphics: %d blocks decoded by the port, %d differ from the files, %d files missing\n", 768 - missing, bad, missing);
+    return bad || missing ? 1 : 0;
+}
+
 int main(int argc, char **argv)
 {
-    const char *rom_path = NULL, *input = NULL, *load_path = NULL;
+    const char *rom_path = NULL, *input = NULL, *load_path = NULL, *verify_graphics = NULL;
     const char *state_path_ptr = "\x01";            /* --load: the --state file, whatever it ends up being */
 #ifndef WBMW_HEADLESS_ONLY
     {                                               /* the settings file first: the command line overrides it */
@@ -1377,6 +1400,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--input-game") && i + 1 < argc) { if (framelog_input(argv[++i])) return 1; }
         else if (!strcmp(argv[i], "--dump-at") && i + 2 < argc) { long n = atol(argv[++i]); framelog_dump_at(n, argv[++i]); }
         else if (!strcmp(argv[i], "--mute")) mute = 1;
+        else if (!strcmp(argv[i], "--verify-graphics") && i + 1 < argc) { verify_graphics = argv[++i]; headless = 1; }
         else if (!strcmp(argv[i], "--widescreen")) widescreen = 1;
         else if (!strcmp(argv[i], "--no-widescreen")) widescreen = 0;
         else if (!strcmp(argv[i], "--enemy-health")) enemy_health = 1;
@@ -1432,6 +1456,7 @@ int main(int argc, char **argv)
     }
     wide_apply();
     bus_reset(); vdp_reset(); sound_reset();
+    if (verify_graphics) return verify_graphics_blocks(verify_graphics);
     if (input) load_input(input);
     if (wav_path && wav_open(wav_path, SOUND_RATE)) return 1;
     if (!headless) {
