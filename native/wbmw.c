@@ -76,6 +76,23 @@ void machine_isr(Cpu *c);
 static int frame, frames_max, png_every, headless, scale;            /* scale 0: fit the screen */
 static const char *out_dir = ".", *save_path = "wbmw.sav", *wav_path;
 static int mute;
+
+/* widescreen: the picture 400 wide (16:9 at 224 lines), 72 pixels past each side of the game's
+ * 256. Only the rooms below show the game there (port/rooms.c draws their plane A wider and
+ * keeps the view inside them); elsewhere those sides are black. docs/WIDESCREEN.md. */
+#define WIDE_PX 72
+extern int port_wide_px;                        /* port/rooms.c (port/world.h) */
+extern int (*port_wide_room)(int area, int room);
+static int widescreen;
+static int wide_room(int area, int room)
+{
+    return area == 2 && room <= 2;                  /* the first village (0), the forest path east of it (2), the field (1) */
+}
+static void wide_apply(void)
+{
+    port_wide_px = vdp_pad = widescreen ? WIDE_PX : 0;
+    port_wide_room = wide_room;
+}
 static struct { int frame; uint8_t buttons; } *script; static int script_n;
 
 static void load_input(const char *path)
@@ -224,7 +241,7 @@ static const char *pad_label(int p)
 
 /* wbmw.ini: what the player chose in the menu (and with F11, F3). The command line can override
  * a setting for one run without changing the file: cfg is what the file holds. */
-static struct { int fullscreen, show_fps, integer_scale, mute; } cfg = {1, 0, 0, 0};
+static struct { int fullscreen, show_fps, integer_scale, mute, widescreen; } cfg = {1, 0, 0, 0, 0};
 static char ini_path[4096];
 static int ini_dirty;
 
@@ -259,8 +276,8 @@ static void settings_save(void)
     if (!f) { fprintf(stderr, "wbmw: cannot write the settings to %s\n", ini_path); return; }
     fprintf(f, "# Wonder Boy in Monster World (native): settings, written by the game's menu (Esc).\n"
                "# Keys by SDL's names; controller inputs by SDL's, an axis with + or - before it; none: unbound.\n");
-    fprintf(f, "fullscreen=%d\nshow_fps=%d\ninteger_scale=%d\nmute=%d\nstick_moves=%d\n",
-            cfg.fullscreen, cfg.show_fps, cfg.integer_scale, cfg.mute, stick_moves);
+    fprintf(f, "fullscreen=%d\nshow_fps=%d\ninteger_scale=%d\nmute=%d\nwidescreen=%d\nstick_moves=%d\n",
+            cfg.fullscreen, cfg.show_fps, cfg.integer_scale, cfg.mute, cfg.widescreen, stick_moves);
     for (int a = 0; a < ACTIONS; a++) {
         char pad[64]; pad_name(pad_bind[a], pad, sizeof pad);
         const char *key = key_bind[a] == SDL_SCANCODE_UNKNOWN ? "" : SDL_GetScancodeName(key_bind[a]);
@@ -286,6 +303,7 @@ static void settings_open(const char *path)
             else if (!strcmp(line, "show_fps")) cfg.show_fps = atoi(v);
             else if (!strcmp(line, "integer_scale")) cfg.integer_scale = atoi(v);
             else if (!strcmp(line, "mute")) cfg.mute = atoi(v);
+            else if (!strcmp(line, "widescreen")) cfg.widescreen = atoi(v);
             else if (!strcmp(line, "stick_moves")) stick_moves = atoi(v);
             else for (int a = 0; a < ACTIONS; a++) {
                 if (!strncmp(line, "key.", 4) && !strcmp(line + 4, ACT_INI[a]))
@@ -296,6 +314,7 @@ static void settings_open(const char *path)
         fclose(f);
     }
     fullscreen = cfg.fullscreen; show_fps = cfg.show_fps; integer_scale = cfg.integer_scale; mute = cfg.mute;
+    widescreen = cfg.widescreen;
 }
 
 /* a controller plugged in (or there at the start) or pulled out: the first one plays */
@@ -336,7 +355,7 @@ static void draw_text(int x, int y, const char *s, uint32_t color)
         const char *k = strchr(FONT7_CHARS, *s);
         if (*s == ' ' || !k) continue;
         for (int r = 0; r < 7; r++) for (int c = 0; c < 5; c++)
-            if (FONT7[k - FONT7_CHARS][r] >> (4 - c) & 1 && x + c >= 0 && x + c < 320 && y + r >= 0 && y + r < ACTIVE_LINES)
+            if (FONT7[k - FONT7_CHARS][r] >> (4 - c) & 1 && x + c >= 0 && x + c < FRAME_STRIDE && y + r >= 0 && y + r < ACTIVE_LINES)
                 frame_rgb[y + r][x + c] = color;
     }
 }
@@ -345,7 +364,7 @@ static void draw_text_centred(int y, const char *s, uint32_t color) { draw_text(
 
 static void present(void)
 {
-    SDL_UpdateTexture(tex, NULL, &frame_rgb[0][0], 320 * 4);
+    SDL_UpdateTexture(tex, NULL, &frame_rgb[0][0], FRAME_STRIDE * 4);
     SDL_Rect src = {0, 0, frame_width, ACTIVE_LINES};              /* only the width the game uses */
     SDL_RenderSetLogicalSize(ren, frame_width, ACTIVE_LINES);
     SDL_RenderClear(ren); SDL_RenderCopy(ren, tex, &src, NULL); SDL_RenderPresent(ren);
@@ -370,8 +389,8 @@ static void draw_toast(void)
 /* the menu's screens: the main one, the exit question, the controls, and the controls waiting
  * for a press (capture) */
 enum { SCR_MAIN, SCR_ASK, SCR_CONTROLS, SCR_CAPTURE };
-enum { MI_FPS, MI_FULL, MI_PIXELS, MI_SOUND, MI_CONTROLS, MI_EXIT, MAIN_N };
-static const char *const MAIN_ITEM[MAIN_N] = {"SHOW FPS", "FULL SCREEN", "WHOLE PIXELS", "SOUND", "CONTROLS", "EXIT GAME"};
+enum { MI_FPS, MI_FULL, MI_PIXELS, MI_WIDE, MI_SOUND, MI_CONTROLS, MI_EXIT, MAIN_N };
+static const char *const MAIN_ITEM[MAIN_N] = {"SHOW FPS", "FULL SCREEN", "WHOLE PIXELS", "WIDESCREEN", "SOUND", "CONTROLS", "EXIT GAME"};
 static const int CTRL_ROW[ACTIONS] = {ACT_UP, ACT_DOWN, ACT_LEFT, ACT_RIGHT, ACT_A, ACT_B, ACT_C, ACT_START, ACT_SAVE, ACT_LOAD};
 enum { CR_STICK = ACTIONS, CR_RESET, CR_BACK, CTRL_N };   /* the controls' rows after the actions */
 enum { COL_KEY = 80, COL_PAD = 152 };              /* the controls' columns, from the box's left */
@@ -390,7 +409,7 @@ static void draw_menu(const Menu *m)
         for (int i = 0; i < MAIN_N; i++) {
             uint32_t col = i == m->item ? MENU_GOLD : MENU_WHITE;
             int y = y0 + 24 + i * 14;
-            int on = i == MI_FPS ? show_fps : i == MI_FULL ? fullscreen : i == MI_PIXELS ? integer_scale : i == MI_SOUND ? !mute : -1;
+            int on = i == MI_FPS ? show_fps : i == MI_FULL ? fullscreen : i == MI_PIXELS ? integer_scale : i == MI_WIDE ? widescreen : i == MI_SOUND ? !mute : -1;
             if (i == m->item) draw_text(x0 + 12, y, ">", col);
             draw_text(x0 + 24, y, MAIN_ITEM[i], col);
             if (on >= 0) draw_text(x0 + w - 12 - 18, y, on ? "ON" : "OFF", col);
@@ -489,6 +508,7 @@ static int menu_step(Menu *m, int only_asking, int up, int down, int left, int r
                 integer_scale = cfg.integer_scale = !integer_scale; ini_dirty = 1;
                 SDL_RenderSetIntegerScale(ren, integer_scale ? SDL_TRUE : SDL_FALSE);
                 break;
+            case MI_WIDE: widescreen = cfg.widescreen = !widescreen; wide_apply(); ini_dirty = 1; break;
             case MI_SOUND: mute = cfg.mute = !mute; ini_dirty = 1; break;
             case MI_CONTROLS: if (ok) { m->screen = SCR_CONTROLS; m->row = 0; m->col = 0; } break;
             case MI_EXIT: if (ok) { m->screen = SCR_ASK; m->yes = 0; } break;
@@ -528,7 +548,7 @@ static void menu_test_keys(void);
 
 static int menu(int asking)
 {
-    static uint32_t saved[ACTIVE_LINES][320];
+    static uint32_t saved[ACTIVE_LINES][FRAME_STRIDE];
     memcpy(saved, frame_rgb, sizeof saved);
     Menu m = {asking ? SCR_ASK : SCR_MAIN, 0, 0, 0, 0, 0};
     int only_asking = asking, result = -1;
@@ -578,7 +598,7 @@ static int menu(int asking)
             for (int a = 0; a < ACTIONS; a++) state = state * 31 + (unsigned)key_bind[a] * 7 + (unsigned)(pad_bind[a] + 1);
             if (state != last) {
                 char path[1024]; snprintf(path, sizeof path, "%s/menu_%02d.png", shots, n++);
-                png_write_rgb(path, &frame_rgb[0][0], frame_width, ACTIVE_LINES, 320);
+                png_write_rgb(path, &frame_rgb[0][0], frame_width, ACTIVE_LINES, FRAME_STRIDE);
                 last = state;
             }
         }
@@ -615,19 +635,20 @@ static void window_open(void)
     SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, "0");   /* buttons by position, on every make of pad */
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0) { fprintf(stderr, "SDL: %s\n", SDL_GetError()); exit(1); }
     /* the game is 256 pixels wide almost everywhere (a few screens are 320): size the window for
-     * 256, at the largest whole scale up to 3 that fits the screen */
+     * 256 (400 with widescreen), at the largest whole scale up to 3 that fits the screen */
+    int w = widescreen ? 256 + 2 * WIDE_PX : 256;
     if (scale <= 0) {
         SDL_Rect r; scale = 3;
         if (SDL_GetDisplayUsableBounds(0, &r) == 0)
-            while (scale > 1 && (224 * scale > r.h * 9 / 10 || 256 * scale > r.w * 9 / 10)) scale--;
+            while (scale > 1 && (224 * scale > r.h * 9 / 10 || w * scale > r.w * 9 / 10)) scale--;
     }
-    win = SDL_CreateWindow(TITLE, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 256 * scale, 224 * scale, SDL_WINDOW_RESIZABLE);
+    win = SDL_CreateWindow(TITLE, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, w * scale, 224 * scale, SDL_WINDOW_RESIZABLE);
     ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
     SDL_RenderSetIntegerScale(ren, integer_scale ? SDL_TRUE : SDL_FALSE);   /* whole multiples only: even pixels */
     if (fullscreen) set_fullscreen(1);
     fps_start = SDL_GetPerformanceCounter();
-    tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, 320, 224);
+    tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, FRAME_STRIDE, 224);
     next_tick = SDL_GetPerformanceCounter();
 }
 
@@ -710,7 +731,7 @@ static void frame_done(void)
     if (headless) {
         if (png_every && frame % png_every == 0) {
             char path[1024]; snprintf(path, sizeof path, "%s/frame_%05d.png", out_dir, frame);
-            png_write_rgb(path, &frame_rgb[0][0], frame_width, ACTIVE_LINES, 320);
+            png_write_rgb(path, &frame_rgb[0][0], frame_width, ACTIVE_LINES, FRAME_STRIDE);
         }
         { static int16_t snd[4096 * 2]; int n = sound_take(snd, 4096); if (wav_path) wav_write(snd, n); }
         if (frame >= frames_max) { wav_close(); framelog_close(); exit(0); }
@@ -926,6 +947,7 @@ void rt_poll(Cpu *c, uint32_t at)
     }
     if (ram[0x8006] & 1) return;                    /* the interrupt already came this frame */
     maybe_save(c, at);                              /* the game waits for VBlank: a state can be taken */
+    vdp_pad_fill = widescreen && wide_room(ram[0x9668], ram[0x9669]);
     for (int l = 0; l < ACTIVE_LINES; l++) { vdp_line = l; vdp_render_line(l); }
     vdp_line = 0;                                   /* the game's own time runs at line 0 */
     for (int l = 0; l < LINES_PER_FRAME; l++) sound_run_line(l == ACTIVE_LINES);   /* a frame of sound */
@@ -1023,6 +1045,8 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--input-game") && i + 1 < argc) { if (framelog_input(argv[++i])) return 1; }
         else if (!strcmp(argv[i], "--dump-at") && i + 2 < argc) { long n = atol(argv[++i]); framelog_dump_at(n, argv[++i]); }
         else if (!strcmp(argv[i], "--mute")) mute = 1;
+        else if (!strcmp(argv[i], "--widescreen")) widescreen = 1;
+        else if (!strcmp(argv[i], "--no-widescreen")) widescreen = 0;
         else if (!strcmp(argv[i], "--timing")) fprintf(stderr, "wbmw: --timing counts the translated code's cycles; the hand-written code has none, so it is off\n");
         else if (!strcmp(argv[i], "--state") && i + 1 < argc) state_path = argv[++i];
         else if (!strcmp(argv[i], "--load")) load_path = state_path_ptr;
@@ -1041,7 +1065,7 @@ int main(int argc, char **argv)
     }
     if (!rom_path) rom_path = find_rom(argv[0]);
     if (!rom_path) {
-        fprintf(stderr, "usage: wbmw [ROM] [--windowed] [--scale N] [--save FILE] [--integer-scale] [--fps] [--mute] [--config FILE]\n"
+        fprintf(stderr, "usage: wbmw [ROM] [--windowed] [--widescreen] [--scale N] [--save FILE] [--integer-scale] [--fps] [--mute] [--config FILE]\n"
                         "       wbmw ROM --frames N [--png-every K] [--out DIR] [--input FILE] [--wav FILE]\n"
                         "                [--frame-log FILE] [--input-game FILE] [--dump-at N DIR]\n"
                         "       states: [--state FILE] [--load] [--load-state FILE] [--save-state-at N FILE]; F2 saves, F4 loads\n");
@@ -1070,6 +1094,7 @@ int main(int argc, char **argv)
             fprintf(stderr, "wbmw: warning: %s is not the expected dump (SHA-1 %s, expected " ROM_SHA1 "): "
                             "the port reads the game's data from it at fixed places, so another version will not work right\n", rom_path, hex);
     }
+    wide_apply();
     bus_reset(); vdp_reset(); sound_reset();
     if (input) load_input(input);
     if (wav_path && wav_open(wav_path, SOUND_RATE)) return 1;

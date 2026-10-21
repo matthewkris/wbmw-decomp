@@ -19,8 +19,8 @@ This makes `work/native/wbmw.exe` (and copies `SDL2.dll` next to it).
 
 ## Run
 
-    work/native/wbmw [ROM] [--windowed] [--scale N] [--save FILE] [--integer-scale] [--fps] [--mute]
-                           [--state FILE] [--load] [--config FILE]
+    work/native/wbmw [ROM] [--windowed] [--widescreen] [--scale N] [--save FILE] [--integer-scale] [--fps]
+                           [--mute] [--state FILE] [--load] [--config FILE]
 
 plays, full screen unless `--windowed` is given. Without ROM, it looks for `rom/Wonder Boy in Monster World (USA, Europe).md`
 in the current folder, next to the program, and in the repository (`../../rom/` from
@@ -50,6 +50,10 @@ The save EEPROM is read from FILE at start and written at exit (default `wbmw.sa
   swaps with it; Delete (Y) clears a cell. Esc, Back/Select, F11, F3 and Home cannot be bound.
   Buttons are by position (SDL's layout, with `SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS` off, so a
   Nintendo pad is read like the others). **Left stick as D-pad** makes the stick move the player too.
+* **Widescreen** (`--widescreen`, also headless, for pictures): 400 pixels wide, the game drawn in
+  the extra 72 at each side in the rooms `wide_room()` allows, black sides elsewhere
+  (`docs/WIDESCREEN.md`). With it off, nothing changes: the build is the original's frame for
+  frame.
 * The settings are kept in `wbmw.ini` next to the program (`--config FILE` for another), written
   when the menu closes or the game exits after a change. The command line overrides a setting for
   one run without changing the file; headless runs (`--frames`) do not read it.

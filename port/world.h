@@ -27,6 +27,14 @@ void call_68k_ret(Cpu *t, uint32_t addr, uint32_t ret);   /* for a routine that 
  * caller when it removes the enemy; this answers 1 then, and the caller must return */
 int world_despawn_offscreen(Cpu *c);
 
+/* Widescreen (the native build only: the harness leaves these alone, so the game is the
+ * original's). port_wide_px: pixels the host shows beyond each side of the 256; port_wide_room:
+ * whether the room (area, number: $FF9668, $FF9669) is drawn for it, the host's choice. Where
+ * both say so, rooms.c draws the layers' columns for the wider view and keeps the view inside
+ * their maps (docs/WIDESCREEN.md). */
+extern int port_wide_px;
+extern int (*port_wide_room)(int area, int room);
+
 /* Leave a rewritten routine the way the original does when it jumps away instead of returning
  * (into code not rewritten yet, e.g. one that resets the stack and yields): the caller carries on
  * at addr with c's registers and stack (m68k_rt.h, rt_after_hand). A routine that does this must

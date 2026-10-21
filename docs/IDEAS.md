@@ -92,6 +92,11 @@ What it involves:
 
 ### Wide screen (asked 2026-10-10)
 
+**Started (2026-10-21), stage 1 done:** a 16:9 picture (400 pixels), the menu's Widescreen option,
+the scenery drawn wider in the first village and the two areas beside it, black sides elsewhere.
+Next: things created and removed at the wider edges (stage 2), then more rooms. See
+`docs/WIDESCREEN.md`. The original assessment:
+
 Possible, but a project of its own. The game is written for a 256-pixel view: scenery is copied
 into video memory just past the visible edges, objects are created and removed at the screen
 edges, and the HUD and text boxes are placed for 256 pixels. A wider view means changing the

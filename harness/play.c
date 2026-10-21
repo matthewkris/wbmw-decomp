@@ -142,7 +142,7 @@ int main(int argc, char **argv)
     if (!win || !ren) { fprintf(stderr, "SDL: %s\n", SDL_GetError()); return 1; }
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
     if (fullscreen) set_fullscreen(win, 1);
-    SDL_Texture *tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, 320, 224);
+    SDL_Texture *tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, FRAME_STRIDE, 224);
     SDL_GameController *gc = NULL;
     audio_open();
 
@@ -179,7 +179,7 @@ int main(int argc, char **argv)
                 case SDLK_F12: {
                     char path[64];
                     snprintf(path, sizeof path, "shot_%ld_%d.png", (long)time(NULL), shots++);
-                    png_write_rgb(path, &frame_rgb[0][0], frame_width, ACTIVE_LINES, 320);
+                    png_write_rgb(path, &frame_rgb[0][0], frame_width, ACTIVE_LINES, FRAME_STRIDE);
                     fprintf(stderr, "wrote %s\n", path);
                     break;
                 }
@@ -195,7 +195,7 @@ int main(int argc, char **argv)
             audio_frame(mute || fast);                  /* no sound while fast-forwarding */
         }
         /* the game switches between 256 and 320 pixels wide; show the active width */
-        SDL_UpdateTexture(tex, NULL, &frame_rgb[0][0], 320 * sizeof(uint32_t));
+        SDL_UpdateTexture(tex, NULL, &frame_rgb[0][0], FRAME_STRIDE * sizeof(uint32_t));
         SDL_Rect src = {0, 0, frame_width, ACTIVE_LINES};
         SDL_RenderSetLogicalSize(ren, frame_width, ACTIVE_LINES);
         SDL_RenderClear(ren);
