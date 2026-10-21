@@ -39,11 +39,9 @@ notes. It contains no ROM, no graphics, maps, text, music or sound, and no file 
 
 The port expects this dump (the common "USA, Europe" release):
 
-| | |
-|---|---|
-| File name | `Wonder Boy in Monster World (USA, Europe).md` |
-| Size | 786,432 bytes (768 KB), no header |
-| SHA-1 | `87a968f773c7e807e647c0737132457b06b78276` |
+* **File name:** `Wonder Boy in Monster World (USA, Europe).md`
+* **Size:** 786,432 bytes (768 KB), no header
+* **SHA-1:** `87a968f773c7e807e647c0737132457b06b78276`
 
 A `.bin` with the same contents works too; rename it, or give its path when you run the game. The
 game reads data from fixed places in the ROM, so other versions (Japanese, Wii Virtual Console
