@@ -45,7 +45,10 @@ The renderer (`harness/vdp.c`, shared with the harness) draws the picture `256 +
 wide. With `vdp_pad_fill` (the room is allowed) the planes and sprites are drawn across the
 whole width; otherwise the sides are black. The HUD stays where it is, centred; beside it plane A
 is not drawn, as it never is behind the HUD, so the band shows plane B and sprites there, as
-through the HUD's own gaps. The sprite limits per line grow in proportion to the width. H40
+through the HUD's own gaps. That is only the HUD's own 64 lines: a message under the HUD
+("Found 5 GOLD.") stretches the window down for a while, and the sides of those lines are the
+play field's, plane A included (at first they were not, and the scenery beside the message
+lost its plane A: the top of the forest's cave entrance vanished while it showed). The sprite limits per line grow in proportion to the width. H40
 screens (320 wide) are centred with 40-pixel black sides.
 
 ## The rooms
