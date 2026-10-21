@@ -60,7 +60,8 @@ The save EEPROM is read from FILE at start and written at exit (default `wbmw.sa
   compares them with `DIR/graphics/block_NNN.bin` from `tools/extract.py` (`tools/rebuild.py`
   runs it; `docs/EXTRACT.md`). `--unpack-list REQ OUT` likewise unpacks the rooms' block tables
   and layer maps listed in REQ with the port's `UnpackBlocks` and `UnpackLayerMap`, for
-  `rebuild.py` to compare.
+  `rebuild.py` to compare. `--rom-reads FILE` marks every ROM byte the game reads into FILE
+  (added to what it holds), for `rebuild.py --reads FILE`.
 * **Talk zoom** (`--talk-zoom`): during a conversation with an ordinary character, the host zooms
   the scene in on the two, the HUD and the box slid up (`docs/TALKZOOM.md`). For testing it,
   `--input FILE` works in a window too, and `WBMW_SHOT_EVERY=N WBMW_SHOT_EVERY_DIR=DIR` writes the

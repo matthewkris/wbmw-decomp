@@ -86,8 +86,9 @@ MARKS = {0xFE: '゛', 0xFF: '゜'}                   # $FE, $FF: the mark over t
 def char(b):
     return chr(b) if 0x20 <= b < 0x7F else GLYPHS.get(b, '{x%02X}' % b)
 
-def decode(d, a, end=None, phrases=None, depth=0, stop_at_end=True):
-    """the text at a as (rendered string, parsed list, end address); up to the END code (or end)"""
+def decode(d, a, end=None, phrases=None, depth=0, stop_at_end=True, jumps=None):
+    """the text at a as (rendered string, parsed list, end address); up to the END code (or end).
+    jumps, if given, gets every jump's target (its word's place plus its value)"""
     out, parsed = [], []
     while end is None or a < end:
         b = d[a]; a += 1
@@ -110,15 +111,24 @@ def decode(d, a, end=None, phrases=None, depth=0, stop_at_end=True):
             vals = []
             for f in args:
                 if f == 'b': vals.append(d[a]); a += 1
-                elif f == 'j': vals.append(sw(d, a)); a += 2
+                elif f == 'j':
+                    vals.append(sw(d, a))
+                    if jumps is not None: jumps.append(a + vals[-1])
+                    a += 2
                 elif f == 'Q':
-                    for _ in range(QUIZ_JUMPS): vals.append(sw(d, a)); a += 2
+                    for _ in range(QUIZ_JUMPS):
+                        vals.append(sw(d, a))
+                        if jumps is not None: jumps.append(a + vals[-1])
+                        a += 2
             out.append('{%s%s}' % (name, ' ' + ' '.join(str(v) for v in vals) if vals else ''))
             parsed.append(('cmd', c, vals))
         else:
             name, n = CODES[b]
             vals = []
-            if n == 'w': vals.append(sw(d, a)); a += 2
+            if n == 'w':
+                vals.append(sw(d, a))
+                if jumps is not None: jumps.append(a + vals[-1])
+                a += 2
             else:
                 for _ in range(n): vals.append(d[a]); a += 1
             if b == 2: out.append('\n')
@@ -141,11 +151,29 @@ def all_messages(d):
     tables = [tb] + [be32(d, tb + 4 * k) & 0xFFFFFF for k in range(4)] + [be32(d, DIR + 0x18) & 0xFFFFFF]
     starts = sorted(set(a for _, a in tab))
     nxt = dict(zip(starts, starts[1:] + [min([t for t in tables if t > starts[-1]] or [None])]))
-    out = []
+    out, jumps = [], []
     for n, (w, a) in enumerate(tab):
-        text, parsed, stop = decode(d, a, nxt[a], phrases, stop_at_end=nxt[a] is None)
+        text, parsed, stop = decode(d, a, nxt[a], phrases, stop_at_end=nxt[a] is None, jumps=jumps)
         out.append(dict(number=n, window=w, address=a, end=stop, text=text, parsed=parsed))
     return out, phrases
+
+def fragments(d, msgs, phrases):
+    """the texts jumps lead to outside every message's and phrase's bytes (some messages jump to
+    text kept after the phrases), each to its END, and those their own jumps lead to"""
+    spans = [(m['address'], m['end']) for m in msgs] + [(a, decode(d, a)[2]) for t in phrases for a in t]
+    inside = lambda t: any(a <= t < e for a, e in spans)
+    todo, out = [], {}
+    for m in msgs: decode(d, m['address'], m['end'], phrases, stop_at_end=False, jumps=todo)
+    for t in phrases:
+        for a in t: decode(d, a, jumps=todo)
+    while todo:
+        t = todo.pop()
+        if t in out or inside(t) or not 0 < t < len(d): continue
+        found = []
+        text, parsed, end = decode(d, t, phrases=phrases, jumps=found)
+        out[t] = dict(address=t, end=end, text=text, parsed=parsed)
+        spans.append((t, end)); todo += found
+    return [out[k] for k in sorted(out)]
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(); ap.add_argument('rom'); ap.add_argument('--message', type=int)

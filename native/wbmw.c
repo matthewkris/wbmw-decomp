@@ -1353,6 +1353,16 @@ static const char *find_rom(const char *argv0)
     return NULL;
 }
 
+/* --rom-reads FILE: which of the ROM's bytes the game reads (a byte each, 1 read), added to what
+ * FILE holds, so that runs from many states add up; tools/rebuild.py --reads FILE compares them
+ * with what the extracted files cover (docs/EXTRACT.md) */
+static const char *rom_reads_path;
+static void rom_reads_save(void)
+{
+    FILE *f = fopen(rom_reads_path, "wb");
+    if (f) { fwrite(bus_rom_reads, 1, rom_size, f); fclose(f); }
+}
+
 /* --verify-graphics DIR: the 768 graphics blocks decoded by the port's DecodeGfxBlock ($6BC4,
  * verified against the original's in the harness) compared with the files tools/extract.py wrote
  * (DIR/graphics/block_NNN.bin): its Python decoder checked by an independent one (docs/EXTRACT.md) */
@@ -1451,6 +1461,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--dump-at") && i + 2 < argc) { long n = atol(argv[++i]); framelog_dump_at(n, argv[++i]); }
         else if (!strcmp(argv[i], "--mute")) mute = 1;
         else if (!strcmp(argv[i], "--verify-graphics") && i + 1 < argc) { verify_graphics = argv[++i]; headless = 1; }
+        else if (!strcmp(argv[i], "--rom-reads") && i + 1 < argc) rom_reads_path = argv[++i];
         else if (!strcmp(argv[i], "--unpack-list") && i + 2 < argc) { unpack_req = argv[++i]; unpack_out = argv[++i]; headless = 1; }
         else if (!strcmp(argv[i], "--widescreen")) widescreen = 1;
         else if (!strcmp(argv[i], "--no-widescreen")) widescreen = 0;
@@ -1506,6 +1517,12 @@ int main(int argc, char **argv)
                             "the port reads the game's data from it at fixed places, so another version will not work right\n", rom_path, hex);
     }
     wide_apply();
+    if (rom_reads_path) {                           /* the ROM's bytes this run reads, added to the file's */
+        bus_rom_reads = calloc(rom_size, 1);
+        FILE *rf = fopen(rom_reads_path, "rb");
+        if (rf) { if (fread(bus_rom_reads, 1, rom_size, rf) != rom_size) memset(bus_rom_reads, 0, rom_size); fclose(rf); }
+        atexit(rom_reads_save);
+    }
     bus_reset(); vdp_reset(); sound_reset();
     if (verify_graphics) return verify_graphics_blocks(verify_graphics);
     if (unpack_req) return unpack_list(unpack_req, unpack_out);

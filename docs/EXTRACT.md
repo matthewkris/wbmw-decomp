@@ -34,6 +34,9 @@ ROM is, and are never committed.
 | `graphics/extra_NNN.bin` | the 6 raw tiles after each of the 20 raw blocks, which `CopyRawTiles` copies with it (the shields) | |
 | `text/messages.txt`, `messages.json` | the 131 messages: readable, and parsed | $1CC14 (`tools/text.py`) |
 | `text/phrases.txt`, `phrases.json` | the phrases messages share (4 tables) | $1CC10 |
+| `text/fragments.json` | three texts messages jump to that lie outside them (after the phrases) | |
+| `rooms/start_points.json` | the 138 start points: where the player appears after a door, an exit or a new game (area, room, kind, place, a word) | the directory's table 0 ($A37E) |
+| `rooms/music.json` | each area's rooms' music | the directory's table 3 ($92D4) |
 | `text/windows.json` | the message windows' places and sizes | $1CC18 |
 | `sprites/animations.json` | the 12 animation sets: groups, animations (frames, durations, commands), and the 962 sprite mappings piece by piece | $A0000 (`tools/sprites.py`) |
 | `sprites/player.png` | Shion's animations, a row each | |
@@ -78,6 +81,7 @@ terminator's value, a command's arguments). Everything must match:
 | The rooms' lists | 199 event lists, 139 spawn lists, 71 slot lists, 33 tile animations, 60 pictures, 9 item lists | encoded back from `lists.json`; each read as its interpreter reads it (the event lists by $ABBE and $A3D8, the spawn lists by $12848, ...), and a code the interpreter does not know is counted as a sign of a misread list: none |
 | Scenes, houses' pictures | 6, 29 records | from their fields (the houses' records partly as they are: not every field is named) |
 | Extra raw tiles | 20 x 192 bytes | as they are |
+| Text fragments, start points, room music | 3, 138, 19 areas | from their fields |
 
 The port's decoders were verified against the original's code in the harness, and the Python
 decoders were written apart from them: two decoders agreeing on every block and every map. (The
@@ -88,17 +92,38 @@ At the end `rebuild.py` counts which of the ROM's bytes the checks cover:
 
 | ROM | Bytes |
 |---|---|
-| built back byte for byte | 103,120 |
+| built back byte for byte | 104,685 |
 | checked by content (graphics, the rooms' maps) | 440,535 |
 | padding ($FF) | 140,320 |
 | the 68000 code and the tables in it ($0-$1C601) | 113,506 |
-| data not covered yet | 4,945 |
+| data not covered yet | 3,380 |
 
-So about 99% of the data outside the code region is shown to come back from the files. What is
-not yet: the directory's table 0 (1.1 KB at $224C0, word offsets), bits around some event lists
-(1.7 KB), the paths and waves some spawn points point at (0.8 KB), the directory's tables 3 (the
-music by area and room) and 4, and the tables inside the code region (the enemy types at $1BC0E,
-the palettes at $599C are covered, others not), which the C port reads as data.
+So over 99% of the data outside the code region is shown to come back from the files. What is
+not: hundreds of small pieces (the largest 283 bytes), the paths and waves some spawn points point
+at, and chunks the maps' tables list that no place uses.
+
+### What the game reads
+
+Coverage counts bytes, but what matters for the game loading its data from the files is what it
+reads. The native build's `--rom-reads FILE` marks every ROM byte read (by the C, by the VDP's DMA,
+by the Z80 through its window: all through `harness/bus.c`), adding to the file, so that runs from
+many states add up; `rebuild.py --reads FILE` then lists what was read that no file holds. In the
+native build no 68000 code runs, so a read in the code region is a table read as data.
+
+Over a run from power-on through the title and the opening, and 2,000 frames of play from each of
+the 107 save states:
+
+| | Bytes |
+|---|---|
+| ROM bytes read | 166,169 |
+| read and held by the files | 159,457 |
+| read, not held, data region | 96 (the paths some spawn points point at, a few bytes elsewhere) |
+| read, not held, code region (tables) | 6,616 |
+
+The tables in the code region are the last thing between the files and the game reading them:
+the largest at $6616 (761 bytes), $72F0 (596, the title's menu), $1B5DC (310), $1B96C (262), $1106
+(250), $8CA2 (224), $1AC82 (223), $4E5C (172, the demo), $6D1C (128: the graphics decoder's
+planar-to-chunky tables). A feature none of these runs reached could read others.
 
 ## The text
 
@@ -125,5 +150,6 @@ pictures and `$C0`-`$C5`, `$D0` icons, left as `{xNN}` (one phrase is made of th
 
 * The bosses' own palettes, for their sheets.
 * Decode the music and sound effects (the Z80 driver's data): the format is not known yet.
-* The last 1% (rebuild.py lists the largest parts not covered), and the tables in the code region.
+* The tables in the code region the game reads (`rebuild.py --reads`): each named and written
+  out, then built back like the rest.
 * Then the game reads its data from the files.

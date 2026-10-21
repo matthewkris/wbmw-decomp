@@ -14,6 +14,7 @@
 
 /* bus.c */
 extern uint8_t *rom; extern size_t rom_size;
+extern uint8_t *bus_rom_reads;          /* bus.c: when set, each ROM byte read is marked (1) */
 extern uint8_t ram[0x10000];
 extern uint8_t zram[0x2000];
 extern uint8_t pad_buttons;           /* active-high: up down left right B C A start */
