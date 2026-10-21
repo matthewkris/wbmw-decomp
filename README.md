@@ -155,5 +155,14 @@ How the port was made, and how to check it against the original:
   is verified), `docs/PROCESS.md` (the process as a whole) and `native/README.md` (the native
   build).
 
+## Licence
+
+This repository's own code and documentation are under the MIT licence (see `LICENSE`).
 Third-party code is in `third_party/`, each part under its own licence: Musashi (68000, harness
-only, with its SoftFloat), ymfm (YM2612 sound) and the Z80 core from `chips`.
+only, with its SoftFloat; MIT), ymfm (YM2612 sound; BSD 3-clause) and the Z80 core from `chips`
+(zlib).
+
+This is an unofficial fan project, not affiliated with or endorsed by Sega or the game's other
+rights holders. *Wonder Boy in Monster World*, Sega, Genesis and Mega Drive are their owners'
+trademarks. The licence does not cover the game itself: none of its data is in this repository,
+and you need your own copy of the game to play.
