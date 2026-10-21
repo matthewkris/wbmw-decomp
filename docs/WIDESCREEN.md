@@ -56,10 +56,13 @@ screens (320 wide) are centred with 40-pixel black sides.
 
 ## The rooms
 
-`wide_room()` in `native/wbmw.c` decides. Now: area 2, rooms 0–2 (`$FF9668`, `$FF9669`):
+`wide_room()` in `native/wbmw.c` decides. Now: area 1, rooms 0–4 and area 2, rooms 0–2
+(`$FF9668`, `$FF9669`). The opening room (area 0, room 0, Wonder Boy's house) is one screen wide,
+so it keeps the 256 with black sides.
 
 | Area, room | What | Width |
 |---|---|---|
+| 1, 0–4 | after the opening: the side-scrolling rooms (the beach, room 2, tried) | 768–1,536 |
 | 2, 0 | the first village | 1,024 |
 | 2, 1 | the field with the statues | 512 |
 | 2, 2 | the forest path east of the village | 768 |

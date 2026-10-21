@@ -22,8 +22,8 @@ On top of the original game:
 * **Quick save and load** of the whole game state, with an on-screen confirmation.
 * **Full screen** by default, with window mode and whole-pixel scaling.
 * **Frame rate display.**
-* **Widescreen (experimental)**: a 16:9 picture. For now only the first village and the areas
-  beside it fill it; everywhere else the original picture is shown with black sides. See
+* **Widescreen (experimental)**: a 16:9 picture. For now only the first areas of the game fill
+  it; everywhere else the original picture is shown with black sides. See
   `docs/WIDESCREEN.md`.
 
 ## No ROM data is in this repository

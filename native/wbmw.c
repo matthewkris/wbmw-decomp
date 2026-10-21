@@ -86,6 +86,7 @@ extern int (*port_wide_room)(int area, int room);
 static int widescreen;
 static int wide_room(int area, int room)
 {
+    if (area == 1) return room <= 4;                /* after the opening: the side-scrolling rooms */
     return area == 2 && room <= 2;                  /* the first village (0), the forest path east of it (2), the field (1) */
 }
 static void wide_apply(void)
