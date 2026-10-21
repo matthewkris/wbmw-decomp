@@ -69,9 +69,9 @@ right zoom; a conversation open when a state is loaded is not zoomed.
 picture (400 pixels), the menu's Widescreen option, the scenery drawn wider in area 1 rooms 0-4
 (after the opening) and area 2 rooms 0-2 (the first village and the areas beside it), black sides
 elsewhere; sprites drawn and enemies created and removed at the wider edges; fixes for the
-message under the HUD and for the layers stopping together. When it is taken up again: try area
-1 rooms 0 and 1 (not seen yet), then area 1 rooms 5-7 (taller rooms of another kind), then the
-following areas a few rooms at a time, with the owner's save states for anything odd. See
+message under the HUD and for the layers stopping together. Since 2026-10-21 the rooms come from a
+rule on their layers (115 of 170 wide); bosses whose moves depend on the screen's edges, if any,
+would still need a look. See
 `docs/WIDESCREEN.md`. The original assessment:
 
 Possible, but a project of its own. The game is written for a 256-pixel view: scenery is copied

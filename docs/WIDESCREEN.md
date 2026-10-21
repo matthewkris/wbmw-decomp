@@ -56,23 +56,36 @@ screens (320 wide) are centred with 40-pixel black sides.
 
 ## The rooms
 
-`wide_room()` in `native/wbmw.c` decides. Now: area 1, rooms 0–4 and area 2, rooms 0–2
-(`$FF9668`, `$FF9669`). The opening room (area 0, room 0, Wonder Boy's house) is one screen wide,
-so it keeps the 256 with black sides.
+`wide_room()` in `native/wbmw.c` decides, from each room's script in the ROM (read once and
+kept): a room is wide when its layers allow it. A layer's kind (its command's first byte) picks
+from the table at `$94CC` how it follows the camera across and down, and how its columns and rows
+are drawn:
 
-| Area, room | What | Width |
-|---|---|---|
-| 1, 0–4 | after the opening: the side-scrolling rooms (the beach, room 2, tried) | 768–1,536 |
-| 2, 0 | the first village | 1,024 |
-| 2, 1 | the field with the statues | 512 |
-| 2, 2 | the forest path east of the village | 768 |
+| Kind | Across | Down | Drawn | Rooms like |
+|---|---|---|---|---|
+| 0 | follows | follows | as screens | rooms scrolling both ways |
+| 1 | fixed | fixed | as screens | one screen (the opening room) |
+| 2 | follows | fixed | as screens | side-scrolling rooms (the village) |
+| 3 | follows | fixed | one screen repeated | a repeated plane B |
+| 4, 5 | follows | follows | repeated | repeated planes B |
+| 6 | fixed | follows | as screens | shafts |
+| 7 | moves by itself | moves by itself | repeated | moving planes B |
 
-A room needs a map at least 400 pixels wide (narrower rooms would show beyond their map: they
-should stay 256 with black sides, as houses and shops are in most widescreen ports). Before
-adding a room, look at its layers (`tools/rooms.py ROM --area A --room R`): screen layers (kind
-2) are drawn wider like these; strip layers (kind 3, one screen repeated) are drawn whole
-already. Rooms with layers that move by themselves, scroll per line, or carry things, and the
-bosses and cutscenes, each need a look of their own.
+The rule: plane A of kind 0 or 2 and at least two screens wide (so a 400-pixel view fits in its
+map); plane B repeated (3, 4, 5, 7) or, drawn as screens, two screens wide too. A narrower layer,
+or one that stays put, would show what is beyond its map at the sides: those rooms (one-screen
+rooms, houses, shops, shafts) keep the 256 with black sides. 115 of the 170 rooms qualify. Two
+exceptions: area 15 (its moving floor is placed from the screen's edge, `$18C8C`) and a boss's
+scripted room (`$9659` bit 4 set: its spawn points run four at a time; these fights are made for
+the 256). Other bosses' rooms qualify by their layers and are wide; the ones tried (the snowman,
+Gragg and Glagg, area 6's) look right, but a boss whose moves depend on the screen's edges would
+need a look.
+
+Tried, walking both ways: the first village, the forest path and the field (area 2), the beach
+(area 1), area 8's beach and its underwater room, area 9's green dungeon (scrolling both ways; it
+stops 72 pixels sooner at its ends, so its own black void shows at the edge, as in the original
+at those ends), area 10's desert, area 12's cave, area 18's snowman, area 7's Gragg and Glagg,
+area 6's temple.
 
 ## Checks
 
