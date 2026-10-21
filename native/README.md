@@ -19,17 +19,20 @@ This makes `work/native/wbmw.exe` (and copies `SDL2.dll` next to it).
 
 ## Run
 
-    work/native/wbmw ROM [--scale N] [--save FILE] [--fullscreen] [--integer-scale] [--fps] [--mute]
-                         [--state FILE] [--load]
+    work/native/wbmw [ROM] [--windowed] [--scale N] [--save FILE] [--integer-scale] [--fps] [--mute]
+                           [--state FILE] [--load]
 
-plays in a window: arrows, Z = A, X = B, C = C, Enter = Start, Esc opens the menu; a controller
+plays, full screen unless `--windowed` is given. Without ROM, it looks for `rom/Wonder Boy in Monster World (USA, Europe).md`
+in the current folder, next to the program, and in the repository (`../../rom/` from
+`work/native/`). The ROM must be 786,432 bytes; a SHA-1 other than the expected dump's gives a
+warning. Errors are also shown in a message box. Keys: arrows, Z = A, X = B, C = C, Enter = Start, Esc opens the menu; a controller
 works too.
 The window is sized for the game's 256-pixel width at the largest scale up to 3 that fits the
 screen (`--scale N` to choose); it can be resized, and the picture keeps its proportions.
 The save EEPROM is read from FILE at start and written at exit (default `wbmw.sav`).
 
 * **F11** or **Alt+Enter** toggles full screen (borderless, at the desktop's resolution, picture
-  centred with its proportions); `--fullscreen` starts in it.
+  centred with its proportions), where the game starts; `--windowed` starts in a window.
 * `--integer-scale` scales only by whole multiples, so every pixel is the same size (a slightly
   smaller picture, with a wider border).
 * **F3** toggles a frame-rate display in the top right corner (`--fps` starts with it on); the
