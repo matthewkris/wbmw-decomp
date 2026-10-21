@@ -854,10 +854,18 @@ static void parallax(void)
 static void layer_x(void)
 {
     c->d[0] = rd32(CAMERA_X); F_L(c->d[0]);
+    int w = wide_layer();
+    if (w && !rd8(LAYER_A + 0x3A) && rd16(LAYER_A + 0x24) - 0x1000 >= 2 * w) {
+        /* widescreen: the camera kept where plane A's wider view stays inside its map, so that
+         * every layer, at its own parallax, stops where plane A does (a slower plane B went on
+         * sliding at the room's ends after plane A had stopped) */
+        uint16_t x = (uint16_t)(c->d[0] >> 16), lo = (uint16_t)(0x1000 + w), hi = (uint16_t)(rd16(LAYER_A + 0x24) - w);
+        if (x < lo) c->d[0] = (uint32_t)lo << 16;
+        else if (x >= hi) c->d[0] = (uint32_t)hi << 16;
+    }
     move_b(1, rd8(c->a[3] + 0x3A));
     c->d[2] = set_w(c->d[2], rd16(c->a[3] + 0x24)); F_W(c->d[2]);
     parallax();
-    int w = wide_layer();
     if (w && (int)(c->d[2] & 0xFFFF) - 0x1000 >= 2 * w) {    /* widescreen: the wider view inside the layer's map */
         uint16_t x = (uint16_t)c->d[0], lo = (uint16_t)(0x1000 + w), hi = (uint16_t)((c->d[2] & 0xFFFF) - w);
         c->d[0] = set_w(c->d[0], x < lo ? lo : x > hi ? hi : x);

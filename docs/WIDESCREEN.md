@@ -25,9 +25,12 @@ harness always runs the original's), five routines change. The scenery, in `port
 * `columns_screens` ($99AC, a room's start): the columns of the 400-pixel view, not of the 256.
 * `columns_in` ($9D46, each frame): `columns_in_wide` draws whatever columns of the 400-pixel
   view are missing, on either side, keeping at most 32.
-* `layer_x` ($9A8E): the layer's x kept 72 pixels further in from each end of its map, so the
-  wider view stays inside it. Near a room's ends the view therefore stops a little earlier than
-  the original's.
+* `layer_x` ($9A8E): the camera it reads kept where plane A's wider view stays inside plane A's
+  map (72 pixels further in from each end), so every layer, at its own parallax, stops where
+  plane A does; then each layer's x kept inside its own map too. Near a room's ends the view
+  therefore stops a little earlier than the original's. (At first only each layer's x was kept
+  in: in the field, whose plane B moves at half speed with too short a range to need it, plane B
+  went on sliding for the last 72 pixels after plane A, with the flowers, had stopped.)
 
 The things in the room (stage 2):
 
