@@ -805,15 +805,16 @@ ENTRY(RoomCmd20, cmd_20)                  /* $95FE */
 #define CAMERA_X      0xFFFF972Cu   /* long: the camera, 16.16 */
 #define CAMERA_Y      0xFFFF9730u
 
-/* widescreen (world.h): the pixels beyond each side for the layers of this room, or 0. RAM is
- * read only when the host asks for it, so the harness's runs are the original's. */
+/* widescreen (world.h): the pixels beyond each side in this room, or 0. RAM is read only when
+ * the host asks for it, so the harness's runs are the original's. */
 int port_wide_px;
 int (*port_wide_room)(int area, int room);
-static int wide_layer(void)
+int port_wide_now(void)
 {
     if (!port_wide_px || !port_wide_room) return 0;
     return port_wide_room(rd8(0xFFFF9668u), rd8(0xFFFF9669u)) ? port_wide_px : 0;
 }
+static int wide_layer(void) { return port_wide_now(); }
 
 /* asr: like lsr, but the sign is kept */
 static uint32_t asr_n(uint16_t *ccr, uint32_t v, unsigned n, unsigned bits)

@@ -19,8 +19,8 @@ rest show the normal picture centred with black sides.
   width). Where its tiles are transparent, plane B shows through.
 * Sprites are placed from the same layer x (the `$8B34` table), so they stay with the scenery.
 
-In a room that allows it, `port/rooms.c` changes three routines (only when the host asks, so the
-harness always runs the original's):
+In a room that allows it (`port_wide_now()`, which reads nothing unless the host asks, so the
+harness always runs the original's), five routines change. The scenery, in `port/rooms.c`:
 
 * `columns_screens` ($99AC, a room's start): the columns of the 400-pixel view, not of the 256.
 * `columns_in` ($9D46, each frame): `columns_in_wide` draws whatever columns of the 400-pixel
@@ -28,6 +28,18 @@ harness always runs the original's):
 * `layer_x` ($9A8E): the layer's x kept 72 pixels further in from each end of its map, so the
   wider view stays inside it. Near a room's ends the view therefore stops a little earlier than
   the original's.
+
+The things in the room (stage 2):
+
+* `BuildSprites` ($53AA) and `AddEntitySprites` ($54C4), `port/sprites.c`: the sprites' window is
+  the wider view (right limit `$8B2E` $180 + 72, left $80 − 72), so whatever is in it is drawn.
+  Before this, Wonder Boy vanished near a room's ends (the view stops sooner there, so he could
+  walk past the old edge) and when he came in at one.
+* `OffScreenXAt` ($BD0, and `$BC6`, `$BEE` through it), `port/kernhelp.c`: "off the screen across"
+  is off the wider view (still with its 32 pixels of margin). Everything that asks goes by it:
+  the spawn points' rules (`port/spawns.c`: whether a point is on the screen, or not too far off
+  it), `DespawnIfOffscreen` ($48C4) and the enemies' own tests. So enemies appear at the edges of
+  the wider view and go away past them, as they did at the 256's.
 
 The renderer (`harness/vdp.c`, shared with the harness) draws the picture `256 + 2 × vdp_pad`
 wide. With `vdp_pad_fill` (the room is allowed) the planes and sprites are drawn across the
@@ -58,17 +70,20 @@ bosses and cutscenes, each need a look of their own.
 * With widescreen off, the native build is the same as before frame for frame (frame logs of RAM
   and VRAM, and the pictures, compared with the build before it over 2,000 frames of five
   states), and so is the harness, in all three modes, with no mismatches in shadow mode.
-* With it on: the village, the forest path and the walk between them, the inside of the inn (the
+* `OffScreenXAt` and `AddEntitySprites` fuzzed against the original (3,000 cases each, no
+  mismatches); the shadow runs check `BuildSprites`.
+* With it on: the village, the forest path and the walk between them (Wonder Boy seen as he comes
+  in at the forest's left end, mushrooms appearing at the wider edges), the inside of the inn (the
   game draws a house as a picture over the village, so the village shows at its sides, as in the
   original), the title screen and a dungeon (black sides).
 
-## Not done yet (stage 2 and on)
+## Not done yet
 
-* **Things appear at the old edges.** Enemies and objects are created when they come within the
-  original 256 (plus a margin) and removed when they leave it, so in the wide view they can
-  appear or vanish in plain sight at the sides. Next: widen the range where they are created,
-  removed and drawn (`OffscreenXAt`/`$BD0` and its users, `DespawnIfOffscreen` $48C4, the spawn
-  rules in `port/spawns.c`, the sprite builder's culling).
-* More rooms, one at a time, starting with the outdoor areas.
+* More rooms, one at a time, starting with the outdoor areas. Things to look at in each: code that
+  places something from the screen's edge itself rather than through `OffScreenXAt` (one found:
+  the moving floor of area $0F, `port/objhelp.c`, placed from plane A's x + $70), and enemies
+  that come in from a side.
+* More of them can be alive at once now (the view holds more): the game's entity slots and the
+  sprite limits have not been a problem in the rooms tried.
 * The window opens 400 wide when widescreen is on at the start; switching it on later keeps the
   window's size (the picture fits inside it).
