@@ -401,19 +401,58 @@ static unsigned plane_a(unsigned *size)
     return (vdp_reg[2] & 0x38) << 10;
 }
 
-/* the scene again, with plane A's map from before the box */
+/* the scene again, with plane A's map from before the box, and without the window (the HUD's
+ * band): zoomed, its lines come into the picture, and they are the scenery's */
 static void zoom_render_scene(void)
 {
     static uint8_t keep[0x2000];
     static uint32_t saved[ACTIVE_LINES][FRAME_STRIDE];
     unsigned size, base = plane_a(&size);
     if (base + size > sizeof vram) { zoom_scene = 0; return; }
+    uint8_t r17 = vdp_reg[17], r18 = vdp_reg[18];
     memcpy(keep, vram + base, size); memcpy(vram + base, zoom_plane, size);
+    vdp_reg[17] = vdp_reg[18] = 0;                  /* no window */
     memcpy(saved, frame_rgb, sizeof saved);
     for (int l = 0; l < ACTIVE_LINES; l++) vdp_render_line(l);
     memcpy(zoom_rgb, frame_rgb, sizeof zoom_rgb);
     memcpy(frame_rgb, saved, sizeof saved); memcpy(vram + base, keep, size);
+    vdp_reg[17] = r17; vdp_reg[18] = r18;
     zoom_scene = 1;
+}
+
+/* The box and its pointer by themselves, from their tiles in plane A, with their transparent
+ * pixels transparent: the frame's corners and the pointer have some, and a copy of the picture
+ * there would show the scene unzoomed around them */
+static uint32_t box_rgb[ACTIVE_LINES][FRAME_STRIDE];
+static SDL_Texture *tex_box;
+
+static void box_tile(int x0, int y0, uint16_t name)
+{
+    unsigned tile = name & 0x7FF, pal = (name >> 13) & 3;
+    for (int r = 0; r < 8; r++) {
+        int row = name & 0x1000 ? 7 - r : r;
+        const uint8_t *p = &vram[(tile * 32 + row * 4) & 0xFFFF];
+        for (int x = 0; x < 8; x++) {
+            int sx = name & 0x800 ? 7 - x : x, X = x0 + x, Y = y0 + r;
+            unsigned ci = (p[sx >> 1] >> (sx & 1 ? 0 : 4)) & 15;
+            if (X < 0 || X >= FRAME_STRIDE || Y < 0 || Y >= ACTIVE_LINES) continue;
+            if (!ci) { box_rgb[Y][X] = 0; continue; }
+            uint16_t c = cram[pal * 16 + ci];
+            box_rgb[Y][X] = 0xFF000000u | ((c >> 1) & 7) * 255 / 7 << 16 | ((c >> 5) & 7) * 255 / 7 << 8 | ((c >> 9) & 7) * 255 / 7;
+        }
+    }
+}
+
+static void box_build(int px, int py, int w, int h)
+{
+    static const int dim[4] = {32, 64, 32, 128};
+    int pw = dim[vdp_reg[16] & 3], ph = dim[(vdp_reg[16] >> 4) & 3];
+    unsigned base = (vdp_reg[2] & 0x38) << 10;
+    for (int j = -1; j < h; j++)                    /* the row above: the pointer */
+        for (int i = 0; i < w; i++) {
+            unsigned na = (base + ((unsigned)((py + j) & (ph - 1)) * pw + ((px + i) & (pw - 1))) * 2) & 0xFFFF;
+            box_tile(zoom.box.x + i * 8, zoom.box.y + j * 8, (uint16_t)(vram[na] << 8 | vram[na + 1]));
+        }
 }
 
 static void zoom_update(void)
@@ -441,6 +480,7 @@ static void zoom_update(void)
         }
         zoom.pointer_w = first < 0 ? 0 : (last - first + 1) * 8;
         zoom.pointer_x = first < 0 ? 0 : zoom.box.x + first * 8;
+        box_build(px, py, w, h);
         /* Wonder Boy ($9EEE) and the speaker, under the pointer: the anchor between them, at
          * Wonder Boy's feet; the zoom as large as leaves the two below the box */
         uint32_t e = 0xFFFF0000u + (ram[0x9EEE] << 8 | ram[0x9EEF]);
@@ -500,14 +540,15 @@ static void present_frame(int zoomed)
         SDL_RenderCopyF(ren, tex, &hud, &hud_to);
         if (zoom.on) {                              /* the box and its pointer at their own size, slid up */
             SDL_FRect box_to = {(float)zoom.box.x, zoom.box.y - up, (float)zoom.box.w, (float)zoom.box.h};
-            SDL_RenderCopyF(ren, tex, &zoom.box, &box_to);
+            SDL_UpdateTexture(tex_box, NULL, &box_rgb[0][0], FRAME_STRIDE * 4);
+            SDL_RenderCopyF(ren, tex_box, &zoom.box, &box_to);
             if (zoom.pointer_w) {
                 SDL_Rect p = {zoom.pointer_x, zoom.box.y - 8, zoom.pointer_w, 8};
                 float centre = zoom.ax + (p.x + p.w / 2.0f - zoom.ax) * z;   /* over the speaker, zoomed */
                 SDL_FRect q = {centre - p.w / 2.0f, p.y - up, (float)p.w, 8};
                 if (q.x < zoom.box.x + 8) q.x = (float)zoom.box.x + 8;
                 if (q.x > zoom.box.x + zoom.box.w - 8 - p.w) q.x = (float)(zoom.box.x + zoom.box.w - 8 - p.w);
-                SDL_RenderCopyF(ren, tex, &p, &q);
+                SDL_RenderCopyF(ren, tex_box, &p, &q);
             }
         }
     }
@@ -806,6 +847,8 @@ static void window_open(void)
     fps_start = SDL_GetPerformanceCounter();
     tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, FRAME_STRIDE, 224);
     tex_zoom = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, FRAME_STRIDE, 224);
+    tex_box = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, FRAME_STRIDE, 224);
+    SDL_SetTextureBlendMode(tex_box, SDL_BLENDMODE_BLEND);   /* the box's transparent pixels */
     next_tick = SDL_GetPerformanceCounter();
 }
 
