@@ -124,7 +124,7 @@ int main(int argc, char **argv)
         if (fr == save_at && md_save_state(save_path, fr)) return 1;
         if (png_every && fr % png_every == 0) {
             snprintf(path, sizeof path, "%s/frame_%05d.png", out, fr);
-            png_write_rgb(path, &frame_rgb[0][0], frame_width, ACTIVE_LINES, 320);
+            png_write_rgb(path, &frame_rgb[0][0], frame_width, ACTIVE_LINES, FRAME_STRIDE);
         }
         if (ram_every && fr % ram_every == 0) {
             snprintf(path, sizeof path, "%s/ram_%05d.bin", out, fr);

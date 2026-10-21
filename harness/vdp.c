@@ -11,8 +11,9 @@ uint8_t vdp_reg[32];
 uint8_t vram[0x10000];
 uint16_t cram[64], vsram[40];
 int vdp_line, vdp_line_cycle;
-uint32_t frame_rgb[240][320];
+uint32_t frame_rgb[240][FRAME_STRIDE];
 int frame_width = 320;
+int vdp_pad, vdp_pad_fill;
 
 static int pending, code;
 static unsigned addr;
@@ -161,8 +162,9 @@ static uint32_t rgb(uint16_t c)
     return (r * 255 / 7) << 16 | (g * 255 / 7) << 8 | (b * 255 / 7);
 }
 
-/* a layer pixel: bits 0-5 colour (palette * 16 + index), bit 6 priority; 0 index = transparent */
-static uint8_t lay_a[320], lay_b[320], lay_s[320];
+/* a layer pixel: bits 0-5 colour (palette * 16 + index), bit 6 priority; 0 index = transparent.
+ * The layers are indexed by picture x; the game's own x is that less the pad (widescreen). */
+static uint8_t lay_a[FRAME_STRIDE], lay_b[FRAME_STRIDE], lay_s[FRAME_STRIDE];
 
 static int plane_dim(int bits) { return bits == 0 ? 32 : bits == 1 ? 64 : bits == 3 ? 128 : 32; }
 
@@ -179,7 +181,10 @@ static void tile_pixel_row(uint16_t name, int ty, uint8_t out[8])
     }
 }
 
-static void draw_plane(uint8_t *out, unsigned base, int line, int width, int is_a, int win_from, int win_to)
+/* a plane over picture x [lo, hi), the game's x being x - pad; plane A not where the window is
+ * (picture x [win_from, win_to)). Columns of vertical scroll beyond the game's width use its
+ * nearest. */
+static void draw_plane(uint8_t *out, unsigned base, int line, int lo, int hi, int pad, int width, int is_a, int win_from, int win_to)
 {
     int pw = plane_dim(vdp_reg[16] & 3), ph = plane_dim((vdp_reg[16] >> 4) & 3);
     unsigned hs_base = (vdp_reg[13] & 0x3F) << 10;
@@ -187,9 +192,10 @@ static void draw_plane(uint8_t *out, unsigned base, int line, int width, int is_
     int hrow = hmode == 0 ? 0 : hmode == 2 ? (line & ~7) : line;
     unsigned ha = (hs_base + hrow * 4 + (is_a ? 0 : 2)) & 0xFFFF;
     int hscroll = (vram[ha] << 8 | vram[ha + 1]) & 0x3FF;
-    for (int x = 0; x < width; x++) {
-        if (is_a && x >= win_from && x < win_to) continue;
-        int col = vmode ? (x >> 4) : 0;
+    for (int xp = lo; xp < hi; xp++) {
+        if (is_a && xp >= win_from && xp < win_to) continue;
+        int x = xp - pad;
+        int col = vmode ? (x < 0 ? 0 : x >= width ? (width >> 4) - 1 : x >> 4) : 0;
         int vs = vsram[(col * 2 + (is_a ? 0 : 1)) % 40] & 0x3FF;
         int px = (x - hscroll) & (pw * 8 - 1);
         int py = (line + vs) & (ph * 8 - 1);
@@ -197,48 +203,56 @@ static void draw_plane(uint8_t *out, unsigned base, int line, int width, int is_
         uint16_t name = vram[na] << 8 | vram[na + 1];
         uint8_t row[8];
         tile_pixel_row(name, py & 7, row);
-        out[x] = row[px & 7];
+        out[xp] = row[px & 7];
     }
 }
 
-static void draw_window(uint8_t *out, int line, int width, int *from, int *to)
+/* the window on this line, where it is in the game's width; *from, *to: the picture x where plane
+ * A is not drawn. A window that reaches an edge of the game's picture reaches the same edge of
+ * a wide one too, as nothing of plane A shows beside it then (the HUD's band shows plane B and
+ * sprites at its sides, as through its own gaps). */
+static void draw_window(uint8_t *out, int line, int width, int lo, int hi, int pad, int *from, int *to)
 {
     int h40 = vdp_reg[12] & 1;
     unsigned base = (vdp_reg[3] & (h40 ? 0x3C : 0x3E)) << 10;
     int hp = (vdp_reg[17] & 0x1F) * 16, right = vdp_reg[17] & 0x80;
     int vp = (vdp_reg[18] & 0x1F) * 8, down = vdp_reg[18] & 0x80;
     int in_v = down ? line >= vp : line < vp;
-    if (in_v) { *from = 0; *to = width; }
-    else if (right) { *from = hp; *to = width; }
-    else { *from = 0; *to = hp; }
-    if (*from >= *to) { *from = *to = 0; return; }
+    int f, t;
+    if (in_v) { f = 0; t = width; }
+    else if (right) { f = hp; t = width; }
+    else { f = 0; t = hp; }
+    if (f >= t) { *from = *to = 0; return; }
     int ww = h40 ? 64 : 32;
-    for (int x = *from; x < *to; x++) {
+    for (int x = f; x < t; x++) {
         unsigned na = (base + ((line >> 3) * ww + (x >> 3)) * 2) & 0xFFFF;
         uint16_t name = vram[na] << 8 | vram[na + 1];
         uint8_t row[8];
         tile_pixel_row(name, line & 7, row);
-        out[x] = row[x & 7];
+        out[x + pad] = row[x & 7];
     }
+    *from = f == 0 ? lo : f + pad;
+    *to = t == width ? hi : t + pad;
 }
 
 /* Sprites on one line, in link order, with the hardware's limits: at most 16 sprites and 256
  * sprite pixels per line in H32 (20 and 320 in H40), and masking: a sprite at x = 0 (raw) hides
  * every later sprite on its lines, once a sprite not at x = 0 has been found on the line. The
- * game masks the bottom of the HUD this way, so hanging spider webs pass behind it. */
-static void draw_sprites(uint8_t *out, int line, int width)
+ * game masks the bottom of the HUD this way, so hanging spider webs pass behind it. A wide
+ * picture (lo..hi past the game's width) has limits in proportion. */
+static void draw_sprites(uint8_t *out, int line, int lo, int hi, int pad, int width)
 {
     int h40 = vdp_reg[12] & 1;
     unsigned sat = (vdp_reg[5] & (h40 ? 0x7E : 0x7F)) << 9;
     int max = h40 ? 80 : 64, link = 0;
-    int per_line = h40 ? 20 : 16, pixels = h40 ? 320 : 256, seen = 0, nonzero = 0;
-    memset(out, 0, 320);
+    int per_line = (h40 ? 20 : 16) * (hi - lo) / width, pixels = hi - lo, seen = 0, nonzero = 0;
+    memset(out, 0, FRAME_STRIDE);
     for (int n = 0; n < max; n++) {
         const uint8_t *s = &vram[(sat + link * 8) & 0xFFFF];
         int y = ((s[0] << 8 | s[1]) & 0x3FF) - 128;
         int hs = ((s[2] >> 2) & 3) + 1, vs = (s[2] & 3) + 1;
         uint16_t attr = s[4] << 8 | s[5];
-        int rawx = (s[6] << 8 | s[7]) & 0x1FF, x = rawx - 128;
+        int rawx = (s[6] << 8 | s[7]) & 0x1FF, x = rawx - 128 + pad;
         if (line >= y && line < y + vs * 8) {
             if (seen++ == per_line) break;
             if (rawx == 0 && nonzero) break;              /* masking */
@@ -255,7 +269,7 @@ static void draw_sprites(uint8_t *out, int line, int width)
                 tile_pixel_row((uint16_t)(name & ~0x1000), row & 7, px);   /* row already flipped */
                 for (int i = 0; i < 8 && c * 8 + i < draw; i++) {
                     int sx = x + c * 8 + i;
-                    if (sx >= 0 && sx < width && px[i] && !out[sx]) out[sx] = px[i];
+                    if (sx >= lo && sx < hi && px[i] && !out[sx]) out[sx] = px[i];
                 }
             }
             if (!pixels) break;
@@ -267,25 +281,30 @@ static void draw_sprites(uint8_t *out, int line, int width)
 
 void vdp_render_line(int line)
 {
-    int width = (vdp_reg[12] & 1) ? 320 : 256;
-    frame_width = width;
+    int width = (vdp_reg[12] & 1) ? 320 : 256;      /* the game's own */
+    int pad = vdp_pad ? (256 + 2 * vdp_pad - width) / 2 : 0;
+    int fill = vdp_pad_fill && width == 256;
+    int lo = fill ? 0 : pad, hi = fill ? width + 2 * pad : pad + width;   /* the picture x drawn */
+    int total = width + 2 * pad;
+    frame_width = total;
     uint32_t bg = rgb(cram[vdp_reg[7] & 0x3F]);
     if (!(vdp_reg[1] & 0x40)) {                       /* display off */
-        for (int x = 0; x < 320; x++) frame_rgb[line][x] = 0;
+        for (int x = 0; x < FRAME_STRIDE; x++) frame_rgb[line][x] = 0;
         return;
     }
     int wf = 0, wt = 0;
     memset(lay_a, 0, sizeof lay_a); memset(lay_b, 0, sizeof lay_b);
-    draw_window(lay_a, line, width, &wf, &wt);
-    draw_plane(lay_a, (vdp_reg[2] & 0x38) << 10, line, width, 1, wf, wt);
-    draw_plane(lay_b, (vdp_reg[4] & 0x07) << 13, line, width, 0, 0, 0);
-    draw_sprites(lay_s, line, width);
-    for (int x = 0; x < width; x++) {
+    draw_window(lay_a, line, width, lo, hi, pad, &wf, &wt);
+    draw_plane(lay_a, (vdp_reg[2] & 0x38) << 10, line, lo, hi, pad, width, 1, wf, wt);
+    draw_plane(lay_b, (vdp_reg[4] & 0x07) << 13, line, lo, hi, pad, width, 0, 0, 0);
+    draw_sprites(lay_s, line, lo, hi, pad, width);
+    for (int x = 0; x < total; x++) {
+        if (x < lo || x >= hi) { frame_rgb[line][x] = 0; continue; }   /* the sides of a picture not wide */
         uint8_t a = lay_a[x], b = lay_b[x], s = lay_s[x], c = 0;
         /* priority order, front to back: S hi, A hi, B hi, S lo, A lo, B lo */
         if (s & 0x40) c = s; else if (a & 0x40) c = a; else if (b & 0x40) c = b;
         else if (s) c = s; else if (a) c = a; else if (b) c = b;
         frame_rgb[line][x] = c ? rgb(cram[c & 0x3F]) : bg;
     }
-    for (int x = width; x < 320; x++) frame_rgb[line][x] = 0;
+    for (int x = total; x < FRAME_STRIDE; x++) frame_rgb[line][x] = 0;
 }

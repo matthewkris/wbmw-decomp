@@ -110,7 +110,10 @@ so Start stays the game's own: it opens the item screen.
 
 ### The menu
 
-* **Show FPS, Full screen, Whole pixels** (every pixel the same size), **Sound**: on or off.
+* **Show FPS, Full screen, Whole pixels** (every pixel the same size), **Widescreen**, **Sound**:
+  on or off. Widescreen is a test for now: the picture is 16:9, and the first village and the
+  areas next to it fill it; everywhere else the normal picture is centred with black sides. Enemies
+  can still appear or vanish at the old screen edges. See `docs/WIDESCREEN.md`.
 * **Controls**: a key and a controller input for each button, plus quick save and quick load.
   Choose one and press Enter (A on a controller), then press the new key or button; on the
   controller side, a stick direction or a trigger works too. A key already used elsewhere swaps
@@ -132,12 +135,13 @@ to `wbmw.sav` in the current folder when you exit. Use `--save FILE` for a diffe
 ### Options
 
 ```
-wbmw [ROM] [--windowed] [--scale N] [--integer-scale] [--fps] [--mute] [--save FILE] [--state FILE] [--load] [--config FILE]
+wbmw [ROM] [--windowed] [--widescreen] [--scale N] [--integer-scale] [--fps] [--mute] [--save FILE] [--state FILE] [--load] [--config FILE]
 ```
 
 * `--windowed`: start in a window instead of full screen. `--scale N` sets the window's size, N
   times 256×224.
 * `--integer-scale`: scale only by whole numbers, so every pixel is the same size.
+* `--widescreen`: turn widescreen on (`--no-widescreen` turns it off) for this run.
 * `--fps`: show the frame rate from the start. `--mute`: no sound.
 * `--state FILE`: the file quick save and quick load use. `--load`: load it at start.
 * `--config FILE`: use this settings file instead of `wbmw.ini`.

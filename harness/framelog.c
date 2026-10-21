@@ -80,7 +80,10 @@ void framelog_at(uint32_t pc)
         uint32_t hc = fnv((const uint8_t *)cram, sizeof cram, fnv((const uint8_t *)vsram, sizeof vsram, 2166136261u));
         fprintf(flog, "%u %08X %08X %08X\n", n, ram_hash(), hv, hc);
     }
-    if ((long)n == dump_at) { dump("ram.bin", ram, sizeof ram); dump("vram.bin", vram, sizeof vram); dump("cram.bin", cram, sizeof cram); }
+    if ((long)n == dump_at) {
+        dump("ram.bin", ram, sizeof ram); dump("vram.bin", vram, sizeof vram); dump("cram.bin", cram, sizeof cram);
+        dump("vdpreg.bin", vdp_reg, sizeof vdp_reg); dump("vsram.bin", vsram, sizeof vsram);
+    }
     if (gin_on) {                                   /* the buttons for the next game frame */
         uint8_t m = 0;
         for (int i = 0; i < gin_n; i++) if (gin[i].frame <= n + 1) m = gin[i].buttons;

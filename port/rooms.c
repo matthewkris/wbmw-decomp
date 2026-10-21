@@ -805,6 +805,16 @@ ENTRY(RoomCmd20, cmd_20)                  /* $95FE */
 #define CAMERA_X      0xFFFF972Cu   /* long: the camera, 16.16 */
 #define CAMERA_Y      0xFFFF9730u
 
+/* widescreen (world.h): the pixels beyond each side for the layers of this room, or 0. RAM is
+ * read only when the host asks for it, so the harness's runs are the original's. */
+int port_wide_px;
+int (*port_wide_room)(int area, int room);
+static int wide_layer(void)
+{
+    if (!port_wide_px || !port_wide_room) return 0;
+    return port_wide_room(rd8(0xFFFF9668u), rd8(0xFFFF9669u)) ? port_wide_px : 0;
+}
+
 /* asr: like lsr, but the sign is kept */
 static uint32_t asr_n(uint16_t *ccr, uint32_t v, unsigned n, unsigned bits)
 {
@@ -846,6 +856,11 @@ static void layer_x(void)
     move_b(1, rd8(c->a[3] + 0x3A));
     c->d[2] = set_w(c->d[2], rd16(c->a[3] + 0x24)); F_W(c->d[2]);
     parallax();
+    int w = wide_layer();
+    if (w && (int)(c->d[2] & 0xFFFF) - 0x1000 >= 2 * w) {    /* widescreen: the wider view inside the layer's map */
+        uint16_t x = (uint16_t)c->d[0], lo = (uint16_t)(0x1000 + w), hi = (uint16_t)((c->d[2] & 0xFFFF) - w);
+        c->d[0] = set_w(c->d[0], x < lo ? lo : x > hi ? hi : x);
+    }
     put16m(c->a[3] + 4, c->d[0]);
 }
 static void layer_y(void)
@@ -1024,6 +1039,13 @@ static void axis_y(uint32_t at)
 /* the drawing kinds ($32: tbl $987A for columns, $33: $987E for rows) */
 static void columns_screens(void)   /* $99AC: the columns shown, from the x */
 {
+    int w = wide_layer();
+    if (w) {                                        /* widescreen: those of the wider view */
+        int x = rd16(c->a[3] + 4), lo = (x - w) >> 4, hi = (x + 256 + w + 15) >> 4;
+        put16m(c->a[3] + 8, (uint16_t)lo);
+        put16m(c->a[3] + 0xA, (uint16_t)(hi - lo));
+        return;
+    }
     c->d[0] = set_w(c->d[0], rd16(c->a[3] + 4)); F_W(c->d[0]);
     c->d[1] = set_w(c->d[1], c->d[0]); F_W(c->d[0]);
     c->d[0] = set_w(c->d[0], asr_n(&c->ccr, c->d[0], 4, 16));
@@ -1484,9 +1506,36 @@ static void draw_row(void)
     }
 }
 
+/* widescreen: the columns of the wider view [lo, hi) not drawn yet, to the right then to the
+ * left, keeping at most the plane's 32 ($8: the first, $A: how many) */
+static void columns_in_wide(int w)
+{
+    link(-6);
+    int x = rd16(c->a[3] + 4), lo = (x - w) >> 4, hi = (x + 256 + w + 15) >> 4;
+    int first = rd16(c->a[3] + 8), n = rd16(c->a[3] + 0xA);
+    while (first + n < hi) {
+        c->d[6] = set_w(c->d[6], (uint16_t)(first + n));
+        push32(0x9D78); draw_column(); c->a[7] += 4;
+        n++;
+    }
+    if (n > 32) { first += n - 32; n = 32; }
+    while (lo < first) {
+        first--;
+        c->d[6] = set_w(c->d[6], (uint16_t)first);
+        push32(0x9DAA); draw_column(); c->a[7] += 4;
+        n++;
+    }
+    if (n > 32) n = 32;
+    put16m(c->a[3] + 8, (uint16_t)first);
+    put16m(c->a[3] + 0xA, (uint16_t)n);
+    unlk();
+}
+
 /* $9D46: the columns that scrolled into view drawn (to the right, or left), up to 32 kept ($8, $A) */
 static void columns_in(void)
 {
+    int w = wide_layer();
+    if (w) { columns_in_wide(w); return; }
     link(-6);
     c->d[0] = set_w(c->d[0], rd16(c->a[3] + 4)); F_W(c->d[0]);
     c->d[2] = set_w(c->d[2], c->d[0]); F_W(c->d[0]);

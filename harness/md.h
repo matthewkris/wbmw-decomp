@@ -40,8 +40,13 @@ void sound_state_io(FILE *f, int saving);
 
 /* vdp.c */
 extern int vdp_line, vdp_line_cycle;   /* current scanline and cycle within it */
-extern uint32_t frame_rgb[240][320];
+#define FRAME_STRIDE 400                /* pixels a row of frame_rgb holds: 256 + 2 * 72 for widescreen */
+extern uint32_t frame_rgb[240][FRAME_STRIDE];
 extern int frame_width;
+/* widescreen (the native build; 0 in the harness): vdp_pad pixels shown at each side of the H32
+ * picture, which stays 256 + 2 * vdp_pad wide in H40 too (black sides there); vdp_pad_fill: the
+ * game fills them (the room allows it), else they are black */
+extern int vdp_pad, vdp_pad_fill;
 void vdp_reset(void);
 void vdp_write_ctrl(uint16_t w);
 void vdp_write_data(uint16_t w);
