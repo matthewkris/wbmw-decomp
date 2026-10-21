@@ -54,6 +54,8 @@ The save EEPROM is read from FILE at start and written at exit (default `wbmw.sa
   the extra 72 at each side in the rooms `wide_room()` allows, black sides elsewhere
   (`docs/WIDESCREEN.md`). With it off, nothing changes: the build is the original's frame for
   frame.
+* **Enemy health** (`--enemy-health`, also headless, for pictures): the damage of each hit as a
+  number rising from the enemy, and a bar of its health over it (`docs/ENEMYHEALTH.md`).
 * **Talk zoom** (`--talk-zoom`): during a conversation with an ordinary character, the host zooms
   the scene in on the two, the HUD and the box slid up (`docs/TALKZOOM.md`). For testing it,
   `--input FILE` works in a window too, and `WBMW_SHOT_EVERY=N WBMW_SHOT_EVERY_DIR=DIR` writes the
