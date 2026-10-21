@@ -5,13 +5,16 @@ Usage: rebuild.py ROM [ASSETS]
 
 The structured data is encoded back from the JSON (tools/assetfmt.py) and must match the ROM
 byte for byte: the text (messages and phrases), the palettes, the room scripts, the animation
-scripts and the sprite mappings. The graphics are compressed; their decoded blocks are checked
-by the native build against the port's own decompressor (wbmw --verify-graphics ASSETS), which
-the harness verified against the original's. The raw parts (the sound) are compared as they are.
+scripts and the sprite mappings, and the tables that point at the data (the data directory, the
+message, window and phrase tables, the graphics table, the areas' room offsets, the animation
+tree). The compressed data is checked by content against the port's own decoders, which the
+harness verified against the original's: the graphics (wbmw --verify-graphics) and the rooms'
+block tables and layer maps (wbmw --unpack-list). The raw parts (the sound) are compared as they
+are. At the end, how much of the ROM the checks cover, and the largest parts they do not.
 """
-import sys, os, json, argparse, subprocess
+import sys, os, json, struct, argparse, subprocess, tempfile
 sys.path.insert(0, os.path.dirname(__file__))
-import assetfmt, gfx
+import assetfmt, gfx, sprites
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('rom'); ap.add_argument('assets', nargs='?', default='assets')
@@ -19,13 +22,17 @@ def main():
     d = open(A.rom, 'rb').read()
     J = lambda *p: json.load(open(os.path.join(A.assets, *p), encoding='utf-8'))
     report, bad_total = {}, 0
+    covered = bytearray(len(d))                     # 1: built back byte for byte; 2: checked by content
+
+    def mark(a, n, how=1):
+        for i in range(a, min(a + n, len(d))): covered[i] = covered[i] or how
 
     def check(name, pieces):
         """pieces: (address, bytes built from the files); counts those not matching the ROM"""
         nonlocal bad_total
         bad, n, total = 0, 0, 0
         for a, b in pieces:
-            n += 1; total += len(b)
+            n += 1; total += len(b); mark(a, len(b))
             if d[a:a + len(b)] != b:
                 if bad < 3: print('%s: differs at $%06X (%d bytes)' % (name, a, len(b)))
                 bad += 1
@@ -46,20 +53,120 @@ def main():
     for f, a in (('z80_driver.bin', 0x098000), ('z80_data.bin', 0x099A77)):
         check('sound ' + f, [(a, open(os.path.join(A.assets, 'sound', f), 'rb').read())])
 
-    # the graphics: the port's decompressor, in the native build, against the decoded blocks
+    # the tables that point at the data, from the files (the layout's own addresses: the data
+    # directory at $1CC00, the graphics table at $41000, the animation data at $A0000)
+    L = J('layout.json')
+    dirs = [int(v, 16) for v in L['directory']]
+    base = lambda i: dirs[i] & 0xFFFFFF
+    check('data directory', [(0x1CC00, b''.join(struct.pack('>I', v) for v in dirs))])
+    check('graphics table', [(gfx.TABLE, b''.join(struct.pack('>I', int(v, 16)) for v in J('graphics', 'table.json')))])
+    check('message table', [(base(5), b''.join(bytes([m['window']]) + struct.pack('>H', int(m['address'], 16) - base(5)) for m in msgs))])
+    W = J('text', 'windows.json')
+    check('window table', [(base(6) + 4 * int(w), bytes([v['col'], v['row'], v['width'], v['lines']])) for w, v in W.items()])
+    pt = [int(v, 16) for v in L['phrase_tables']]
+    pieces = [(base(4), b''.join(struct.pack('>I', v) for v in pt))]
+    for k in range(4):
+        offs = [int(p['address'], 16) - (pt[k] & 0xFFFFFF) for p in sorted((p for p in ph if p['table'] == k), key=lambda p: p['number'])]
+        pieces.append((pt[k] & 0xFFFFFF, b''.join(struct.pack('>h', o) for o in offs)))
+    check('phrase tables', pieces)
+    pieces = []
+    for area in range(19):
+        rs = sorted((r for r in rms if r['area'] == area), key=lambda r: r['room'])
+        pieces.append((base(8 + area), b''.join(struct.pack('>h', int(r['address'], 16) - base(8 + area)) for r in rs)))
+    check('area room tables', pieces)
+    words = lambda vs: b''.join(struct.pack('>h', v) for v in vs)
+    check('animation tree', [(sprites.ANIM, words(L['anim_level1']))]
+          + [(sprites.ANIM + int(k), words(v)) for k, v in L['anim_level2'].items()]
+          + [(sprites.ANIM + int(k), words(v)) for k, v in L['anim_level3'].items()])
+
+    # the compressed data, by content, against the port's decoders in the native build
     exe = os.path.join(os.path.dirname(__file__), '..', 'work', 'native', 'wbmw.exe' if os.name == 'nt' else 'wbmw')
     if os.path.exists(exe):
         r = subprocess.run([exe, A.rom, '--verify-graphics', A.assets], capture_output=True, text=True)
         print(r.stdout.strip())
         report['graphics'] = dict(blocks=768, checked_by="the port's DecodeGfxBlock", differing=0 if r.returncode == 0 else 'some')
         bad_total += r.returncode != 0
+        if r.returncode == 0:
+            for e in gfx.table(d):
+                if e != 0xFFFFFFFF: mark(e & 0xFFFFFF, gfx.decode(d, e)[1] - (e & 0xFFFFFF), 2)
+        bad = check_maps(exe, A, J, report)
+        bad_total += bad
+        if not bad:                                 # the maps' data: block tables, place lists, chunks
+            for t in J('rooms', 'shared_blocks.json'):
+                a = int(t['address'], 16); mark(a, assetfmt.blocks_end(d, a) - a, 2)
+            for r in J('rooms', 'maps.json'):
+                for lay in r['layers']:
+                    src, bt = int(lay['src'], 16), int(lay['blocks_at'], 16)
+                    mark(bt, assetfmt.blocks_end(d, bt) - bt, 2)
+                    offs = src + struct.unpack_from('>h', d, src + 2)[0]
+                    q = src + 4
+                    while d[q] < 0x80:
+                        num = d[q + 1]; mark(offs + 2 * num, 2, 2)
+                        c = src + struct.unpack_from('>h', d, offs + 2 * num)[0]
+                        mark(c, assetfmt.chunk_end(d, c) - c, 2); q += 2
+                    mark(src, q + 1 - src, 2)
     else:
-        print('graphics: not checked (build the native game first: make -C native)')
-        report['graphics'] = dict(checked=False)
+        print('graphics and room maps: not checked (build the native game first: make -C native)')
+        report['graphics'] = report['room maps'] = dict(checked=False)
+
+    gaps, i = [], 0
+    while i < len(d):
+        if covered[i] or d[i] == 0xFF and all(b == 0xFF for b in d[i:i + 16]): i += 1; continue
+        j = i
+        while j < len(d) and not covered[j] and not (d[j] == 0xFF and all(b == 0xFF for b in d[j:j + 16])): j += 1
+        gaps.append((j - i, i)); i = j
+    CODE = 0x1C602                                  # $0-$1C601: the vectors, the header and the 68000 code
+    data_gaps = [(n, a) for n, a in gaps if a >= CODE]
+    report['coverage'] = dict(rom_bytes=len(d), built_back=covered.count(1), checked_by_content=covered.count(2),
+                              padding=sum(1 for b in d if b == 0xFF),
+                              code_and_its_tables_not_covered=sum(min(n, CODE - a) for n, a in gaps if a < CODE),
+                              data_not_covered=sum(n for n, _ in data_gaps))
+    print('largest data not covered:', ', '.join('$%06X (%d bytes)' % (a, n) for n, a in sorted(data_gaps, reverse=True)[:10]))
 
     print(json.dumps(report, indent=1))
     print('everything matches' if not bad_total else '%d pieces differ' % bad_total)
     return 1 if bad_total else 0
+
+def check_maps(exe, A, J, report):
+    """the rooms' block tables and layer maps: the port's unpackers' results against the files"""
+    maps, shared = J('rooms', 'maps.json'), J('rooms', 'shared_blocks.json')
+    want = {}                                       # ('B'|'L', address) -> the files' data
+    for t in shared: want[('B', int(t['address'], 16))] = t['blocks']
+    for r in maps:
+        for lay in r['layers']:
+            want[('B', int(lay['blocks_at'], 16))] = lay['blocks']
+            want[('L', int(lay['src'], 16))] = lay['places']
+    tmp = tempfile.mkdtemp()
+    req, out = os.path.join(tmp, 'req.txt'), os.path.join(tmp, 'out.bin')
+    open(req, 'w').write(''.join('%s %X\n' % k for k in want))
+    r = subprocess.run([exe, A.rom, '--unpack-list', req, out], capture_output=True, text=True)
+    if r.returncode: print(r.stdout, r.stderr); report['room maps'] = dict(checked=False); return 1
+    o, p, bad = open(out, 'rb').read(), 0, {'B': 0, 'L': 0}
+    n = {'B': 0, 'L': 0}
+    while p < len(o):
+        kind, addr = chr(o[p]), struct.unpack_from('>I', o, p + 1)[0]; p += 5
+        files = want[(kind, addr)]; n[kind] += 1
+        if kind == 'B':
+            count = struct.unpack_from('>H', o, p)[0]; p += 2
+            ok = count == len(files)
+            for i in range(count):
+                rec = o[p:p + 9]; p += 9
+                if i >= len(files): continue
+                if files[i] is None: ok &= rec == b'\xee' * 9
+                else: ok &= list(struct.unpack('>4H', rec[:8])) + [rec[8]] == files[i]
+        else:
+            m, cells = o[p:p + 64], o[p + 64:p + 64 + 16 * 0x180]; p += 64 + 16 * 0x180
+            ok = all((m[pos] == 0xFF) == (str(pos) not in files) for pos in range(64))
+            for pos, want_cells in files.items():
+                k = m[int(pos)]
+                ok &= k < 16 and list(struct.unpack_from('>192H', cells, k * 0x180)) == want_cells
+        if not ok:
+            if bad['B'] + bad['L'] < 3: print('room maps: %s at $%06X differs' % ('block table' if kind == 'B' else 'layer map', addr))
+            bad[kind] += 1
+    report['room maps'] = dict(block_tables=n['B'], layer_maps=n['L'], checked_by="the port's UnpackBlocks and UnpackLayerMap",
+                               differing=bad['B'] + bad['L'])
+    print(r.stdout.strip())
+    return bad['B'] + bad['L']
 
 if __name__ == '__main__':
     sys.exit(main())

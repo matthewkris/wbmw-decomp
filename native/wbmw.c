@@ -1376,9 +1376,59 @@ static int verify_graphics_blocks(const char *dir)
     return bad || missing ? 1 : 0;
 }
 
+/* --unpack-list REQ OUT: the rooms' block tables and layer maps unpacked by the port's own
+ * unpackers (UnpackBlocks $9F6A, UnpackLayerMap $A068, verified against the original's in the
+ * harness), for tools/rebuild.py to compare with tools/extract.py's (docs/EXTRACT.md). REQ has a
+ * line a table, "B address" (a block table) or "L address" (a layer's data); OUT gets a record
+ * each: the letter, the address (4 bytes), then for B the count (2 bytes) and 8 bytes of tile
+ * words and the attribute byte a block, for L the 64 bytes of the layer's map and the 16 chunks'
+ * 192 cells (words). The buffers are filled with $EE first, so a block left empty shows. */
+void UnpackBlocks(Cpu *c), UnpackLayerMap(Cpu *c);
+#define UNPACK_TABLE 0xFFFF7000u                   /* a block table: 8 bytes a block, the attributes $800 on */
+#define UNPACK_RECORD 0xFFFF7C00u                  /* a layer's record ($22 its map, $1C its table, $34 its data) */
+#define UNPACK_MAP 0xFFFFA000u                     /* (sign-extended from a word: at $8000 up to be RAM) */
+static int unpack_list(const char *req, const char *out)
+{
+    FILE *in = fopen(req, "r"), *o = fopen(out, "wb");
+    if (!in || !o) { perror(in ? out : req); return 1; }
+    char kind; unsigned addr; int n = 0;
+    while (fscanf(in, " %c %x", &kind, &addr) == 2) {
+        Cpu c; memset(&c, 0, sizeof c);
+        c.a[7] = 0xFFFF0C00u - 4; wr32(c.a[7], 0);  /* a return address, as a jsr leaves */
+        uint8_t head[5] = {(uint8_t)kind, (uint8_t)(addr >> 24), (uint8_t)(addr >> 16), (uint8_t)(addr >> 8), (uint8_t)addr};
+        fwrite(head, 1, 5, o);
+        memset(&ram[UNPACK_TABLE & 0xFFFF], 0xEE, 0x1000);
+        if (kind == 'B') {
+            c.a[3] = addr; c.a[1] = UNPACK_TABLE;
+            UnpackBlocks(&c);
+            unsigned count = rd16(addr);
+            uint8_t cnt[2] = {(uint8_t)(count >> 8), (uint8_t)count};
+            fwrite(cnt, 1, 2, o);
+            for (unsigned i = 0; i < count && i < 0x800; i++) {
+                fwrite(&ram[(UNPACK_TABLE & 0xFFFF) + 8 * i], 1, 8, o);
+                fwrite(&ram[(UNPACK_TABLE & 0xFFFF) + 0x800 + i], 1, 1, o);
+            }
+        } else {
+            memset(&ram[0x5000], 0xEE, 16 * 0x180);
+            memset(&ram[UNPACK_RECORD & 0xFFFF], 0, 0x80);
+            wr16(UNPACK_RECORD + 0x22, (uint16_t)UNPACK_MAP);     /* its map: a word, sign-extended */
+            wr32(UNPACK_RECORD + 0x1C, UNPACK_TABLE);
+            wr32(UNPACK_RECORD + 0x34, addr);
+            c.a[3] = UNPACK_RECORD;
+            UnpackLayerMap(&c);
+            fwrite(&ram[UNPACK_MAP & 0xFFFF], 1, 64, o);
+            fwrite(&ram[0x5000], 1, 16 * 0x180, o);
+        }
+        n++;
+    }
+    fclose(in); fclose(o);
+    printf("unpacked %d tables with the port's unpackers\n", n);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
-    const char *rom_path = NULL, *input = NULL, *load_path = NULL, *verify_graphics = NULL;
+    const char *rom_path = NULL, *input = NULL, *load_path = NULL, *verify_graphics = NULL, *unpack_req = NULL, *unpack_out = NULL;
     const char *state_path_ptr = "\x01";            /* --load: the --state file, whatever it ends up being */
 #ifndef WBMW_HEADLESS_ONLY
     {                                               /* the settings file first: the command line overrides it */
@@ -1401,6 +1451,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--dump-at") && i + 2 < argc) { long n = atol(argv[++i]); framelog_dump_at(n, argv[++i]); }
         else if (!strcmp(argv[i], "--mute")) mute = 1;
         else if (!strcmp(argv[i], "--verify-graphics") && i + 1 < argc) { verify_graphics = argv[++i]; headless = 1; }
+        else if (!strcmp(argv[i], "--unpack-list") && i + 2 < argc) { unpack_req = argv[++i]; unpack_out = argv[++i]; headless = 1; }
         else if (!strcmp(argv[i], "--widescreen")) widescreen = 1;
         else if (!strcmp(argv[i], "--no-widescreen")) widescreen = 0;
         else if (!strcmp(argv[i], "--enemy-health")) enemy_health = 1;
@@ -1457,6 +1508,7 @@ int main(int argc, char **argv)
     wide_apply();
     bus_reset(); vdp_reset(); sound_reset();
     if (verify_graphics) return verify_graphics_blocks(verify_graphics);
+    if (unpack_req) return unpack_list(unpack_req, unpack_out);
     if (input) load_input(input);
     if (wav_path && wav_open(wav_path, SOUND_RATE)) return 1;
     if (!headless) {
