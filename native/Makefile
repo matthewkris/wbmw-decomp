@@ -20,11 +20,17 @@ $(OUT)/ymfm_%.o: $(YMFM)/ymfm_%.cpp
 	@mkdir -p $(OUT)
 	$(CXX) -O2 -std=c++14 -w -I$(YMFM) -c $< -o $@
 
-# -mconsole: sdl2-config asks for a Windows GUI program, which has no console for messages
+# Windows (MSYS2): -mconsole, as sdl2-config asks for a GUI program, which has no console for
+# messages; SDL2.dll copied next to the program
+ifeq ($(OS),Windows_NT)
+WINFLAGS = -mconsole
+COPY_DLL = cp "$$(dirname $$(which sdl2-config))/SDL2.dll" $(OUT)/
+endif
 $(OUT)/wbmw: wbmw.c machine.c $(MACHINE) $(PORT) $(YMO) ../harness/md.h
+	@mkdir -p $(OUT)
 	$(CC) $(CFLAGS) -I../port -I../harness $$(sdl2-config --cflags) wbmw.c machine.c $(MACHINE) $(PORT) $(YMO) \
-		-o $@ -static-libgcc $$(sdl2-config --libs) -mconsole -static-libstdc++ -lstdc++ -lm
-	cp "$$(dirname $$(which sdl2-config))/SDL2.dll" $(OUT)/
+		-o $@ -static-libgcc $$(sdl2-config --libs) $(WINFLAGS) -static-libstdc++ -lstdc++ -lm
+	$(COPY_DLL)
 
 clean:
 	rm -rf $(OUT)

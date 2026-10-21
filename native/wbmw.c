@@ -12,7 +12,7 @@
  * the next 60 Hz tick, reads the controller and runs the game's interrupt handler (machine.c's
  * $4B5C), as the hardware would.
  *
- *   wbmw ROM [--scale N] [--save FILE] [--fullscreen] [--integer-scale] [--fps]   play in a window
+ *   wbmw [ROM] [--windowed] [--scale N] [--save FILE] [--integer-scale] [--fps]   play (full screen)
  *   wbmw ROM --frames N [--png-every K] [--out DIR] [--input FILE] [--wav FILE]   headless, for comparison
  *            [--frame-log FILE] [--input-game FILE] [--dump-at N DIR]          by game frame (harness/framelog.c)
  *
@@ -103,7 +103,7 @@ static uint8_t buttons_at(int fr)
 #ifndef WBMW_HEADLESS_ONLY
 static SDL_Window *win; static SDL_Renderer *ren; static SDL_Texture *tex; static SDL_GameController *gc;
 static Uint64 next_tick;
-static int fullscreen, integer_scale, show_fps;
+static int fullscreen = 1, integer_scale, show_fps;   /* full screen unless --windowed */
 static const char *TITLE = "Wonder Boy in Monster World (native)  (arrows, Z/X/C, Enter; F11 full screen, F3 fps, Esc menu)";
 
 /* frames shown per second, measured over each second */
@@ -604,6 +604,67 @@ void rt_poll(Cpu *c, uint32_t at)
     c->ret = ret;
 }
 
+/* an error the player should see even when the program was started by a double click (its
+ * console closes at once): in a message box too */
+static void fail(const char *msg)
+{
+    fprintf(stderr, "wbmw: %s\n", msg);
+#ifndef WBMW_HEADLESS_ONLY
+    if (!headless) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Wonder Boy in Monster World", msg, NULL);
+#endif
+}
+
+/* SHA-1 (FIPS 180-1), to tell the player whether their ROM is the dump this port was made from */
+static void sha1(const uint8_t *data, size_t len, uint8_t out[20])
+{
+    uint32_t h[5] = {0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0};
+    uint64_t bits = (uint64_t)len * 8;
+    size_t total = ((len + 8) / 64 + 1) * 64;
+    for (size_t off = 0; off < total; off += 64) {
+        uint8_t blk[64];
+        for (int i = 0; i < 64; i++) {
+            size_t k = off + (size_t)i;
+            blk[i] = k < len ? data[k] : k == len ? 0x80 : k >= total - 8 ? (uint8_t)(bits >> (8 * (total - 1 - k))) : 0;
+        }
+        uint32_t w[80];
+        for (int i = 0; i < 16; i++) w[i] = (uint32_t)blk[4 * i] << 24 | blk[4 * i + 1] << 16 | blk[4 * i + 2] << 8 | blk[4 * i + 3];
+        for (int i = 16; i < 80; i++) { uint32_t x = w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16]; w[i] = x << 1 | x >> 31; }
+        uint32_t a = h[0], b = h[1], c = h[2], d = h[3], e = h[4];
+        for (int i = 0; i < 80; i++) {
+            uint32_t f, k;
+            if (i < 20) { f = (b & c) | (~b & d); k = 0x5A827999; }
+            else if (i < 40) { f = b ^ c ^ d; k = 0x6ED9EBA1; }
+            else if (i < 60) { f = (b & c) | (b & d) | (c & d); k = 0x8F1BBCDC; }
+            else { f = b ^ c ^ d; k = 0xCA62C1D6; }
+            uint32_t t = (a << 5 | a >> 27) + f + e + k + w[i];
+            e = d; d = c; c = b << 30 | b >> 2; b = a; a = t;
+        }
+        h[0] += a; h[1] += b; h[2] += c; h[3] += d; h[4] += e;
+    }
+    for (int i = 0; i < 20; i++) out[i] = (uint8_t)(h[i / 4] >> (24 - 8 * (i % 4)));
+}
+
+#define ROM_NAME "Wonder Boy in Monster World (USA, Europe).md"
+#define ROM_SHA1 "87a968f773c7e807e647c0737132457b06b78276"
+
+/* the ROM when none is named: rom/ here, next to the program, or the repository's rom/ (the
+ * program is built into work/native/) */
+static const char *find_rom(const char *argv0)
+{
+    static char path[4096];
+    char dir[4096] = ".";
+    const char *slash = strrchr(argv0, '/'), *bs = strrchr(argv0, '\\');
+    if (bs && (!slash || bs > slash)) slash = bs;
+    if (slash && (size_t)(slash - argv0) < sizeof dir) { memcpy(dir, argv0, (size_t)(slash - argv0)); dir[slash - argv0] = 0; }
+    const char *tries[] = { "rom/" ROM_NAME, ROM_NAME, "%s/rom/" ROM_NAME, "%s/" ROM_NAME, "%s/../../rom/" ROM_NAME };
+    for (int i = 0; i < 5; i++) {
+        snprintf(path, sizeof path, tries[i], dir);
+        FILE *f = fopen(path, "rb");
+        if (f) { fclose(f); return path; }
+    }
+    return NULL;
+}
+
 int main(int argc, char **argv)
 {
     const char *rom_path = NULL, *input = NULL, *load_path = NULL;
@@ -627,24 +688,43 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--save") && i + 1 < argc) save_path = argv[++i];
 #ifndef WBMW_HEADLESS_ONLY
         else if (!strcmp(argv[i], "--fullscreen")) fullscreen = 1;
+        else if (!strcmp(argv[i], "--windowed")) fullscreen = 0;
         else if (!strcmp(argv[i], "--integer-scale")) integer_scale = 1;
         else if (!strcmp(argv[i], "--fps")) show_fps = 1;
 #endif
         else rom_path = argv[i];
     }
+    if (!rom_path) rom_path = find_rom(argv[0]);
     if (!rom_path) {
-        fprintf(stderr, "usage: wbmw ROM [--scale N] [--save FILE] [--fullscreen] [--integer-scale] [--fps] [--mute] [--timing]\n"
-                        "       wbmw ROM --frames N [--png-every K] [--out DIR] [--input FILE] [--wav FILE] [--timing]\n"
+        fprintf(stderr, "usage: wbmw [ROM] [--windowed] [--scale N] [--save FILE] [--integer-scale] [--fps] [--mute]\n"
+                        "       wbmw ROM --frames N [--png-every K] [--out DIR] [--input FILE] [--wav FILE]\n"
                         "                [--frame-log FILE] [--input-game FILE] [--dump-at N DIR]\n"
                         "       states: [--state FILE] [--load] [--load-state FILE] [--save-state-at N FILE]; F2 saves, F4 loads\n");
+        fail("No ROM found. Put your own dump of the game, named\n\n    " ROM_NAME "\n\n"
+             "in a folder called rom (in the repository, or next to wbmw), or give its path:\n\n    wbmw path/to/your.rom");
         return 2;
     }
     FILE *f = fopen(rom_path, "rb");
-    if (!f) { perror(rom_path); return 1; }
+    if (!f) { char m[4200]; snprintf(m, sizeof m, "Cannot open the ROM: %s", rom_path); fail(m); return 1; }
     fseek(f, 0, SEEK_END); rom_size = (size_t)ftell(f); fseek(f, 0, SEEK_SET);
     rom = malloc(rom_size);
-    if (fread(rom, 1, rom_size, f) != rom_size) { fprintf(stderr, "%s: short read\n", rom_path); return 1; }
+    if (fread(rom, 1, rom_size, f) != rom_size) { char m[4200]; snprintf(m, sizeof m, "Cannot read the ROM: %s", rom_path); fail(m); return 1; }
     fclose(f);
+    if (rom_size != 786432) {
+        char m[4300];
+        snprintf(m, sizeof m, "%s is %lu bytes; the game's ROM is 786,432 bytes (768 KB). Use a plain dump of the cartridge (.md or .bin, no header).",
+                 rom_path, (unsigned long)rom_size);
+        fail(m);
+        return 1;
+    }
+    {
+        uint8_t d[20]; char hex[41];
+        sha1(rom, rom_size, d);
+        for (int i = 0; i < 20; i++) snprintf(hex + 2 * i, 3, "%02x", d[i]);
+        if (strcmp(hex, ROM_SHA1))
+            fprintf(stderr, "wbmw: warning: %s is not the expected dump (SHA-1 %s, expected " ROM_SHA1 "): "
+                            "the port reads the game's data from it at fixed places, so another version will not work right\n", rom_path, hex);
+    }
     bus_reset(); vdp_reset(); sound_reset();
     if (input) load_input(input);
     if (wav_path && wav_open(wav_path, SOUND_RATE)) return 1;
