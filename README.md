@@ -1,14 +1,30 @@
 # Wonder Boy in Monster World (Genesis/Mega Drive) — C port
 
-A port of the Sega Genesis/Mega Drive game *Wonder Boy in Monster World* to hand-written C (the
-console was sold as the Genesis in North America and the Mega Drive in Europe and elsewhere).
-It runs natively with SDL2. The game's 68000 program is not emulated: every routine was rewritten by
-hand, then checked against the original in a reference harness (shadow runs, fuzzing, coverage).
-The game is playable from start to finish.
+A port of the Sega Genesis/Mega Drive game *Wonder Boy in Monster World* to C. It runs natively
+with SDL2. The game's 68000 program is not emulated: every routine was rewritten in C, then
+checked against the original in a reference harness (shadow runs, fuzzing, coverage). The game
+is playable from start to finish.
 
-One part is still emulated: sound. On the Genesis/Mega Drive, the music and sound effects are played by a
-small program on the console's second CPU, a Z80. The port loads that driver from your ROM and runs
-it on an emulated Z80, which drives emulated sound chips (ymfm for the YM2612, plus the SN76489).
+One part is still emulated: sound. On the Genesis/Mega Drive, the music and sound effects are
+played by a small program on the console's second CPU, a Z80. The port loads that driver from your
+ROM and runs it on an emulated Z80, which drives emulated sound chips (ymfm for the YM2612, plus
+the SN76489).
+
+## Added features
+
+On top of the original game:
+
+* **Pause menu** (Esc, or Back/Select on a controller) with a confirmation before exiting.
+* **Custom controls**: set a key and a controller button, stick direction or trigger for each game
+  button, and for quick save and quick load.
+* **Settings saved** between sessions (`wbmw.ini`): full screen, whole-pixel scaling, sound, frame
+  rate display, controls.
+* **Quick save and load** of the whole game state, with an on-screen confirmation.
+* **Full screen** by default, with window mode and whole-pixel scaling.
+* **Frame rate display.**
+* **Widescreen (experimental)**: a 16:9 picture. For now only the first village and the areas
+  beside it fill it; everywhere else the original picture is shown with black sides. See
+  `docs/WIDESCREEN.md`.
 
 ## No ROM data is in this repository
 
@@ -171,7 +187,7 @@ libsdl2-dev`; macOS with Homebrew: `brew install sdl2`). Then follow steps 3 to 
 
 How the port was made, and how to check it against the original:
 
-* `port/`: the hand-written C of every routine in the game. `native/`: the machine core
+* `port/`: the C of every routine in the game. `native/`: the machine core
   (`machine.c`) and the SDL host (`wbmw.c`).
 * `harness/`: the reference harness. It runs the original 68000 code (Musashi) with the C routines
   checked against it (shadow mode) or used in its place (replace mode). See `harness/README.md`.
