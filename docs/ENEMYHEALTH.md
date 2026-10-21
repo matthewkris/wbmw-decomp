@@ -26,9 +26,11 @@ the game's code and RAM are untouched.
   `$9628`/`$962A`.
 * The numbers are placed where the hit landed, in the world's coordinates, so they stay there as
   the view scrolls (an enemy knocked back moves away from its number); the bar follows the enemy.
-  Nothing is drawn over the HUD.
+* They go under the window (the HUD's lines, and a "Found ..." box under it: the lines register 18
+  gives the window from the top) and under an open message's box (`$8CA4` bit 7: the box at
+  `$8D92`-`$8D98`, with the pointer's row above it).
 
 ## Tried
 
 The mushrooms of the forest path: a hit of 32 (white, the bar red at 32 of 96), then the killing
-blow (gold), with widescreen on.
+blow (gold), with widescreen on. The Myconid (a boss: kind $5C, 256) counts as an enemy too.
