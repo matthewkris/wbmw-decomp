@@ -12,8 +12,13 @@ comparisons with the original keep working.
   even pixels.
 * **The menu, first version** (asked 2026-10-11, native build): Esc opens it over the frozen
   game; Show FPS and Exit game, with a confirmation (also when closing the window). See
-  `native/README.md`. Still to do from the settings menu below: more toggles, volume, saving
-  the settings, and the same menu in `play.exe`.
+  `native/README.md`.
+* **The menu on a controller** (asked 2026-10-21): Back/Select opens it; Start stays the game's.
+* **Settings and controls** (asked 2026-10-21): the menu has Full screen, Whole pixels and Sound
+  toggles and a Controls screen (a key and a controller input for each button and for quick save
+  and load, swapping on conflict, clear, left stick on/off, reset), all kept in `wbmw.ini`. Quick
+  save and load show a message. Still to do from the settings menu below: volume sliders, save
+  state slots, and the same menu in `play.exe`.
 
 ## To do
 

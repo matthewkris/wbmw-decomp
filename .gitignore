@@ -5,3 +5,4 @@ __pycache__/
 # save data and save states from the harness window
 *.state
 *.sav
+wbmw.ini
