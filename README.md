@@ -220,7 +220,7 @@ How the port was made, and how to check it against the original:
   byte-identical.
 * `tools/extract.py "rom/Wonder Boy in Monster World (USA, Europe).md"` writes the game's data out
   of your ROM into `assets/` (graphics, palettes, every room's map, all the text, the sprites and
-  their animations; git-ignored, as the ROM is): the first step towards the game loading its data from files. `tools/rebuild.py` checks the files
+  their animations, the tables in the code; git-ignored, as the ROM is): the first step towards the game loading its data from files. `tools/rebuild.py` checks the files
   are complete by building the ROM's bytes back from them. See `docs/EXTRACT.md`.
 * Documentation: `docs/NOTES.md` (what the game does), `docs/PORT.md` (the port and how each routine
   is verified), `docs/PROCESS.md` (the process as a whole) and `native/README.md` (the native

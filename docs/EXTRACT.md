@@ -43,6 +43,7 @@ ROM is, and are never committed.
 | `sprites/enemies/enemy_TTTT.png`, `enemies.json` | each of the 100 enemy types the rooms load, its animations drawn with the graphics and palettes of the first room it appears in | the enemy types at $1BC0E |
 | `sprites/rooms/areaAA_roomRR.png` | every room with its enemies at their spawn points | |
 | `sound/z80_driver.bin`, `z80_data.bin` | the Z80 sound driver and what follows it, as they are | $98000 |
+| `tables/code_tables.json` | the 215 tables in the code region the game reads as data: each one's name, place, size, the routines that point at it, a note, and its values in hex | the code region (`tools/codetables.py`) |
 
 ## The checks
 
@@ -82,6 +83,7 @@ terminator's value, a command's arguments). Everything must match:
 | Scenes, houses' pictures | 6, 29 records | from their fields (the houses' records partly as they are: not every field is named) |
 | Extra raw tiles | 20 x 192 bytes | as they are |
 | Text fragments, start points, room music | 3, 138, 19 areas | from their fields |
+| Tables in the code region | 215 | from their values: byte for byte |
 
 The port's decoders were verified against the original's code in the harness, and the Python
 decoders were written apart from them: two decoders agreeing on every block and every map. (The
@@ -92,10 +94,10 @@ At the end `rebuild.py` counts which of the ROM's bytes the checks cover:
 
 | ROM | Bytes |
 |---|---|
-| built back byte for byte | 104,685 |
+| built back byte for byte | 118,659 |
 | checked by content (graphics, the rooms' maps) | 440,535 |
 | padding ($FF) | 140,320 |
-| the 68000 code and the tables in it ($0-$1C601) | 113,506 |
+| the 68000 code and the tables in it that the game does not read ($0-$1C601) | 99,532 |
 | data not covered yet | 3,380 |
 
 So over 99% of the data outside the code region is shown to come back from the files. What is
@@ -116,14 +118,31 @@ the 107 save states:
 | | Bytes |
 |---|---|
 | ROM bytes read | 166,169 |
-| read and held by the files | 159,457 |
+| read and held by the files | 166,073 |
 | read, not held, data region | 96 (the paths some spawn points point at, a few bytes elsewhere) |
-| read, not held, code region (tables) | 6,616 |
+| read, not held, code region (tables) | 0 |
 
-The tables in the code region are the last thing between the files and the game reading them:
-the largest at $6616 (761 bytes), $72F0 (596, the title's menu), $1B5DC (310), $1B96C (262), $1106
-(250), $8CA2 (224), $1AC82 (223), $4E5C (172, the demo), $6D1C (128: the graphics decoder's
-planar-to-chunky tables). A feature none of these runs reached could read others.
+### The tables in the code region
+
+The game's code holds tables of its own: the colour scripts, the monsters' records, the title's
+layouts, the sine and tangent tables, the prices, the demo's input, the ending's scripts and so
+on. `tools/codetables.py` lists the 215 the game was seen to read: 13,974 bytes. Each one runs from
+an address an instruction points at (in the disassembler's code/data map, `tools/fixpoint.sh`) to
+the next such address or the next code, so a table is written whole even where the runs read only
+part of it. Bytes another file already holds (the palettes at $599C) are left out. The list keeps
+only addresses, sizes and names: the values are the ROM's, and `extract.py` writes them to
+`tables/code_tables.json`.
+
+Two need a word:
+
+* `owned_thresholds` ($24D8, 4 bytes): the disassembler took it for an unreferenced `bra`; it is
+  the table of thresholds `$23E4` reads.
+* `before_back_palettes` ($C366, 8 bytes): the back palette list at $C36E is read with a negative
+  index too, so the 8 bytes of code before it are read as data.
+
+The names come from the port's own names where it has one (`HANDLERS`, `TAN_TABLE`, ...), are
+given for the larger tables, and are `table_XXXXXX` for the rest, with a note from the port's
+comment on the routine that reads it. A feature none of the runs reached could read others.
 
 ## The text
 
@@ -150,6 +169,6 @@ pictures and `$C0`-`$C5`, `$D0` icons, left as `{xNN}` (one phrase is made of th
 
 * The bosses' own palettes, for their sheets.
 * Decode the music and sound effects (the Z80 driver's data): the format is not known yet.
-* The tables in the code region the game reads (`rebuild.py --reads`): each named and written
-  out, then built back like the rest.
+* The last 96 bytes the game reads that no file holds: the paths some spawn points point at, and
+  a few bytes at the ends of compressed data, likely the decoders reading ahead.
 * Then the game reads its data from the files.
