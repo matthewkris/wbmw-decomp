@@ -49,6 +49,11 @@ window): the game's code and RAM are untouched, so the harness's comparisons are
   still on the screen and the message flag already clear. The zoom is held as it is, the box
   redrawn from its tiles each frame as the palette fades, until the screen is dark, and then put
   back while nothing shows. At first it eased out during the fade, the box zoomed with the scene.
+* With widescreen's one-row HUD, the HUD is 32 lines, and the lines under it that show the map
+  (from `vdp_band_top`) are scenery the zoom may show (`zoom_hud`). The box still rises up to 64
+  lines as the HUD slides out: with the camera kept 32 lines below a room's top, the box in area
+  5's town covered the characters' heads and, rising only 32, never cleared them, so nothing
+  zoomed.
 * The zoom is drawn by SDL at the window's resolution, so it is smooth.
 
 ## Testing

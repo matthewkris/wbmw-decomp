@@ -473,7 +473,14 @@ static struct {
     int pointer_x, pointer_w;                       /* the pointer's place over the box, or w 0 */
 } zoom = {1, 0, 0, 0, {0, 0, 0, 0}, 0, 0};
 #define ZOOM_MAX 1.5f
-#define ZOOM_HUD 64                                 /* the HUD's lines, never zoomed */
+#define ZOOM_HUD 64                                 /* the HUD's lines (the message boxes' rows count from them) */
+/* the HUD's lines as shown, never zoomed: the wide HUD's one row (32), and under it the lines that
+ * show the map (from vdp_band_top); else 64 */
+static int zoom_hud(void)
+{
+    if (!vdp_hud_wide || (vdp_reg[12] & 1)) return ZOOM_HUD;
+    return vdp_band_top > 32 ? vdp_band_top : 32;
+}
 #define ZOOM_BODY 28                                /* a character's height above its feet, about */
 #define ZOOM_TALLEST 48                            /* a speaker taller than this is a boss: no zoom */
 #define ZOOM_PERSON 24                             /* the smallest speaker found without a pointer */
@@ -568,9 +575,11 @@ static void box_build(int px, int py, int w, int h)
  * that the scene keeps its anchor as near as the field allows. */
 static void zoom_layout(float z, float ay, float *up, float *dy)
 {
-    *up = (ACTIVE_LINES - ZOOM_HUD) * (z - 1);
+    int hud = zoom_hud();
+    *up = (ACTIVE_LINES - hud) * (z - 1);           /* the box's rise: up to 64 lines, the HUD's up to its own */
     if (*up > ZOOM_HUD) *up = ZOOM_HUD;
-    float hi = ZOOM_HUD - *up - ZOOM_HUD * z;       /* the field's first line at the top shown, or above */
+    float hud_up = *up < hud ? *up : hud;
+    float hi = hud - hud_up - hud * z;              /* the field's first line at the top shown, or above */
     float lo = ACTIVE_LINES - ACTIVE_LINES * z;     /* its last line at the bottom, or below */
     float d = ay * (1 - z);
     *dy = d > hi ? hi : d < lo ? lo : d;
@@ -677,15 +686,15 @@ static void present_frame(int zoomed)
     if (zoomed && zoom.z > 1) {
         float z = zoom.z, up, dy;
         zoom_layout(z, zoom.ay, &up, &dy);
-        int top = (int)(ZOOM_HUD - up);
+        int hud_h = zoom_hud(), top = (int)(hud_h - (up < hud_h ? up : hud_h));
         SDL_Rect field = {0, top, frame_width, ACTIVE_LINES - top};
         SDL_FRect dst = {zoom.ax * (1 - z), dy, frame_width * z, ACTIVE_LINES * z};
         if (zoom_scene) SDL_UpdateTexture(tex_zoom, NULL, &zoom_rgb[0][0], FRAME_STRIDE * 4);
         SDL_RenderSetClipRect(ren, &field);
         SDL_RenderCopyF(ren, zoom_scene ? tex_zoom : tex, &src, &dst);
         SDL_RenderSetClipRect(ren, NULL);
-        SDL_Rect hud = {0, 0, frame_width, ZOOM_HUD};                    /* the HUD, slid up */
-        SDL_FRect hud_to = {0, -up, (float)frame_width, ZOOM_HUD};
+        SDL_Rect hud = {0, 0, frame_width, hud_h};                       /* the HUD, slid up */
+        SDL_FRect hud_to = {0, -up, (float)frame_width, (float)hud_h};
         SDL_RenderCopyF(ren, tex, &hud, &hud_to);
         if (zoom.on) {                              /* the box and its pointer at their own size, slid up */
             SDL_FRect box_to = {(float)zoom.box.x, zoom.box.y - up, (float)zoom.box.w, (float)zoom.box.h};
