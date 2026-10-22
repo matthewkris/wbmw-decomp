@@ -30,6 +30,9 @@ the game's code and RAM are untouched.
   gives the window from the top) and under an open message's box (`$8CA4` bit 7: the box at
   `$8D92`-`$8D98`, with the pointer's row above it).
 
+* Loading a state clears them (`overlays_reset`, with the gold numbers and the talk zoom): they
+  belong to the run before it, and at first its bars stayed up over the loaded scene.
+
 ## Tried
 
 The mushrooms of the forest path: a hit of 32 (white, the bar red at 32 of 96), then the killing

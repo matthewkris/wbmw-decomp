@@ -840,6 +840,15 @@ static void gold_found(int amount)
         return;
     }
 }
+/* a state loaded: the health bars, numbers and the zoom belonged to the run before it (its
+ * enemies' bars stayed up over the loaded scene) */
+static void overlays_reset(void)
+{
+    memset(hit_track, 0, sizeof hit_track); memset(popup, 0, sizeof popup); memset(gold_pop, 0, sizeof gold_pop);
+    hits_started = 0;
+    vdp_hide_msg = 0;
+    zoom.z = 1; zoom.e = 0; zoom.on = 0;
+}
 static void draw_text_faded(int cx, int y, const char *t, uint32_t color, int a);
 static void gold_frame(void)
 {
@@ -1452,6 +1461,7 @@ static int load_state(const char *path, Cpu *c, uint32_t *pc)
     toast = "STATE LOADED"; toast_frames = 90;
 #ifndef WBMW_HEADLESS_ONLY
     zoom_plane_ok = 0;                              /* the talk zoom's map from before a box is another scene's */
+    overlays_reset();
 #endif
     return 0;
 }
