@@ -45,6 +45,10 @@ window): the game's code and RAM are untouched, so the harness's comparisons are
 * The box and its pointer are drawn over it from their own tiles (plane A's, decoded with the
   palette), their transparent pixels left transparent. A copy of the picture there would bring
   the unzoomed scene with them, around the frame's corners and the pointer.
+* A conversation ended by a fade (`$9BF3` bit 0: the inn's "Good night") fades out with its box
+  still on the screen and the message flag already clear. The zoom is held as it is, the box
+  redrawn from its tiles each frame as the palette fades, until the screen is dark, and then put
+  back while nothing shows. At first it eased out during the fade, the box zoomed with the scene.
 * The zoom is drawn by SDL at the window's resolution, so it is smooth.
 
 ## Testing
