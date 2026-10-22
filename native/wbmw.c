@@ -89,8 +89,10 @@ static int widescreen;
 /* Whether a room's layers allow it, from its script in the ROM (the area blocks at the data
  * directory's slots 8-26; the commands as $93C4 reads them): plane A following the camera across
  * and drawn as screens (its kind 0 or 2: $94CC) and at least two screens wide; plane B repeated
- * (kinds 3, 4, 5, 7: one screen, drawn whole) or, drawn as screens, two screens wide too. A
- * narrower layer, or one that stays put, would show what is beyond its map at the sides. */
+ * (kinds 3, 4, 5, 7: one screen, drawn whole), fixed (kind 1: the map lookup wraps its columns,
+ * so the sides show it repeated: area 5's castle wall behind its bridge carries on seamlessly)
+ * or, drawn as screens, two screens wide too. A narrower plane A would show what is beyond its
+ * map at the sides. */
 static int layers_wide(int area, int room)
 {
     static const signed char args[0x15] = {   /* the commands' argument bytes; -1 a pointer (a flag byte, then a long or a word) */
@@ -105,7 +107,7 @@ static int layers_wide(int area, int room)
         if (c > 0x14) return 0;
         if (c <= 1 || c == 0x10 || c == 0x11) {     /* a layer: kind, width, height (screens), word, its data */
             uint8_t kind = rd8(p), w = rd8(p + 1);
-            if (c & 1) b_ok = kind == 3 || kind == 4 || kind == 5 || kind == 7 || ((kind == 0 || kind == 2) && w >= 2);
+            if (c & 1) b_ok = kind == 1 || kind == 3 || kind == 4 || kind == 5 || kind == 7 || ((kind == 0 || kind == 2) && w >= 2);
             else a_ok = (kind == 0 || kind == 2) && w >= 2;
         }
         int n = args[c];
