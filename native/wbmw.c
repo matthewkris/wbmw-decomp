@@ -1078,7 +1078,23 @@ static void quit(int code)
 }
 
 /* show the frame, keep 60 Hz, read the keyboard and controller (through the bindings) */
-static void quick_save(void) { save_pending = frame; save_to = state_path; }   /* at the next frame wait */
+/* quick save, at the next frame wait; over an existing state only when pressed again within two
+ * seconds (a save was too easily overwritten by accident) */
+static void quick_save(void)
+{
+    static Uint32 confirm_until;
+    FILE *f = fopen(state_path, "rb");
+    int exists = f != NULL;
+    if (f) fclose(f);
+    int confirming = confirm_until && !SDL_TICKS_PASSED(SDL_GetTicks(), confirm_until);
+    if (exists && !confirming) {
+        confirm_until = SDL_GetTicks() + 2000;
+        toast = "PRESS SAVE AGAIN TO OVERWRITE"; toast_frames = 120;
+        return;
+    }
+    confirm_until = 0;
+    save_pending = frame; save_to = state_path;
+}
 
 static void window_frame(void)
 {
