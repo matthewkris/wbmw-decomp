@@ -384,10 +384,14 @@ static void draw_sprites(uint8_t *out, int line, int lo, int hi, int pad, int wi
         if (mask_at >= 0 && n >= mask_at) masked = 1;
         const uint8_t *s = &vram[(sat + link * 8) & 0xFFFF];
         int y = ((s[0] << 8 | s[1]) & 0x3FF) - 128;
-        if (menu && n <= mask_n) y += 8;            /* the status screen's own, with it */
         int hs = ((s[2] >> 2) & 3) + 1, vs = (s[2] & 3) + 1;
         uint16_t attr = s[4] << 8 | s[5];
         int rawx = (s[6] << 8 | s[7]) & 0x1FF, x = rawx - 128 + pad;
+        /* the sprites before the mask are the HUD's and the status screen's (the cursors): one in
+         * the HUD's top row (an item slot's cursor) goes with the row as the wide HUD places it,
+         * the status screen's down with it */
+        if (hw && mask_n >= 0 && n < mask_n && y < HUD_TOP) x += hx0 - pad;
+        else if (menu && n <= mask_n) y += 8;
         if (line >= y && line < y + vs * 8) {
             if (seen++ == per_line && !masked) break;
             if (rawx == 0 && nonzero && !side_ok) {     /* masking */
