@@ -117,14 +117,16 @@ static int layers_wide(int area, int room)
 }
 
 /* the rooms shown wide: every room whose layers allow it, but not area 15 (its moving floor is
- * placed from the screen's edge, $18C8C) nor a boss's room ($9659 bit 4: its spawn points run
- * four at a time; the fights are made for the 256) */
+ * placed from the screen's edge, $18C8C). Inside a house or shop ($9659 bit 4, set by $BE6C and
+ * $C634) the room stays wide: the house's picture is drawn over the room, which shows around it
+ * as in the original (at first bit 4 was taken for a boss's room, and the sides went black at
+ * once as the player went through a door) */
 static int wide_room(int area, int room)
 {
     static signed char known[19][64];               /* 0 not yet, 1 yes, -1 no */
     if (area < 0 || area >= 19 || room < 0 || room >= 64 || area == 15) return 0;
     if (!known[area][room]) known[area][room] = layers_wide(area, room) ? 1 : -1;
-    return known[area][room] > 0 && !(ram[0x9659] & 0x10);
+    return known[area][room] > 0;
 }
 /* each frame: whether the room is shown wide, and how much of the HUD's band beside it shows the
  * map. In a wide room port/rooms.c draws each layer's rows up to 64 lines above the play field, as

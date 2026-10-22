@@ -31,9 +31,10 @@ On top of the original game. They are all on by default; each can be turned off 
   in on Wonder Boy and the one he is talking to, with the text box kept at its own size. See
   `docs/TALKZOOM.md`.
 * **Widescreen (experimental)**: a 16:9 picture. Most rooms fill it (115 of the 170, those
-  whose maps are wide enough); one-screen rooms, houses and shops keep the original picture with
-  black sides. See
-  `docs/WIDESCREEN.md`.
+  whose maps are wide enough); one-screen rooms keep the original picture with black sides.
+  Houses and shops open over the room outside, as in the original, so the room stays wide. Beside the status bar, the extra width shows the scenery where the room's map
+  reaches that high, and is black where it doesn't (most rooms), so nothing looks cut off at the
+  top. See `docs/WIDESCREEN.md`.
 
 ## No ROM data is in this repository
 
@@ -136,8 +137,8 @@ so Start stays the game's own: it opens the item screen.
 
 * **Show FPS, Full screen, Whole pixels** (every pixel the same size), **Widescreen**, **Talk
   zoom**, **Enemy health** (the health bars and damage numbers), **Sound**: on or off. Widescreen
-  is a test for now: the picture is 16:9, and most rooms fill it; one-screen rooms, houses and
-  shops keep the normal picture, centred with black sides. See `docs/WIDESCREEN.md`.
+  is a test for now: the picture is 16:9, and most rooms fill it; one-screen rooms keep the
+  normal picture, centred with black sides. See `docs/WIDESCREEN.md`.
 * **Controls**: a key and a controller input for each button, plus quick save and quick load.
   Choose one and press Enter (A on a controller), then press the new key or button; on the
   controller side, a stick direction or a trigger works too. A key already used elsewhere swaps
