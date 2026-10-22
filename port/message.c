@@ -539,14 +539,16 @@ static void found_show(void)
     call_68k(c, 0x7EEE);
     wr16(0xFFFF965Cu, 0x3C); F_W(0x3C);
 }
+int port_found_gold, port_found_thing;              /* for the host (world.h) */
 static void show_found_gold(void)                   /* $1FCA: its bsr's return on the stack, as the frame (and a1) sit under it */
 {
+    port_found_gold = (int)(c->d[0] & 0xFFFF);      /* the amount (d0, as $1FD8 shows it) */
     c->a[7] -= 4; wr32(c->a[7], 0x1FCEu);
     found_gold();
     c->a[7] += 4;
     found_show();
 }
-static void show_found(void)      { found_thing(); found_show(); }   /* $1FD0 */
+static void show_found(void)      { port_found_thing = 1; found_thing(); found_show(); }   /* $1FD0 */
 
 /* $276C: message d0's text (a pointer at $8C7A) and window (a1), from the tables at $1CC14 and
  * $1CC18 */

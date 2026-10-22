@@ -103,6 +103,13 @@ only after half a second); and while that edge differs and the window is taller,
 lines show the window as it is, in the game's width, so the status screen is whole. A message
 under the HUD ("Found 5 GOLD.") leaves the edge alone.
 
+The gold's box is drawn in the items' box's frame (its own had no top: the items' box's bottom was
+its top), with its words inside, level with the items. A message under the HUD ("Found a Potion.",
+"PAUSE") hung from the bottom row the same way, its edge its top: it gets its own bottom row turned
+over, on the line above it. Gold found is not shown in a box at all: its amount rises in gold from
+where Wonder Boy picked it up, like the damage numbers (`port_found_gold`, noted by `$1FCA`; the
+box is hidden, `vdp_hide_msg`, until the game closes it or another thing's box opens).
+
 Beside the HUD, what the game puts behind it shows where the map is drawn there, and stays
 hidden in the black bar (as behind the HUD: area 7's spears rise back into the ceiling there, and
 showed above it at first). The game hides what is behind the

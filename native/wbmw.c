@@ -85,6 +85,7 @@ static int enemy_health;                            /* the damage numbers and he
 #define WIDE_PX 72
 extern int port_wide_px;                        /* port/rooms.c (port/world.h) */
 extern int (*port_wide_room)(int area, int room);
+extern int port_found_gold, port_found_thing;   /* port/message.c (port/world.h) */
 static int widescreen;
 /* Whether a room's layers allow it, from its script in the ROM (the area blocks at the data
  * directory's slots 8-26; the commands as $93C4 reads them): plane A following the camera across
@@ -135,6 +136,7 @@ static int wide_room(int area, int room)
  * far as its map's top; above the lowest of those tops (of the layers drawn as screens: $C, the
  * first row drawn, in 64s of 16 lines; a repeated layer, $33 = 2, fills the plane) the band's
  * sides are black, as the HUD covers the scene there in the original. */
+static void gold_found(int amount);
 static void wide_frame(void)
 {
     /* The room shown: the game sets the next room's number as the player walks out, while the
@@ -160,6 +162,18 @@ static void wide_frame(void)
         if (l[0x33] == 2) continue;
         int y = l[6] << 8 | l[7], first = (l[0xC] << 8 | l[0xD]) >> 2, t = 64 - (y - first);
         if (t > top) top = t;
+    }
+    /* widescreen: the "Found 5 GOLD." box hidden (its amount rises from Wonder Boy instead) until
+     * the game closes it, or another found thing's box opens */
+    static int msg_seen, msg_wait;
+    if (port_found_thing) { port_found_thing = 0; vdp_hide_msg = 0; }
+    if (port_found_gold) {
+        if (vdp_hud_wide) { gold_found(port_found_gold); vdp_hide_msg = 1; msg_seen = msg_wait = 0; }
+        port_found_gold = 0;
+    }
+    if (vdp_hide_msg) {
+        if ((vdp_reg[18] & 0x1F) > 8 && !(vdp_reg[18] & 0x80)) msg_seen = 1;
+        else if (msg_seen || ++msg_wait > 30) vdp_hide_msg = 0;
     }
     vdp_band_top = !vdp_pad_fill ? 64 : top < 0 ? 0 : top > 64 ? 64 : top;   /* a room not wide: black (the wide HUD leaves its bottom row's lines to it) */
 }
@@ -753,10 +767,9 @@ static void blend_px(int x, int y, uint32_t c, int a)
     frame_rgb[y][x] = r << 16 | g << 8 | l;
 }
 
-/* digits in the 5x7 font with a black outline, centred on x, faded by a */
-static void draw_number(int cx, int y, int value, uint32_t color, int a)
+/* text in the 5x7 font with a black outline, centred on x, faded by a */
+static void draw_text_faded(int cx, int y, const char *t, uint32_t color, int a)
 {
-    char t[12]; snprintf(t, sizeof t, "%d", value);
     int x0 = cx - (int)strlen(t) * 3;
     for (int pass = 0; pass < 2; pass++)
         for (int i = 0; t[i]; i++) {
@@ -770,6 +783,57 @@ static void draw_number(int cx, int y, int value, uint32_t color, int a)
             }
         }
 }
+static void draw_number(int cx, int y, int value, uint32_t color, int a)
+{
+    char t[12]; snprintf(t, sizeof t, "%d", value);
+    draw_text_faded(cx, y, t, color, a);
+}
+
+/* what the numbers and bars go under, this frame */
+static void hit_limits(int pad)
+{
+    hit_window_lines = vdp_reg[18] & 0x80 ? 0 : (vdp_reg[18] & 0x1F) * 8;   /* a window from the top */
+    if (vdp_hud_wide && !(vdp_reg[12] & 1)) {       /* the wide HUD: its top row, and no hidden message's box */
+        if (hit_window_lines == 64 || vdp_hide_msg) hit_window_lines = 32;
+    }
+    hit_box = (SDL_Rect){0, 0, 0, 0};
+    if (ram[0x8CA4] & 0x80) {
+        int col = ram[0x8D92] << 8 | ram[0x8D93], row = ram[0x8D94] << 8 | ram[0x8D95];
+        int w = ram[0x8D96] << 8 | ram[0x8D97], h = ram[0x8D98] << 8 | ram[0x8D99];
+        hit_box = (SDL_Rect){pad + col * 8, 64 + row * 8 - 8, w * 8, h * 8 + 8};
+    }
+}
+
+/* Widescreen: gold found is shown as its amount rising in gold from Wonder Boy, like the damage
+ * numbers, instead of the "Found 5 GOLD." box under the HUD (hidden: wide_frame, vdp_hide_msg) */
+#define GOLD_POPS 8
+static struct { int x, y, value, age; } gold_pop[GOLD_POPS];
+static void gold_found(int amount)
+{
+    uint32_t p = 0xFFFF0000u + (ram[0x9EEE] << 8 | ram[0x9EEF]);
+    for (int i = 0; i < GOLD_POPS; i++) if (!gold_pop[i].age) {
+        gold_pop[i].x = rd16(p - 0x3800); gold_pop[i].y = rd16(p - 0x3700) - 2 * rd8(p - 0x34FD) - 10;
+        gold_pop[i].value = amount; gold_pop[i].age = 1;
+        return;
+    }
+}
+static void draw_text_faded(int cx, int y, const char *t, uint32_t color, int a);
+static void gold_frame(void)
+{
+    if ((vdp_reg[12] & 1) || !(vdp_reg[1] & 0x40)) return;
+    int pad = (frame_width - 256) / 2;
+    int cam_x = ram[0x8B34] << 8 | ram[0x8B35], cam_y = ram[0x8B36] << 8 | ram[0x8B37];
+    hit_limits(pad);
+    for (int i = 0; i < GOLD_POPS; i++) {           /* up 20 pixels in 60 frames, the last 20 fading */
+        if (!gold_pop[i].age) continue;
+        char t[16]; snprintf(t, sizeof t, "+%d", gold_pop[i].value);
+        int sx = pad + (int16_t)(gold_pop[i].x - cam_x - 128);
+        int sy = (int16_t)(gold_pop[i].y - cam_y - 128) - gold_pop[i].age / 3;
+        int a = gold_pop[i].age > 40 ? (60 - gold_pop[i].age) * 256 / 20 : 256;
+        draw_text_faded(sx, sy, t, 0xFFD860, a);
+        if (++gold_pop[i].age > 60) gold_pop[i].age = 0;
+    }
+}
 
 static void hits_frame(void)
 {
@@ -777,14 +841,7 @@ static void hits_frame(void)
     uint32_t player = 0xFFFF0000u + (ram[0x9EEE] << 8 | ram[0x9EEF]);
     int pad = (frame_width - 256) / 2;
     int cam_x = ram[0x8B34] << 8 | ram[0x8B35], cam_y = ram[0x8B36] << 8 | ram[0x8B37];
-    hit_window_lines = vdp_reg[18] & 0x80 ? 0 : (vdp_reg[18] & 0x1F) * 8;   /* a window from the top */
-    if (vdp_hud_wide && hit_window_lines == 64 && !(vdp_reg[12] & 1)) hit_window_lines = 32;   /* the wide HUD: its top row */
-    hit_box = (SDL_Rect){0, 0, 0, 0};
-    if (ram[0x8CA4] & 0x80) {
-        int col = ram[0x8D92] << 8 | ram[0x8D93], row = ram[0x8D94] << 8 | ram[0x8D95];
-        int w = ram[0x8D96] << 8 | ram[0x8D97], h = ram[0x8D98] << 8 | ram[0x8D99];
-        hit_box = (SDL_Rect){pad + col * 8, 64 + row * 8 - 8, w * 8, h * 8 + 8};
-    }
+    hit_limits(pad);
     for (int k = 0; k < HIT_SLOTS; k++) {
         uint32_t o = 0xFFFF0000u + 4 * (uint32_t)k;
         int hp = rd16(o - 0x2600), max = kind_max(rd8(o - 0x2BFD));
@@ -1188,6 +1245,7 @@ static void frame_done(void)
     frame++;
 #ifndef WBMW_HEADLESS_ONLY
     hits_frame();                                   /* Enemy health, drawn over the picture */
+    gold_frame();                                   /* widescreen: the gold found */
 #endif
     if (headless) {
         if (png_every && frame % png_every == 0) {
