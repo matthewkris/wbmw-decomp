@@ -38,7 +38,8 @@ On top of the original game. They are all on by default; each can be turned off 
     in the original, so they stay wide. Rooms switch between wide and narrow only while the
     screen is black during a transition.
   * **A one-row status bar**: hearts, items and gold side by side across the top, in every room.
-    The enemy health box is left out, since hits show each enemy's health. The item menu (Start)
+    The enemy health box is left out, since hits show each enemy's health; in a boss fight a slim
+    bar under the status bar shows the boss's health instead, blue after a hit, then grey. The item menu (Start)
     and messages such as "PAUSE" open below it with their own top edge.
   * **Gold as a number**: gold you pick up rises from you as a gold number, in the same style as
     the damage numbers, instead of a "Found ... GOLD" box.
