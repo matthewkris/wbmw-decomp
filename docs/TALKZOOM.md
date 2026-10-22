@@ -16,7 +16,7 @@ window): the game's code and RAM are untouched, so the harness's comparisons are
   or, for a box without a pointer, the one Wonder Boy could have talked to (within its reach,
   `-$3500`, and level with him, as `$164B8` has it) whatever its size, else the person nearest
   him (within 64 pixels, at least 24 tall by its size, so not Priscilla). The reach came second:
-  a child of 22 lines in area 6, standing where Wonder Boy stands, was at first too small to
+  a character 22 lines tall in area 6, standing where Wonder Boy stands, was at first too small to
   count. No zoom when there is none (the Sphinx is drawn in the
   background), or when the speaker is taller than 48 pixels (a boss: they fill the screen as it
   is). A character's size is its `-$34FD` (half its height).
