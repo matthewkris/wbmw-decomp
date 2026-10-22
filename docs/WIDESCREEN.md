@@ -72,9 +72,12 @@ are drawn:
 | 7 | moves by itself | moves by itself | repeated | moving planes B |
 
 The rule: plane A of kind 0 or 2 and at least two screens wide (so a 400-pixel view fits in its
-map); plane B repeated (3, 4, 5, 7) or, drawn as screens, two screens wide too. A narrower layer,
-or one that stays put, would show what is beyond its map at the sides: those rooms (one-screen
-rooms, shafts) keep the 256 with black sides. 115 of the 170 rooms qualify. One exception: area
+map); plane B repeated (3, 4, 5, 7), fixed (1), or, drawn as screens, two screens wide too. A
+fixed plane B is one screen that stays put, but the map lookup wraps its columns, so the sides
+show it repeated: area 5's castle wall behind its bridge carries on seamlessly (at first these
+six rooms were left at the 256). A narrower plane A, or one that stays put, would show what is
+beyond its map at the sides: those rooms (one-screen rooms, shafts) keep the 256 with black
+sides. 121 of the 170 rooms qualify. One exception: area
 15 (its moving floor is placed from the screen's edge, `$18C8C`). Houses and shops are not rooms
 of their own: their picture opens over the room outside (`$BE6C`, which sets `$9659` bit 4 while
 inside), so they stay as wide as it. (At first bit 4 was taken for "a boss's scripted room" and

@@ -70,7 +70,7 @@ picture (400 pixels), the menu's Widescreen option, the scenery drawn wider in a
 (after the opening) and area 2 rooms 0-2 (the first village and the areas beside it), black sides
 elsewhere; sprites drawn and enemies created and removed at the wider edges; fixes for the
 message under the HUD and for the layers stopping together. Since 2026-10-21 the rooms come from a
-rule on their layers (115 of 170 wide); bosses whose moves depend on the screen's edges, if any,
+rule on their layers (121 of 170 wide); bosses whose moves depend on the screen's edges, if any,
 would still need a look. See
 `docs/WIDESCREEN.md`. The original assessment:
 
