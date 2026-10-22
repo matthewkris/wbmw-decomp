@@ -26,8 +26,12 @@ window): the game's code and RAM are untouched, so the harness's comparisons are
 
 * The box: the message's window, at column `$8D92`, row `$8D94` (counted from below the HUD's
   64 lines), `$8D96` × `$8D98` tiles; on plane A at `$8D9A`, `$8D9C` (scrolled).
-* The zoom eases in over about a second (6% of the way each frame; at first 12%, which felt
-  hurried), to at most 1.5×, about an anchor between Wonder Boy and the speaker, at
+* The zoom eases in over a second and out over three quarters of one, along one smooth curve
+  (slow, faster, slow: `zoom.e`). Its final layout (the zoom, the scene's place, how far the HUD
+  and the box rise) is worked out once and every part moves to it in proportion, so they move
+  and arrive together. At first the zoom closed a fixed share of the way each frame (12%, then
+  6%): it lunged at the start and crawled at the end, the scene's rise kinked where
+  `zoom_layout`'s limits took over, and the box stopped dead at its highest. It goes to at most 1.5×, about an anchor between Wonder Boy and the speaker, at
   Wonder Boy's feet, so the two grow upward. The HUD slides up out of the picture and the box
   with it, as far as the zoomed play field reaches (all 64 lines from 1.4× up), so the scene
   takes the height; the zoom is as large as keeps their heads (about 28 lines above their feet)

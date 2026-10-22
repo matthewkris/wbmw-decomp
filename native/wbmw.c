@@ -471,7 +471,10 @@ static struct {
     int on;                                         /* a conversation, and where its box is */
     SDL_Rect box;
     int pointer_x, pointer_w;                       /* the pointer's place over the box, or w 0 */
-} zoom = {1, 0, 0, 0, {0, 0, 0, 0}, 0, 0};
+    float e, zt;                                    /* the way in (0 none, 1 all: zoom_update), to the zoom zt */
+} zoom = {1, 0, 0, 0, {0, 0, 0, 0}, 0, 0, 0, 1};
+#define ZOOM_IN_FRAMES 60                           /* the way in, about a second, and out */
+#define ZOOM_OUT_FRAMES 45
 #define ZOOM_MAX 1.5f
 #define ZOOM_HUD 64                                 /* the HUD's lines (the message boxes' rows count from them) */
 /* the HUD's lines as shown, never zoomed: the wide HUD's one row (32), and under it the lines that
@@ -604,7 +607,7 @@ static void zoom_update(void)
             for (int k = 0; k < 64; k++) if (cram[k]) { dark = 0; break; }
         }
         zoom_scene = 0;
-        if (dark) { zoom.z = 1; return; }
+        if (dark) { zoom.z = 1; zoom.e = 0; return; }
         zoom.on = 1;
         box_build(box_px, box_py, box_w, box_h);
         if (zoom_plane_ok) zoom_render_scene();
@@ -671,8 +674,16 @@ static void zoom_update(void)
             zoom.on = 1;
         }
     }
-    zoom.z += (zt - zoom.z) * 0.06f;                /* eased in and out over about a second */
-    if (fabsf(zoom.z - 1) < 0.005f && zt == 1) zoom.z = 1;
+    /* The way in and out is one smooth curve (slow, faster, slow) over a fixed time, and the zoom,
+     * the scene's place, the box and the HUD all follow it (present_frame), so they move together
+     * and arrive together (at first the zoom eased exponentially: a jolt at the start, a long
+     * crawl at the end, the scene's rise kinked where zoom_layout's limits took over, and the box
+     * stopped dead at its highest) */
+    if (zt > 1) zoom.zt = zt;
+    if (zt > 1) { zoom.e += 1.0f / ZOOM_IN_FRAMES; if (zoom.e > 1) zoom.e = 1; }
+    else { zoom.e -= 1.0f / ZOOM_OUT_FRAMES; if (zoom.e < 0) zoom.e = 0; }
+    float sm = zoom.e * zoom.e * (3 - 2 * zoom.e);
+    zoom.z = 1 + (zoom.zt - 1) * sm;
     zoom_scene = 0;
     if (zoom.z > 1 && zoom.on && zoom_plane_ok) zoom_render_scene();   /* after the box closes, the frame is the scene */
 }
@@ -684,8 +695,11 @@ static void present_frame(int zoomed)
     SDL_RenderSetLogicalSize(ren, frame_width, ACTIVE_LINES);
     SDL_RenderClear(ren); SDL_RenderCopy(ren, tex, &src, NULL);
     if (zoomed && zoom.z > 1) {
-        float z = zoom.z, up, dy;
-        zoom_layout(z, zoom.ay, &up, &dy);
+        /* the way there: the layout at the zoom aimed at, in proportion (zoom_layout's limits are
+         * met all the way: a straight line from no zoom to a layout that meets them) */
+        float z = zoom.z, up, dy, k = zoom.zt > 1 ? (z - 1) / (zoom.zt - 1) : 0;
+        zoom_layout(zoom.zt, zoom.ay, &up, &dy);
+        up *= k; dy *= k;
         int hud_h = zoom_hud(), top = (int)(hud_h - (up < hud_h ? up : hud_h));
         SDL_Rect field = {0, top, frame_width, ACTIVE_LINES - top};
         SDL_FRect dst = {zoom.ax * (1 - z), dy, frame_width * z, ACTIVE_LINES * z};
