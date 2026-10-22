@@ -84,7 +84,7 @@ need a look.
 The host takes the room number for this only when the screen is dark (the palette all black, or
 the display off), which is when the game draws the next room: it sets the next room's number as
 the player walks out, while the old room is still shown for the fade out. At first the number was
-taken at once, and walking out of Lilypad's castle tower (one screen) into the town widened the
+taken at once, and walking out of area 5's castle tower (one screen) into the town widened the
 tower for the ten frames of its fade: sky at the sides, its walls cut at the 256's edges, which
 looked like the screen drawing in. A room number that stays the same for a second, or a state
 loaded, is taken without waiting.
