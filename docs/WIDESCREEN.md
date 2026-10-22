@@ -83,13 +83,15 @@ shift.) Bosses' rooms qualify by their layers like any other; the ones tried (th
 and Glagg, area 6's) look right, but a boss whose moves depend on the screen's edges would need a
 look.
 
-Beside the HUD, sprites still show (over the black bar too). The game hides what is behind the
+Beside the HUD, what the game puts behind it shows where the map is drawn there, and stays
+hidden in the black bar (as behind the HUD: area 7's spears rise back into the ceiling there, and
+showed above it at first). The game hides what is behind the
 HUD in two ways: two masking sprites (a sprite at x = 0 hides every later one on its lines) and,
 once they are added, its sprite builder's top limit raised to the HUD's bottom (`$8B28`), so a
 piece wholly above line 64 is not built at all. In widescreen the limit is not raised
 (`port/sprites.c`), and on the HUD's lines the renderer draws every sprite after the mask at the
-sides only. At first Wonder Boy jumping up beside the HUD vanished into the bar, then kept only
-his sword and legs.
+sides only, from `vdp_band_top` down. At first Wonder Boy jumping up beside the HUD vanished
+where the map is drawn, then kept only his sword and legs.
 
 The host takes the room number for this only when the screen is dark (the palette all black, or
 the display off), which is when the game draws the next room: it sets the next room's number as

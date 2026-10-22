@@ -255,8 +255,11 @@ static void draw_sprites(uint8_t *out, int line, int lo, int hi, int pad, int wi
      * after one that is not, wherever it is on the screen) is drawn at the sides only, without
      * the limits, on the mask's own lines and above them: the game builds them there too in
      * widescreen (port/sprites.c keeps its top limit; it would leave out what is behind the
-     * HUD), and Wonder Boy jumping up beside the HUD lost his head and body. */
+     * HUD), and Wonder Boy jumping up beside the HUD lost his head and body. Only where the map
+     * is drawn beside the HUD (from vdp_band_top): in the black above it they stay hidden, as
+     * behind the HUD (the spears of area 7 rising back into the ceiling showed there). */
     int side_ok = line < HUD_LINES && (lo < pad || hi > pad + width), mask_at = -1;
+    int sides_shown = line >= vdp_band_top;         /* the map beside the HUD on this line, not the black */
     if (side_ok) {
         int l = 0, nz = 0;
         for (int n = 0; n < max; n++) {
@@ -292,7 +295,7 @@ static void draw_sprites(uint8_t *out, int line, int lo, int hi, int pad, int wi
                 tile_pixel_row((uint16_t)(name & ~0x1000), row & 7, px);   /* row already flipped */
                 for (int i = 0; i < 8 && c * 8 + i < draw; i++) {
                     int sx = x + c * 8 + i;
-                    if (masked && sx >= pad && sx < pad + width) continue;
+                    if (masked && (!sides_shown || (sx >= pad && sx < pad + width))) continue;
                     if (sx >= lo && sx < hi && px[i] && !out[sx]) out[sx] = px[i];
                 }
             }
