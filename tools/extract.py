@@ -17,7 +17,8 @@ never committed):
   rooms/shared_blocks.json  the three block tables every room shares
   rooms/lists.json      the other lists room scripts point at: event lists (exits, doors, things,
                         jumps on flags), spawn lists (the enemies), graphics slot lists, tile and
-                        cell animations, and the cell lists, pictures and item lists they point at
+                        cell animations, and the cell lists, pictures, item lists and townspeople's
+                        walk scripts they point at
   rooms/scenes.json     the ending's scenes (the directory's table 7): each scene's two layers'
                         maps, palette and graphics slot list
   rooms/house_pictures.json  the houses' and shops' pictures (the directory's table 2): place and
@@ -104,7 +105,7 @@ def dir_tables(d, maps, block_table):
 def room_lists(d, allrooms, extra=()):
     """every list the room scripts point at (by address), and what those point at; with the
     number of codes their interpreters do not know (a sign of a misread list)"""
-    out = {k: {} for k in ('events', 'spawns', 'slots', 'tile_anims', 'cell_anims', 'cell_lists', 'pictures', 'item_lists')}
+    out = {k: {} for k in ('events', 'spawns', 'slots', 'tile_anims', 'cell_anims', 'cell_lists', 'pictures', 'item_lists', 'walk_scripts')}
     odd = 0
     def ptr(r, a):
         return a['long'] & 0xFFFFFF if a['flag'] else rooms.area_base(d, r['area']) + a['offset']
@@ -114,6 +115,7 @@ def room_lists(d, allrooms, extra=()):
         if kind == 'cells': w, e = assetfmt.cell_list_parse(d, a); out['cell_lists'][key] = dict(words=w, end='%06X' % e)
         elif kind == 'picture': v, e = assetfmt.picture_parse(d, a); out['pictures'][key] = dict(v, end='%06X' % e)
         elif kind == 'items': v, e = assetfmt.item_list_parse(d, a); out['item_lists'][key] = dict(bytes=v, end='%06X' % e)
+        elif kind == 'walk': v, e = assetfmt.walk_script_parse(d, a); out['walk_scripts'][key] = dict(items=v, end='%06X' % e)
     for kind, a in extra:                          # from the directory's tables
         key = '%06X' % a
         if kind == 'events' and key not in out['events']:
@@ -125,6 +127,7 @@ def room_lists(d, allrooms, extra=()):
             if any('code' in x and not (x['code'] < 16 or 0xF8 <= x['code']) for x in items):
                 items, end, data = assetfmt.spawn_list_parse(d, a, kinds=False)
             out['spawns'][key] = dict(items=items, end='%06X' % end, data=['%s %06X' % (k, t) for k, t in data])
+            for k, t in data: sub(k, t)
         elif kind == 'picture': sub('picture', a)
         elif kind == 'slots' and key not in out['slots']:
             items, end = assetfmt.slots_parse(d, a); out['slots'][key] = dict(items=items, end='%06X' % end)
@@ -146,6 +149,7 @@ def room_lists(d, allrooms, extra=()):
                         bad = sum(1 for x in items if 'code' in x and not (x['code'] < 16 or 0xF8 <= x['code']))
                     odd += bad
                     out['spawns'][key] = dict(items=items, end='%06X' % end, data=['%s %06X' % (k, t) for k, t in data])
+                    for k, t in data: sub(k, t)
                 elif c == 2 and key not in out['slots']:
                     items, end = assetfmt.slots_parse(d, a); out['slots'][key] = dict(items=items, end='%06X' % end)
                 elif c == 4 and key not in out['tile_anims']:
@@ -290,6 +294,20 @@ def main():
                     anims['%02X.%02X.%02X' % (st, g, an)] = dict(address='%06X' % a, items=items)
                 except Exception as e:
                     print('animation %02X.%02X.%02X: %s' % (st, g, an, e)); bad += 1
+    # a stop ($FD, or a frame of duration 0) keeps its place, and the animation goes on from the
+    # next byte when its timer is set again (UpdateAnim, $80E): such a continuation is kept as its own script
+    # when it fills the bytes up to the next script exactly
+    starts = sorted(set(int(v['address'], 16) for v in anims.values()))
+    for k, v in sorted(anims.items()):
+        last = v['items'][-1]
+        if not (last.get('cmd') == 0xFD or last.get('duration') == 0): continue
+        p = int(v['address'], 16) + len(assetfmt.anim_encode(v['items']))
+        nxt = next((s for s in starts if s >= p), None)
+        if nxt is None or nxt == p: continue
+        start, items, end = assetfmt.anim_parse(d, p)
+        if end != nxt or not all('cmd' in it or '%06X' % (sprites.ANIM + it['mapping']) in maps for it in items): continue
+        anims[k + '+'] = dict(address='%06X' % p, items=items, continues=k)
+        starts = sorted(starts + [p])
     json.dump(dict(animations=anims, mappings=maps), open(path('sprites', 'animations.json'), 'w'), indent=1)
     tile, colours = sprites.player_vram(d, 2, 0)
     rows = [((g, a), sprites.script(d, p)[0]) for g, al in T[0].items() for a, p in al.items()]
@@ -332,7 +350,7 @@ def main():
     l2 = sprites.packed_tables(d, l1)
     l3 = sprites.packed_tables(d, [v for t in l2.values() for v in t])
     tb = rooms.be32(d, rooms.DIR + 0x10) & 0xFFFFFF
-    json.dump(dict(directory=['%08X' % rooms.be32(d, rooms.DIR + 4 * i) for i in range(27)],
+    json.dump(dict(directory=['%08X' % rooms.be32(d, rooms.DIR + 4 * i) for i in range(30)],
                    phrase_tables=['%08X' % rooms.be32(d, tb + 4 * k) for k in range(4)],
                    anim_level1=l1, anim_level2={str(k): v for k, v in l2.items()}, anim_level3={str(k): v for k, v in l3.items()}),
               open(path('layout.json'), 'w'), indent=1)

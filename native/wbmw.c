@@ -1615,7 +1615,8 @@ static int verify_graphics_blocks(const char *dir)
  * line a table, "B address" (a block table) or "L address" (a layer's data); OUT gets a record
  * each: the letter, the address (4 bytes), then for B the count (2 bytes) and 8 bytes of tile
  * words and the attribute byte a block, for L the 64 bytes of the layer's map and the 16 chunks'
- * 192 cells (words). The buffers are filled with $EE first, so a block left empty shows. */
+ * 192 cells (words). The buffers are filled with $EE first, so a block left empty shows.
+ * OUT.reads marks the ROM bytes the unpackers read (a byte each, 1 read), for the coverage. */
 void UnpackBlocks(Cpu *c), UnpackLayerMap(Cpu *c);
 #define UNPACK_TABLE 0xFFFF7000u                   /* a block table: 8 bytes a block, the attributes $800 on */
 #define UNPACK_RECORD 0xFFFF7C00u                  /* a layer's record ($22 its map, $1C its table, $34 its data) */
@@ -1624,6 +1625,7 @@ static int unpack_list(const char *req, const char *out)
 {
     FILE *in = fopen(req, "r"), *o = fopen(out, "wb");
     if (!in || !o) { perror(in ? out : req); return 1; }
+    bus_rom_reads = calloc(rom_size, 1);            /* the ROM bytes the unpackers read: OUT.reads */
     char kind; unsigned addr; int n = 0;
     while (fscanf(in, " %c %x", &kind, &addr) == 2) {
         Cpu c; memset(&c, 0, sizeof c);
@@ -1655,6 +1657,9 @@ static int unpack_list(const char *req, const char *out)
         n++;
     }
     fclose(in); fclose(o);
+    char rpath[4200]; snprintf(rpath, sizeof rpath, "%s.reads", out);
+    FILE *r = fopen(rpath, "wb");
+    if (r) { fwrite(bus_rom_reads, 1, rom_size, r); fclose(r); }
     printf("unpacked %d tables with the port's unpackers\n", n);
     return 0;
 }

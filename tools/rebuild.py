@@ -66,7 +66,8 @@ def main():
                spawns=lambda v: assetfmt.flow_encode(v['items'], assetfmt.spawn_fmt),
                slots=lambda v: assetfmt.slots_encode(v['items']), tile_anims=lambda v: w16s(v['words']),
                cell_anims=lambda v: bytes(v['bytes']), cell_lists=lambda v: w16s(v['words']),
-               pictures=assetfmt.picture_encode, item_lists=lambda v: bytes(v['bytes']))
+               pictures=assetfmt.picture_encode, item_lists=lambda v: bytes(v['bytes']),
+               walk_scripts=lambda v: assetfmt.walk_script_encode(v['items']))
     for kind, f in enc.items():
         check('room ' + kind.replace('_', ' '), [(int(a, 16), f(v)) for a, v in LS[kind].items()])
 
@@ -130,22 +131,11 @@ def main():
         if r.returncode == 0:
             for e in gfx.table(d):
                 if e != 0xFFFFFFFF: mark(e & 0xFFFFFF, gfx.decode(d, e)[1] - (e & 0xFFFFFF), 2)
-        bad = check_maps(exe, A, J, report)
+        bad, read = check_maps(exe, A, J, report)
         bad_total += bad
-        if not bad:                                 # the maps' data: block tables, place lists, chunks
-            for t in J('rooms', 'shared_blocks.json'):
-                a = int(t['address'], 16); mark(a, assetfmt.blocks_end(d, a) - a, 2)
-            for r in J('rooms', 'maps.json'):
-                for lay in r['layers']:
-                    src, bt = int(lay['src'], 16), int(lay['blocks_at'], 16)
-                    mark(bt, assetfmt.blocks_end(d, bt) - bt, 2)
-                    offs = src + struct.unpack_from('>h', d, src + 2)[0]
-                    q = src + 4
-                    while d[q] < 0x80:
-                        num = d[q + 1]; mark(offs + num, 2, 2)          # (a byte offset into the chunks' table)
-                        c = src + struct.unpack_from('>h', d, offs + num)[0]
-                        mark(c, assetfmt.chunk_end(d, c) - c, 2); q += 2
-                    mark(src, q + 1 - src, 2)
+        if not bad:                                 # the maps' data: every byte the port's unpackers read
+            for i, r in enumerate(read):
+                if r: mark(i, 1, 2)
     else:
         print('graphics and room maps: not checked (build the native game first: make -C native)')
         report['graphics'] = report['room maps'] = dict(checked=False)
@@ -198,8 +188,9 @@ def check_maps(exe, A, J, report):
     req, out = os.path.join(tmp, 'req.txt'), os.path.join(tmp, 'out.bin')
     open(req, 'w').write(''.join('%s %X\n' % k for k in want))
     r = subprocess.run([exe, A.rom, '--unpack-list', req, out], capture_output=True, text=True)
-    if r.returncode: print(r.stdout, r.stderr); report['room maps'] = dict(checked=False); return 1
+    if r.returncode: print(r.stdout, r.stderr); report['room maps'] = dict(checked=False); return 1, b''
     o, p, bad = open(out, 'rb').read(), 0, {'B': 0, 'L': 0}
+    read = open(out + '.reads', 'rb').read()      # the ROM bytes the unpackers read, for the coverage
     n = {'B': 0, 'L': 0}
     while p < len(o):
         kind, addr = chr(o[p]), struct.unpack_from('>I', o, p + 1)[0]; p += 5
@@ -224,7 +215,7 @@ def check_maps(exe, A, J, report):
     report['room maps'] = dict(block_tables=n['B'], layer_maps=n['L'], checked_by="the port's UnpackBlocks and UnpackLayerMap",
                                differing=bad['B'] + bad['L'])
     print(r.stdout.strip())
-    return bad['B'] + bad['L']
+    return bad['B'] + bad['L'], read
 
 if __name__ == '__main__':
     sys.exit(main())

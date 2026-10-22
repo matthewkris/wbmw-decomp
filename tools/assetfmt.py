@@ -128,40 +128,6 @@ def text_encode(parsed):
                     for _ in range(text.QUIZ_JUMPS): out += w16(next(v))
     return bytes(out)
 
-# ---- where the rooms' compressed data ends, for counting what the checks cover ----
-
-def blocks_end(d, a3):
-    """the end of a block table ($9F6A): the nibbles, then each block's bytes"""
-    n = be16(d, a3); a3 += 2
-    if n == 0: return a3
-    a2 = a3 + (n + 1) // 2
-    for i in range(n):
-        code = d[a3 + i // 2] >> (0 if i & 1 else 4) & 0xF
-        if code == 0: continue
-        m = code ^ 0xF
-        a2 += (0 if m & 8 else 1) + 2 + {0: 6, 1: 0, 2: 2, 3: 3}.get(m & 7, 3)
-    return a2
-
-def chunk_end(d, p):
-    """the end of a chunk's data ($A0F4): the bytes it reads from the ROM, up to a zero-run
-    stream (the rest is read from what that stream expands to)"""
-    left, q = 192, p
-    c = d[q]; q += 1
-    if c & 0x80:                                    # $A1C4: a count, a mask's length, the mask, the bytes kept
-        total, nmask = d[q], d[q + 1]
-        zeros = sum(bin(d[q + 2 + i]).count('1') for i in range(nmask))
-        return q + 2 + nmask + total - zeros
-    filled = [False] * 192
-    for _ in range(c):
-        q += 2; nb = 0
-        for i in range(192):
-            if filled[i]: continue
-            if nb == 0: bits = d[q]; q += 1; nb = 8
-            nb -= 1
-            if bits & 1: filled[i] = True; left -= 1
-            bits >>= 1
-    return q + (left * 10 + 7) // 8
-
 # ---- the lists the room scripts point at besides the maps: event lists (command 5), spawn
 # lists (8), graphics slot lists (2), tile animations (4), cell animations (11), and the data
 # their items point at. Each is read item by item as its interpreter reads it; a list with jumps
@@ -274,7 +240,7 @@ def _spawn_step(d, p):
     elif c == 13: fmt = 'bnb' + 'w' * d[p + 2] + PLACE
     else: fmt = spawn_fmt(dict(code=c, args=[]))
     vals, refs, q = _args(d, p + 1, fmt)
-    refs = [(f if f == 'j' else 'path' if c == 5 else 'waves', t) for f, t in refs]
+    refs = [(f if f == 'j' else 'walk' if c == 5 else 'waves', t) for f, t in refs]
     return dict(code=c, args=vals), q, refs, c in (0xFF, 0xFE)
 
 def spawn_list_parse(d, a, kinds=True):
@@ -285,6 +251,24 @@ def spawn_list_parse(d, a, kinds=True):
             if w & 0x8000: break
     items, end, data = flow_parse(d, p, _spawn_step)
     return ([dict(words=words)] if kinds else []) + items, end, data
+
+# a townsperson's walk script (handler 11, $16598; a spawn point of kind 5 points at it): 0 wait
+# (frames), 1 walk (a signed distance), 2 walk home, 3 speak (a word), 4, 5 jump (a word from its
+# own place); it ends with a jump back
+WALK_FMT = {0: 'b', 1: 'b', 2: '', 3: 'bb', 4: '', 5: 'j'}
+
+def _walk_step(d, p):
+    c = d[p]
+    if c not in WALK_FMT: raise ValueError('walk script command %d at $%06X' % (c, p))
+    vals, refs, q = _args(d, p + 1, WALK_FMT[c])
+    return dict(code=c, args=vals), q, refs, c == 5
+
+def walk_script_parse(d, a):
+    items, end, _ = flow_parse(d, a, _walk_step)
+    return items, end
+
+def walk_script_encode(items):
+    return flow_encode(items, lambda it: WALK_FMT[it['code']])
 
 # a graphics slot list ($234C, rooms.gfx_slots): $80-$BF a slot, $C0 the next, $C1-$F7 a run of
 # blocks (a word), $F8-$FE empty slots, under $80 a block (two bytes), $FF the end
