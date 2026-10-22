@@ -277,7 +277,7 @@ static void find_free(uint32_t *reg, uint32_t first, int32_t field, uint32_t ste
 }
 static void find_free_a0e2(void) { find_free(&c->a[3], 0xFFFFA0E2u, 0, 0x10, 1); }                 /* $127FE */
 static void find_free_enemy(void) { find_free(&c->a[2], sx(rd16(0xFFFFA11Au)), -0x4000, 4, 0xF); }  /* $12812 */
-/* $12826: a free spawn point ($A15C): 16 of them, or 4 from $40 in a boss's room ($9659 bit 4) */
+/* $12826: a free spawn point ($A15C): 16 of them, or 4 from $40 inside a house or shop ($9659 bit 4: $BE6C, $C634) */
 static void find_free_spawn(void)
 {
     if (rd8(0xFFFF9659u) & 0x10) find_free(&c->a[3], 0x40, -0x5EA4, 4, 3);

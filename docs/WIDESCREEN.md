@@ -74,12 +74,14 @@ are drawn:
 The rule: plane A of kind 0 or 2 and at least two screens wide (so a 400-pixel view fits in its
 map); plane B repeated (3, 4, 5, 7) or, drawn as screens, two screens wide too. A narrower layer,
 or one that stays put, would show what is beyond its map at the sides: those rooms (one-screen
-rooms, houses, shops, shafts) keep the 256 with black sides. 115 of the 170 rooms qualify. Two
-exceptions: area 15 (its moving floor is placed from the screen's edge, `$18C8C`) and a boss's
-scripted room (`$9659` bit 4 set: its spawn points run four at a time; these fights are made for
-the 256). Other bosses' rooms qualify by their layers and are wide; the ones tried (the snowman,
-Gragg and Glagg, area 6's) look right, but a boss whose moves depend on the screen's edges would
-need a look.
+rooms, shafts) keep the 256 with black sides. 115 of the 170 rooms qualify. One exception: area
+15 (its moving floor is placed from the screen's edge, `$18C8C`). Houses and shops are not rooms
+of their own: their picture opens over the room outside (`$BE6C`, which sets `$9659` bit 4 while
+inside), so they stay as wide as it. (At first bit 4 was taken for "a boss's scripted room" and
+turned widescreen off, which only ever happened at a door: the sides went black at once, a jarring
+shift.) Bosses' rooms qualify by their layers like any other; the ones tried (the snowman, Gragg
+and Glagg, area 6's) look right, but a boss whose moves depend on the screen's edges would need a
+look.
 
 The host takes the room number for this only when the screen is dark (the palette all black, or
 the display off), which is when the game draws the next room: it sets the next room's number as
