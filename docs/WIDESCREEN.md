@@ -111,7 +111,10 @@ its top), with its words inside, level with the items. A message under the HUD (
 "PAUSE") hung from the bottom row the same way, its edge its top: it gets its own bottom row turned
 over, on the line above it. Gold found is not shown in a box at all: its amount rises in gold from
 where Wonder Boy picked it up, like the damage numbers (`port_found_gold`, noted by `$1FCA`; the
-box is hidden, `vdp_hide_msg`, until the game closes it or another thing's box opens).
+box is hidden, `vdp_hide_msg`, until the game closes it or another thing's box opens). While it
+is hidden the game's masks still cover the message's lines (it moves them down to 56-88), so
+there they hide nothing: at first Wonder Boy jumping just after picking up gold went behind
+nothing visible.
 
 Beside the HUD, what the game puts behind it shows where the map is drawn there, and stays
 hidden in the black bar (as behind the HUD: area 7's spears rise back into the ceiling there, and

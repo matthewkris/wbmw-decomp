@@ -412,6 +412,7 @@ static void draw_sprites(uint8_t *out, int line, int lo, int hi, int pad, int wi
                 for (int i = 0; i < 8 && c * 8 + i < draw; i++) {
                     int sx = x + c * 8 + i;
                     int covered = hw && line < HUD_LINES ? line < HUD_TOP && sx >= hx0 && sx < hx0 + HUD_W : sx >= pad && sx < pad + width;
+                    if (hw && vdp_hide_msg && line >= HUD_LINES) covered = 0;   /* the hidden message's masks: nothing there to hide behind */
                     if (masked && (!sides_shown || covered)) continue;
                     if (sx >= lo && sx < hi && px[i] && !out[sx]) out[sx] = px[i];
                 }
