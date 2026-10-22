@@ -565,7 +565,26 @@ static void zoom_update(void)
     int pad = (frame_width - 256) / 2;              /* the game's 256 in the picture (widescreen) */
     int talking = talk_zoom && (ram[0x9659] & 8) && (ram[0x8CA4] & 0x80) && !(vdp_reg[12] & 1);
     float zt = 1;
+    static int box_px, box_py, box_w, box_h;
+    /* A conversation ended by a fade ($9BF3 bit 0: the inn's "Good night") fades out with its box
+     * still on the screen, the message flag already clear: the zoom is held as it is, the box
+     * redrawn each frame as the palette fades, until the screen is dark, and then put back while
+     * nothing shows (at first it eased out during the fade, the box zoomed with the scene). */
+    int hold = !talking && zoom.on && zoom.z > 1 && (ram[0x9BF3] & 1);
     zoom.on = 0;
+    if (hold) {
+        int dark = !(vdp_reg[1] & 0x40);
+        if (!dark) {
+            dark = 1;
+            for (int k = 0; k < 64; k++) if (cram[k]) { dark = 0; break; }
+        }
+        zoom_scene = 0;
+        if (dark) { zoom.z = 1; return; }
+        zoom.on = 1;
+        box_build(box_px, box_py, box_w, box_h);
+        if (zoom_plane_ok) zoom_render_scene();
+        return;
+    }
     if (!talking) {                                 /* plane A's map while there is no box */
         unsigned size, base = plane_a(&size);
         zoom_plane_ok = base + size <= sizeof vram;
@@ -586,6 +605,7 @@ static void zoom_update(void)
         zoom.pointer_w = first < 0 ? 0 : (last - first + 1) * 8;
         zoom.pointer_x = first < 0 ? 0 : zoom.box.x + first * 8;
         box_build(px, py, w, h);
+        box_px = px; box_py = py; box_w = w; box_h = h;
         /* Wonder Boy ($9EEE) and the speaker, under the pointer: the anchor between them, at
          * Wonder Boy's feet; the zoom as large as leaves the two below the box */
         uint32_t e = 0xFFFF0000u + (ram[0x9EEE] << 8 | ram[0x9EEF]);
