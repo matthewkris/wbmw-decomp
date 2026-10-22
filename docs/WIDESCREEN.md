@@ -86,6 +86,23 @@ shift.) Bosses' rooms qualify by their layers like any other; the ones tried (th
 and Glagg, area 6's) look right, but a boss whose moves depend on the screen's edges would need a
 look.
 
+### The HUD in one row
+
+With widescreen on, the HUD is laid out for the wide picture in every room, wide or not
+(`vdp_hud_wide`, `harness/vdp.c`): its top row only (32 lines), with the gold's box (the bottom
+row's right) moved beside the items', the three centred (hearts, items, gold: 352 pixels). The
+bottom row's left, the last enemy's health, is left out: the host shows each enemy's health as it
+is hit (`docs/ENEMYHEALTH.md`). The bottom row's lines (32-63) are the play field's where the map
+is drawn there, black elsewhere, as beside the HUD. The game draws its HUD as always; the renderer
+only places it. Only while the window is the HUD (from the top, the full width, 8 rows or more).
+
+The status screen (Start) grows the window down over the HUD's bottom row, and draws there a frame
+before it starts to grow. So the gold's box is drawn from a copy of its tiles, kept each frame
+while the window is 8 rows and the bottom row's top edge is the HUD's (a changed edge is taken
+only after half a second); and while that edge differs and the window is taller, the bottom row's
+lines show the window as it is, in the game's width, so the status screen is whole. A message
+under the HUD ("Found 5 GOLD.") leaves the edge alone.
+
 Beside the HUD, what the game puts behind it shows where the map is drawn there, and stays
 hidden in the black bar (as behind the HUD: area 7's spears rise back into the ceiling there, and
 showed above it at first). The game hides what is behind the

@@ -13,7 +13,7 @@ uint16_t cram[64], vsram[40];
 int vdp_line, vdp_line_cycle;
 uint32_t frame_rgb[240][FRAME_STRIDE];
 int frame_width = 320;
-int vdp_pad, vdp_pad_fill, vdp_band_top = 64;
+int vdp_pad, vdp_pad_fill, vdp_band_top = 64, vdp_hud_wide;
 
 static int pending, code;
 static unsigned addr;
@@ -214,8 +214,74 @@ static void draw_plane(uint8_t *out, unsigned base, int line, int lo, int hi, in
  * takes beyond the 64 for a while (a message under the HUD, "Found 5 GOLD.") are the play
  * field's: their sides show plane A as usual. */
 #define HUD_LINES 64
+/* The HUD laid out for the wide picture (vdp_hud_wide, the native build's widescreen): its top row
+ * only, 32 lines, the gold's box (the bottom row's right, x 160-255) moved beside the items' (the
+ * top row's right), the three centred: hearts, items, gold, 352 pixels. The bottom row's left, the
+ * last enemy's health, is left out (the host shows each enemy's health as it is hit). Its lines
+ * (32-63) are the play field's where the map is drawn there (vdp_band_top), black elsewhere. Only
+ * while the window is the HUD: from the top, the full width, at least its 64 lines. */
+#define HUD_TOP 32
+#define HUD_W 352
+static int hud_wide(int width, int pad)
+{
+    return vdp_hud_wide && pad && width == 256 && vdp_reg[17] == 0 && !(vdp_reg[18] & 0x80) && (vdp_reg[18] & 0x1F) >= 8;
+}
+static int hud_x0(int pad) { return pad + 128 - HUD_W / 2; }
+/* The gold's box is drawn from a copy of its tiles, kept while the window is the HUD alone (8
+ * rows), as the status screen (Start) grows the window down and draws over the HUD's bottom row.
+ * While that row's top edge differs from the copy's (something other than the HUD drew there)
+ * the bottom row's lines show the window as it is, in the game's width, so that the screen drawn
+ * there is whole; a message under the HUD ("Found 5 GOLD.") leaves the row as it is. */
+static uint16_t hud_gold[4][12], hud_edge[32];
+static int hud_kept;
+static uint16_t win_cell(int row, int col)
+{
+    unsigned na = (((vdp_reg[3] & 0x3E) << 10) + (row * 32 + col) * 2) & 0xFFFF;
+    return (uint16_t)(vram[na] << 8 | vram[na + 1]);
+}
+static void hud_keep(void)                      /* each frame the window is 8 rows */
+{
+    static int odd;                             /* frames its edge has differed (a new HUD, not the status screen) */
+    int same = hud_kept;
+    for (int c = 0; c < 32 && same; c++) if (win_cell(4, c) != hud_edge[c]) same = 0;
+    if (!same && hud_kept && ++odd < 30) return;   /* the status screen draws over it a frame before it grows */
+    odd = 0;
+    for (int r = 0; r < 4; r++) for (int c = 0; c < 12; c++) hud_gold[r][c] = win_cell(4 + r, 20 + c);
+    for (int c = 0; c < 32; c++) hud_edge[c] = win_cell(4, c);
+    hud_kept = 1;
+}
+static int hud_covered(void)                    /* the bottom row drawn over (the status screen) */
+{
+    if (!hud_kept || (vdp_reg[18] & 0x1F) <= 8) return 0;
+    for (int c = 0; c < 32; c++) if (win_cell(4, c) != hud_edge[c]) return 1;
+    return 0;
+}
 static void draw_window(uint8_t *out, int line, int width, int lo, int hi, int pad, int *from, int *to)
 {
+    if (hud_wide(width, pad) && line < HUD_LINES) {
+        *from = *to = 0;
+        if (line == 0 && (vdp_reg[18] & 0x1F) == 8) hud_keep();
+        if (line >= HUD_TOP) {
+            if (!hud_covered()) return;
+            for (int x = 0; x < width; x++) {       /* the screen drawn over the bottom row, as it is */
+                uint8_t row[8];
+                tile_pixel_row(win_cell(line >> 3, x >> 3), line & 7, row);
+                out[x + pad] = row[x & 7];
+            }
+            *from = pad; *to = pad + width;
+            return;
+        }
+        int x0 = hud_x0(pad);
+        for (int X = 0; X < HUD_W; X++) {
+            int sx = X < 256 ? X : X - 96, sl = X < 256 ? line : line + HUD_TOP;   /* past the items: the gold */
+            uint16_t name = X >= 256 && hud_kept ? hud_gold[(sl >> 3) - 4][(sx >> 3) - 20] : win_cell(sl >> 3, sx >> 3);
+            uint8_t row[8];
+            tile_pixel_row(name, sl & 7, row);
+            out[x0 + X] = row[sx & 7];
+        }
+        *from = x0; *to = x0 + HUD_W;
+        return;
+    }
     int h40 = vdp_reg[12] & 1;
     unsigned base = (vdp_reg[3] & (h40 ? 0x3C : 0x3E)) << 10;
     int hp = (vdp_reg[17] & 0x1F) * 16, right = vdp_reg[17] & 0x80;
@@ -260,6 +326,7 @@ static void draw_sprites(uint8_t *out, int line, int lo, int hi, int pad, int wi
      * behind the HUD (the spears of area 7 rising back into the ceiling showed there). */
     int side_ok = line < HUD_LINES && (lo < pad || hi > pad + width), mask_at = -1;
     int sides_shown = line >= vdp_band_top;         /* the map beside the HUD on this line, not the black */
+    int hw = hud_wide(width, pad), hx0 = hud_x0(pad);   /* the wide HUD: it covers only its row's boxes */
     if (side_ok) {
         int l = 0, nz = 0;
         for (int n = 0; n < max; n++) {
@@ -295,7 +362,8 @@ static void draw_sprites(uint8_t *out, int line, int lo, int hi, int pad, int wi
                 tile_pixel_row((uint16_t)(name & ~0x1000), row & 7, px);   /* row already flipped */
                 for (int i = 0; i < 8 && c * 8 + i < draw; i++) {
                     int sx = x + c * 8 + i;
-                    if (masked && (!sides_shown || (sx >= pad && sx < pad + width))) continue;
+                    int covered = hw ? line < HUD_TOP && sx >= hx0 && sx < hx0 + HUD_W : sx >= pad && sx < pad + width;
+                    if (masked && (!sides_shown || covered)) continue;
                     if (sx >= lo && sx < hi && px[i] && !out[sx]) out[sx] = px[i];
                 }
             }
@@ -320,15 +388,21 @@ void vdp_render_line(int line)
         for (int x = 0; x < FRAME_STRIDE; x++) frame_rgb[line][x] = 0;
         return;
     }
-    int wf = 0, wt = 0;
+    int wf = 0, wt = 0, hw = hud_wide(width, pad) && line < HUD_LINES, hx0 = hud_x0(pad);
     memset(lay_a, 0, sizeof lay_a); memset(lay_b, 0, sizeof lay_b);
     draw_window(lay_a, line, width, lo, hi, pad, &wf, &wt);
     draw_plane(lay_a, (vdp_reg[2] & 0x38) << 10, line, lo, hi, pad, width, 1, wf, wt);
     draw_plane(lay_b, (vdp_reg[4] & 0x07) << 13, line, lo, hi, pad, width, 0, 0, 0);
     draw_sprites(lay_s, line, lo, hi, pad, width);
     for (int x = 0; x < total; x++) {
-        if (x < lo || x >= hi) { frame_rgb[line][x] = 0; continue; }   /* the sides of a picture not wide */
-        if (bar && (x < pad || x >= pad + width)) {   /* the bar: no scenery, but the sprites over it */
+        int boxes = line < HUD_TOP ? x >= hx0 && x < hx0 + HUD_W : wt > wf && x >= wf && x < wt;
+        if (hw && !boxes) {                         /* the wide HUD's lines, outside its boxes (or the screen over them) */
+            if (!(fill && line >= vdp_band_top)) {  /* no map there: black, the sprites over it */
+                frame_rgb[line][x] = lay_s[x] ? rgb(cram[lay_s[x] & 0x3F]) : 0;
+                continue;
+            }
+        } else if (!hw && (x < lo || x >= hi)) { frame_rgb[line][x] = 0; continue; }   /* the sides of a picture not wide */
+        if (!hw && bar && (x < pad || x >= pad + width)) {   /* the bar: no scenery, but the sprites over it */
             frame_rgb[line][x] = lay_s[x] ? rgb(cram[lay_s[x] & 0x3F]) : 0;
             continue;
         }

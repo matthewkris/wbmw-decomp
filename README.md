@@ -33,9 +33,11 @@ On top of the original game. They are all on by default; each can be turned off 
   `docs/TALKZOOM.md`.
 * **Widescreen (experimental)**: a 16:9 picture. Most rooms fill it (121 of the 170, those
   whose maps are wide enough); one-screen rooms keep the original picture with black sides.
-  Houses and shops open over the room outside, as in the original, so the room stays wide. Beside the status bar, the extra width shows the scenery where the room's map
-  reaches that high, and is black where it doesn't (most rooms), so nothing looks cut off at the
-  top. See `docs/WIDESCREEN.md`.
+  Houses and shops open over the room outside, as in the original, so the room stays wide.
+  The status bar becomes a single row across the top (hearts, items, gold), in
+  every room; the enemy health box is left out, as hits show each enemy's health. Below and
+  beside it the scenery shows where the room's map reaches that high, and it is black where it
+  doesn't (most rooms), so nothing looks cut off at the top. See `docs/WIDESCREEN.md`.
 
 ## No ROM data is in this repository
 
