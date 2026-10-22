@@ -273,10 +273,16 @@ static void draw_window(uint8_t *out, int line, int width, int lo, int hi, int p
         }
         int x0 = hud_x0(pad);
         for (int X = 0; X < HUD_W; X++) {
-            int sx = X < 256 ? X : X - 96, sl = X < 256 ? line : line + HUD_TOP;   /* past the items: the gold */
-            uint16_t name = X >= 256 && hud_kept ? hud_gold[(sl >> 3) - 4][(sx >> 3) - 20] : win_cell(sl >> 3, sx >> 3);
+            /* past the items: the gold's box, in the items' box's frame (its own had no top: the
+             * items' box's bottom was its top, and its sides are not the items' box's corners),
+             * the inside (columns 22-29) its own rows after the first (an empty one under that
+             * shared edge), so its words are level with the items' */
+            int sx = X < 256 ? X : X - 96, r = line >> 3, col = sx >> 3;
+            int inside = X >= 256 && (r == 1 || r == 2) && col >= 22 && col <= 29;
+            uint16_t name = !inside ? win_cell(r, col)
+                          : hud_kept ? hud_gold[r][col - 20] : win_cell(4 + r, col);
             uint8_t row[8];
-            tile_pixel_row(name, sl & 7, row);
+            tile_pixel_row(name, line & 7, row);
             out[x0 + X] = row[sx & 7];
         }
         *from = x0; *to = x0 + HUD_W;
