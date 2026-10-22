@@ -605,8 +605,8 @@ static void zoom_update(void)
             int half = rd8(o - 0x34FD);
             int ox = pad + (int16_t)(rd16(o - 0x3800) - cam_x - 128), d = abs(ox - centre);
             /* with no pointer, one the player could have talked to (within its reach, -$3500,
-             * and level with him, as $164B8 has it) is the speaker whatever its size (a child
-             * of 22 lines in area 6, standing where Wonder Boy stands) */
+             * and level with him, as $164B8 has it) is the speaker whatever its size (one
+             * 22 lines tall in area 6, standing where Wonder Boy stands) */
             int dx = (int16_t)(rd16(o - 0x3800) - rd16(e - 0x3800)), dy = (int16_t)(rd16(o - 0x3700) - rd16(e - 0x3700));
             int reach = rd8(o - 0x3500), talkable = !zoom.pointer_w && reach && abs(dx) <= reach + 2 && abs(dy) <= half + rd8(e - 0x34FD);
             if (!zoom.pointer_w && half < ZOOM_PERSON / 2 && !talkable) continue;
