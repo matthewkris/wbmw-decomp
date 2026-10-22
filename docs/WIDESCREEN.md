@@ -93,7 +93,10 @@ With widescreen on, the HUD is laid out for the wide picture in every room, wide
 row's right) moved beside the items', the three centred (hearts, items, gold: 352 pixels). The
 bottom row's left, the last enemy's health, is left out: the host shows each enemy's health as it
 is hit (`docs/ENEMYHEALTH.md`). The bottom row's lines (32-63) are the play field's where the map
-is drawn there, black elsewhere, as beside the HUD. The game draws its HUD as always; the renderer
+is drawn there, black elsewhere, as beside the HUD. In a room that scrolls down too, `layer_y`
+keeps the camera it reads 32 lines below the map's top (`WIDE_ABOVE`, as `layer_x` does at the
+ends), so those lines always show the map: at first the camera scrolled into them near a room's
+top, and a strip of sky came and went as Wonder Boy jumped (area 5's town). The game draws its HUD as always; the renderer
 only places it. Only while the window is the HUD (from the top, the full width, 8 rows or more).
 
 The status screen (Start) grows the window down over the HUD's bottom row, and draws there a frame

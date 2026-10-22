@@ -872,9 +872,18 @@ static void layer_x(void)
     }
     put16m(c->a[3] + 4, c->d[0]);
 }
+/* widescreen: the lines of the map shown above the play field (under the wide HUD's one row) */
+#define WIDE_ABOVE 32
 static void layer_y(void)
 {
     c->d[0] = rd32(CAMERA_Y); F_L(c->d[0]);
+    if (wide_layer() && !rd8(LAYER_A + 0x3B) && rd16(LAYER_A + 0x26) - 0x1000 >= WIDE_ABOVE) {
+        /* widescreen: the camera it reads kept WIDE_ABOVE lines below the map's top, so the lines
+         * under the HUD's row always show the map; it scrolled into them, a strip of sky coming
+         * and going as Wonder Boy jumped near a room's top (area 5's town) */
+        uint16_t y = (uint16_t)(c->d[0] >> 16), lo = 0x1000 + WIDE_ABOVE;
+        if (y < lo) c->d[0] = (uint32_t)lo << 16;
+    }
     move_b(1, rd8(c->a[3] + 0x3B));
     c->d[2] = set_w(c->d[2], rd16(c->a[3] + 0x26)); F_W(c->d[2]);
     parallax();
