@@ -262,6 +262,12 @@ static int hud_covered(void)                    /* the bottom row drawn over (th
  * with its own bottom row (the screen's last, 15, drawn before it slides open) turned over above
  * it: from line 32, the line under the HUD's row. */
 #define MENU_LAST 15
+/* A bottom edge's tile has the edge in its last 5 lines, so turned over it has 3 empty lines
+ * under the edge. Over a message ("Found the Amulet.") it is drawn that much lower, the edge on
+ * the line above the box as the HUD's was, the lines it leaves at the top showing what is behind
+ * (at first the box had 3 more lines inside at the top than the original's). The status screen
+ * keeps them: under the HUD's row, lowered, it would leave a sliver of scenery between the two. */
+#define EDGE_SHIFT 3
 static int menu_line(uint8_t *out, int line, int width, int pad, int *from, int *to)
 {
     int rows = vdp_reg[18] & 0x1F;
@@ -290,10 +296,10 @@ static void draw_window(uint8_t *out, int line, int width, int lo, int hi, int p
             /* a message under the HUD ("Found a Potion.") hung from the bottom row, its edge its
              * top: it gets its own bottom row turned over, on the line above it */
             int rows = vdp_reg[18] & 0x1F;
-            if (line < HUD_LINES - 8 || rows <= 8 || vdp_hide_msg) return;
+            if (line < HUD_LINES - 8 + EDGE_SHIFT || rows <= 8 || vdp_hide_msg) return;
             for (int x = 0; x < width; x++) {
                 uint8_t row[8];
-                tile_pixel_row((uint16_t)(win_cell(rows - 1, x >> 3) ^ 0x1000), line & 7, row);
+                tile_pixel_row((uint16_t)(win_cell(rows - 1, x >> 3) ^ 0x1000), (line & 7) - EDGE_SHIFT, row);
                 out[x + pad] = row[x & 7];
             }
             *from = pad; *to = pad + width;
