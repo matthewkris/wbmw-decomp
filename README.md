@@ -20,7 +20,8 @@ On top of the original game. They are all on by default; each can be turned off 
   button, and for quick save and quick load.
 * **Settings saved** between sessions (`wbmw.ini`): full screen, whole-pixel scaling, sound, frame
   rate display, controls.
-* **Quick save and load** of the whole game state, with an on-screen confirmation.
+* **Quick save and load** of the whole game state, with an on-screen confirmation. Saving over
+  an existing save asks you to press quick save again, so it isn't overwritten by accident.
 * **Full screen** by default, with window mode and whole-pixel scaling.
 * **Frame rate display.**
 * **Enemy health bars and damage numbers**: when you hit an enemy, the damage rises from it as a
@@ -153,9 +154,11 @@ D-pad, A and B, whatever you set the game's controls to.
 Your settings are saved in `wbmw.ini` next to `wbmw.exe`. Command-line options override them for
 one run without changing the file. Delete the file to go back to the defaults.
 
-Quick save stores the game in `wbmw.state` and quick load returns to it. A message at the bottom
-of the screen confirms each one. The game's own save, kept on the cartridge's EEPROM, is written
-to `wbmw.sav` in the current folder when you exit. Use `--save FILE` for a different file.
+Quick save stores the game in `wbmw.state` and quick load returns to it. If there is already a
+save, the first press shows "PRESS SAVE AGAIN TO OVERWRITE"; press it again within two seconds
+to replace it. A message at the bottom of the screen confirms each one. The game's own save,
+kept on the cartridge's EEPROM, is written to `wbmw.sav` in the current folder when you exit.
+Use `--save FILE` for a different file.
 
 ### Options
 
