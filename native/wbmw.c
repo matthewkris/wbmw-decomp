@@ -1586,6 +1586,80 @@ static void rom_reads_save(void)
     if (f) { fwrite(bus_rom_reads, 1, rom_size, f); fclose(f); }
 }
 
+/* --pack FILE: the game's data from the files tools/extract.py wrote, packed by tools/pack.py
+ * (docs/EXTRACT.md, "The game reads the files"), instead of from the ROM. The pack's data image
+ * takes the ROM's place in the address space; the decoders take the compressed data's decoded
+ * form from it (port_pack_find). The mask says which bytes the files hold: a read of any other is
+ * counted (bus_rom_reads) and reported at exit, since the game should never make one. */
+static uint8_t *pack, *pack_mask;
+static const uint8_t *pack_gfx;
+typedef struct { uint32_t key; const uint8_t *at; } PackEntry;
+static PackEntry *pack_tables, *pack_layers;
+static int pack_ntables, pack_nlayers;
+static uint32_t be32p(const uint8_t *p) { return (uint32_t)p[0] << 24 | p[1] << 16 | p[2] << 8 | p[3]; }
+
+static const uint8_t *pack_lookup(PackEntry *e, int n, uint32_t key)
+{
+    int lo = 0, hi = n - 1;                         /* sorted by key (pack.py) */
+    while (lo <= hi) {
+        int m = (lo + hi) / 2;
+        if (e[m].key == key) return e[m].at;
+        if (e[m].key < key) lo = m + 1; else hi = m - 1;
+    }
+    return NULL;
+}
+
+static const uint8_t *pack_find(int kind, uint32_t key)
+{
+    if (kind == 'G') return key < 768 ? pack_gfx + 1024 * key : NULL;
+    if (kind == 'B') return pack_lookup(pack_tables, pack_ntables, key & 0xFFFFFF);
+    if (kind == 'L') return pack_lookup(pack_layers, pack_nlayers, key & 0xFFFFFF);
+    return NULL;
+}
+
+static void pack_report(void)
+{
+    size_t n = 0, first = 0;
+    for (size_t i = 0; i < rom_size; i++)
+        if (bus_rom_reads[i] && !pack_mask[i]) { if (!n) first = i; n++; }
+    if (n) fprintf(stderr, "wbmw: the game read %lu bytes the files do not hold (the first at $%06lX)\n",
+                   (unsigned long)n, (unsigned long)first);
+    else fprintf(stderr, "wbmw: every byte the game read is held by the files\n");
+}
+
+static int pack_load(const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) { char m[4200]; snprintf(m, sizeof m, "Cannot open the pack: %s", path); fail(m); return 1; }
+    fseek(f, 0, SEEK_END); size_t size = (size_t)ftell(f); fseek(f, 0, SEEK_SET);
+    pack = malloc(size);
+    size_t got = fread(pack, 1, size, f);
+    fclose(f);
+    if (got != size || size < 12 || memcmp(pack, "WBMWPAK1", 8)) {
+        char m[4200]; snprintf(m, sizeof m, "%s is not a pack made by tools/pack.py", path); fail(m); return 1;
+    }
+    const uint8_t *p = pack + 8;
+    rom_size = be32p(p); p += 4;
+    rom = (uint8_t *)p; p += rom_size;
+    pack_mask = (uint8_t *)p; p += rom_size;
+    pack_gfx = p; p += 768 * 1024;
+    pack_ntables = (int)be32p(p); p += 4;
+    pack_tables = calloc((size_t)pack_ntables, sizeof *pack_tables);
+    for (int i = 0; i < pack_ntables; i++) {
+        pack_tables[i].key = be32p(p); pack_tables[i].at = p + 4;
+        p += 6 + 10 * (p[4] << 8 | p[5]);
+    }
+    pack_nlayers = (int)be32p(p); p += 4;
+    pack_layers = calloc((size_t)pack_nlayers, sizeof *pack_layers);
+    for (int i = 0; i < pack_nlayers; i++) {
+        pack_layers[i].key = be32p(p); pack_layers[i].at = p + 4;
+        p += 9 + 385 * p[8];
+    }
+    if (p != pack + size) { char m[4200]; snprintf(m, sizeof m, "%s is damaged (its parts do not add up)", path); fail(m); return 1; }
+    port_pack_find = pack_find;
+    return 0;
+}
+
 /* --verify-graphics DIR: the 768 graphics blocks decoded by the port's DecodeGfxBlock ($6BC4,
  * verified against the original's in the harness) compared with the files tools/extract.py wrote
  * (DIR/graphics/block_NNN.bin): its Python decoder checked by an independent one (docs/EXTRACT.md) */
@@ -1666,6 +1740,7 @@ static int unpack_list(const char *req, const char *out)
 
 int main(int argc, char **argv)
 {
+    const char *pack_path = NULL;
     const char *rom_path = NULL, *input = NULL, *load_path = NULL, *verify_graphics = NULL, *unpack_req = NULL, *unpack_out = NULL;
     const char *state_path_ptr = "\x01";            /* --load: the --state file, whatever it ends up being */
 #ifndef WBMW_HEADLESS_ONLY
@@ -1685,11 +1760,16 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--input") && i + 1 < argc) input = argv[++i];
         else if (!strcmp(argv[i], "--wav") && i + 1 < argc) wav_path = argv[++i];
         else if (!strcmp(argv[i], "--frame-log") && i + 1 < argc) { if (framelog_open(argv[++i])) return 1; }
+        else if (!strcmp(argv[i], "--frame-log-skip") && i + 1 < argc) {   /* LO-HI: RAM addresses (hex) left out */
+            unsigned lo, hi;
+            if (sscanf(argv[++i], "%x-%x", &lo, &hi) == 2) framelog_skip(lo & 0xFFFF, hi & 0xFFFF);
+        }
         else if (!strcmp(argv[i], "--input-game") && i + 1 < argc) { if (framelog_input(argv[++i])) return 1; }
         else if (!strcmp(argv[i], "--dump-at") && i + 2 < argc) { long n = atol(argv[++i]); framelog_dump_at(n, argv[++i]); }
         else if (!strcmp(argv[i], "--mute")) mute = 1;
         else if (!strcmp(argv[i], "--verify-graphics") && i + 1 < argc) { verify_graphics = argv[++i]; headless = 1; }
         else if (!strcmp(argv[i], "--rom-reads") && i + 1 < argc) rom_reads_path = argv[++i];
+        else if (!strcmp(argv[i], "--pack") && i + 1 < argc) pack_path = argv[++i];
         else if (!strcmp(argv[i], "--unpack-list") && i + 2 < argc) { unpack_req = argv[++i]; unpack_out = argv[++i]; headless = 1; }
         else if (!strcmp(argv[i], "--widescreen")) widescreen = 1;
         else if (!strcmp(argv[i], "--no-widescreen")) widescreen = 0;
@@ -1713,8 +1793,9 @@ int main(int argc, char **argv)
 #endif
         else rom_path = argv[i];
     }
-    if (!rom_path) rom_path = find_rom(argv[0]);
-    if (!rom_path) {
+    if (pack_path) { if (pack_load(pack_path)) return 1; }
+    else if (!rom_path) rom_path = find_rom(argv[0]);
+    if (!pack_path && !rom_path) {
         fprintf(stderr, "usage: wbmw [ROM] [--windowed] [--widescreen] [--scale N] [--save FILE] [--integer-scale] [--fps] [--mute] [--talk-zoom] [--enemy-health] [--config FILE]\n"
                         "       wbmw ROM --frames N [--png-every K] [--out DIR] [--input FILE] [--wav FILE]\n"
                         "                [--frame-log FILE] [--input-game FILE] [--dump-at N DIR]\n"
@@ -1723,26 +1804,28 @@ int main(int argc, char **argv)
              "in a folder called rom (in the repository, or next to wbmw), or give its path:\n\n    wbmw path/to/your.rom");
         return 2;
     }
-    FILE *f = fopen(rom_path, "rb");
-    if (!f) { char m[4200]; snprintf(m, sizeof m, "Cannot open the ROM: %s", rom_path); fail(m); return 1; }
-    fseek(f, 0, SEEK_END); rom_size = (size_t)ftell(f); fseek(f, 0, SEEK_SET);
-    rom = malloc(rom_size);
-    if (fread(rom, 1, rom_size, f) != rom_size) { char m[4200]; snprintf(m, sizeof m, "Cannot read the ROM: %s", rom_path); fail(m); return 1; }
-    fclose(f);
-    if (rom_size != 786432) {
-        char m[4300];
-        snprintf(m, sizeof m, "%s is %lu bytes; the game's ROM is 786,432 bytes (768 KB). Use a plain dump of the cartridge (.md or .bin, no header).",
-                 rom_path, (unsigned long)rom_size);
-        fail(m);
-        return 1;
-    }
-    {
-        uint8_t d[20]; char hex[41];
-        sha1(rom, rom_size, d);
-        for (int i = 0; i < 20; i++) snprintf(hex + 2 * i, 3, "%02x", d[i]);
-        if (strcmp(hex, ROM_SHA1))
-            fprintf(stderr, "wbmw: warning: %s is not the expected dump (SHA-1 %s, expected " ROM_SHA1 "): "
-                            "the port reads the game's data from it at fixed places, so another version will not work right\n", rom_path, hex);
+    FILE *f = pack_path ? NULL : fopen(rom_path, "rb");
+    if (!pack_path && !f) { char m[4200]; snprintf(m, sizeof m, "Cannot open the ROM: %s", rom_path); fail(m); return 1; }
+    if (f) {
+        fseek(f, 0, SEEK_END); rom_size = (size_t)ftell(f); fseek(f, 0, SEEK_SET);
+        rom = malloc(rom_size);
+        if (fread(rom, 1, rom_size, f) != rom_size) { char m[4200]; snprintf(m, sizeof m, "Cannot read the ROM: %s", rom_path); fail(m); return 1; }
+        fclose(f);
+        if (rom_size != 786432) {
+            char m[4300];
+            snprintf(m, sizeof m, "%s is %lu bytes; the game's ROM is 786,432 bytes (768 KB). Use a plain dump of the cartridge (.md or .bin, no header).",
+                     rom_path, (unsigned long)rom_size);
+            fail(m);
+            return 1;
+        }
+        {
+            uint8_t d[20]; char hex[41];
+            sha1(rom, rom_size, d);
+            for (int i = 0; i < 20; i++) snprintf(hex + 2 * i, 3, "%02x", d[i]);
+            if (strcmp(hex, ROM_SHA1))
+                fprintf(stderr, "wbmw: warning: %s is not the expected dump (SHA-1 %s, expected " ROM_SHA1 "): "
+                                "the port reads the game's data from it at fixed places, so another version will not work right\n", rom_path, hex);
+        }
     }
     wide_apply();
     if (rom_reads_path) {                           /* the ROM's bytes this run reads, added to the file's */
@@ -1750,6 +1833,10 @@ int main(int argc, char **argv)
         FILE *rf = fopen(rom_reads_path, "rb");
         if (rf) { if (fread(bus_rom_reads, 1, rom_size, rf) != rom_size) memset(bus_rom_reads, 0, rom_size); fclose(rf); }
         atexit(rom_reads_save);
+    }
+    if (pack) {                                     /* the reads the files should hold, checked at exit */
+        if (!bus_rom_reads) bus_rom_reads = calloc(rom_size, 1);
+        atexit(pack_report);
     }
     bus_reset(); vdp_reset(); sound_reset();
     if (verify_graphics) return verify_graphics_blocks(verify_graphics);

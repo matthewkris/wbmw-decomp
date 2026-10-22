@@ -62,6 +62,9 @@ The save EEPROM is read from FILE at start and written at exit (default `wbmw.sa
   and layer maps listed in REQ with the port's `UnpackBlocks` and `UnpackLayerMap`, for
   `rebuild.py` to compare. `--rom-reads FILE` marks every ROM byte the game reads into FILE
   (added to what it holds), for `rebuild.py --reads FILE`.
+* `--pack FILE`: the game's data from the pack `tools/pack.py` makes of the extracted files,
+  instead of from the ROM (`docs/EXTRACT.md`, "The game reads the files"). At exit it reports
+  whether the game read any byte the files do not hold.
 * **Talk zoom** (`--talk-zoom`): during a conversation with an ordinary character, the host zooms
   the scene in on the two, the HUD and the box slid up (`docs/TALKZOOM.md`). For testing it,
   `--input FILE` works in a window too, and `WBMW_SHOT_EVERY=N WBMW_SHOT_EVERY_DIR=DIR` writes the
@@ -90,6 +93,8 @@ input script format, for comparison with `work/harness/harness`.
 
 Both this program and the harness take `--frame-log FILE`, `--input-game FILE` and `--dump-at N
 DIR` (`harness/framelog.c`); `tools/framecmp.py` compares two frame logs by game frame.
+`--frame-log-skip LO-HI` (hex RAM addresses, repeatable) leaves more of RAM out of the hash, for
+runs that differ only in scratch memory (the pack's decoders write none).
 
 ## Save states
 

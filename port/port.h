@@ -185,4 +185,12 @@ typedef struct { uint32_t addr, end; const char *name; PortFn fn; uint32_t contr
 extern const PortRoutine port_routines[];
 extern const int port_routine_count;
 
+/* The game's data from the files (the native build's --pack, tools/pack.py; the harness leaves
+ * it unset). The compressed data is not in the data image, so the decoders take what it decodes
+ * to from the pack: port_pack_find('G', block number) the graphics block's 1,024 bytes (gfx.c),
+ * ('B', address) a block table: its count, then 10 bytes a block: 1 if there, 4 tile words, the
+ * attribute (rooms.c), ('L', address) a layer's data: its block table's address, its places'
+ * number, each place's byte and 192 cells (rooms.c). Big-endian, as in the pack. NULL: not there */
+extern const uint8_t *(*port_pack_find)(int kind, uint32_t key);
+
 #endif

@@ -340,8 +340,19 @@ void CopyRawTiles(Cpu *c)
     c->ccr = cc;
 }
 
+const uint8_t *(*port_pack_find)(int kind, uint32_t key);
+
 void DecodeGfxBlock(Cpu *c)
 {
+    if (port_pack_find) {                           /* the files: a compressed block decoded already */
+        uint32_t e = rd32(GFX_TABLE + 4 * (c->d[0] & 0x3FFF));
+        const uint8_t *b = e & 0x81000000u ? NULL : port_pack_find('G', c->d[0] & 0xFFFF);
+        if (b) {
+            for (int i = 0; i < 1024; i++) wr8(c->a[1] + i, b[i]);
+            c->a[1] += 1024;
+            return;
+        }
+    }
     R r = { c->d[0], c->d[1], c->d[2], c->d[3], c->d[4], c->d[5], c->d[6], c->d[7],
             c->a[0], c->a[1], c->a[2], c->a[3], c->a[7], c->ccr };
     uint16_t cc = r.cc;

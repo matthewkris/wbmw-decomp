@@ -2,9 +2,10 @@
 
 The long-term idea (`docs/IDEAS.md`, "Extract the assets from the ROM once") is that the game
 loads its data from ordinary files instead of reading it from the ROM as it plays: graphics as
-images, maps and text as files that can be looked at and changed. This is the first step:
-writing the data out, in readable forms, to check that every format is understood. The game does
-not use these files yet.
+images, maps and text as files that can be looked at and changed. `tools/extract.py` writes the
+data out in readable forms, `tools/rebuild.py` checks that the files hold all of it, and
+`tools/pack.py` packs them for the game, which can play from them instead of the ROM (`--pack`,
+"The game reads the files" below).
 
 ## Running it
 
@@ -43,7 +44,7 @@ ROM is, and are never committed.
 | `sprites/enemies/enemy_TTTT.png`, `enemies.json` | each of the 100 enemy types the rooms load, its animations drawn with the graphics and palettes of the first room it appears in | the enemy types at $1BC0E |
 | `sprites/rooms/areaAA_roomRR.png` | every room with its enemies at their spawn points | |
 | `sound/z80_driver.bin`, `z80_data.bin` | the Z80 sound driver and what follows it, as they are | $98000 |
-| `tables/code_tables.json` | the 215 tables in the code region the game reads as data: each one's name, place, size, the routines that point at it, a note, and its values in hex | the code region (`tools/codetables.py`) |
+| `tables/code_tables.json` | the 447 tables in the code region (the data among the code): each one's name, place, size, the routines that point at it, a note, and its values in hex | the code region (`tools/codetables.py`) |
 
 ## The checks
 
@@ -84,7 +85,7 @@ terminator's value, a command's arguments). Everything must match:
 | Extra raw tiles | 20 x 192 bytes | as they are |
 | Text fragments, start points, room music | 3, 138, 19 areas | from their fields |
 | Walk scripts | 12 | from `lists.json`: byte for byte |
-| Tables in the code region | 215 | from their values: byte for byte |
+| Tables in the code region | 447 | from their values: byte for byte |
 
 The port's decoders were verified against the original's code in the harness, and the Python
 decoders were written apart from them: two decoders agreeing on every block and every map. (The
@@ -139,10 +140,12 @@ Getting there took, besides the tables in the code region below:
 
 The game's code holds tables of its own: the colour scripts, the monsters' records, the title's
 layouts, the sine and tangent tables, the prices, the demo's input, the ending's scripts and so
-on. `tools/codetables.py` lists the 215 the game was seen to read: 13,974 bytes. Each one runs from
-an address an instruction points at (in the disassembler's code/data map, `tools/fixpoint.sh`) to
-the next such address or the next code, so a table is written whole even where the runs read only
-part of it. Bytes another file already holds (the palettes at $599C) are left out. The list keeps
+on. `tools/codetables.py` lists all 447 of them: 18,148 bytes, every place the disassembler's
+code/data map (`tools/fixpoint.sh`) has data, jump tables included (the C reads their offsets as
+data). Each one runs from an address an instruction points at to the next such address or the
+next code, so a table is written whole even where the runs read only part of it. All of them, not
+only the 215 the recorded runs read: the first runs from the pack found a jump table at $FE26 (the
+companion's states) that no recorded run had reached. Bytes another file already holds (the palettes at $599C) are left out. The list keeps
 only addresses, sizes and names: the values are the ROM's, and `extract.py` writes them to
 `tables/code_tables.json`.
 
@@ -155,7 +158,36 @@ Two need a word:
 
 The names come from the port's own names where it has one (`HANDLERS`, `TAN_TABLE`, ...), are
 given for the larger tables, and are `table_XXXXXX` for the rest, with a note from the port's
-comment on the routine that reads it. A feature none of the runs reached could read others.
+comment on the routine that reads it.
+
+## The game reads the files
+
+    python tools/pack.py                      (after extract.py: writes assets/game.pak)
+    work/native/wbmw --pack assets/game.pak
+
+`tools/pack.py` packs the files into the one file the game loads, reading nothing from the ROM:
+
+* the data image: every piece the files hold, built by the same code as `rebuild.py`'s check
+  (`rebuild.build_pieces`), at its place in the ROM's address space, and the raw graphics blocks.
+  The game's C reads its data at the ROM's addresses, so it reads the image instead, unchanged;
+* its mask: the 143,515 bytes the files hold. A read of any other byte is counted and reported
+  when the game exits ("the game read N bytes the files do not hold"); it should never happen;
+* the compressed data's decoded form, which is not in the image: the 768 graphics blocks, the 201
+  block tables and the 238 layers' maps, by address. With the pack loaded, `DecodeGfxBlock` ($6BC4)
+  copies a compressed block from it, and `UnpackBlocks` ($9F6A) and `UnpackLayerMap` ($A068) copy
+  the tables and chunks (`port_pack_find`, `port/port.h`). A layer's places are kept in its
+  data's order, which numbers its chunks (`rebuild.py` checks it).
+
+The sound driver and its data go into the image as they are (`sound/*.bin`), so the music works
+the same until its format is decoded.
+
+Checked against the ROM's runs by game frame (`--frame-log`, `tools/framecmp.py`), with the
+decoders' scratch RAM left out of the hash (`--frame-log-skip`: the decoder's rows and Huffman
+tree at $FF8DE8-$FF8E07 and $FF8F0A-$FF8FFF, the unpacker's $FF970C-$FF9723 and $FF9862-$FF9961,
+which the pack's copies do not write): 6,000 frames from power-on (the title and the demo) and 600
+frames from each of the 98 save states. RAM, VRAM, CRAM and VSRAM are identical in every frame,
+and every byte the game read is held by the files. (Four of the states never reach the frame wait
+the log samples at, in either run.)
 
 ## The text
 
@@ -182,4 +214,4 @@ pictures and `$C0`-`$C5`, `$D0` icons, left as `{xNN}` (one phrase is made of th
 
 * The bosses' own palettes, for their sheets.
 * Decode the music and sound effects (the Z80 driver's data): the format is not known yet.
-* The game reads its data from the files: everything it reads is in them now.
+* The game loads the pack by default when there is one, and the build makes it (extract, pack).
