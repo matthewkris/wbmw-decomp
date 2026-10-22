@@ -18,8 +18,8 @@ On top of the original game. They are all on by default; each can be turned off 
 * **Pause menu** (Esc, or Back/Select on a controller) with a confirmation before exiting.
 * **Custom controls**: set a key and a controller button, stick direction or trigger for each game
   button, and for quick save and quick load.
-* **Settings saved** between sessions (`wbmw.ini`): full screen, whole-pixel scaling, sound, frame
-  rate display, controls.
+* **Settings saved** between sessions (`wbmw.ini`): full screen, whole-pixel scaling, widescreen,
+  talk zoom, enemy health, sound, frame rate display, controls.
 * **Quick save and load** of the whole game state, with an on-screen confirmation. Saving over
   an existing save asks you to press quick save again, so it isn't overwritten by accident.
 * **Full screen** by default, with window mode and whole-pixel scaling.
@@ -28,17 +28,24 @@ On top of the original game. They are all on by default; each can be turned off 
   number (gold for the blow that defeats it), and a small bar over it shows the health it has
   left for two seconds: green, then yellow below two thirds, red below one third. Bosses have
   them too. They stay under the text boxes and the status bar. See `docs/ENEMYHEALTH.md`.
-* **Talk zoom (experimental)**: during a conversation with an ordinary character, the view eases
-  in on Wonder Boy and the one he is talking to, with the text box kept at its own size. See
-  `docs/TALKZOOM.md`.
-* **Widescreen (experimental)**: a 16:9 picture. Most rooms fill it (121 of the 170, those
-  whose maps are wide enough); one-screen rooms keep the original picture with black sides.
-  Houses and shops open over the room outside, as in the original, so the room stays wide.
-  The status bar becomes a single row across the top (hearts, items, gold), in
-  every room; the enemy health box is left out, as hits show each enemy's health, and gold you
-  pick up rises from you as a number instead of a "Found ... GOLD" box. Below and
-  beside it the scenery shows where the room's map reaches that high, and it is black where it
-  doesn't (most rooms), so nothing looks cut off at the top. See `docs/WIDESCREEN.md`.
+* **Talk zoom (experimental)**: during a conversation with an ordinary character (not bosses),
+  the view eases in on Wonder Boy and the one he is talking to over about a second, with the
+  text box kept at its own size. It stays zoomed through a conversation that ends with a fade to
+  black, such as the inn's. See `docs/TALKZOOM.md`.
+* **Widescreen (experimental)**: a 16:9 picture. See `docs/WIDESCREEN.md`.
+  * **Most rooms fill it**: 121 of the 170, those whose maps are wide enough. One-screen rooms
+    keep the original picture with black sides. Houses and shops open over the room outside, as
+    in the original, so they stay wide. Rooms switch between wide and narrow only while the
+    screen is black during a transition.
+  * **A one-row status bar**: hearts, items and gold side by side across the top, in every room.
+    The enemy health box is left out, since hits show each enemy's health. The item menu (Start)
+    and messages such as "PAUSE" open below it with their own top edge.
+  * **Gold as a number**: gold you pick up rises from you as a gold number, in the same style as
+    the damage numbers, instead of a "Found ... GOLD" box.
+  * **Above the play field**: below and beside the status bar, the scenery shows where the
+    room's map reaches that high, and it is black where it doesn't (most rooms), so nothing
+    looks cut off. Wonder Boy and enemies stay visible there; what the original hides behind the
+    status bar stays hidden.
 
 ## No ROM data is in this repository
 
@@ -141,8 +148,7 @@ so Start stays the game's own: it opens the item screen.
 
 * **Show FPS, Full screen, Whole pixels** (every pixel the same size), **Widescreen**, **Talk
   zoom**, **Enemy health** (the health bars and damage numbers), **Sound**: on or off. Widescreen
-  is a test for now: the picture is 16:9, and most rooms fill it; one-screen rooms keep the
-  normal picture, centred with black sides. See `docs/WIDESCREEN.md`.
+  is experimental: see **Added features** above.
 * **Controls**: a key and a controller input for each button, plus quick save and quick load.
   Choose one and press Enter (A on a controller), then press the new key or button; on the
   controller side, a stick direction or a trigger works too. A key already used elsewhere swaps
