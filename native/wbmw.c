@@ -133,7 +133,23 @@ static int wide_room(int area, int room)
  * sides are black, as the HUD covers the scene there in the original. */
 static void wide_frame(void)
 {
-    vdp_pad_fill = widescreen && wide_room(ram[0x9668], ram[0x9669]);
+    /* The room shown: the game sets the next room's number as the player walks out, while the
+     * old room is still on the screen for the fade out (the castle's tower drawn wide for those
+     * frames, past what it draws: sky with its walls cut at the 256's edges). So the room number
+     * is taken when the screen is dark (the palette all black, or the display off), where the
+     * next room is drawn; or once it has stayed the same for a second (a change without a fade),
+     * or after a state is loaded (the frame jumps). */
+    static int shown_area = -1, shown_room, last_area = -1, last_room, same, last_frame;
+    int area = ram[0x9668], room = ram[0x9669], dark = !(vdp_reg[1] & 0x40);
+    if (area != last_area || room != last_room) { last_area = area; last_room = room; same = 0; }
+    else same++;
+    if (!dark) {
+        dark = 1;
+        for (int k = 0; k < 64; k++) if (cram[k]) { dark = 0; break; }
+    }
+    if (shown_area < 0 || dark || same >= 60 || frame != last_frame + 1) { shown_area = area; shown_room = room; }
+    last_frame = frame;
+    vdp_pad_fill = widescreen && wide_room(shown_area, shown_room);
     int top = 0;
     for (int k = 0; k < 2 && vdp_pad_fill; k++) {
         const uint8_t *l = &ram[k ? 0x97D4 : 0x9754];

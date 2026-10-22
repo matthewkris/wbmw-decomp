@@ -81,6 +81,14 @@ the 256). Other bosses' rooms qualify by their layers and are wide; the ones tri
 Gragg and Glagg, area 6's) look right, but a boss whose moves depend on the screen's edges would
 need a look.
 
+The host takes the room number for this only when the screen is dark (the palette all black, or
+the display off), which is when the game draws the next room: it sets the next room's number as
+the player walks out, while the old room is still shown for the fade out. At first the number was
+taken at once, and walking out of Lilypad's castle tower (one screen) into the town widened the
+tower for the ten frames of its fade: sky at the sides, its walls cut at the 256's edges, which
+looked like the screen drawing in. A room number that stays the same for a second, or a state
+loaded, is taken without waiting.
+
 Tried, walking both ways: the first village, the forest path and the field (area 2), the beach
 (area 1), area 8's beach and its underwater room, area 9's green dungeon (scrolling both ways; it
 stops 72 pixels sooner at its ends, so its own black void shows at the edge, as in the original
