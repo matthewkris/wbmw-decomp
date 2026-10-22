@@ -161,12 +161,12 @@ static void wide_frame(void)
         int y = l[6] << 8 | l[7], first = (l[0xC] << 8 | l[0xD]) >> 2, t = 64 - (y - first);
         if (t > top) top = t;
     }
-    vdp_band_top = top < 0 ? 0 : top > 64 ? 64 : top;
+    vdp_band_top = !vdp_pad_fill ? 64 : top < 0 ? 0 : top > 64 ? 64 : top;   /* a room not wide: black (the wide HUD leaves its bottom row's lines to it) */
 }
 static void wide_apply(void)
 {
     port_wide_px = vdp_pad = widescreen ? WIDE_PX : 0;
-    port_wide_room = wide_room;
+    vdp_hud_wide = widescreen;                      /* the HUD's top row only, the gold beside the items (harness/vdp.c) */    port_wide_room = wide_room;
 }
 static struct { int frame; uint8_t buttons; } *script; static int script_n;
 
@@ -778,6 +778,7 @@ static void hits_frame(void)
     int pad = (frame_width - 256) / 2;
     int cam_x = ram[0x8B34] << 8 | ram[0x8B35], cam_y = ram[0x8B36] << 8 | ram[0x8B37];
     hit_window_lines = vdp_reg[18] & 0x80 ? 0 : (vdp_reg[18] & 0x1F) * 8;   /* a window from the top */
+    if (vdp_hud_wide && hit_window_lines == 64 && !(vdp_reg[12] & 1)) hit_window_lines = 32;   /* the wide HUD: its top row */
     hit_box = (SDL_Rect){0, 0, 0, 0};
     if (ram[0x8CA4] & 0x80) {
         int col = ram[0x8D92] << 8 | ram[0x8D93], row = ram[0x8D94] << 8 | ram[0x8D95];
