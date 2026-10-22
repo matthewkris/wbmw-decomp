@@ -28,7 +28,7 @@ ROM is, and are never committed.
 | `rooms/areaAA_roomRR.png` | every room's map, drawn with its own graphics and palettes | |
 | `rooms/maps.json` | every layer's map as data: its block table (4 tile words and an attribute a block) and its chunks (16 x 12 block numbers a place on the map) | the layers' data ($9F6A, $A068) |
 | `rooms/shared_blocks.json` | the three block tables every room shares | the directory's table 1 |
-| `rooms/lists.json` | the other lists room scripts point at: 199 event lists (exits, doors, things, jumps on flags), 139 spawn lists (the enemies), 71 graphics slot lists, 33 tile animations; and the 60 pictures and 9 item lists they point at | room commands 2, 4, 5, 8, 11 |
+| `rooms/lists.json` | the other lists room scripts point at: 199 event lists (exits, doors, things, jumps on flags), 139 spawn lists (the enemies), 71 graphics slot lists, 33 tile animations; and the 60 pictures, 9 item lists and 12 townspeople's walk scripts they point at | room commands 2, 4, 5, 8, 11 |
 | `rooms/scenes.json` | the ending's six scenes: each one's layers, palette and graphics | the directory's table 7 ($96D6) |
 | `rooms/house_pictures.json` | the 29 houses' and shops' pictures: place and size, frame, triggers, things | the directory's table 2 ($B986) |
 | `graphics/extra_NNN.bin` | the 6 raw tiles after each of the 20 raw blocks, which `CopyRawTiles` copies with it (the shields) | |
@@ -71,7 +71,7 @@ terminator's value, a command's arguments). Everything must match:
 | Palettes | 160 | from the colour words |
 | Room scripts | 170 | from `rooms.json`'s items |
 | Animation scripts, sprite mappings | 774, 964 | from `animations.json` |
-| Data directory | 27 longs | from `layout.json` |
+| Data directory | 30 longs | from `layout.json` |
 | Graphics table | 768 longs | from `graphics/table.json` |
 | Message, window and phrase tables | | from the messages' windows and addresses, `windows.json`, the phrases' addresses |
 | Areas' room tables | 19 | from the rooms' addresses |
@@ -83,6 +83,7 @@ terminator's value, a command's arguments). Everything must match:
 | Scenes, houses' pictures | 6, 29 records | from their fields (the houses' records partly as they are: not every field is named) |
 | Extra raw tiles | 20 x 192 bytes | as they are |
 | Text fragments, start points, room music | 3, 138, 19 areas | from their fields |
+| Walk scripts | 12 | from `lists.json`: byte for byte |
 | Tables in the code region | 215 | from their values: byte for byte |
 
 The port's decoders were verified against the original's code in the harness, and the Python
@@ -94,15 +95,15 @@ At the end `rebuild.py` counts which of the ROM's bytes the checks cover:
 
 | ROM | Bytes |
 |---|---|
-| built back byte for byte | 118,659 |
-| checked by content (graphics, the rooms' maps) | 440,535 |
+| built back byte for byte | 118,861 |
+| checked by content (graphics, the rooms' maps) | 440,984 |
 | padding ($FF) | 140,320 |
 | the 68000 code and the tables in it that the game does not read ($0-$1C601) | 99,532 |
-| data not covered yet | 3,380 |
+| data not covered yet | 2,729 |
 
 So over 99% of the data outside the code region is shown to come back from the files. What is
-not: hundreds of small pieces (the largest 283 bytes), the paths and waves some spawn points point
-at, and chunks the maps' tables list that no place uses.
+not: hundreds of small pieces (the largest 283 bytes), the waves one spawn point points at, and
+chunks the maps' tables list that no place uses. None of it is read in the runs below.
 
 ### What the game reads
 
@@ -118,9 +119,21 @@ the 107 save states:
 | | Bytes |
 |---|---|
 | ROM bytes read | 166,169 |
-| read and held by the files | 166,073 |
-| read, not held, data region | 96 (the paths some spawn points point at, a few bytes elsewhere) |
-| read, not held, code region (tables) | 0 |
+| read and held by the files | 166,169: all of them |
+
+Getting there took, besides the tables in the code region below:
+
+* The data directory has 30 entries, not 27: the last three point at the three block tables every
+  room shares.
+* The townspeople's walk scripts (`rooms/lists.json`, `walk_scripts`): a spawn point of kind 5
+  points at one for handler 11 ($16598): wait, walk a distance, walk home, speak, and a jump back.
+* Animations that go on after a stop: a stop (`$FD`, or a frame of duration 0) keeps its place,
+  and when the animation's timer is set again it carries on from the next byte (`UpdateAnim`,
+  $80E). `animations.json` keeps each such continuation as its own script (`00.00.1E+`, with
+  `continues`) where it fills the bytes up to the next script exactly: 12 of them.
+* The rooms' compressed maps are counted by the bytes the port's unpackers read (`wbmw
+  --unpack-list` writes them to `OUT.reads`) instead of by estimating where each one ends: the
+  unpackers read a few bytes past where the estimate stopped.
 
 ### The tables in the code region
 
@@ -169,6 +182,4 @@ pictures and `$C0`-`$C5`, `$D0` icons, left as `{xNN}` (one phrase is made of th
 
 * The bosses' own palettes, for their sheets.
 * Decode the music and sound effects (the Z80 driver's data): the format is not known yet.
-* The last 96 bytes the game reads that no file holds: the paths some spawn points point at, and
-  a few bytes at the ends of compressed data, likely the decoders reading ahead.
-* Then the game reads its data from the files.
+* The game reads its data from the files: everything it reads is in them now.
