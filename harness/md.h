@@ -49,8 +49,9 @@ extern int frame_width;
  * game fills them (the room allows it), else they are black; vdp_band_top: in a filled picture,
  * the first of the HUD's lines whose sides show the scene (the map is drawn there), the lines
  * above it black at the sides (64, the default: the whole band); vdp_hud_wide: the HUD laid out
- * for the wide picture (its top row only, the gold beside the items; vdp.c) */
-extern int vdp_pad, vdp_pad_fill, vdp_band_top, vdp_hud_wide;
+ * for the wide picture (its top row only, the gold beside the items; vdp.c); vdp_hide_msg: with it,
+ * the window's rows under the HUD not drawn (the host shows the gold found its own way) */
+extern int vdp_pad, vdp_pad_fill, vdp_band_top, vdp_hud_wide, vdp_hide_msg;
 void vdp_reset(void);
 void vdp_write_ctrl(uint16_t w);
 void vdp_write_data(uint16_t w);

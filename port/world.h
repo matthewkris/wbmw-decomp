@@ -36,6 +36,10 @@ int world_despawn_offscreen(Cpu *c);
 extern int port_wide_px;
 extern int (*port_wide_room)(int area, int room);
 int port_wide_now(void);            /* rooms.c: port_wide_px where the room allows it, else 0 */
+/* message.c: the "Found ..." box under the HUD, for the host (only noted: the game is unchanged):
+ * port_found_gold the gold found ($1FCA, its amount), port_found_thing a thing found ($1FD0); the
+ * host clears them */
+extern int port_found_gold, port_found_thing;
 
 /* Leave a rewritten routine the way the original does when it jumps away instead of returning
  * (into code not rewritten yet, e.g. one that resets the stack and yields): the caller carries on

@@ -13,7 +13,7 @@ uint16_t cram[64], vsram[40];
 int vdp_line, vdp_line_cycle;
 uint32_t frame_rgb[240][FRAME_STRIDE];
 int frame_width = 320;
-int vdp_pad, vdp_pad_fill, vdp_band_top = 64, vdp_hud_wide;
+int vdp_pad, vdp_pad_fill, vdp_band_top = 64, vdp_hud_wide, vdp_hide_msg;
 
 static int pending, code;
 static unsigned addr;
@@ -258,11 +258,24 @@ static int hud_covered(void)                    /* the bottom row drawn over (th
 }
 static void draw_window(uint8_t *out, int line, int width, int lo, int hi, int pad, int *from, int *to)
 {
+    if (hud_wide(width, pad) && vdp_hide_msg && line >= HUD_LINES) { *from = *to = 0; return; }   /* the message hidden */
     if (hud_wide(width, pad) && line < HUD_LINES) {
         *from = *to = 0;
         if (line == 0 && (vdp_reg[18] & 0x1F) == 8) hud_keep();
         if (line >= HUD_TOP) {
-            if (!hud_covered()) return;
+            int rows = vdp_reg[18] & 0x1F;
+            if (!hud_covered()) {
+                /* a message under the HUD ("Found a Potion.") hung from the bottom row, its edge
+                 * its top: it gets its own bottom row turned over, on the line above it */
+                if (line < HUD_LINES - 8 || rows <= 8 || vdp_hide_msg) return;
+                for (int x = 0; x < width; x++) {
+                    uint8_t row[8];
+                    tile_pixel_row((uint16_t)(win_cell(rows - 1, x >> 3) ^ 0x1000), line & 7, row);
+                    out[x + pad] = row[x & 7];
+                }
+                *from = pad; *to = pad + width;
+                return;
+            }
             for (int x = 0; x < width; x++) {       /* the screen drawn over the bottom row, as it is */
                 uint8_t row[8];
                 tile_pixel_row(win_cell(line >> 3, x >> 3), line & 7, row);
