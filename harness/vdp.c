@@ -358,32 +358,42 @@ static void draw_sprites(uint8_t *out, int line, int lo, int hi, int pad, int wi
      * widescreen (port/sprites.c keeps its top limit; it would leave out what is behind the
      * HUD), and Wonder Boy jumping up beside the HUD lost his head and body. Only where the map
      * is drawn beside the HUD (from vdp_band_top): in the black above it they stay hidden, as
-     * behind the HUD (the spears of area 7 rising back into the ceiling showed there). */
-    int side_ok = line < HUD_LINES && (lo < pad || hi > pad + width), mask_at = -1;
+     * behind the HUD (the spears of area 7 rising back into the ceiling showed there). Below the
+     * HUD a mask hides only within the game's width too (the status screen's masks, beside it,
+     * cut an enemy in the side in two). And with the status screen drawn 8 lines lower (menu_line),
+     * the sprites up to its mask (its cursor, the mask) are too. */
+    int sides_any = lo < pad || hi > pad + width;
+    int side_ok = line < HUD_LINES && sides_any, mask_at = -1, mask_n = -1;
     int sides_shown = line >= vdp_band_top;         /* the map beside the HUD on this line, not the black */
     int hw = hud_wide(width, pad), hx0 = hud_x0(pad);   /* the wide HUD: it covers only its row's boxes */
-    if (side_ok) {
+    int menu = hw && hud_covered();
+    if (sides_any || menu) {
         int l = 0, nz = 0;
         for (int n = 0; n < max; n++) {
             const uint8_t *s = &vram[(sat + l * 8) & 0xFFFF];
             int rx = (s[6] << 8 | s[7]) & 0x1FF;
-            if (rx == 0 && nz) { mask_at = n; break; }
+            if (rx == 0 && nz) { mask_n = n; break; }
             if (rx) nz = 1;
             l = s[3] & 0x7F;
             if (!l) break;
         }
     }
+    if (side_ok) mask_at = mask_n;
     memset(out, 0, FRAME_STRIDE);
     for (int n = 0; n < max; n++) {
         if (mask_at >= 0 && n >= mask_at) masked = 1;
         const uint8_t *s = &vram[(sat + link * 8) & 0xFFFF];
         int y = ((s[0] << 8 | s[1]) & 0x3FF) - 128;
+        if (menu && n <= mask_n) y += 8;            /* the status screen's own, with it */
         int hs = ((s[2] >> 2) & 3) + 1, vs = (s[2] & 3) + 1;
         uint16_t attr = s[4] << 8 | s[5];
         int rawx = (s[6] << 8 | s[7]) & 0x1FF, x = rawx - 128 + pad;
         if (line >= y && line < y + vs * 8) {
             if (seen++ == per_line && !masked) break;
-            if (rawx == 0 && nonzero && !side_ok) break;   /* masking */
+            if (rawx == 0 && nonzero && !side_ok) {     /* masking */
+                if (!sides_any) break;
+                masked = 1;                             /* (wide: hidden within the game's width only) */
+            }
             if (rawx) nonzero = 1;
             int draw = masked || hs * 8 < pixels ? hs * 8 : pixels;    /* the pixel budget can run out inside a sprite */
             if (!masked) pixels -= draw;
@@ -397,7 +407,7 @@ static void draw_sprites(uint8_t *out, int line, int lo, int hi, int pad, int wi
                 tile_pixel_row((uint16_t)(name & ~0x1000), row & 7, px);   /* row already flipped */
                 for (int i = 0; i < 8 && c * 8 + i < draw; i++) {
                     int sx = x + c * 8 + i;
-                    int covered = hw ? line < HUD_TOP && sx >= hx0 && sx < hx0 + HUD_W : sx >= pad && sx < pad + width;
+                    int covered = hw && line < HUD_LINES ? line < HUD_TOP && sx >= hx0 && sx < hx0 + HUD_W : sx >= pad && sx < pad + width;
                     if (masked && (!sides_shown || covered)) continue;
                     if (sx >= lo && sx < hi && px[i] && !out[sx]) out[sx] = px[i];
                 }
