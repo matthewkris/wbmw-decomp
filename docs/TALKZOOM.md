@@ -12,9 +12,12 @@ window): the game's code and RAM are untouched, so the harness's comparisons are
 * **With an ordinary character.** The speaker is the character under the box's pointer (two
   tiles in plane A's row above the box, drawn from the message's data over the one speaking; only
   tiles that differ from the map kept from before the box count, as the scenery has tiles in that
-  row too: the top of Purapril's temple, at first taken for a 96-pixel pointer aimed at no one),
-  or, for a box without a pointer, the person nearest Wonder Boy (within 64 pixels, at least 24
-  tall by its size, so not Priscilla). No zoom when there is none (the Sphinx is drawn in the
+  row too: the top of area 4's temple, at first taken for a 96-pixel pointer aimed at no one),
+  or, for a box without a pointer, the one Wonder Boy could have talked to (within its reach,
+  `-$3500`, and level with him, as `$164B8` has it) whatever its size, else the person nearest
+  him (within 64 pixels, at least 24 tall by its size, so not Priscilla). The reach came second:
+  a child of 22 lines in area 6, standing where Wonder Boy stands, was at first too small to
+  count. No zoom when there is none (the Sphinx is drawn in the
   background), or when the speaker is taller than 48 pixels (a boss: they fill the screen as it
   is). A character's size is its `-$34FD` (half its height).
 * Not in H40 screens, and not for a conversation already open when a state is loaded (see below).
