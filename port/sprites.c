@@ -168,9 +168,12 @@ next:
                     wr8(0xFF8B31, (uint8_t)sub_b(&cc, 2, rd8(0xFF8B31)));
                     cc = tst_b(cc, rd8(0xFF8A77));
                     if (rd8(0xFF8A77) & 0x80) { wr16(0xFF8B2A, (uint16_t)c->d[2]); cc = tst_w(cc, c->d[2]); }
-                    else {
+                    else {                                  /* the top: below the mask (the HUD) */
                         c->d[2] = set_w(c->d[2], add_w(&cc, 0x20, c->d[2]));
-                        wr16(0xFF8B28, (uint16_t)c->d[2]); cc = tst_w(cc, c->d[2]);
+                        /* widescreen: not raised, as the HUD covers only the game's width; what is
+                         * above it shows at the sides (the renderer hides it within the width) */
+                        if (!port_wide_now()) wr16(0xFF8B28, (uint16_t)c->d[2]);
+                        cc = tst_w(cc, c->d[2]);
                     }
                 }
             }
