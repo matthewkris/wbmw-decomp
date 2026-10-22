@@ -827,46 +827,6 @@ static void hit_limits(int pad)
     }
 }
 
-/* Widescreen: the HUD's one row has no room for the box that showed the last enemy hit's health,
- * so for a boss (an enemy taller than ZOOM_TALLEST, as talk zoom tells them) a slim bar under the
- * row shows it, as that box did: blue for two seconds after a hit, then grey, until the boss
- * that was hit last is gone */
-static int boss_slot = -1, boss_hit_until, boss_hp_seen[HIT_SLOTS], boss_fade;
-static void boss_frame(void)
-{
-    if (!vdp_hud_wide || (vdp_reg[12] & 1) || !(vdp_reg[1] & 0x40)) { boss_slot = -1; boss_fade = 0; return; }
-    uint32_t player = 0xFFFF0000u + (ram[0x9EEE] << 8 | ram[0x9EEF]);
-    for (int k = 0; k < HIT_SLOTS; k++) {
-        uint32_t o = 0xFFFF0000u + 4 * (uint32_t)k;
-        int hp = rd16(o - 0x2600), max = kind_max(rd8(o - 0x2BFD));
-        int boss = (rd8(o - 0x4000) & 0x80) && o != player && !rd8(o - 0x2BFE) && max && hp <= max
-                && 2 * rd8(o - 0x34FD) > ZOOM_TALLEST;
-        if (!boss) { boss_hp_seen[k] = -1; continue; }
-        if (boss_hp_seen[k] > hp) { boss_slot = k; boss_hit_until = frame + 120; }   /* hit */
-        boss_hp_seen[k] = hp;
-    }
-    int hp = 0, max = 0;
-    if (boss_slot >= 0) {
-        uint32_t o = 0xFFFF0000u + 4 * (uint32_t)boss_slot;
-        hp = rd16(o - 0x2600); max = kind_max(rd8(o - 0x2BFD));
-        if (boss_hp_seen[boss_slot] < 0 || hp <= 0 || !max) boss_slot = -1;   /* gone */
-    }
-    if (boss_slot >= 0) { if (boss_fade < 256) boss_fade += 32; }
-    else if (boss_fade > 0) boss_fade -= 16;
-    if (boss_fade <= 0 || (!(vdp_reg[18] & 0x80) && (vdp_reg[18] & 0x1F) > 8)) return;   /* (not over a message or the status screen) */
-    static int last_hp, last_max, blue;
-    if (boss_slot >= 0) { last_hp = hp; last_max = max; blue = boss_hit_until > frame; }
-    int a = boss_fade > 256 ? 256 : boss_fade, w = 160, x0 = frame_width / 2 - w / 2, y0 = 36;
-    int fill = last_max ? (last_hp * w + last_max - 1) / last_max : 0;
-    uint32_t col = blue ? 0x2090F0 : 0x808080;
-    int keep = hit_window_lines; hit_window_lines = 0;
-    for (int y = -1; y <= 4; y++) for (int x = -1; x <= w; x++) {
-        int edge = y < 0 || y > 3 || x < 0 || x >= w;
-        blend_px(x0 + x, y0 + y, edge ? 0xFFFFFF : x < fill ? col : 0x000000, a);
-    }
-    hit_window_lines = keep;
-}
-
 /* Widescreen: gold found is shown as its amount rising in gold from Wonder Boy, like the damage
  * numbers, instead of the "Found 5 GOLD." box under the HUD (hidden: wide_frame, vdp_hide_msg) */
 #define GOLD_POPS 8
@@ -1309,7 +1269,6 @@ static void frame_done(void)
 #ifndef WBMW_HEADLESS_ONLY
     hits_frame();                                   /* Enemy health, drawn over the picture */
     gold_frame();                                   /* widescreen: the gold found */
-    boss_frame();                                   /* widescreen: the boss's health, under the HUD */
 #endif
     if (headless) {
         if (png_every && frame % png_every == 0) {

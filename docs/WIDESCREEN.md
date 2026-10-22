@@ -92,10 +92,7 @@ With widescreen on, the HUD is laid out for the wide picture in every room, wide
 (`vdp_hud_wide`, `harness/vdp.c`): its top row only (32 lines), with the gold's box (the bottom
 row's right) moved beside the items', the three centred (hearts, items, gold: 352 pixels). The
 bottom row's left, the last enemy's health, is left out: the host shows each enemy's health as it
-is hit (`docs/ENEMYHEALTH.md`). For a boss (an enemy taller than 48 lines, as talk zoom tells them:
-Gragg and Glagg are 64, with 512 health each) a slim bar under the row stands in for that box
-(`boss_frame`): the last boss hit, blue for two seconds after a hit and grey after, until that boss
-is gone; not over a message or the status screen. The bottom row's lines (32-63) are the play field's where the map
+is hit (`docs/ENEMYHEALTH.md`). The bottom row's lines (32-63) are the play field's where the map
 is drawn there, black elsewhere, as beside the HUD. In a room that scrolls down too, `layer_y`
 keeps the camera it reads 32 lines below the map's top (`WIDE_ABOVE`, as `layer_x` does at the
 ends), so those lines always show the map: at first the camera scrolled into them near a room's
