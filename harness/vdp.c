@@ -252,33 +252,48 @@ static void hud_keep(void)                      /* each frame the window is 8 ro
 }
 static int hud_covered(void)                    /* the bottom row drawn over (the status screen) */
 {
-    if (!hud_kept || (vdp_reg[18] & 0x1F) <= 8) return 0;
+    int rows = vdp_reg[18] & 0x1F;
+    if (rows <= 8) return 0;
+    if (!hud_kept) return rows >= 12;           /* no copy yet (a state loaded with it open): by its size */
     for (int c = 0; c < 32; c++) if (win_cell(4, c) != hud_edge[c]) return 1;
     return 0;
+}
+/* The status screen hung from the HUD's bottom row, which was its top. It is drawn 8 lines lower,
+ * with its own bottom row (the screen's last, 15, drawn before it slides open) turned over above
+ * it: from line 32, the line under the HUD's row. */
+#define MENU_LAST 15
+static int menu_line(uint8_t *out, int line, int width, int pad, int *from, int *to)
+{
+    int rows = vdp_reg[18] & 0x1F;
+    if (line >= rows * 8 + 8) return 0;         /* below it: the play field */
+    int sl = line - 8, flip = line < HUD_TOP + 8;
+    for (int x = 0; x < width; x++) {
+        uint8_t row[8];
+        uint16_t name = flip ? (uint16_t)(win_cell(MENU_LAST, x >> 3) ^ 0x1000) : win_cell(sl >> 3, x >> 3);
+        tile_pixel_row(name, flip ? line & 7 : sl & 7, row);
+        out[x + pad] = row[x & 7];
+    }
+    *from = pad; *to = pad + width;
+    return 1;
 }
 static void draw_window(uint8_t *out, int line, int width, int lo, int hi, int pad, int *from, int *to)
 {
     if (hud_wide(width, pad) && vdp_hide_msg && line >= HUD_LINES) { *from = *to = 0; return; }   /* the message hidden */
+    if (hud_wide(width, pad) && line >= HUD_TOP && hud_covered()) {   /* the status screen, a row lower */
+        if (!menu_line(out, line, width, pad, from, to)) *from = *to = 0;
+        return;
+    }
     if (hud_wide(width, pad) && line < HUD_LINES) {
         *from = *to = 0;
         if (line == 0 && (vdp_reg[18] & 0x1F) == 8) hud_keep();
-        if (line >= HUD_TOP) {
+        if (line >= HUD_TOP) {                      /* (the status screen: menu_line, above) */
+            /* a message under the HUD ("Found a Potion.") hung from the bottom row, its edge its
+             * top: it gets its own bottom row turned over, on the line above it */
             int rows = vdp_reg[18] & 0x1F;
-            if (!hud_covered()) {
-                /* a message under the HUD ("Found a Potion.") hung from the bottom row, its edge
-                 * its top: it gets its own bottom row turned over, on the line above it */
-                if (line < HUD_LINES - 8 || rows <= 8 || vdp_hide_msg) return;
-                for (int x = 0; x < width; x++) {
-                    uint8_t row[8];
-                    tile_pixel_row((uint16_t)(win_cell(rows - 1, x >> 3) ^ 0x1000), line & 7, row);
-                    out[x + pad] = row[x & 7];
-                }
-                *from = pad; *to = pad + width;
-                return;
-            }
-            for (int x = 0; x < width; x++) {       /* the screen drawn over the bottom row, as it is */
+            if (line < HUD_LINES - 8 || rows <= 8 || vdp_hide_msg) return;
+            for (int x = 0; x < width; x++) {
                 uint8_t row[8];
-                tile_pixel_row(win_cell(line >> 3, x >> 3), line & 7, row);
+                tile_pixel_row((uint16_t)(win_cell(rows - 1, x >> 3) ^ 0x1000), line & 7, row);
                 out[x + pad] = row[x & 7];
             }
             *from = pad; *to = pad + width;
@@ -293,7 +308,8 @@ static void draw_window(uint8_t *out, int line, int width, int lo, int hi, int p
             int sx = X < 256 ? X : X - 96, r = line >> 3, col = sx >> 3;
             int inside = X >= 256 && (r == 1 || r == 2) && col >= 22 && col <= 29;
             uint16_t name = !inside ? win_cell(r, col)
-                          : hud_kept ? hud_gold[r][col - 20] : win_cell(4 + r, col);
+                          : hud_kept ? hud_gold[r][col - 20]
+                          : hud_covered() ? win_cell(r, 21) : win_cell(4 + r, col);   /* no copy, covered: left empty */
             uint8_t row[8];
             tile_pixel_row(name, line & 7, row);
             out[x0 + X] = row[sx & 7];

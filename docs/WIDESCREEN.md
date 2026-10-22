@@ -99,8 +99,11 @@ only places it. Only while the window is the HUD (from the top, the full width, 
 The status screen (Start) grows the window down over the HUD's bottom row, and draws there a frame
 before it starts to grow. So the gold's box is drawn from a copy of its tiles, kept each frame
 while the window is 8 rows and the bottom row's top edge is the HUD's (a changed edge is taken
-only after half a second); and while that edge differs and the window is taller, the bottom row's
-lines show the window as it is, in the game's width, so the status screen is whole. A message
+only after half a second); and while that edge differs and the window is taller, the status
+screen is shown whole, in the game's width. It hung from the HUD's bottom row too, its edge its
+top: it is drawn 8 lines lower, with its own bottom row (its last, drawn before it slides open)
+turned over above it. With a state loaded while it is open (no copy yet) it is told by its size
+(12 rows or more), and the gold's box is left empty until it closes. A message
 under the HUD ("Found 5 GOLD.") leaves the edge alone.
 
 The gold's box is drawn in the items' box's frame (its own had no top: the items' box's bottom was
