@@ -40,6 +40,8 @@ never committed):
                         sprites/enemies/enemies.json says which room it is drawn with
   sprites/rooms/areaAA_roomRR.png  every room with its enemies at their spawn points
   sound/z80_driver.bin  the Z80 sound driver; sound/z80_data.bin what follows it (not decoded yet)
+  tables/code_tables.json  the tables in the code region the game reads as data (tools/codetables.py):
+                        each one's name, place, size, who reads it, and its values
 
 This first step only writes the data out so that it can be looked at and its decoding checked;
 the game still reads the ROM. The decoders are tools/gfx.py, tools/rooms.py, tools/text.py and
@@ -47,7 +49,7 @@ tools/sprites.py.
 """
 import sys, os, json, hashlib, argparse
 sys.path.insert(0, os.path.dirname(__file__))
-import gfx, rooms, text, sprites, assetfmt
+import gfx, rooms, text, sprites, assetfmt, codetables
 
 EXPECTED_SHA1 = '87a968f773c7e807e647c0737132457b06b78276'
 Z80_DRIVER = (0x098000, 0x099A77)            # docs/NOTES.md, the memory map
@@ -320,6 +322,10 @@ def main():
     open(path('sound', 'z80_driver.bin'), 'wb').write(d[Z80_DRIVER[0]:Z80_DRIVER[1]])
     open(path('sound', 'z80_data.bin'), 'wb').write(d[Z80_DATA[0]:Z80_DATA[1]])
     checks['sound'] = dict(driver_bytes=Z80_DRIVER[1] - Z80_DRIVER[0], data_bytes=Z80_DATA[1] - Z80_DATA[0], decoded=False)
+
+    # the tables in the code region the game reads as data
+    json.dump(codetables.extract(d), open(path('tables', 'code_tables.json'), 'w'), indent=1)
+    checks['code tables'] = dict(tables=len(codetables.TABLES), bytes=sum(t[1] for t in codetables.TABLES))
 
     # the tables that point at the data
     l1 = [sprites.sw(d, sprites.ANIM + o) for o in range(0, sprites.sw(d, sprites.ANIM), 2)]

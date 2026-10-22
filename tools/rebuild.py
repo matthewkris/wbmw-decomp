@@ -18,7 +18,7 @@ native build no 68000 code runs, so a read in the code region ($0-$1C601) is a t
 """
 import sys, os, json, struct, argparse, subprocess, tempfile
 sys.path.insert(0, os.path.dirname(__file__))
-import assetfmt, gfx, sprites
+import assetfmt, gfx, sprites, codetables
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('rom'); ap.add_argument('assets', nargs='?', default='assets')
@@ -116,6 +116,9 @@ def main():
     check('animation tree', [(sprites.ANIM, words(L['anim_level1']))]
           + [(sprites.ANIM + int(k), words(v)) for k, v in L['anim_level2'].items()]
           + [(sprites.ANIM + int(k), words(v)) for k, v in L['anim_level3'].items()])
+
+    # the tables in the code region the game reads as data, from their rows
+    check('code tables', [(int(t['address'], 16), codetables.encode(t['rows'], t['element'])) for t in J('tables', 'code_tables.json')])
 
     # the compressed data, by content, against the port's decoders in the native build
     exe = os.path.join(os.path.dirname(__file__), '..', 'work', 'native', 'wbmw.exe' if os.name == 'nt' else 'wbmw')
