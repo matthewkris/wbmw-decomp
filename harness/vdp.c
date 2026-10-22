@@ -249,20 +249,39 @@ static void draw_sprites(uint8_t *out, int line, int lo, int hi, int pad, int wi
     int h40 = vdp_reg[12] & 1;
     unsigned sat = (vdp_reg[5] & (h40 ? 0x7E : 0x7F)) << 9;
     int max = h40 ? 80 : 64, link = 0;
-    int per_line = (h40 ? 20 : 16) * (hi - lo) / width, pixels = hi - lo, seen = 0, nonzero = 0;
+    int per_line = (h40 ? 20 : 16) * (hi - lo) / width, pixels = hi - lo, seen = 0, nonzero = 0, masked = 0;
+    /* Widescreen: masking hides sprites behind the HUD, which in a wide picture covers only the
+     * game's width. On the HUD's lines every sprite after the mask (the first sprite at x = 0
+     * after one that is not, wherever it is on the screen) is drawn at the sides only, without
+     * the limits, on the mask's own lines and above them: the game builds them there too in
+     * widescreen (port/sprites.c keeps its top limit; it would leave out what is behind the
+     * HUD), and Wonder Boy jumping up beside the HUD lost his head and body. */
+    int side_ok = line < HUD_LINES && (lo < pad || hi > pad + width), mask_at = -1;
+    if (side_ok) {
+        int l = 0, nz = 0;
+        for (int n = 0; n < max; n++) {
+            const uint8_t *s = &vram[(sat + l * 8) & 0xFFFF];
+            int rx = (s[6] << 8 | s[7]) & 0x1FF;
+            if (rx == 0 && nz) { mask_at = n; break; }
+            if (rx) nz = 1;
+            l = s[3] & 0x7F;
+            if (!l) break;
+        }
+    }
     memset(out, 0, FRAME_STRIDE);
     for (int n = 0; n < max; n++) {
+        if (mask_at >= 0 && n >= mask_at) masked = 1;
         const uint8_t *s = &vram[(sat + link * 8) & 0xFFFF];
         int y = ((s[0] << 8 | s[1]) & 0x3FF) - 128;
         int hs = ((s[2] >> 2) & 3) + 1, vs = (s[2] & 3) + 1;
         uint16_t attr = s[4] << 8 | s[5];
         int rawx = (s[6] << 8 | s[7]) & 0x1FF, x = rawx - 128 + pad;
         if (line >= y && line < y + vs * 8) {
-            if (seen++ == per_line) break;
-            if (rawx == 0 && nonzero) break;              /* masking */
+            if (seen++ == per_line && !masked) break;
+            if (rawx == 0 && nonzero && !side_ok) break;   /* masking */
             if (rawx) nonzero = 1;
-            int draw = hs * 8 < pixels ? hs * 8 : pixels;    /* the pixel budget can run out inside a sprite */
-            pixels -= draw;
+            int draw = masked || hs * 8 < pixels ? hs * 8 : pixels;    /* the pixel budget can run out inside a sprite */
+            if (!masked) pixels -= draw;
             int ty = line - y;
             int vf = attr & 0x1000, hf = attr & 0x800;
             int row = vf ? vs * 8 - 1 - ty : ty;
@@ -273,10 +292,11 @@ static void draw_sprites(uint8_t *out, int line, int lo, int hi, int pad, int wi
                 tile_pixel_row((uint16_t)(name & ~0x1000), row & 7, px);   /* row already flipped */
                 for (int i = 0; i < 8 && c * 8 + i < draw; i++) {
                     int sx = x + c * 8 + i;
+                    if (masked && sx >= pad && sx < pad + width) continue;
                     if (sx >= lo && sx < hi && px[i] && !out[sx]) out[sx] = px[i];
                 }
             }
-            if (!pixels) break;
+            if (!pixels && !masked) break;
         }
         link = s[3] & 0x7F;
         if (!link) break;
@@ -289,7 +309,7 @@ void vdp_render_line(int line)
     int pad = vdp_pad ? (256 + 2 * vdp_pad - width) / 2 : 0;
     int fill = vdp_pad_fill && width == 256;
     int lo = fill ? 0 : pad, hi = fill ? width + 2 * pad : pad + width;   /* the picture x drawn */
-    int bar = fill && line < HUD_LINES && line < vdp_band_top;   /* the band's sides black: no map above it */
+    int bar = fill && line < HUD_LINES && line < vdp_band_top;   /* the band's sides black (no map above it), the sprites still drawn */
     int total = width + 2 * pad;
     frame_width = total;
     uint32_t bg = rgb(cram[vdp_reg[7] & 0x3F]);
@@ -305,7 +325,10 @@ void vdp_render_line(int line)
     draw_sprites(lay_s, line, lo, hi, pad, width);
     for (int x = 0; x < total; x++) {
         if (x < lo || x >= hi) { frame_rgb[line][x] = 0; continue; }   /* the sides of a picture not wide */
-        if (bar && (x < pad || x >= pad + width)) { frame_rgb[line][x] = 0; continue; }
+        if (bar && (x < pad || x >= pad + width)) {   /* the bar: no scenery, but the sprites over it */
+            frame_rgb[line][x] = lay_s[x] ? rgb(cram[lay_s[x] & 0x3F]) : 0;
+            continue;
+        }
         uint8_t a = lay_a[x], b = lay_b[x], s = lay_s[x], c = 0;
         /* priority order, front to back: S hi, A hi, B hi, S lo, A lo, B lo */
         if (s & 0x40) c = s; else if (a & 0x40) c = a; else if (b & 0x40) c = b;
