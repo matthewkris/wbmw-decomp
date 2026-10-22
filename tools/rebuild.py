@@ -20,6 +20,89 @@ import sys, os, json, struct, argparse, subprocess, tempfile
 sys.path.insert(0, os.path.dirname(__file__))
 import assetfmt, gfx, sprites, codetables
 
+def build_pieces(J, assets):
+    """every piece of the ROM the files hold, built from them: [(name, [(address, bytes)])].
+    rebuild.py compares them with the ROM; pack.py places them in the game's data image"""
+    out = []
+    add = lambda name, pieces: out.append((name, list(pieces)))
+    msgs = J('text', 'messages.json')
+    add('messages', [(int(m['address'], 16), assetfmt.text_encode(m['parsed'])) for m in msgs])
+    ph = J('text', 'phrases.json')
+    add('phrases', [(int(p['address'], 16), assetfmt.text_encode(p['parsed'])) for p in ph])
+    add('text fragments', [(int(f['address'], 16), assetfmt.text_encode(f['parsed'])) for f in J('text', 'fragments.json')])
+    pals = J('palettes', 'palettes.json')
+    add('palettes', [(gfx.PALETTES + 17 * p['number'], assetfmt.palette_encode([int(w, 16) for w in p['words']])) for p in pals])
+    rms = J('rooms', 'rooms.json')
+    add('room scripts', [(int(r['address'], 16), assetfmt.room_script_encode(r['items'])) for r in rms])
+    an = J('sprites', 'animations.json')
+    add('animation scripts', [(int(v['address'], 16), assetfmt.anim_encode(v['items'])) for v in an['animations'].values()])
+    add('sprite mappings', [(int(v['address'], 16), assetfmt.mapping_encode(v)) for v in an['mappings'].values()])
+    for f, a in (('z80_driver.bin', 0x098000), ('z80_data.bin', 0x099A77)):
+        add('sound ' + f, [(a, open(os.path.join(assets, 'sound', f), 'rb').read())])
+
+    # the lists the room scripts point at, and what those point at
+    LS = J('rooms', 'lists.json')
+    w16s = lambda ws: b''.join(struct.pack('>H', v) for v in ws)
+    enc = dict(events=lambda v: assetfmt.flow_encode(v['items'], assetfmt.event_fmt),
+               spawns=lambda v: assetfmt.flow_encode(v['items'], assetfmt.spawn_fmt),
+               slots=lambda v: assetfmt.slots_encode(v['items']), tile_anims=lambda v: w16s(v['words']),
+               cell_anims=lambda v: bytes(v['bytes']), cell_lists=lambda v: w16s(v['words']),
+               pictures=assetfmt.picture_encode, item_lists=lambda v: bytes(v['bytes']),
+               walk_scripts=lambda v: assetfmt.walk_script_encode(v['items']))
+    for kind, f in enc.items():
+        add('room ' + kind.replace('_', ' '), [(int(a, 16), f(v)) for a, v in LS[kind].items()])
+
+    # the ending's scenes (from their fields) and the houses' pictures (their records as they are:
+    # some fields are not named yet); the extra raw tiles after the raw graphics blocks
+    sc = J('rooms', 'scenes.json')
+    add('scene records', [(int(x['address'], 16), struct.pack('>IIHHI', int(x['layer_a'], 16), int(x['layer_b'], 16),
+                                                                 x['palette'], x['word_8B56'], int(x['slots'], 16))) for x in sc])
+    hp = J('rooms', 'house_pictures.json')
+    add('house picture records', [(int(x['address'], 16), bytes.fromhex(x['raw'])) for x in hp['records']])
+    sp = J('rooms', 'start_points.json'); t0 = int(sp['table'], 16)
+    add('start points', [(t0 - 2, struct.pack('>H', sp['count_before']) + b''.join(struct.pack('>h', o) for o in sp['offsets']))]
+          + [(t0 + int(o), bytes([v['area'], v['room']]) + struct.pack('>H', v['kind']) + bytes([v['x'], v['y']]) + struct.pack('>H', v['word']))
+             for o, v in sp['points'].items()])
+    mu = J('rooms', 'music.json'); t3 = int(mu['table'], 16)
+    add('room music', [(t3, b''.join(struct.pack('>h', a['offset']) for a in mu['areas']))]
+          + [(t3 + a['offset'], bytes(a['music'])) for a in mu['areas']])
+    ex = []
+    for i, e in enumerate(J('graphics', 'table.json')):
+        e = int(e, 16)
+        if e != 0xFFFFFFFF and e >> 24 & 1:
+            ex.append(((e & 0xFFFFFF) + gfx.BLOCK, open(os.path.join(assets, 'graphics', 'extra_%03d.bin' % i), 'rb').read()))
+    add('extra raw tiles', ex)
+
+    # the tables that point at the data, from the files (the layout's own addresses: the data
+    # directory at $1CC00, the graphics table at $41000, the animation data at $A0000)
+    L = J('layout.json')
+    dirs = [int(v, 16) for v in L['directory']]
+    base = lambda i: dirs[i] & 0xFFFFFF
+    add('data directory', [(0x1CC00, b''.join(struct.pack('>I', v) for v in dirs))])
+    add('graphics table', [(gfx.TABLE, b''.join(struct.pack('>I', int(v, 16)) for v in J('graphics', 'table.json')))])
+    add('message table', [(base(5), b''.join(bytes([m['window']]) + struct.pack('>H', int(m['address'], 16) - base(5)) for m in msgs))])
+    W = J('text', 'windows.json')
+    add('window table', [(base(6) + 4 * int(w), bytes([v['col'], v['row'], v['width'], v['lines']])) for w, v in W.items()])
+    pt = [int(v, 16) for v in L['phrase_tables']]
+    pieces = [(base(4), b''.join(struct.pack('>I', v) for v in pt))]
+    for k in range(4):
+        offs = [int(p['address'], 16) - (pt[k] & 0xFFFFFF) for p in sorted((p for p in ph if p['table'] == k), key=lambda p: p['number'])]
+        pieces.append((pt[k] & 0xFFFFFF, b''.join(struct.pack('>h', o) for o in offs)))
+    add('phrase tables', pieces)
+    pieces = []
+    for area in range(19):
+        rs = sorted((r for r in rms if r['area'] == area), key=lambda r: r['room'])
+        pieces.append((base(8 + area), b''.join(struct.pack('>h', int(r['address'], 16) - base(8 + area)) for r in rs)))
+    add('area room tables', pieces)
+    words = lambda vs: b''.join(struct.pack('>h', v) for v in vs)
+    add('animation tree', [(sprites.ANIM, words(L['anim_level1']))]
+          + [(sprites.ANIM + int(k), words(v)) for k, v in L['anim_level2'].items()]
+          + [(sprites.ANIM + int(k), words(v)) for k, v in L['anim_level3'].items()])
+
+    # the tables in the code region the game reads as data, from their rows
+    add('code tables', [(int(t['address'], 16), codetables.encode(t['rows'], t['element'])) for t in J('tables', 'code_tables.json')])
+    return out
+
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('rom'); ap.add_argument('assets', nargs='?', default='assets')
     ap.add_argument('--reads', help="the native build's --rom-reads map")
@@ -44,82 +127,7 @@ def main():
         report[name] = dict(pieces=n, bytes=total, differing=bad)
         bad_total += bad
 
-    msgs = J('text', 'messages.json')
-    check('messages', [(int(m['address'], 16), assetfmt.text_encode(m['parsed'])) for m in msgs])
-    ph = J('text', 'phrases.json')
-    check('phrases', [(int(p['address'], 16), assetfmt.text_encode(p['parsed'])) for p in ph])
-    check('text fragments', [(int(f['address'], 16), assetfmt.text_encode(f['parsed'])) for f in J('text', 'fragments.json')])
-    pals = J('palettes', 'palettes.json')
-    check('palettes', [(gfx.PALETTES + 17 * p['number'], assetfmt.palette_encode([int(w, 16) for w in p['words']])) for p in pals])
-    rms = J('rooms', 'rooms.json')
-    check('room scripts', [(int(r['address'], 16), assetfmt.room_script_encode(r['items'])) for r in rms])
-    an = J('sprites', 'animations.json')
-    check('animation scripts', [(int(v['address'], 16), assetfmt.anim_encode(v['items'])) for v in an['animations'].values()])
-    check('sprite mappings', [(int(v['address'], 16), assetfmt.mapping_encode(v)) for v in an['mappings'].values()])
-    for f, a in (('z80_driver.bin', 0x098000), ('z80_data.bin', 0x099A77)):
-        check('sound ' + f, [(a, open(os.path.join(A.assets, 'sound', f), 'rb').read())])
-
-    # the lists the room scripts point at, and what those point at
-    LS = J('rooms', 'lists.json')
-    w16s = lambda ws: b''.join(struct.pack('>H', v) for v in ws)
-    enc = dict(events=lambda v: assetfmt.flow_encode(v['items'], assetfmt.event_fmt),
-               spawns=lambda v: assetfmt.flow_encode(v['items'], assetfmt.spawn_fmt),
-               slots=lambda v: assetfmt.slots_encode(v['items']), tile_anims=lambda v: w16s(v['words']),
-               cell_anims=lambda v: bytes(v['bytes']), cell_lists=lambda v: w16s(v['words']),
-               pictures=assetfmt.picture_encode, item_lists=lambda v: bytes(v['bytes']),
-               walk_scripts=lambda v: assetfmt.walk_script_encode(v['items']))
-    for kind, f in enc.items():
-        check('room ' + kind.replace('_', ' '), [(int(a, 16), f(v)) for a, v in LS[kind].items()])
-
-    # the ending's scenes (from their fields) and the houses' pictures (their records as they are:
-    # some fields are not named yet); the extra raw tiles after the raw graphics blocks
-    sc = J('rooms', 'scenes.json')
-    check('scene records', [(int(x['address'], 16), struct.pack('>IIHHI', int(x['layer_a'], 16), int(x['layer_b'], 16),
-                                                                 x['palette'], x['word_8B56'], int(x['slots'], 16))) for x in sc])
-    hp = J('rooms', 'house_pictures.json')
-    check('house picture records', [(int(x['address'], 16), bytes.fromhex(x['raw'])) for x in hp['records']])
-    sp = J('rooms', 'start_points.json'); t0 = int(sp['table'], 16)
-    check('start points', [(t0 - 2, struct.pack('>H', sp['count_before']) + b''.join(struct.pack('>h', o) for o in sp['offsets']))]
-          + [(t0 + int(o), bytes([v['area'], v['room']]) + struct.pack('>H', v['kind']) + bytes([v['x'], v['y']]) + struct.pack('>H', v['word']))
-             for o, v in sp['points'].items()])
-    mu = J('rooms', 'music.json'); t3 = int(mu['table'], 16)
-    check('room music', [(t3, b''.join(struct.pack('>h', a['offset']) for a in mu['areas']))]
-          + [(t3 + a['offset'], bytes(a['music'])) for a in mu['areas']])
-    ex = []
-    for i, e in enumerate(J('graphics', 'table.json')):
-        e = int(e, 16)
-        if e != 0xFFFFFFFF and e >> 24 & 1:
-            ex.append(((e & 0xFFFFFF) + gfx.BLOCK, open(os.path.join(A.assets, 'graphics', 'extra_%03d.bin' % i), 'rb').read()))
-    check('extra raw tiles', ex)
-
-    # the tables that point at the data, from the files (the layout's own addresses: the data
-    # directory at $1CC00, the graphics table at $41000, the animation data at $A0000)
-    L = J('layout.json')
-    dirs = [int(v, 16) for v in L['directory']]
-    base = lambda i: dirs[i] & 0xFFFFFF
-    check('data directory', [(0x1CC00, b''.join(struct.pack('>I', v) for v in dirs))])
-    check('graphics table', [(gfx.TABLE, b''.join(struct.pack('>I', int(v, 16)) for v in J('graphics', 'table.json')))])
-    check('message table', [(base(5), b''.join(bytes([m['window']]) + struct.pack('>H', int(m['address'], 16) - base(5)) for m in msgs))])
-    W = J('text', 'windows.json')
-    check('window table', [(base(6) + 4 * int(w), bytes([v['col'], v['row'], v['width'], v['lines']])) for w, v in W.items()])
-    pt = [int(v, 16) for v in L['phrase_tables']]
-    pieces = [(base(4), b''.join(struct.pack('>I', v) for v in pt))]
-    for k in range(4):
-        offs = [int(p['address'], 16) - (pt[k] & 0xFFFFFF) for p in sorted((p for p in ph if p['table'] == k), key=lambda p: p['number'])]
-        pieces.append((pt[k] & 0xFFFFFF, b''.join(struct.pack('>h', o) for o in offs)))
-    check('phrase tables', pieces)
-    pieces = []
-    for area in range(19):
-        rs = sorted((r for r in rms if r['area'] == area), key=lambda r: r['room'])
-        pieces.append((base(8 + area), b''.join(struct.pack('>h', int(r['address'], 16) - base(8 + area)) for r in rs)))
-    check('area room tables', pieces)
-    words = lambda vs: b''.join(struct.pack('>h', v) for v in vs)
-    check('animation tree', [(sprites.ANIM, words(L['anim_level1']))]
-          + [(sprites.ANIM + int(k), words(v)) for k, v in L['anim_level2'].items()]
-          + [(sprites.ANIM + int(k), words(v)) for k, v in L['anim_level3'].items()])
-
-    # the tables in the code region the game reads as data, from their rows
-    check('code tables', [(int(t['address'], 16), codetables.encode(t['rows'], t['element'])) for t in J('tables', 'code_tables.json')])
+    for name, pieces in build_pieces(J, A.assets): check(name, pieces)
 
     # the compressed data, by content, against the port's decoders in the native build
     exe = os.path.join(os.path.dirname(__file__), '..', 'work', 'native', 'wbmw.exe' if os.name == 'nt' else 'wbmw')
@@ -206,9 +214,9 @@ def check_maps(exe, A, J, report):
         else:
             m, cells = o[p:p + 64], o[p + 64:p + 64 + 16 * 0x180]; p += 64 + 16 * 0x180
             ok = all((m[pos] == 0xFF) == (str(pos) not in files) for pos in range(64))
-            for pos, want_cells in files.items():
+            for i, (pos, want_cells) in enumerate(files.items()):      # (in the data's order: chunk i)
                 k = m[int(pos)]
-                ok &= k < 16 and list(struct.unpack_from('>192H', cells, k * 0x180)) == want_cells
+                ok &= k == i and list(struct.unpack_from('>192H', cells, k * 0x180)) == want_cells
         if not ok:
             if bad['B'] + bad['L'] < 3: print('room maps: %s at $%06X differs' % ('block table' if kind == 'B' else 'layer map', addr))
             bad[kind] += 1

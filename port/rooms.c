@@ -60,8 +60,23 @@ static int dbra(int r) { c->d[r] = set_w(c->d[r], c->d[r] - 1); return (c->d[r] 
 
 /* $9F6A: the blocks at a3 into the table at a1 (and their bytes at a1 + $800). The first word is
  * the count; then a nibble a block (high first), then the blocks' bytes from half-way */
+static int pack_blocks(uint32_t at, uint32_t to)   /* the files' block table at `at`, into `to` */
+{
+    const uint8_t *r = port_pack_find ? port_pack_find('B', at) : NULL;
+    if (!r) return 0;
+    unsigned n = r[0] << 8 | r[1];
+    for (unsigned i = 0; i < n; i++) {
+        const uint8_t *b = r + 2 + 10 * i;
+        if (!b[0]) continue;                        /* an empty block: left as it was */
+        for (int k = 0; k < 8; k++) wr8(to + 8 * i + k, b[1 + k]);
+        wr8(to + 0x800 + i, b[9]);
+    }
+    return 1;
+}
+
 static void unpack_blocks(void)
 {
+    if (pack_blocks(c->a[3], c->a[1])) return;
     c->d[4] = set_w(c->d[4], rd16(c->a[3])); c->a[3] += 2; F_W(c->d[4]);
     if (!(c->d[4] & 0xFFFF)) return;
     c->a[0] = c->a[1] + 0x800;
@@ -205,6 +220,19 @@ static void unpack_layer_map(void)
     do { wr32(c->a[0], c->d[0]); c->a[0] += 4; F_L(c->d[0]); } while (dbra(1));
     c->a[4] = rd32(c->a[3] + 0x34);
     c->a[1] = rd32(c->a[3] + 0x1C);
+    const uint8_t *L = port_pack_find ? port_pack_find('L', c->a[4]) : NULL;
+    if (L) {                                        /* the files: the map and its chunks decoded already */
+        pack_blocks((uint32_t)L[0] << 24 | L[1] << 16 | L[2] << 8 | L[3], c->a[1]);
+        for (int i = 0; i < L[4]; i++, chunk_no++) {
+            const uint8_t *p = L + 5 + 385 * i;
+            wr8(sx(map) + (int8_t)p[0], chunk_no);
+            uint32_t at = 0xFF5000u + 0x180u * chunk_no;
+            for (int k = 0; k < 384; k++) wr8(at + k, p[1 + k]);
+        }
+        c->a[7] = c->a[6]; c->a[6] = rd32(c->a[7]); c->a[7] += 4;   /* unlk a6 */
+        c->a[3] = sx(rd16(c->a[7])); c->a[7] += 2;
+        return;
+    }
     uint32_t a3 = c->a[3];
     unpack_room_blocks();
     c->a[3] = a3;

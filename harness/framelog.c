@@ -29,10 +29,22 @@ static uint32_t fnv(const uint8_t *p, size_t n, uint32_t h)
 /* RAM that is expected to differ between the builds, and is left out of the hash:
  * the stack ($FF0000-$FF0BFF: where the VBlank interrupt pushed its frame depends on where the
  * 68000 happened to be), and the VBlank counter $FF8A49 (lag frames add to it). */
+static struct { uint16_t lo, hi; } skip[16]; static int skip_n;   /* --frame-log-skip: left out too */
+void framelog_skip(uint32_t lo, uint32_t hi)
+{
+    if (skip_n < 16 && lo <= hi) { skip[skip_n].lo = (uint16_t)lo; skip[skip_n].hi = (uint16_t)hi; skip_n++; }
+}
 static uint32_t ram_hash(void)
 {
-    uint32_t h = fnv(ram + 0x0C00, 0x8A49 - 0x0C00, 2166136261u);
-    return fnv(ram + 0x8A4A, 0x10000 - 0x8A4A, h);
+    const uint8_t *r = ram;
+    static uint8_t copy[0x10000];
+    if (skip_n) {                                   /* the skipped ranges hashed as zeros */
+        memcpy(copy, ram, sizeof copy);
+        for (int i = 0; i < skip_n; i++) memset(copy + skip[i].lo, 0, (size_t)(skip[i].hi - skip[i].lo) + 1);
+        r = copy;
+    }
+    uint32_t h = fnv(r + 0x0C00, 0x8A49 - 0x0C00, 2166136261u);
+    return fnv(r + 0x8A4A, 0x10000 - 0x8A4A, h);
 }
 
 int framelog_open(const char *path)

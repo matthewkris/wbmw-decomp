@@ -195,6 +195,15 @@ What is reusable as it stands, what is reusable after changes, and what belongs 
    protocol, status bits); sample the PC to find where.
 8. Give the owner a playable window early; add save states and run comparison.
 9. Port one subsystem at a time against the harness.
+10. Extract the data into files, and prove them complete twice over (`docs/EXTRACT.md`): build
+    the ROM's bytes back from them, and mark every ROM byte the native build reads over all the
+    save states (`--rom-reads`) to find what the files miss. Reads found what the byte coverage
+    could not: tables inside the code, an animation carrying on past its stop, a directory
+    longer than it looked, scripts only one kind of spawn point uses. Extract every table in the
+    code region, not only those seen read: the first run from the files hit one no recorded run
+    had. Then let the game run from the files (a data image plus the decoded form of the
+    compressed data) and compare it with the ROM's runs frame by frame, leaving out only the
+    decoders' scratch RAM.
 
 Environment notes for a Windows machine: Python's `python3` name does not exist (use
 `python`); the MSYS2 GCC needs its own shell (Git Bash cannot give it a temp directory); SDL2

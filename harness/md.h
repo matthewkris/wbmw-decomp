@@ -106,6 +106,7 @@ int framelog_open(const char *path);
 int framelog_input(const char *path);    /* input keyed by game frame */
 int framelog_input_active(void);
 void framelog_dump_at(long n, const char *dir);
+void framelog_skip(uint32_t lo, uint32_t hi);   /* RAM offsets lo-hi left out of the hash too */
 void framelog_at(uint32_t pc);
 void framelog_close(void);
 
