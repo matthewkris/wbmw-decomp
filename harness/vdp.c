@@ -466,6 +466,10 @@ void vdp_render_line(int line)
         /* priority order, front to back: S hi, A hi, B hi, S lo, A lo, B lo */
         if (s & 0x40) c = s; else if (a & 0x40) c = a; else if (b & 0x40) c = b;
         else if (s) c = s; else if (a) c = a; else if (b) c = b;
+        /* beside the HUD (its lines, wide): where nothing is drawn, black, not the backdrop. Rooms
+         * leave gaps in their maps where the HUD always covered them (area 12's cave has its
+         * purple backdrop in one, seen as a line beside the HUD when jumping) */
+        if (!c && line < HUD_LINES && fill && (hw || x < pad || x >= pad + width)) { frame_rgb[line][x] = 0; continue; }
         frame_rgb[line][x] = c ? rgb(cram[c & 0x3F]) : bg;
     }
     for (int x = total; x < FRAME_STRIDE; x++) frame_rgb[line][x] = 0;
