@@ -86,6 +86,29 @@ the header and the table they cover the 23,808 bytes of the data exactly, and en
 for byte. In `music.txt` a track reads like `voice_type 0 instrument 7 l4 gate 16 C5 rest D#5`:
 notes by name, `+X` for a note that sounds with the next, `lN` a length, `[N ... ]` a loop.
 
+## Which song plays where
+
+`music.json` gives each song's `plays`, and `music.txt` lists them under each song
+(`music.uses`). Most come from the rooms' music (the directory's table 3, read by `RoomMusic`,
+$92D4, into $9660): a byte per room, a song under $80; $80 + n picks between the two songs of
+the pair n at $932A by a game flag (area 2 room 0: song $0A, then $02 once flag $37 is set; area
+6 rooms 5, 6, 8: $09, then $0D once flag $38 is set; a third pair, by flag $61, unused); $EF
+picks song $0F if game flag $4D or $4E is set, else $55 ($DAC8: area 12 rooms 2 and 3); $F0 and
+up keep the music playing. The rest the code queues itself (`CODE_SONGS`):
+
+| Song | Plays |
+|---|---|
+| $14 | the title ($718A) |
+| $0D | a boss's entrance (spawn point kind 12, once the player is below $1040, $13380); also rooms of areas 6 and 12 |
+| $13 | a boss beaten, outside area 18 ($176F4) |
+| $15 | the ride of room script 13 ($D48C: area 16 room 4, area 18 room 6) |
+| $16 | the ending ($1B016) |
+| $54 | the night at the inn (a conversation ended by a fade, $C1E8) |
+
+All 26 songs are accounted for. Found by logging every sound command over all the save states
+(a temporary hook in `QueueSound`) and then from the code: a state starts with its music
+playing, so the log showed only the title's and room changes'.
+
 ## Checked
 
 * `tools/rebuild.py`: the 737 pieces (header, table, headers, tracks) built from `music.json`
@@ -97,8 +120,7 @@ notes by name, `+X` for a note that sounds with the next, `lN` a length, `[N ...
 ## Not done yet
 
 * The driver's own tables (the FM instruments, the PSG and drum tables) decoded and made files.
-* Which song is which in the game (the commands the 68000 queues for each room, `music.json`
-  in `rooms/`), and names for the effects.
+* Names for the effects (where the 68000 queues each).
 * A MIDI export for listening and editing in other tools, and an import back.
 * The driver in C (replacing the emulated Z80), checked against it by comparing every write to
   the sound chips.
