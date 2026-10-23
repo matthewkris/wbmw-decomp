@@ -98,7 +98,11 @@ is hit (`docs/ENEMYHEALTH.md`). The bottom row's lines (32-63) are the play fiel
 is drawn there, black elsewhere, as beside the HUD. Where the map is drawn but a pixel has
 nothing on it, it is black there too, not the room's backdrop colour: area 12's cave has gaps in
 its map that the original's 64-line HUD always covered, and its purple backdrop showed through
-them as a line beside the one-row HUD when Wonder Boy jumped. In a room that scrolls down too, `layer_y`
+them as a line beside the one-row HUD when Wonder Boy jumped. Where the map is drawn there is the band's top
+(`vdp_band_top`, from each layer's first drawn row and its y), taken as the higher of this frame's
+and the frame before's: the picture shows the scroll the game sent the frame before (in VBlank),
+so coming back down from a jump near a room's top (area 12 room 0), this frame's alone let a few
+lines above the map show, the plane's wrapped rows (its floor) beside the HUD. In a room that scrolls down too, `layer_y`
 keeps the camera it reads 32 lines below the map's top (`WIDE_ABOVE`, as `layer_x` does at the
 ends), so those lines always show the map: at first the camera scrolled into them near a room's
 top, and a strip of sky came and went as Wonder Boy jumped (area 5's town). The game draws its HUD as always; the renderer
