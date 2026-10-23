@@ -34,10 +34,9 @@ the music it plays is decoded here, as files that build back byte for byte.
 * Tracks are logical. A note takes a voice of the track's type (`voice_type`), among those its
   mask allows (`voices`), the lowest priority one if all are busy ($0393, $040D). A song's
   tracks may be pushed off a voice by an effect of a higher priority, and come back after it.
-* Tables in the driver: the FM frequency numbers at $107B (8 steps a semitone, from a C), the PSG
-  periods at $113D, the attenuation tables at $1200 and $1240, the lengths at $0E35, the FM
-  instruments from $1281, the drum notes at $19F1 (6 bytes each). Not decoded yet: kept in
-  `sound/z80_driver.bin` as they are.
+* The driver's code is $0000-$107A (`sound/z80_driver.bin`, as it is: a few small tables are in
+  it, such as the lengths at $0E35 and the commands' tables at $0275 and $0E62). Its tables follow,
+  $107B-$1A76, decoded by `tools/soundtables.py` into `sound/instruments.json` (below).
 
 ## The music's format
 
@@ -86,6 +85,26 @@ the header and the table they cover the 23,808 bytes of the data exactly, and en
 for byte. In `music.txt` a track reads like `voice_type 0 instrument 7 l4 gate 16 C5 rest D#5`:
 notes by name, `+X` for a note that sounds with the next, `lN` a length, `[N ... ]` a loop.
 
+## The driver's tables (`instruments.json`)
+
+Each read where the code reads it, with the size it uses; 7 bytes between tables that nothing
+reads are kept as they are (`filler`). They encode back byte for byte.
+
+| Table | Z80 | Read by | What |
+|---|---|---|---|
+| `fm_frequencies` | $107B | $0586 | 97 FM frequency numbers: 8 steps a semitone, from a C |
+| `psg_periods` | $113D | $0549 | 97 PSG periods, the same steps |
+| `attenuation_fm`, `attenuation_psg` | $1200, $1240 | $0E1B | a track's volume (`volume`, halved) to an FM level (0-127) or a PSG one (steps of 8) |
+| `fm_instruments` | $1281 | $0A08 | 51 instruments of 19 bytes: algorithm and feedback (register $B0), a level, the LFO sensitivity ($B4, the pan added); for each operator, in register order (1, 3, 2, 4), its level, its detune and multiple ($30) and an envelope's number; two bytes not named yet (the voice's +$26, +$27); a script of each kind (`mod_a`, `mod_b`) |
+| `envelopes` | $164B | $0698 | 119 operator envelopes: registers $50 (key scale, attack), $60 (AM, decay), $70 (sustain rate), $80 (sustain level, release) |
+| `psg_instruments` | $1828 | $0AB2 | 17 instruments of 6 bytes: three not named yet (the voice's +$2F, +$2D, +$2E), a volume envelope's number, a script of each kind |
+| `psg_envelopes` | $188F | $0AD6, $09CF | 8 volume envelopes, by pointers: a byte a step, its high nibble the attenuation (times 8), its low the frames it lasts (0: held), $F0 the end |
+| `mod_a`, `mod_b` | $1901, $19D8 | $0B04 | 14 and 3 scripts by pointers (the voice's +$10 and +$20), kept as bytes: their format is not read yet |
+| `drums` | $19F1 | $0CB3 | 22 drum notes (a track in drum mode plays note n as drum n): voice type, voices, instrument, a byte, a pitch (a word) |
+
+Changing them changes the sound: with every FM instrument's algorithm set to 7, the pack built
+from the edited files plays a different title.
+
 ## Which song plays where
 
 `music.json` gives each song's `plays`, and `music.txt` lists them under each song
@@ -119,7 +138,7 @@ playing, so the log showed only the title's and room changes'.
 
 ## Not done yet
 
-* The driver's own tables (the FM instruments, the PSG and drum tables) decoded and made files.
+* The modulation scripts' format, and names for the instruments' unnamed bytes.
 * Names for the effects (where the 68000 queues each).
 * A MIDI export for listening and editing in other tools, and an import back.
 * The driver in C (replacing the emulated Z80), checked against it by comparing every write to

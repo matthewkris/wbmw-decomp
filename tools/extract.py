@@ -40,7 +40,9 @@ never committed):
   sprites/enemies/enemy_TTTT.png  each enemy type's animations, as the rooms load it;
                         sprites/enemies/enemies.json says which room it is drawn with
   sprites/rooms/areaAA_roomRR.png  every room with its enemies at their spawn points
-  sound/z80_driver.bin  the Z80 sound driver, as it is
+  sound/z80_driver.bin  the Z80 sound driver's code, as it is ($0000-$107A)
+  sound/instruments.json  its tables (tools/soundtables.py): frequencies, attenuation, the FM and
+                        PSG instruments, envelopes, modulation scripts, drums
   sound/music.json      the music and sound effects (tools/music.py): the sound table, each song's
                         and effect's header, every track and section as notes and commands
   sound/music.txt       the same, readable: notes by name
@@ -53,10 +55,10 @@ tools/sprites.py.
 """
 import sys, os, json, hashlib, argparse
 sys.path.insert(0, os.path.dirname(__file__))
-import gfx, rooms, text, sprites, assetfmt, codetables, music
+import gfx, rooms, text, sprites, assetfmt, codetables, music, soundtables
 
 EXPECTED_SHA1 = '87a968f773c7e807e647c0737132457b06b78276'
-FORMAT = 4                                   # raised whenever what this writes changes: pack.py wants the same
+FORMAT = 5                                   # raised whenever what this writes changes: pack.py wants the same
 Z80_DRIVER = (0x098000, 0x099A77)            # docs/NOTES.md, the memory map; the data after it: music.DATA
 
 def sheet(d, rows, tile, colours, base=0):
@@ -342,7 +344,8 @@ def main():
                              enemy_types=len(index), enemy_types_not_drawn=skipped)
 
     # sound: the driver as it is; the music and effects decoded (tools/music.py)
-    open(path('sound', 'z80_driver.bin'), 'wb').write(d[Z80_DRIVER[0]:Z80_DRIVER[1]])
+    open(path('sound', 'z80_driver.bin'), 'wb').write(d[Z80_DRIVER[0]:Z80_DRIVER[0] + soundtables.CODE_END])
+    json.dump(soundtables.parse(d[Z80_DRIVER[0]:Z80_DRIVER[1]]), open(path('sound', 'instruments.json'), 'w'), indent=1)
     mj, mt = music.extract(d)
     json.dump(mj, open(path('sound', 'music.json'), 'w'), indent=0)
     open(path('sound', 'music.txt'), 'w', encoding='utf-8').write(mt)
