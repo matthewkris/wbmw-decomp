@@ -18,7 +18,12 @@ comparisons with the original keep working.
   toggles and a Controls screen (a key and a controller input for each button and for quick save
   and load, swapping on conflict, clear, left stick on/off, reset), all kept in `wbmw.ini`. Quick
   save and load show a message. Still to do from the settings menu below: volume sliders, save
-  state slots, and the same menu in `play.exe`.
+  state slots, and the same menu in `play.exe`. The menu has since grown the Widescreen, Talk
+  zoom and Enemy health toggles.
+* **Quick save asks before overwriting** (asked 2026-10-22): with a save already there, the first
+  press shows "PRESS SAVE AGAIN TO OVERWRITE"; a second within two seconds replaces it.
+* **A state load clears the host's overlays** (asked 2026-10-22): health bars, damage and gold
+  numbers and the talk zoom from before the load are dropped.
 
 ## To do
 
@@ -52,27 +57,34 @@ the like) must still exit without asking.
 
 Done 2026-10-21 as the menu's **Enemy health** (on by default): the damage of each hit rises
 from the enemy as a number (gold for the killing blow), and a bar over it shows the health it
-has left, for two seconds after a hit. All in the host. See `docs/ENEMYHEALTH.md`. Not done: a
-place in the HUD for it (the bar over the enemy turned out to be enough so far); bosses not tried.
+has left, for two seconds after a hit. All in the host. See `docs/ENEMYHEALTH.md`. Bosses have
+them too. A boss health bar in the HUD was tried (2026-10-22) and taken out at the owner's request:
+the bar over the enemy is enough. With widescreen on, the HUD's enemy health box is gone too (see
+Wide screen).
 
 ### Zoom in during character interactions (asked 2026-10-20): done (experimental)
 
 Done 2026-10-21 as the menu's **Talk zoom** (on by default): in a conversation with an ordinary
 character the scene eases in on Wonder Boy and the speaker, the HUD and the box slid up, the box
 kept at its own size; not for bosses or the Sphinx (asked by the owner). All in the host. See
-`docs/TALKZOOM.md`. Open: more conversations tried (shops, people outdoors); whether 1.5 is the
-right zoom; a conversation open when a state is loaded is not zoomed.
+`docs/TALKZOOM.md`. Since 2026-10-22 it eases in and out smoothly (about a second in, three
+quarters out), finds speakers the game gives no pointer for, and holds through a conversation
+that ends in a fade to black (the inn). Open: whether 1.5 is the right zoom; a conversation open
+when a state is loaded is not zoomed.
 
 ### Wide screen (asked 2026-10-10)
 
-**Started (2026-10-21), stages 1 and 2 done, paused there by the owner (experimental):** a 16:9
-picture (400 pixels), the menu's Widescreen option, the scenery drawn wider in area 1 rooms 0-4
-(after the opening) and area 2 rooms 0-2 (the first village and the areas beside it), black sides
-elsewhere; sprites drawn and enemies created and removed at the wider edges; fixes for the
-message under the HUD and for the layers stopping together. Since 2026-10-21 the rooms come from a
-rule on their layers (121 of 170 wide); bosses whose moves depend on the screen's edges, if any,
-would still need a look. See
-`docs/WIDESCREEN.md`. The original assessment:
+**Done (experimental, on by default; 2026-10-21 to 22):** a 16:9 picture (400 pixels), the
+menu's Widescreen option. The rooms come from a rule on their layers: 121 of 170 are drawn wide,
+the rest keep the original picture with black sides; houses and shops stay wide over the room
+outside, and rooms switch between wide and narrow only while the screen is dark. Sprites are drawn
+and enemies created and removed at the wider edges. A one-row HUD (hearts, items and gold side by
+side, the enemy health box left out) in every room, with the item menu and messages opening below
+it; gold picked up rises as a number instead of a "Found ... GOLD" box. Above the play field the
+scenery shows where the room's map reaches, black where it does not. See `docs/WIDESCREEN.md`.
+Open: bosses whose moves depend on the screen's edges, if any.
+
+The original assessment:
 
 Possible, but a project of its own. The game is written for a 256-pixel view: scenery is copied
 into video memory just past the visible edges, objects are created and removed at the screen
@@ -83,14 +95,20 @@ that is off by default, with the normal view still checked against the original.
 
 ### Extract the assets from the ROM once (asked 2026-10-21)
 
-**Started (2026-10-21):** `tools/extract.py` writes the graphics, palettes, rooms (scripts and
-drawn maps), all the text and the sound data's raw bytes into `assets/` (git-ignored), with the
-decoders' checks; the game does not use them yet. `tools/rebuild.py` checks them against the
-ROM: the structured data built back byte for byte, the compressed data (graphics, room maps)
-by content against the port's decoders; about 99% of the data covered so far. See
-`docs/EXTRACT.md` for what comes next.
+**Done, opt-in (2026-10-21 to 22):** `tools/extract.py` writes the graphics, palettes, rooms
+(scripts, maps and lists), all the text, the sprites, the tables inside the code and the sound
+data's raw bytes into `assets/` (git-ignored). `tools/rebuild.py` checks them against the ROM
+(structured data byte for byte, compressed data by content against the port's decoders), and
+every byte the game reads over all the save states is in them. `tools/pack.py` packs them into
+`assets/game.pak`, and `wbmw --pack assets/game.pak` plays from the files instead of the ROM,
+identical to the ROM's runs frame by frame. See `docs/EXTRACT.md`. Still to do: the pack by
+default and made by the build; the music's format decoded (it plays from the pack as raw data
+for the Z80 driver); the README's steps.
 
-Today the C reads the game's data straight from the ROM image as it plays, at the same addresses
+The original plan (the C did not need changing after all: the pack's data image sits where the
+ROM was, and only the three decoders take the decoded data):
+
+Before, the C read the game's data straight from the ROM image as it played, at the same addresses
 the cartridge has (graphics, maps, text, palettes, music, the Z80 sound driver). Instead, a
 one-time step could unpack the ROM into ordinary files, and the game would load those.
 
@@ -116,3 +134,14 @@ one-time step could unpack the ROM into ordinary files, and the game would load 
 * **A cheap first step:** an extractor that only writes viewable copies (PNG sheets of the
   tiles, the maps, the text) without the game using them, to see the formats and check the
   decoding.
+
+### Steady camera (asked 2026-10-23): for later
+
+In some rooms taller than the screen (area 12 room 0, for one) the original's camera follows
+Wonder Boy up when he jumps, about 38 lines, and eases back down when he lands. It is smooth and
+faithful (the same with widescreen off), but it reads as the screen jumping. An option, off by
+default, could keep the camera still for ordinary jumps and follow only when he climbs well above
+its view (onto a higher ledge), as most later platformers do. It would change the game's camera
+(`layer_y` in `port/rooms.c` reads it; the camera itself is the game's), so it goes behind a
+setting with the normal camera kept for comparisons. The cost: it hides terrain above that the
+original shows.
