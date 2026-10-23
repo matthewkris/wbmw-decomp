@@ -3,6 +3,9 @@
 
 Usage: pack.py [ASSETS] [OUT]          (defaults: assets, ASSETS/game.pak)
 
+Answers 3, writing nothing, when ASSETS was written by another version of extract.py (its
+manifest's format): extract again (tools/makepack.sh, which the build runs, does).
+
 The pack holds, from the files only (the ROM is not read):
 
   * the data image: every piece the files hold at its place in the ROM's address space, as
@@ -22,7 +25,7 @@ data's order: its place on the map (1) and its chunk's 192 cells (words).
 """
 import sys, os, json, struct
 sys.path.insert(0, os.path.dirname(__file__))
-import rebuild, gfx
+import rebuild, extract
 
 SIZE = 0xC0000                                      # the ROM's address space: 786,432 bytes
 
@@ -30,6 +33,11 @@ def main():
     assets = sys.argv[1] if len(sys.argv) > 1 else 'assets'
     out = sys.argv[2] if len(sys.argv) > 2 else os.path.join(assets, 'game.pak')
     J = lambda *p: json.load(open(os.path.join(assets, *p), encoding='utf-8'))
+    fmt = J('manifest.json').get('format') if os.path.exists(os.path.join(assets, 'manifest.json')) else None
+    if fmt != extract.FORMAT:                       # written by an older extract.py, or not at all
+        print('%s: written by another version of tools/extract.py (format %s, this one wants %d): extract again'
+              % (assets, fmt, extract.FORMAT))
+        return 3
     image, mask = bytearray(SIZE), bytearray(SIZE)
 
     def put(a, b):

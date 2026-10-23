@@ -95,15 +95,16 @@ that is off by default, with the normal view still checked against the original.
 
 ### Extract the assets from the ROM once (asked 2026-10-21)
 
-**Done, opt-in (2026-10-21 to 22):** `tools/extract.py` writes the graphics, palettes, rooms
+**Done (2026-10-21 to 23):** `tools/extract.py` writes the graphics, palettes, rooms
 (scripts, maps and lists), all the text, the sprites, the tables inside the code and the sound
 data's raw bytes into `assets/` (git-ignored). `tools/rebuild.py` checks them against the ROM
 (structured data byte for byte, compressed data by content against the port's decoders), and
 every byte the game reads over all the save states is in them. `tools/pack.py` packs them into
 `assets/game.pak`, and `wbmw --pack assets/game.pak` plays from the files instead of the ROM,
-identical to the ROM's runs frame by frame. See `docs/EXTRACT.md`. Still to do: the pack by
-default and made by the build; the music's format decoded (it plays from the pack as raw data
-for the Z80 driver); the README's steps.
+identical to the ROM's runs frame by frame. Since 2026-10-23 the build makes the pack
+(`tools/makepack.sh`) and the game plays from it by default, the ROM only when there is no pack
+or one is named. See `docs/EXTRACT.md`. Still to do: the music's format decoded (it plays from
+the pack as raw data for the Z80 driver).
 
 The original plan (the C did not need changing after all: the pack's data image sits where the
 ROM was, and only the three decoders take the decoded data):

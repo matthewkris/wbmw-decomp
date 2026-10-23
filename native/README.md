@@ -62,9 +62,10 @@ The save EEPROM is read from FILE at start and written at exit (default `wbmw.sa
   and layer maps listed in REQ with the port's `UnpackBlocks` and `UnpackLayerMap`, for
   `rebuild.py` to compare. `--rom-reads FILE` marks every ROM byte the game reads into FILE
   (added to what it holds), for `rebuild.py --reads FILE`.
-* `--pack FILE`: the game's data from the pack `tools/pack.py` makes of the extracted files,
-  instead of from the ROM (`docs/EXTRACT.md`, "The game reads the files"). At exit it reports
-  whether the game read any byte the files do not hold.
+* The game's data comes from `assets/game.pak`, which the build makes from the ROM
+  (`tools/makepack.sh`; `docs/EXTRACT.md`, "The game reads the files"), unless a ROM is named on
+  the command line; without a pack it reads the ROM. `--pack FILE` names a pack and reports at
+  exit whether the game read any byte the files do not hold (a default pack reports only that).
 * **Talk zoom** (`--talk-zoom`): during a conversation with an ordinary character, the host zooms
   the scene in on the two, the HUD and the box slid up (`docs/TALKZOOM.md`). For testing it,
   `--input FILE` works in a window too, and `WBMW_SHOT_EVERY=N WBMW_SHOT_EVERY_DIR=DIR` writes the

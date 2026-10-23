@@ -53,6 +53,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 import gfx, rooms, text, sprites, assetfmt, codetables
 
 EXPECTED_SHA1 = '87a968f773c7e807e647c0737132457b06b78276'
+FORMAT = 1                                   # raised whenever what this writes changes: pack.py wants the same
 Z80_DRIVER = (0x098000, 0x099A77)            # docs/NOTES.md, the memory map
 Z80_DATA = (0x099A77, 0x09F777)
 
@@ -355,7 +356,7 @@ def main():
                    anim_level1=l1, anim_level2={str(k): v for k, v in l2.items()}, anim_level3={str(k): v for k, v in l3.items()}),
               open(path('layout.json'), 'w'), indent=1)
 
-    manifest = dict(rom=os.path.basename(A.rom), size=len(d), sha1=sha1, expected_sha1=EXPECTED_SHA1,
+    manifest = dict(format=FORMAT, rom=os.path.basename(A.rom), size=len(d), sha1=sha1, expected_sha1=EXPECTED_SHA1,
                     checks=checks, files=len(files) + 1)
     json.dump(manifest, open(path('manifest.json'), 'w'), indent=1)
     print(json.dumps(checks, indent=1))
