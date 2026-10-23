@@ -151,6 +151,37 @@ def header_encode(kind, pri, tempo, tracks):
         return bytes([pri]) + struct.pack('<H', tempo) + b''.join(struct.pack('<H', t) for _, t in tracks) + bytes(2)
     return bytes([pri]) + b''.join(bytes([ch]) + struct.pack('<H', t) for ch, t in tracks) + bytes([0xFF])
 
+# songs the code queues itself (the rest come from the rooms' music, uses())
+CODE_SONGS = {0x14: 'the title ($718A)',
+              0x0D: "a boss's entrance: spawn point kind 12, when the player is below $1040 ($13380)",
+              0x13: 'a boss beaten, outside area 18 ($176F4, called where three bosses are defeated: $17796, $17C20, $18560)',
+              0x15: 'the ride of room script 13 ($D48C: area 16 room 4, area 18 room 6)',
+              0x16: "the ending's script ($1B016)",
+              0x54: 'the inn: a conversation ended by a fade, the night ($C1E8)'}
+
+def uses(d):
+    """where each song plays: {song: [text]}, from the rooms' music (the directory's table 3,
+    $92D4: a song, $80 + n a pair at $932A by a game flag, $EF by flags $4D/$4E ($DAC8), $F0 up
+    the music as it was) and CODE_SONGS"""
+    import rooms
+    t3 = rooms.be32(d, rooms.DIR + 0xC) & 0xFFFFFF
+    where = {}
+    def add(song, text): where.setdefault(song, []).append(text)
+    for area in range(19):
+        base = t3 + rooms.sw(d, t3 + 2 * area)
+        for room in range(rooms.room_count(d, area)):
+            v = d[base + room]
+            at = 'area %d room %d' % (area, room)
+            if v < 0x80: add(v, at)
+            elif v == 0xEF: add(0x0F, at + ' (game flag $4D or $4E set)'); add(0x55, at + ' (game flags $4D and $4E clear)')
+            elif v < 0xF0:
+                f, clear, set_ = d[0x932A + 3 * (v & 0x7F):0x932A + 3 * (v & 0x7F) + 3]
+                add(clear, at + ' (game flag $%02X clear)' % f); add(set_, at + ' (game flag $%02X set)' % f)
+    out = {}
+    for song in sorted(set(where) | set(CODE_SONGS)):
+        out[song] = ([CODE_SONGS[song]] if song in CODE_SONGS else []) + where.get(song, [])
+    return out
+
 NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 def note_name(n):
     """note n: block n // 12, semitone n % 12 ($0516); the frequency table ($107B) starts at a C"""
@@ -172,6 +203,19 @@ def track_text(items, z, labels=()):
         q += item_size(it)
     return ' '.join(out)
 
+def group(texts):
+    """'area 2 room 0', 'area 2 room 1', ... as 'area 2 rooms 0, 1'; other texts as they are"""
+    out, rooms_of = [], {}
+    for t in texts:
+        w = t.split(' ', 4)
+        if len(w) >= 4 and w[0] == 'area' and w[2] == 'room':
+            key = (int(w[1]), w[4] if len(w) > 4 else '')
+            if key not in rooms_of: rooms_of[key] = []; out.append(key)
+            rooms_of[key].append(w[3])
+        else: out.append(t)
+    return [t if isinstance(t, str) else 'area %d room%s %s%s' % (t[0], 's' if len(rooms_of[t]) > 1 else '', ', '.join(rooms_of[t]),
+                                                                   ' ' + t[1] if t[1] else '') for t in out]
+
 def extract(d):
     """everything in the data region, for assets/sound/music.json, and the text for music.txt"""
     S, P = sounds(d), pieces(d)
@@ -186,9 +230,11 @@ def extract(d):
         while j < DATA[1] and j not in cov: j += 1
         gaps.append((i, j - i)); i = j
     U = unused(d, gaps[1:])                          # (the first is the header, before the table)
+    W = uses(d)
     J = dict(header=d[DATA[0]:rom(TABLE)].hex(),
              sounds=[dict(number=n, address='%04X' % h, kind=k, priority=pri, tempo=tempo,
-                          tracks=[[ch, '%04X' % t] for ch, t in tr]) for n, h, k, pri, tempo, tr, _ in S],
+                          tracks=[[ch, '%04X' % t] for ch, t in tr], **({'plays': W.get(n, [])} if k == 'song' else {}))
+                     for n, h, k, pri, tempo, tr, _ in S],
              tracks={'%04X' % z: dict(items=items, end='%04X' % end, labels=['%04X' % l for l in sorted(labels)])
                      for z, (items, end, labels) in sorted(P.items())},
              unused={'%04X' % z: dict(items=items, end='%04X' % end) for z, items, end in U})
@@ -199,6 +245,7 @@ def extract(d):
         for ch, t in tr: names.setdefault(t, []).append('%s $%02X %s %d' % (k, n, 'track' if k == 'song' else 'channel', ch))
         lines.append('%s $%02X at $%04X: priority $%02X%s, %d track%s' % (k, n, h, pri, ', tempo %d' % tempo if tempo is not None else '',
                                                                         len(tr), '' if len(tr) == 1 else 's'))
+        if k == 'song': lines += ['    plays: ' + w for w in (group(W[n]) if n in W else ['nowhere found'])]
     lines.append('')
     for z, (items, end, labels) in sorted(P.items()):
         lines.append('$%04X (%s):' % (z, '; '.join(names.get(z, ['called or gone to']))))

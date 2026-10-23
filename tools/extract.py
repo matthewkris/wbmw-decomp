@@ -56,7 +56,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 import gfx, rooms, text, sprites, assetfmt, codetables, music
 
 EXPECTED_SHA1 = '87a968f773c7e807e647c0737132457b06b78276'
-FORMAT = 3                                   # raised whenever what this writes changes: pack.py wants the same
+FORMAT = 4                                   # raised whenever what this writes changes: pack.py wants the same
 Z80_DRIVER = (0x098000, 0x099A77)            # docs/NOTES.md, the memory map; the data after it: music.DATA
 
 def sheet(d, rows, tile, colours, base=0):
