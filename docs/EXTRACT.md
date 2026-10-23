@@ -41,7 +41,7 @@ ROM is, and are never committed.
 | `text/windows.json` | the message windows' places and sizes | $1CC18 |
 | `sprites/animations.json` | the 12 animation sets: groups, animations (frames, durations, commands), and the 962 sprite mappings piece by piece | $A0000 (`tools/sprites.py`) |
 | `sprites/player.png` | Shion's animations, a row each | |
-| `sprites/enemies/enemy_TTTT.png`, `enemies.json` | each of the 100 enemy types the rooms load, its animations drawn with the graphics and palettes of the first room it appears in | the enemy types at $1BC0E |
+| `sprites/enemies/enemy_TTTT.png`, `enemies.json` | each of the 100 enemy types the rooms load, its animations drawn with the graphics and palettes of the first room it appears in, and its own palette in line 3 where it has one (41 of them: the first byte of its record, as the game loads it; `palette` in `enemies.json`) | the enemy types at $1BC0E |
 | `sprites/rooms/areaAA_roomRR.png` | every room with its enemies at their spawn points | |
 | `sound/z80_driver.bin`, `z80_data.bin` | the Z80 sound driver and what follows it, as they are | $98000 |
 | `tables/code_tables.json` | the 447 tables in the code region (the data among the code): each one's name, place, size, the routines that point at it, a note, and its values in hex | the code region (`tools/codetables.py`) |
@@ -214,13 +214,10 @@ pictures and `$C0`-`$C5`, `$D0` icons, left as `{xNN}` (one phrase is made of th
 
 ## Known gaps
 
-* Enemies are drawn with the palettes of the first room they appear in. Bosses load palettes of
-  their own when they appear (the Myconid's sheet has its shapes right and its colours wrong).
 * The enemies' category 2 types (spawners with their own layouts) are not decoded; none of the
   rooms' lists needs them for drawing so far.
 
 ## Next
 
-* The bosses' own palettes, for their sheets.
 * Decode the music and sound effects (the Z80 driver's data): the format is not known yet.
 * Raise `extract.FORMAT` whenever what `extract.py` writes changes, so the build extracts again.

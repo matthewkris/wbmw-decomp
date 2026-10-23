@@ -88,6 +88,20 @@ def enemy(d, t):
     n = struct.unpack_from('>H', d, g)[0]
     return d[r + 3], d[r + 4], [struct.unpack_from('>H', d, g + 2 + 2 * k)[0] for k in range(n)]
 
+def enemy_palette(d, t):
+    """enemy type t's own palette record, or None: the record's first byte. A room's kinds that have
+    one put it in palette line 3 as they load ($125C4 into $A146), the last one winning ($137C8:
+    $A146 to $9671, over the room's own line 3)"""
+    cat, i = t >> 8, t & 0xFF
+    if cat == 2: return None
+    return d[ENEMIES + sw(d, ENEMIES + cat) + 5 * (i >> 1)] or None
+
+def kinds_palette(d, types):
+    """the palette line 3 a room's kinds leave (the last that has one), or None"""
+    pal = None
+    for t in types: pal = enemy_palette(d, t) or pal
+    return pal
+
 # placement script ($12848): spawner byte 00-0F -> bytes before the common (type, x, y) tail,
 # or None when the spawner has no tail (its own layout, skipped by length)
 SPAWN_ARGS = {0: 1, 1: 3, 2: 3, 3: 5, 4: 3, 5: 3, 7: 1, 8: 1, 9: 1, 0xB: 7, 0xC: 1, 0xF: 7}
@@ -130,7 +144,7 @@ def room_with_enemies(d, area, room, T):
         except ValueError: continue
         used += len(ids); base[t] = (48 - used) * 32
         extra.append((48 - used, ids))
-    tile, colours = vram(d, area, room)
+    tile, colours = vram(d, area, room, pal3=kinds_palette(d, types))
     for first, ids in extra:
         t0 = tile                              # chain the extra slots in front of the room's
         def tile(n, first=first, ids=ids, t0=t0):
@@ -175,9 +189,10 @@ def player_vram(d, area, room, sword=0, shield=0):
         return tile(n)
     return ptile, colours
 
-def vram(d, area, room, extra=None):
+def vram(d, area, room, extra=None, pal3=None):
     """tile fetcher for the VRAM a room sets up (graphics slots), and its palette lines.
-    extra = (first slot, block ids) places more graphics, as the enemy loader does."""
+    extra = (first slot, block ids) places more graphics, as the enemy loader does; pal3, a
+    palette line 3 in place of the room's (an enemy kind's, enemy_palette)."""
     slots = [0xFFFF] * 64
     rooms.gfx_slots(d, 0x96BC, slots)
     pals = [0, 1, 0, 0]
@@ -185,6 +200,7 @@ def vram(d, area, room, extra=None):
         if cmd == 'gfx_slots': rooms.gfx_slots(d, a[0], slots)
         elif cmd == 'palette': pals[2] = a[0]
         elif cmd == 'palette3': pals[3] = a[0]
+    if pal3 is not None: pals[3] = pal3
     if extra:
         for k, b in enumerate(extra[1]): slots[extra[0] + k] = b
     cache = {}

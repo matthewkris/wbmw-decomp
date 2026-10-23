@@ -149,10 +149,15 @@ Decoded by `tools/sprites.py` (`--list` walks all 774 animations, 1,546 frames, 
   added unless bit 3 of `-$3FFD` is set. When flipped, an offset becomes −offset − size. Tiles in
   a piece run down columns, as the VDP lays them out.
 * **Enemy types** (`enemy_types`, $1BC0E): a type word's high byte is a byte offset into a table of
-  category offsets; record n = (low byte) / 2 is 5 bytes: flag, word offset (from $1BC0E) of a
+  category offsets; record n = (low byte) / 2 is 5 bytes: palette, word offset (from $1BC0E) of a
   graphics list (word count, then graphics block ids), animation set, animation group
   (`EnemyGfxRecord` $125A6, `EnemyAnimRecord` $126AA). Category 2 is laid out differently and
-  is not decoded.
+  is not decoded. The first byte, when not 0, is the kind's own palette record: loading the kind
+  ($125C4) puts it in $A146, and after the room's spawn list `RoomSpawns` ($137C8, which first
+  sets $A146's high byte to $FF) copies it to $9671, palette line 3, over the room's own; so the
+  last kind loaded that has one wins. 41 of the 100 kinds the rooms load have one (bosses such as
+  the Myconid, kind $5C, palette $48, and many ordinary enemies). Checked against $9671 in every
+  room of the save states (`tools/sprites.py`, `enemy_palette`, `kinds_palette`).
 * **Enemy graphics** (`AllocEnemyGfx`, $125C4): for each type in a room's list, its graphics
   blocks go into VRAM slots counting down from 48 (an identical list already loaded is reused),
   and the type's tile base, (first slot) × 32, is kept in a table at `$FFA122` and copied into
