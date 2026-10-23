@@ -6,8 +6,10 @@ hand-written C of `port/` (verified routine by routine against the original in t
 frame loop and its scheduler, the frame wait, the VBlank interrupt, and the original's hangs.
 None of the original's code is translated or emulated: the build needs nothing from `work/`.
 `wbmw.c` is the host around it: the memory map, save EEPROM, controller and
-VDP come from the harness (`harness/bus.c`, `harness/vdp.c`). Sound is the harness's too (`harness/sound.c`: the Z80 running the game's driver, ymfm's YM2612, an SN76489). The ROM is
-still needed at run time, for the game's data (graphics, maps, text).
+VDP come from the harness (`harness/bus.c`, `harness/vdp.c`). Sound is the harness's too
+(`harness/sound.c`: the Z80 running the game's driver, ymfm's YM2612, an SN76489). The game's data
+(graphics, maps, text, the sound driver) comes from `assets/game.pak`, which the build makes from
+the ROM, or from the ROM itself when there is no pack (`docs/EXTRACT.md`).
 
 ## Build
 
@@ -15,16 +17,21 @@ From `native/`, in an MSYS2 UCRT64 shell:
 
     make
 
-This makes `work/native/wbmw.exe` (and copies `SDL2.dll` next to it).
+This makes `work/native/wbmw.exe` (and copies `SDL2.dll` next to it), then runs
+`tools/makepack.sh`, which extracts the ROM in `rom/` into `assets/` and packs it into
+`assets/game.pak` when they are missing or out of date (it needs Python 3; without it, or without
+a ROM, it says so and the game reads the ROM).
 
 ## Run
 
-    work/native/wbmw [ROM] [--windowed] [--widescreen] [--scale N] [--save FILE] [--integer-scale] [--fps]
-                           [--mute] [--state FILE] [--load] [--config FILE]
+    work/native/wbmw [ROM] [--pack FILE] [--windowed] [--widescreen] [--talk-zoom] [--enemy-health]
+                           [--scale N] [--save FILE] [--integer-scale] [--fps] [--mute]
+                           [--state FILE] [--load] [--config FILE]
 
-plays, full screen unless `--windowed` is given. Without ROM, it looks for `rom/Wonder Boy in Monster World (USA, Europe).md`
-in the current folder, next to the program, and in the repository (`../../rom/` from
-`work/native/`). The ROM must be 786,432 bytes; a SHA-1 other than the expected dump's gives a
+plays, full screen unless `--windowed` is given. Without ROM, it plays from `assets/game.pak` (or
+`game.pak`) in the current folder, next to the program, or in the repository (`../../assets/` from
+`work/native/`); without a pack, it looks for `rom/Wonder Boy in Monster World (USA, Europe).md`
+in the same places. A ROM must be 786,432 bytes; a SHA-1 other than the expected dump's gives a
 warning. Errors are also shown in a message box. Keys: arrows, Z = A, X = B, C = C, Enter = Start, Esc opens the menu; a controller
 works too.
 The window is sized for the game's 256-pixel width at the largest scale up to 3 that fits the
@@ -38,8 +45,8 @@ The save EEPROM is read from FILE at start and written at exit (default `wbmw.sa
 * **F3** toggles a frame-rate display in the top right corner (`--fps` starts with it on); the
   window title always shows the rate. The game itself always runs 60 frames a second of game
   time; the display tells whether the PC keeps up.
-* **Esc** opens the menu over the picture: **Show FPS**, **Full screen**, **Whole pixels** and
-  **Sound** (on/off), **Controls**, and **Exit game**, which asks "Exit the game?" (No first).
+* **Esc** opens the menu over the picture: **Show FPS**, **Full screen**, **Whole pixels**,
+  **Widescreen**, **Talk zoom**, **Enemy health** and **Sound** (on/off), **Controls**, and **Exit game**, which asks "Exit the game?" (No first).
   Up/Down choose, Enter (or Z, Space) selects, Esc goes back or resumes. On a controller,
   **Back/Select** (View, Share/Create, Minus) opens it, as the Genesis pad has no such button and
   Start stays the game's (the item screen); in the menu the D-pad (or left stick) chooses, A
@@ -51,8 +58,8 @@ The save EEPROM is read from FILE at start and written at exit (default `wbmw.sa
   Buttons are by position (SDL's layout, with `SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS` off, so a
   Nintendo pad is read like the others). **Left stick as D-pad** makes the stick move the player too.
 * **Widescreen** (`--widescreen`, also headless, for pictures): 400 pixels wide, the game drawn in
-  the extra 72 at each side in the rooms `wide_room()` allows, black sides elsewhere
-  (`docs/WIDESCREEN.md`). With it off, nothing changes: the build is the original's frame for
+  the extra 72 at each side in the rooms `wide_room()` allows (121 of 170), black sides elsewhere,
+  with the one-row HUD in every room and gold as a rising number (`docs/WIDESCREEN.md`). With it off, nothing changes: the build is the original's frame for
   frame.
 * **Enemy health** (`--enemy-health`, also headless, for pictures): the damage of each hit as a
   number rising from the enemy, and a bar of its health over it (`docs/ENEMYHEALTH.md`).
@@ -60,7 +67,7 @@ The save EEPROM is read from FILE at start and written at exit (default `wbmw.sa
   compares them with `DIR/graphics/block_NNN.bin` from `tools/extract.py` (`tools/rebuild.py`
   runs it; `docs/EXTRACT.md`). `--unpack-list REQ OUT` likewise unpacks the rooms' block tables
   and layer maps listed in REQ with the port's `UnpackBlocks` and `UnpackLayerMap`, for
-  `rebuild.py` to compare. `--rom-reads FILE` marks every ROM byte the game reads into FILE
+  `rebuild.py` to compare (and `OUT.reads`, the ROM bytes they read). `--rom-reads FILE` marks every ROM byte the game reads into FILE
   (added to what it holds), for `rebuild.py --reads FILE`.
 * The game's data comes from `assets/game.pak`, which the build makes from the ROM
   (`tools/makepack.sh`; `docs/EXTRACT.md`, "The game reads the files"), unless a ROM is named on

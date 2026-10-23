@@ -4,14 +4,14 @@ The long-term idea (`docs/IDEAS.md`, "Extract the assets from the ROM once") is 
 loads its data from ordinary files instead of reading it from the ROM as it plays: graphics as
 images, maps and text as files that can be looked at and changed. `tools/extract.py` writes the
 data out in readable forms, `tools/rebuild.py` checks that the files hold all of it, and
-`tools/pack.py` packs them for the game, which can play from them instead of the ROM (`--pack`,
-"The game reads the files" below).
+`tools/pack.py` packs them for the game, which plays from them instead of the ROM (the build
+makes the pack: "The game reads the files" below).
 
 ## Running it
 
     python tools/extract.py "rom/Wonder Boy in Monster World (USA, Europe).md"
 
-writes `assets/` (about 1,200 files, 9 MB, a minute or so; `--no-rooms` skips drawing the rooms
+writes `assets/` (about 1,280 files, 14 MB, a minute or so; `--no-rooms` skips drawing the rooms
 and takes a few seconds). `assets/` is in `.gitignore`: the files are the game's data, as much as the
 ROM is, and are never committed.
 
@@ -96,10 +96,10 @@ At the end `rebuild.py` counts which of the ROM's bytes the checks cover:
 
 | ROM | Bytes |
 |---|---|
-| built back byte for byte | 118,861 |
+| built back byte for byte | 123,035 |
 | checked by content (graphics, the rooms' maps) | 440,984 |
 | padding ($FF) | 140,320 |
-| the 68000 code and the tables in it that the game does not read ($0-$1C601) | 99,532 |
+| the 68000 code ($0-$1C601; its tables are built back) | 95,358 |
 | data not covered yet | 2,729 |
 
 So over 99% of the data outside the code region is shown to come back from the files. What is

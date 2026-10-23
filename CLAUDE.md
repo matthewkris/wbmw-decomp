@@ -29,9 +29,26 @@ power-on and from every save state taken between frames. The harness's checklist
 machine core (C in the native build, the 68000's in the harness by design), dead code (`$C67E`,
 `$1B930`, `$13578`) and one data byte (`$24D8`).
 
+**Since (2026-10-21 to 23):**
+
+- **Added features**, all in the host or behind an option, on by default, each in the menu and
+  `wbmw.ini`: settings and controls, quick save and load (asking before an overwrite), enemy
+  health bars and damage numbers (`docs/ENEMYHEALTH.md`), talk zoom (`docs/TALKZOOM.md`) and
+  widescreen (`docs/WIDESCREEN.md`: 121 of 170 rooms wide by a rule on their layers, a one-row
+  HUD, gold as a rising number). With them off the build is the original's frame for frame.
+- **The game plays from extracted files.** `tools/extract.py` writes all the game's data into
+  `assets/` (git-ignored), `tools/rebuild.py` proves the files complete (built back against the
+  ROM, and every byte the game reads over all the save states held), `tools/pack.py` packs them
+  into `assets/game.pak`, and the build makes it (`tools/makepack.sh`). `wbmw` plays from the pack
+  by default (the ROM when there is none, or one is named), identical to the ROM's runs frame by
+  frame. See `docs/EXTRACT.md`. Raise `extract.FORMAT` whenever what `extract.py` writes changes.
+- `docs/IDEAS.md` lists what the owner asked for, done and to do.
+
 Open, all optional: a timing model for the C (`--timing` is off: it counted the translated
 code's cycles; without it the native build plays like the harness's replace mode, never slowing
-down); the owner playing the native build at length. The history below is kept as it was.
+down); the music's format (it plays from the pack as raw data for the Z80 driver); the ideas in
+`docs/IDEAS.md` (a steady camera, volume sliders, save slots); the owner playing the native build
+at length. The history below is kept as it was.
 
 Done (the early stages):
 
