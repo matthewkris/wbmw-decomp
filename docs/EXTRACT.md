@@ -163,7 +163,16 @@ comment on the routine that reads it.
 ## The game reads the files
 
     python tools/pack.py                      (after extract.py: writes assets/game.pak)
-    work/native/wbmw --pack assets/game.pak
+    work/native/wbmw                          (plays from assets/game.pak when it finds one)
+
+The build (`make -C native`) runs `tools/makepack.sh`, which extracts the ROM into `assets/` when
+`assets/` is missing or was written by another version of the extractor (its manifest's
+`format`, `extract.FORMAT`), and packs `assets/` when the pack is missing or older than the files
+and tools it is made from. Otherwise `assets/` is left as it is, so files changed by hand are
+packed rather than overwritten. Without a ROM or without Python it makes nothing, and the game
+reads the ROM. The game plays from `assets/game.pak` (or `game.pak` beside it) unless a ROM is
+named on the command line; `--pack FILE` names a pack, and then says at exit that every byte read
+was held, as well as when one was not.
 
 `tools/pack.py` packs the files into the one file the game loads, reading nothing from the ROM:
 
@@ -214,4 +223,4 @@ pictures and `$C0`-`$C5`, `$D0` icons, left as `{xNN}` (one phrase is made of th
 
 * The bosses' own palettes, for their sheets.
 * Decode the music and sound effects (the Z80 driver's data): the format is not known yet.
-* The game loads the pack by default when there is one, and the build makes it (extract, pack).
+* Raise `extract.FORMAT` whenever what `extract.py` writes changes, so the build extracts again.

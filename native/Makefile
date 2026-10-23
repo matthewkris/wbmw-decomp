@@ -10,7 +10,14 @@ CXX = g++
 YMFM = ../third_party/ymfm
 YMO = $(OUT)/ym2612.o $(OUT)/ymfm_opn.o $(OUT)/ymfm_adpcm.o $(OUT)/ymfm_ssg.o
 
-all: $(OUT)/wbmw
+all: $(OUT)/wbmw pack
+
+# the game's data from your ROM, extracted and packed into assets/game.pak, which the game plays
+# from (docs/EXTRACT.md): made when missing or out of date; skipped, with a message, without a ROM
+# in rom/ or without Python 3 (the game then reads the ROM)
+.PHONY: pack clean
+pack:
+	@sh ../tools/makepack.sh
 
 # the YM2612: ymfm (C++) behind harness/ym2612.cpp
 $(OUT)/ym2612.o: ../harness/ym2612.cpp

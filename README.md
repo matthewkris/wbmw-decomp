@@ -55,9 +55,10 @@ notes. It contains no ROM, no graphics, maps, text, music or sound, and no file 
 * `rom/` (where you put your dump), `work/` (everything built from it) and `assets/` (the data
   `tools/extract.py` writes out of it) are listed in `.gitignore`. So are save files (`*.sav`)
   and save states (`*.state`).
-* When the game runs, it reads all of its data (graphics, maps, text, music, sound, and the Z80
-  sound driver) from your ROM file. The C code holds only the game's logic, with a few small numeric tables (jump targets,
-  lookup tables) as part of that logic.
+* The build reads all of the game's data (graphics, maps, text, music, sound, and the Z80 sound
+  driver) out of your ROM into `assets/` and packs it into `assets/game.pak`, which the game plays
+  from; without the pack, the game reads your ROM file directly. The C code holds only the game's
+  logic, with a few small numeric tables (jump targets, lookup tables) as part of that logic.
 
 The port expects this dump (the common "USA, Europe" release):
 
@@ -72,11 +73,11 @@ repacks, hacks) will not work properly. It warns you if your file's SHA-1 doesn'
 ## Play it (Windows)
 
 1. **Install MSYS2** from <https://www.msys2.org> (the default location, `C:\msys64`, is fine).
-2. **Open the "MSYS2 UCRT64" shell** from the Start menu and install the compiler, make, SDL2 and
-   git:
+2. **Open the "MSYS2 UCRT64" shell** from the Start menu and install the compiler, make, SDL2,
+   Python and git:
 
    ```bash
-   pacman -S --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-SDL2 make git
+   pacman -S --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-SDL2 mingw-w64-ucrt-x86_64-python make git
    ```
 
 3. **Get the code:**
@@ -105,7 +106,10 @@ repacks, hacks) will not work properly. It warns you if your file's SHA-1 doesn'
    make -C native
    ```
 
-   This makes `work/native/wbmw.exe` and copies `SDL2.dll` next to it.
+   This makes `work/native/wbmw.exe` and copies `SDL2.dll` next to it. Then it reads the game's
+   data out of your ROM into `assets/` and packs it into `assets/game.pak` (about 15 seconds, the
+   first time only), which the game plays from. Without Python it skips this, and the game reads
+   the ROM itself instead.
 
 6. **Play:**
 
@@ -114,12 +118,14 @@ repacks, hacks) will not work properly. It warns you if your file's SHA-1 doesn'
    ```
 
    You can also double-click `wbmw.exe` in `work\native\`. The game starts **full screen**. It
-   finds the ROM in the repository's `rom/` folder, in a `rom/` folder next to `wbmw.exe`, or
-   next to `wbmw.exe` itself. To use a ROM somewhere else, give its path:
-   `work/native/wbmw.exe path/to/rom.md`.
+   plays from `assets/game.pak` (in the repository, in an `assets` folder next to `wbmw.exe`, or
+   next to `wbmw.exe` itself). Without one it reads the ROM: from the repository's `rom/` folder,
+   a `rom/` folder next to `wbmw.exe`, or next to `wbmw.exe` itself. To use a ROM somewhere else,
+   give its path: `work/native/wbmw.exe path/to/rom.md` (a ROM named this way is always used).
 
-To play on another Windows PC, copy `wbmw.exe`, `SDL2.dll` and your ROM (in a `rom` folder next to
-them, or beside them). MSYS2 isn't needed to run the game.
+To play on another Windows PC, copy `wbmw.exe`, `SDL2.dll` and `assets/game.pak` (in an `assets`
+folder next to them, or beside them); the ROM isn't needed once the pack is made. MSYS2 isn't
+needed to run the game.
 
 ### Controls
 
@@ -202,6 +208,13 @@ libsdl2-dev`; macOS with Homebrew: `brew install sdl2`). Then follow steps 3 to 
   be zipped, or it may have a 512-byte copier header (`.smd` files are in a different format).
 * **"warning: ... is not the expected dump"**: this is a different version or a modified ROM. The
   game may start, but it won't play correctly.
+* **"makepack: no Python 3 found"** while building: install it in the MSYS2 UCRT64 shell
+  (`pacman -S mingw-w64-ucrt-x86_64-python`) and build again. The game still works without it, by
+  reading the ROM.
+* **"wbmw: the game read N bytes the files do not hold"** when the game exits: something the game
+  needs is missing from `assets/game.pak`. Please report it, with a save state from just before.
+  `work/native/wbmw.exe "rom/Wonder Boy in Monster World (USA, Europe).md"` plays from the ROM
+  meanwhile.
 * **`sdl2-config: command not found`** or **`gcc: command not found`** while building: you are in
   the wrong MSYS2 shell. Use "MSYS2 UCRT64", not "MSYS2 MSYS", and run the `pacman` line from step 2.
 
@@ -222,7 +235,8 @@ How the port was made, and how to check it against the original:
   of your ROM into `assets/` (graphics, palettes, every room's map, all the text, the sprites and
   their animations, the tables in the code; git-ignored, as the ROM is): the first step towards the game loading its data from files. `tools/rebuild.py` checks the files
   are complete by building the ROM's bytes back from them. See `docs/EXTRACT.md`. `tools/pack.py` then packs them into
-  `assets/game.pak`, and `wbmw --pack assets/game.pak` plays the game from the files instead of the ROM.
+  `assets/game.pak`, which the game plays from (`tools/makepack.sh`, which the build runs, does both
+  when needed; files changed by hand in `assets/` are packed, not overwritten).
 * Documentation: `docs/NOTES.md` (what the game does), `docs/PORT.md` (the port and how each routine
   is verified), `docs/PROCESS.md` (the process as a whole) and `native/README.md` (the native
   build).

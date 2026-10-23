@@ -1560,20 +1560,31 @@ static void sha1(const uint8_t *data, size_t len, uint8_t out[20])
 
 /* the ROM when none is named: rom/ here, next to the program, or the repository's rom/ (the
  * program is built into work/native/) */
-static const char *find_rom(const char *argv0)
+/* the first of tries (each with %s the program's folder) that exists */
+static const char *find_file(const char *argv0, const char *const *tries, int n)
 {
     static char path[4096];
     char dir[4096] = ".";
     const char *slash = strrchr(argv0, '/'), *bs = strrchr(argv0, '\\');
     if (bs && (!slash || bs > slash)) slash = bs;
     if (slash && (size_t)(slash - argv0) < sizeof dir) { memcpy(dir, argv0, (size_t)(slash - argv0)); dir[slash - argv0] = 0; }
-    const char *tries[] = { "rom/" ROM_NAME, ROM_NAME, "%s/rom/" ROM_NAME, "%s/" ROM_NAME, "%s/../../rom/" ROM_NAME };
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < n; i++) {
         snprintf(path, sizeof path, tries[i], dir);
         FILE *f = fopen(path, "rb");
         if (f) { fclose(f); return path; }
     }
     return NULL;
+}
+static const char *find_rom(const char *argv0)
+{
+    static const char *const tries[] = { "rom/" ROM_NAME, ROM_NAME, "%s/rom/" ROM_NAME, "%s/" ROM_NAME, "%s/../../rom/" ROM_NAME };
+    return find_file(argv0, tries, 5);
+}
+/* the pack tools/makepack.sh makes (the build runs it): played from when no ROM is named */
+static const char *find_pack(const char *argv0)
+{
+    static const char *const tries[] = { "assets/game.pak", "game.pak", "%s/assets/game.pak", "%s/game.pak", "%s/../../assets/game.pak" };
+    return find_file(argv0, tries, 5);
 }
 
 /* --rom-reads FILE: which of the ROM's bytes the game reads (a byte each, 1 read), added to what
@@ -1596,6 +1607,7 @@ static const uint8_t *pack_gfx;
 typedef struct { uint32_t key; const uint8_t *at; } PackEntry;
 static PackEntry *pack_tables, *pack_layers;
 static int pack_ntables, pack_nlayers;
+static int pack_loud;                               /* --pack named: say at exit that all was well too */
 static uint32_t be32p(const uint8_t *p) { return (uint32_t)p[0] << 24 | p[1] << 16 | p[2] << 8 | p[3]; }
 
 static const uint8_t *pack_lookup(PackEntry *e, int n, uint32_t key)
@@ -1624,7 +1636,7 @@ static void pack_report(void)
         if (bus_rom_reads[i] && !pack_mask[i]) { if (!n) first = i; n++; }
     if (n) fprintf(stderr, "wbmw: the game read %lu bytes the files do not hold (the first at $%06lX)\n",
                    (unsigned long)n, (unsigned long)first);
-    else fprintf(stderr, "wbmw: every byte the game read is held by the files\n");
+    else if (pack_loud) fprintf(stderr, "wbmw: every byte the game read is held by the files\n");
 }
 
 static int pack_load(const char *path)
@@ -1793,7 +1805,9 @@ int main(int argc, char **argv)
 #endif
         else rom_path = argv[i];
     }
-    if (pack_path) { if (pack_load(pack_path)) return 1; }
+    int pack_named = pack_loud = pack_path != NULL;
+    if (!pack_path && !rom_path && !verify_graphics && !unpack_req) pack_path = find_pack(argv[0]);
+    if (pack_path) { if (pack_load(pack_path)) return 1; if (!pack_named) fprintf(stderr, "playing from %s\n", pack_path); }
     else if (!rom_path) rom_path = find_rom(argv[0]);
     if (!pack_path && !rom_path) {
         fprintf(stderr, "usage: wbmw [ROM] [--windowed] [--widescreen] [--scale N] [--save FILE] [--integer-scale] [--fps] [--mute] [--talk-zoom] [--enemy-health] [--config FILE]\n"
