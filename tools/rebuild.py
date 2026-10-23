@@ -18,7 +18,7 @@ native build no 68000 code runs, so a read in the code region ($0-$1C601) is a t
 """
 import sys, os, json, struct, argparse, subprocess, tempfile
 sys.path.insert(0, os.path.dirname(__file__))
-import assetfmt, gfx, sprites, codetables, music
+import assetfmt, gfx, sprites, codetables, music, soundtables
 
 def build_pieces(J, assets):
     """every piece of the ROM the files hold, built from them: [(name, [(address, bytes)])].
@@ -37,7 +37,8 @@ def build_pieces(J, assets):
     an = J('sprites', 'animations.json')
     add('animation scripts', [(int(v['address'], 16), assetfmt.anim_encode(v['items'])) for v in an['animations'].values()])
     add('sprite mappings', [(int(v['address'], 16), assetfmt.mapping_encode(v)) for v in an['mappings'].values()])
-    add('sound driver', [(0x098000, open(os.path.join(assets, 'sound', 'z80_driver.bin'), 'rb').read())])
+    add('sound driver code', [(0x098000, open(os.path.join(assets, 'sound', 'z80_driver.bin'), 'rb').read())])
+    add('sound driver tables', [(0x098000 + soundtables.CODE_END, soundtables.encode(J('sound', 'instruments.json')))])
     add('music and effects', music.build(J('sound', 'music.json')))
 
     # the lists the room scripts point at, and what those point at

@@ -378,4 +378,4 @@ and the music's format are in `docs/SOUND.md` (`tools/z80dis.py`, `tools/music.p
 * $40000–$409F9: nothing found that references it. ($99A77–$9F776 is the music: `docs/SOUND.md`.)
 * The 46 unreferenced routines and 6 stray `rts` words ($3E4A $8934 $9C5C $1005A $100F0 $14B7C).
 * Contents of the 20.7 KB of data embedded in the code region.
-* The Z80 driver's own tables (FM instruments, PSG and drum tables): `docs/SOUND.md`.
+* The Z80 driver's modulation scripts ($1901, $19D8): `docs/SOUND.md`.

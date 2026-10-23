@@ -43,7 +43,8 @@ ROM is, and are never committed.
 | `sprites/player.png` | Shion's animations, a row each | |
 | `sprites/enemies/enemy_TTTT.png`, `enemies.json` | each of the 100 enemy types the rooms load, its animations drawn with the graphics and palettes of the first room it appears in, and its own palette in line 3 where it has one (41 of them: the first byte of its record, as the game loads it; `palette` in `enemies.json`) | the enemy types at $1BC0E |
 | `sprites/rooms/areaAA_roomRR.png` | every room with its enemies at their spawn points | |
-| `sound/z80_driver.bin` | the Z80 sound driver, as it is | $98000 |
+| `sound/z80_driver.bin` | the Z80 sound driver's code, as it is ($0000-$107A) | $98000 |
+| `sound/instruments.json` | the driver's tables: frequencies, attenuation, 51 FM and 17 PSG instruments, 119 operator envelopes, PSG envelopes, modulation scripts, 22 drums (`tools/soundtables.py`, `docs/SOUND.md`) | $9907B (Z80 $107B) |
 | `sound/music.json`, `music.txt` | the music and sound effects: the sound table, the 88 sounds' headers (26 songs, 62 effects), their 636 tracks and sections as notes and commands, and 12 unused tracks; `music.txt` readable, notes by name (`tools/music.py`, `docs/SOUND.md`) | $99A77 (Z80 $9A77, the sound table at $9B01) |
 | `tables/code_tables.json` | the 447 tables in the code region (the data among the code): each one's name, place, size, the routines that point at it, a note, and its values in hex | the code region (`tools/codetables.py`) |
 
@@ -78,7 +79,8 @@ terminator's value, a command's arguments). Everything must match:
 | Message, window and phrase tables | | from the messages' windows and addresses, `windows.json`, the phrases' addresses |
 | Areas' room tables | 19 | from the rooms' addresses |
 | Animation tree | 225 tables | from `layout.json` |
-| Sound driver | 1 | as it is (its code, and tables not decoded yet) |
+| Sound driver code | 1 | as it is |
+| Sound driver tables | 1 | from `instruments.json`: byte for byte |
 | Music and effects | 737 | from `music.json`: byte for byte |
 | Graphics | 768 blocks | compressed: compared by content with the port's own decompressor (`wbmw --verify-graphics assets`, `DecodeGfxBlock` $6BC4) |
 | Room block tables, layer maps | 201, 238 | compressed: compared by content with the port's own unpackers (`wbmw --unpack-list`, `UnpackBlocks` $9F6A and `UnpackLayerMap` $A068); the ending's scenes use rooms' layers |
@@ -221,6 +223,5 @@ pictures and `$C0`-`$C5`, `$D0` icons, left as `{xNN}` (one phrase is made of th
 
 ## Next
 
-* The sound driver's own tables (FM instruments, PSG and drum tables), and which song plays where
-  (`docs/SOUND.md`).
+* The sound driver's modulation scripts and the instruments' unnamed bytes (`docs/SOUND.md`).
 * Raise `extract.FORMAT` whenever what `extract.py` writes changes, so the build extracts again.
