@@ -46,7 +46,9 @@ The things in the room (stage 2):
 
 The renderer (`harness/vdp.c`, shared with the harness) draws the picture `256 + 2 × vdp_pad`
 wide. With `vdp_pad_fill` (the room is allowed) the planes and sprites are drawn across the
-whole width; otherwise the sides are black. The HUD stays where it is, centred; beside it plane A
+whole width; otherwise the sides are black. (With the one-row HUD, below, the band beside and
+under the HUD is drawn as described there; this paragraph is how it began, with the original's
+64-line HUD.) The HUD stays where it is, centred; beside it plane A
 is not drawn, as it never is behind the HUD, so the band shows plane B and sprites there, as
 through the HUD's own gaps. That is only the HUD's own 64 lines: a message under the HUD
 ("Found 5 GOLD.") stretches the window down for a while, and the sides of those lines are the
@@ -93,7 +95,10 @@ With widescreen on, the HUD is laid out for the wide picture in every room, wide
 row's right) moved beside the items', the three centred (hearts, items, gold: 352 pixels). The
 bottom row's left, the last enemy's health, is left out: the host shows each enemy's health as it
 is hit (`docs/ENEMYHEALTH.md`). The bottom row's lines (32-63) are the play field's where the map
-is drawn there, black elsewhere, as beside the HUD. In a room that scrolls down too, `layer_y`
+is drawn there, black elsewhere, as beside the HUD. Where the map is drawn but a pixel has
+nothing on it, it is black there too, not the room's backdrop colour: area 12's cave has gaps in
+its map that the original's 64-line HUD always covered, and its purple backdrop showed through
+them as a line beside the one-row HUD when Wonder Boy jumped. In a room that scrolls down too, `layer_y`
 keeps the camera it reads 32 lines below the map's top (`WIDE_ABOVE`, as `layer_x` does at the
 ends), so those lines always show the map: at first the camera scrolled into them near a room's
 top, and a strip of sky came and went as Wonder Boy jumped (area 5's town). The game draws its HUD as always; the renderer
@@ -157,10 +162,14 @@ area 6's temple.
 
 ## Not done yet
 
-* More rooms, one at a time, starting with the outdoor areas. Things to look at in each: code that
-  places something from the screen's edge itself rather than through `OffScreenXAt` (one found:
-  the moving floor of area $0F, `port/objhelp.c`, placed from plane A's x + $70), and enemies
-  that come in from a side.
+* The rooms are chosen by the rule above (121 of 170), not one at a time; the owner's play finds
+  what is left. Things to look out for: code that places something from the screen's edge itself
+  rather than through `OffScreenXAt` (one found: the moving floor of area $0F, `port/objhelp.c`,
+  placed from plane A's x + $70, so that area stays narrow), and enemies or bosses that come in
+  from a side or move by the screen's edges.
+* In rooms taller than the screen the original's camera follows a jump up and back (area 12 room
+  0: about 38 lines), the same with widescreen off; a steadier camera is an idea for later
+  (`docs/IDEAS.md`).
 * More of them can be alive at once now (the view holds more): the game's entity slots and the
   sprite limits have not been a problem in the rooms tried.
 * The window opens 400 wide when widescreen is on at the start; switching it on later keeps the

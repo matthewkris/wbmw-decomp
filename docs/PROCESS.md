@@ -23,7 +23,10 @@ major milestone.
 | 8 | Playable window, save states, run diff | `play.exe`, `--save-state-at`, `cmpruns.py` | a run from a state equals the straight run |
 | 9 | Port routine by routine, by hand | `port/` (45 routines) | shadow check on every call, full coverage, differential fuzzing |
 | 10 | Translate the rest mechanically, as scaffolding | `tools/m68k2c.py`, `port/m68k_rt.h`, `work/gen` | the same checks as hand ports |
-| 11 | Rewrite into idiomatic C, subsystem by subsystem | not started | the same checks, against the original |
+| 11 | Rewrite into idiomatic C, subsystem by subsystem | `port/*.c`, every routine (`docs/PORT.md`) | the same checks, against the original |
+| 12 | Native build: the C alone, no 68000 | `native/` (`machine.c`, `wbmw.c`), batches N1-N5 | frame logs by game frame equal the original's |
+| 13 | Added features, behind options | the menu, enemy health, talk zoom, widescreen | with them off, still the original frame for frame |
+| 14 | Extract the data, play from the files | `extract.py`, `rebuild.py`, `pack.py`, `makepack.sh` | built back against the ROM; every byte read held; frame logs equal the ROM's |
 
 Each stage made the next one cheaper or checkable. Stage 3 is what made stage 2 trustworthy;
 stage 7 is what made stage 5 trustworthy; stage 8 is what made stages 9 and 10 trustworthy.
@@ -32,9 +35,9 @@ Hand transcription (stage 9) proved the method and the harness tooling on 45 rou
 1,100 instructions, but at that pace the whole game (28,000 instructions) was too long. The
 owner then chose mechanical translation as scaffolding (stage 10): the first subsystem
 translated, movement with collision (849 instructions), matched the original on the first run.
-Understanding now comes in stage 11, rewriting translated code into idiomatic C. For the next
-game, consider starting stage 10 right after the harness, and hand-porting only to prove the
-checks.
+Understanding then came in stage 11, rewriting translated code into idiomatic C, until no
+translated code was left (stage 12). For the next game, consider starting stage 10 right after
+the harness, and hand-porting only to prove the checks.
 
 ## What made it work
 
@@ -144,6 +147,11 @@ What is reusable as it stands, what is reusable after changes, and what belongs 
   any 68000 game. The fuzz input generators in `hybrid.c` are this game's and should move to a
   game file when a second game starts.
 * `tools/gfx.py`'s PNG writing and palette conversion; `tools/header.py`.
+* The extraction's checks and the pack: the method of `tools/rebuild.py` (each piece built back
+  from the files and compared, coverage counted, `--reads` against the native build's
+  `--rom-reads`), `tools/pack.py`'s data image and mask, `port_pack_find` for the decoders, and
+  `tools/makepack.sh`. The pieces themselves are this game's; `tools/codetables.py` is generated
+  from the code/data map, so the method carries over.
 
 **General for any 68000 game, after removing hard-coded values:**
 

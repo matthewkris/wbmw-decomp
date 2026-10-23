@@ -6,8 +6,8 @@ checked against the original in a reference harness (shadow runs, fuzzing, cover
 is playable from start to finish.
 
 One part is still emulated: sound. On the Genesis/Mega Drive, the music and sound effects are
-played by a small program on the console's second CPU, a Z80. The port loads that driver from your
-ROM and runs it on an emulated Z80, which drives emulated sound chips (ymfm for the YM2612, plus
+played by a small program on the console's second CPU, a Z80. The port loads that driver with the
+rest of the game's data (from the pack made from your ROM) and runs it on an emulated Z80, which drives emulated sound chips (ymfm for the YM2612, plus
 the SN76489).
 
 ## Added features
@@ -67,8 +67,9 @@ The port expects this dump (the common "USA, Europe" release):
 * **SHA-1:** `87a968f773c7e807e647c0737132457b06b78276`
 
 A `.bin` with the same contents works too; rename it, or give its path when you run the game. The
-game reads data from fixed places in the ROM, so other versions (Japanese, Wii Virtual Console
-repacks, hacks) will not work properly. It warns you if your file's SHA-1 doesn't match.
+extractor and the game read data from fixed places in the ROM, so other versions (Japanese, Wii
+Virtual Console repacks, hacks) will not work properly. Both warn you if your file's SHA-1 doesn't
+match.
 
 ## Play it (Windows)
 
@@ -178,8 +179,10 @@ Use `--save FILE` for a different file.
 ### Options
 
 ```
-wbmw [ROM] [--windowed] [--widescreen] [--talk-zoom] [--enemy-health] [--scale N] [--integer-scale] [--fps] [--mute] [--save FILE] [--state FILE] [--load] [--config FILE]
+wbmw [ROM] [--pack FILE] [--windowed] [--widescreen] [--talk-zoom] [--enemy-health] [--scale N] [--integer-scale] [--fps] [--mute] [--save FILE] [--state FILE] [--load] [--config FILE]
 ```
+
+* `ROM`: play from this ROM instead of `assets/game.pak`. `--pack FILE`: play from this pack.
 
 * `--windowed`: start in a window instead of full screen. `--scale N` sets the window's size, N
   times 256×224.
@@ -195,8 +198,8 @@ wbmw [ROM] [--windowed] [--widescreen] [--talk-zoom] [--enemy-health] [--scale N
 ## Linux and macOS
 
 These aren't tested yet, but the build is plain C/C++ with SDL2 and should work. Install a C/C++
-compiler, make and the SDL2 development package (Debian/Ubuntu: `sudo apt install build-essential
-libsdl2-dev`; macOS with Homebrew: `brew install sdl2`). Then follow steps 3 to 6, running
+compiler, make, Python 3 and the SDL2 development package (Debian/Ubuntu: `sudo apt install
+build-essential python3 libsdl2-dev`; macOS with Homebrew: `brew install sdl2 python`). Then follow steps 3 to 6, running
 `work/native/wbmw` instead of `wbmw.exe`.
 
 ## Troubleshooting
@@ -233,13 +236,16 @@ How the port was made, and how to check it against the original:
   byte-identical.
 * `tools/extract.py "rom/Wonder Boy in Monster World (USA, Europe).md"` writes the game's data out
   of your ROM into `assets/` (graphics, palettes, every room's map, all the text, the sprites and
-  their animations, the tables in the code; git-ignored, as the ROM is): the first step towards the game loading its data from files. `tools/rebuild.py` checks the files
-  are complete by building the ROM's bytes back from them. See `docs/EXTRACT.md`. `tools/pack.py` then packs them into
-  `assets/game.pak`, which the game plays from (`tools/makepack.sh`, which the build runs, does both
-  when needed; files changed by hand in `assets/` are packed, not overwritten).
+  their animations, the tables in the code; git-ignored, as the ROM is), as images and JSON that
+  can be looked at and changed. `tools/rebuild.py` checks the files are complete by building the
+  ROM's bytes back from them, and `tools/pack.py` packs them into `assets/game.pak`, which the game
+  plays from. `tools/makepack.sh`, which the build runs, extracts and packs when needed; files
+  changed by hand in `assets/` are packed, not overwritten. See `docs/EXTRACT.md`.
 * Documentation: `docs/NOTES.md` (what the game does), `docs/PORT.md` (the port and how each routine
-  is verified), `docs/PROCESS.md` (the process as a whole) and `native/README.md` (the native
-  build).
+  is verified), `docs/PROCESS.md` (the process as a whole), `docs/EXTRACT.md` (the extracted data
+  and the pack), `native/README.md` (the native build), the added features (`docs/WIDESCREEN.md`,
+  `docs/TALKZOOM.md`, `docs/ENEMYHEALTH.md`) and `docs/IDEAS.md` (what was asked for, done and to
+  do).
 
 ## Licence
 
