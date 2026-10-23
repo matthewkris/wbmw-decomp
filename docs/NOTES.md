@@ -25,7 +25,7 @@ Status: first survey. Addresses are ROM offsets unless they start with `$FF`.
 | $041000–$041BFF | graphics table: 768 longs, see below |
 | $041C00–$09622A | 726 graphics chunks; then $FF padding to $98000 |
 | $098000–$099A76 | Z80 sound driver, 6,775 bytes, copied to Z80 RAM at boot by $306 |
-| $099A77–$09F776 | unknown, 23.8 KB; probably music and effects for the Z80 (not yet confirmed); then padding |
+| $099A77–$09F776 | the music and sound effects, read by the Z80 driver through its bank window (Z80 $9A77–$F776): the sound table at $99B01, 26 songs and 62 effects (`docs/SOUND.md`); then padding |
 | $0A0000–$0A4C76 | animation tables (three levels of word offsets), read by the interpreter at $7FC/$870 |
 | $0A4C77–$0BFFFF | $FF padding |
 
@@ -346,7 +346,8 @@ caller.
 | $200001 | serial EEPROM, bit-banged (bit 0 data, bit 1 clock), all in $1C49A–$1C600 |
 
 Sound: the 68000 never writes the YM2612 or PSG. `$366` queues one command byte (d0) in a
-16-entry ring at Z80 `$1C30`, guarded by a busy flag at Z80 `$1C00`. 98 call sites.
+16-entry ring at Z80 `$1C30`, guarded by a busy flag at Z80 `$1C00`. 98 call sites. The driver
+and the music's format are in `docs/SOUND.md` (`tools/z80dis.py`, `tools/music.py`).
 
 ## Boot and menu (seen in the harness)
 
@@ -374,7 +375,7 @@ Sound: the 68000 never writes the YM2612 or PSG. `$366` queues one command byte 
 * Which tiles each sprite uses and in what layout (Genesis sprites are column-major).
 * Formats of the 27 directory blocks; several contain long pointer tables of their own
   ($211CA, $2246C–$224B8), which stay inside `incbin` ranges and are not relocatable yet.
-* $40000–$409F9 and $99A77–$9F776: nothing found that references them.
+* $40000–$409F9: nothing found that references it. ($99A77–$9F776 is the music: `docs/SOUND.md`.)
 * The 46 unreferenced routines and 6 stray `rts` words ($3E4A $8934 $9C5C $1005A $100F0 $14B7C).
 * Contents of the 20.7 KB of data embedded in the code region.
-* Z80 driver disassembly and its music data.
+* The Z80 driver's own tables (FM instruments, PSG and drum tables): `docs/SOUND.md`.

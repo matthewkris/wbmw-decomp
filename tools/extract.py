@@ -40,7 +40,10 @@ never committed):
   sprites/enemies/enemy_TTTT.png  each enemy type's animations, as the rooms load it;
                         sprites/enemies/enemies.json says which room it is drawn with
   sprites/rooms/areaAA_roomRR.png  every room with its enemies at their spawn points
-  sound/z80_driver.bin  the Z80 sound driver; sound/z80_data.bin what follows it (not decoded yet)
+  sound/z80_driver.bin  the Z80 sound driver, as it is
+  sound/music.json      the music and sound effects (tools/music.py): the sound table, each song's
+                        and effect's header, every track and section as notes and commands
+  sound/music.txt       the same, readable: notes by name
   tables/code_tables.json  the tables in the code region the game reads as data (tools/codetables.py):
                         each one's name, place, size, who reads it, and its values
 
@@ -50,12 +53,11 @@ tools/sprites.py.
 """
 import sys, os, json, hashlib, argparse
 sys.path.insert(0, os.path.dirname(__file__))
-import gfx, rooms, text, sprites, assetfmt, codetables
+import gfx, rooms, text, sprites, assetfmt, codetables, music
 
 EXPECTED_SHA1 = '87a968f773c7e807e647c0737132457b06b78276'
-FORMAT = 2                                   # raised whenever what this writes changes: pack.py wants the same
-Z80_DRIVER = (0x098000, 0x099A77)            # docs/NOTES.md, the memory map
-Z80_DATA = (0x099A77, 0x09F777)
+FORMAT = 3                                   # raised whenever what this writes changes: pack.py wants the same
+Z80_DRIVER = (0x098000, 0x099A77)            # docs/NOTES.md, the memory map; the data after it: music.DATA
 
 def sheet(d, rows, tile, colours, base=0):
     """animations as rows of frames, each cell as large as the largest frame (bosses included)"""
@@ -339,10 +341,14 @@ def main():
     checks['sprites'] = dict(sets=len(T), animations=len(anims), mappings=len(maps), problems=bad,
                              enemy_types=len(index), enemy_types_not_drawn=skipped)
 
-    # sound: as it is, not decoded yet
+    # sound: the driver as it is; the music and effects decoded (tools/music.py)
     open(path('sound', 'z80_driver.bin'), 'wb').write(d[Z80_DRIVER[0]:Z80_DRIVER[1]])
-    open(path('sound', 'z80_data.bin'), 'wb').write(d[Z80_DATA[0]:Z80_DATA[1]])
-    checks['sound'] = dict(driver_bytes=Z80_DRIVER[1] - Z80_DRIVER[0], data_bytes=Z80_DATA[1] - Z80_DATA[0], decoded=False)
+    mj, mt = music.extract(d)
+    json.dump(mj, open(path('sound', 'music.json'), 'w'), indent=0)
+    open(path('sound', 'music.txt'), 'w', encoding='utf-8').write(mt)
+    checks['sound'] = dict(driver_bytes=Z80_DRIVER[1] - Z80_DRIVER[0], sounds=len(mj['sounds']),
+                           songs=sum(1 for s in mj['sounds'] if s['kind'] == 'song'), tracks=len(mj['tracks']),
+                           unused_tracks=len(mj['unused']))
 
     # the tables in the code region the game reads as data
     json.dump(codetables.extract(d), open(path('tables', 'code_tables.json'), 'w'), indent=1)

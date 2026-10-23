@@ -46,7 +46,8 @@ machine core (C in the native build, the 68000's in the harness by design), dead
 
 Open, all optional: a timing model for the C (`--timing` is off: it counted the translated
 code's cycles; without it the native build plays like the harness's replace mode, never slowing
-down); the music's format (it plays from the pack as raw data for the Z80 driver); the ideas in
+down); the music is decoded (`docs/SOUND.md`: `tools/z80dis.py`, `tools/music.py`), its driver's
+own tables (instruments) and a C driver not yet; the ideas in
 `docs/IDEAS.md` (a steady camera, volume sliders, save slots); the owner playing the native build
 at length. The history below is kept as it was.
 
