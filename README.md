@@ -236,14 +236,15 @@ How the port was made, and how to check it against the original:
   byte-identical.
 * `tools/extract.py "rom/Wonder Boy in Monster World (USA, Europe).md"` writes the game's data out
   of your ROM into `assets/` (graphics, palettes, every room's map, all the text, the sprites and
-  their animations, the tables in the code; git-ignored, as the ROM is), as images and JSON that
+  their animations, the tables in the code, the music and sound effects; git-ignored, as the ROM
+  is), as images, JSON and text that
   can be looked at and changed. `tools/rebuild.py` checks the files are complete by building the
   ROM's bytes back from them, and `tools/pack.py` packs them into `assets/game.pak`, which the game
   plays from. `tools/makepack.sh`, which the build runs, extracts and packs when needed; files
   changed by hand in `assets/` are packed, not overwritten. See `docs/EXTRACT.md`.
 * Documentation: `docs/NOTES.md` (what the game does), `docs/PORT.md` (the port and how each routine
   is verified), `docs/PROCESS.md` (the process as a whole), `docs/EXTRACT.md` (the extracted data
-  and the pack), `native/README.md` (the native build), the added features (`docs/WIDESCREEN.md`,
+  and the pack), `docs/SOUND.md` (the Z80 sound driver and the music's format), `native/README.md` (the native build), the added features (`docs/WIDESCREEN.md`,
   `docs/TALKZOOM.md`, `docs/ENEMYHEALTH.md`) and `docs/IDEAS.md` (what was asked for, done and to
   do).
 

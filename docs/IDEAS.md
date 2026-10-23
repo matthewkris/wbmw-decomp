@@ -103,8 +103,9 @@ every byte the game reads over all the save states is in them. `tools/pack.py` p
 `assets/game.pak`, and `wbmw --pack assets/game.pak` plays from the files instead of the ROM,
 identical to the ROM's runs frame by frame. Since 2026-10-23 the build makes the pack
 (`tools/makepack.sh`) and the game plays from it by default, the ROM only when there is no pack
-or one is named. See `docs/EXTRACT.md`. Still to do: the music's format decoded (it plays from
-the pack as raw data for the Z80 driver).
+or one is named. See `docs/EXTRACT.md`. Since 2026-10-23 the music and effects are decoded
+too (`sound/music.json`, `docs/SOUND.md`). Still to do: the sound driver's own tables (its
+instruments).
 
 The original plan (the C did not need changing after all: the pack's data image sits where the
 ROM was, and only the three decoders take the decoded data):
