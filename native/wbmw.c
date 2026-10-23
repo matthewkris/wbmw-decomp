@@ -175,7 +175,14 @@ static void wide_frame(void)
         if ((vdp_reg[18] & 0x1F) > 8 && !(vdp_reg[18] & 0x80)) msg_seen = 1;
         else if (msg_seen || ++msg_wait > 30) vdp_hide_msg = 0;
     }
-    vdp_band_top = !vdp_pad_fill ? 64 : top < 0 ? 0 : top > 64 ? 64 : top;   /* a room not wide: black (the wide HUD leaves its bottom row's lines to it) */
+    /* the scroll the picture shows is the frame before's (the game sends it in VBlank), so the
+     * band is the higher of this frame's and that one's: coming back down from a jump near a
+     * room's top, this frame's alone let lines above the map show beside the HUD, the plane's
+     * wrapped rows (area 12's floor) */
+    static int last_top;
+    int shown_top = top > last_top ? top : last_top;
+    last_top = top;
+    vdp_band_top = !vdp_pad_fill ? 64 : shown_top < 0 ? 0 : shown_top > 64 ? 64 : shown_top;   /* a room not wide: black (the wide HUD leaves its bottom row's lines to it) */
 }
 static void wide_apply(void)
 {
