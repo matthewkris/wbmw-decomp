@@ -53,7 +53,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 import gfx, rooms, text, sprites, assetfmt, codetables
 
 EXPECTED_SHA1 = '87a968f773c7e807e647c0737132457b06b78276'
-FORMAT = 1                                   # raised whenever what this writes changes: pack.py wants the same
+FORMAT = 2                                   # raised whenever what this writes changes: pack.py wants the same
 Z80_DRIVER = (0x098000, 0x099A77)            # docs/NOTES.md, the memory map
 Z80_DATA = (0x099A77, 0x09F777)
 
@@ -317,18 +317,20 @@ def main():
     for r in allrooms:
         for c in r['script']:
             if c['command'] != 'enemies': continue
-            for t in sprites.placements(d, c['args'][0])[0]: seen.setdefault(t, (r['area'], r['room']))
+            types = sprites.placements(d, c['args'][0])[0]
+            for t in types: seen.setdefault(t, (r['area'], r['room'], sprites.kinds_palette(d, types)))
     skipped = 0
-    for t, (area, room) in sorted(seen.items()):
+    for t, (area, room, room_pal3) in sorted(seen.items()):
         try: st, g, ids = sprites.enemy(d, t)
         except ValueError: skipped += 1; continue          # category 2: its own layout, not decoded yet
         al = T.get(st, {}).get(g, {})
         if not al: skipped += 1; continue
         first = 48 - len(ids)                             # $125C4: its graphics just below slot 48
-        tile, colours = sprites.vram(d, area, room, (first, ids))
+        pal = sprites.enemy_palette(d, t)               # its own palette in line 3, else what its room's kinds leave there
+        tile, colours = sprites.vram(d, area, room, (first, ids), pal3=pal or room_pal3)
         rows = [(a, sprites.script(d, p)[0]) for a, p in al.items()]
         rooms.write(path('sprites', 'enemies', 'enemy_%04X.png' % t), sheet(d, rows, tile, colours, first * 32))
-        index['%04X' % t] = dict(set=st, group=g, graphics=ids, area=area, room=room, animations=len(al))
+        index['%04X' % t] = dict(set=st, group=g, graphics=ids, palette=pal, area=area, room=room, animations=len(al))
     json.dump(index, open(path('sprites', 'enemies', 'enemies.json'), 'w'), indent=1)
     if not A.no_rooms:
         for r in allrooms:

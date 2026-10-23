@@ -29,7 +29,7 @@ extract() {
 }
 
 [ -f assets/manifest.json ] || extract
-if [ -f "$PAK" ] && [ -z "$(find assets tools/pack.py tools/rebuild.py tools/assetfmt.py tools/codetables.py \
+if [ -f "$PAK" ] && [ -z "$(find assets tools/extract.py tools/pack.py tools/rebuild.py tools/assetfmt.py tools/codetables.py \
         -newer "$PAK" -type f ! -name game.pak 2>/dev/null | head -1)" ]; then
     exit 0                                      # up to date
 fi
