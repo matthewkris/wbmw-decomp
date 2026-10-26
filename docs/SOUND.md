@@ -98,8 +98,8 @@ reads are kept as they are (`filler`). They encode back byte for byte.
 | `fm_instruments` | $1281 | $0A08 | 51 instruments of 19 bytes: algorithm and feedback (register $B0), a level, the LFO sensitivity ($B4, the pan added); for each operator, in register order (1, 3, 2, 4), its level, its detune and multiple ($30) and an envelope's number; its pitch offset (`pitch_lo`, `pitch_hi`: a word, the voice's +$26/+$27, added to every note: whole notes in the high byte, so most instruments' $F400 is an octave down; a PSG voice's is always $E800, $0AFC); a script of each kind (`mod_a`, `mod_b`) |
 | `envelopes` | $164B | $0698 | 119 operator envelopes: registers $50 (key scale, attack), $60 (AM, decay), $70 (sustain rate), $80 (sustain level, release) |
 | `psg_instruments` | $1828 | $0AB2 | 17 instruments of 6 bytes: three not named yet (the voice's +$2F, +$2D, +$2E), a volume envelope's number, a script of each kind |
-| `psg_envelopes` | $188F | $0AD6, $09CF | 8 volume envelopes, by pointers: a byte a step, its high nibble the attenuation (times 8), its low the frames it lasts (0: held), $F0 the end |
-| `mod_a`, `mod_b` | $1901, $19D8 | $0B04 | 14 and 3 scripts by pointers (the voice's +$10 and +$20), kept as bytes: their format is not read yet |
+| `psg_envelopes` | $188F | $0AD6, $09CF | 8 volume envelopes, by pointers, as `steps`: [level, frames] (a byte each: its high nibble the attenuation, times 8, its low the frames it lasts, 0 held), `["end"]` for $F0 (the voice let go, $0460) |
+| `mod_a`, `mod_b` | $1901, $19D8 | $0B04 | 14 pitch and 3 volume modulation scripts by pointers (the voice's +$10 and +$20), as `items` (below); an instrument names one of each |
 | `drums` | $19F1 | $0CB3 | 22 drum notes (a track in drum mode plays note n as drum n): voice type, voices, instrument, a byte, a pitch (a word) |
 
 Changing them changes the sound: with every FM instrument's algorithm set to 7, the pack built
@@ -151,6 +151,38 @@ the sword's swings stay with the music at 0 and go with the effects at 0; the ov
 * The game played from the pack (`docs/EXTRACT.md`), whose music is built from `music.json`,
   gives the same sound output as from the ROM, sample for sample (`--wav`): the title, and 900
   frames from two save states.
+
+## The modulation scripts
+
+An instrument names a pitch script (`mod_a`, read by $07D7) and a volume script (`mod_b`, $08F3).
+A pitch script moves the voice's pitch offset (+$14, in 1/256 of a note, added to the note), a
+volume script its volume offset (+$1C, added to the attenuation). Every `rate` frames (+$3A /
++$38, 1 at first) the offset moves by the current step's delta; when the step's count runs out
+the next item is read. In `instruments.json` each script has its address (a `goto` names one)
+and its items:
+
+| Byte(s) | Item | Meaning |
+|---|---|---|
+| $00 | `end` | nothing more: the offset held |
+| n, delta | `steps`, `delta` | n steps of the delta (a pitch script's a word, a volume script's a byte) |
+| $FF word | `goto` | go on at the address |
+| $FE | `loop_end` | back to the loop's start until its count runs out |
+| $FD n | `loop` | the loop's start, n times |
+| $FC n | `reverse` | the delta turned round, for n steps |
+| $FB value | `set` | the offset set (a word, or a byte) |
+| $FA | `stop` | the delta 0: the offset held |
+| $F9 n | `rate` | n frames between steps |
+| $F8 depth n | `random` | (pitch only) a random offset for n steps, the random byte shifted up by depth ($0B66) |
+
+So a vibrato is a delay, a few steps one way, then `reverse` in a loop: script 1 ($191E) is 4
+steps of nothing, 8 steps of -1 every 4 frames, then turns every 16 steps. The others: drops and
+rises (a sound sliding down or up), trills built of single big steps, random wobbles (scripts 7
+and 10, for noise-like sounds), and 0 (none). Bytes after a script's end that are never read
+are kept (`tail`: $19D3's last byte, whose step would run into the next table).
+
+The songs' instruments use scripts 0, 1, 5 (vibratos, 8 or 12 steps of 1/256 of a note: about
+3-5 cents) and 12 (a dive, twice); the effects use the rest. The MIDI files leave them out: the
+vibratos are too slight to show with MIDI's modulation.
 
 ## The sound effects
 
@@ -252,7 +284,8 @@ song or effect.
 
 ## Not done yet
 
-* The modulation scripts' format, and names for the instruments' unnamed bytes.
+* Names for the instruments' last unnamed bytes (an FM instrument's `level`'s use beyond the
+  carriers, `b0_high`; a PSG instrument's `b0`-`b2`).
 * A MIDI import back into `music.json`.
 * The driver in C (replacing the emulated Z80), checked against it by comparing every write to
   the sound chips.

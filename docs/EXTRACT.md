@@ -224,5 +224,5 @@ pictures and `$C0`-`$C5`, `$D0` icons, left as `{xNN}` (one phrase is made of th
 
 ## Next
 
-* The sound driver's modulation scripts and the instruments' unnamed bytes (`docs/SOUND.md`).
+* The sound driver's instruments' last unnamed bytes (`docs/SOUND.md`).
 * Raise `extract.FORMAT` whenever what `extract.py` writes changes, so the build extracts again.
