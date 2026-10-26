@@ -316,7 +316,7 @@ envelope and its release ($0976), and the pitch and volume written: 34 routines,
 187 runs (322,748 whole frames of the voices) the same. A slip in it (a word written a byte at a
 time from a sum that read the word: `SET16` is a function for that reason) was found at once;
 `WBMW_Z80_SHADOW_DUMP=1` prints the voice's record before and after, the Z80's and the C's.
-Next: the track interpreter ($0B9C,
+Batch 4: the tracks ($0B7F, $0B9C: the data's notes, lengths, calls, loops and commands; a note's voice, $0CA5), the commands from the ring ($019C, the sounds started), the fade ($0155): every tick of the 187 runs the same (107,607 track steps, 322,799 commands and fades). `snd_init` and `snd_tick` (the start, and a tick of the main loop) are written, not yet run in place of the Z80. Next: the native build on the C driver. Formerly next: the track interpreter ($0B9C,
 $0CA5, the commands), the main loop's parts (the commands from the 68000, the fades, the timer),
 then the C driver in place of the Z80.
 

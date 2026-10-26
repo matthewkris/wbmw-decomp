@@ -19,6 +19,8 @@ typedef struct {
     uint8_t (*window)(uint16_t a);                  /* a read through the bank window ($8000-$FFFF) */
 } SndIO;
 extern SndIO snd_io;
+void snd_init(void);                                /* the driver started (its RAM and the chips) */
+void snd_tick(void);                                /* a tick of timer B: the driver's main loop once */
 
 /* the Z80's registers at a routine's entry, for the shadow check's adapters; an adapter leaves
  * the routine's results in them, and `outs` says which the original's must equal at its return */

@@ -46,10 +46,23 @@ static void SET16(unsigned a, unsigned v)           /* (a function: v may read t
 #define V_PSG_LEVEL 41                              /* (+$29) a PSG voice's attenuation */
 #define V_LEFT      60                              /* (+$3C) its time left, a word */
 /* a track's fields */
-#define T_FLAGS     0                               /* bit 7 playing */
+#define T_FLAGS     0                               /* bit 7 playing, 6 started, 5 slides, 4 tied, 0 drums */
+#define T_DEPTH     1                               /* the loop stack's depth */
+#define T_WAIT      2                               /* the time to its next step (a word) */
+#define T_LENGTH    4                               /* a step's length (a word) */
+#define T_AT        6                               /* where it is in its data (a word) */
+#define T_TYPE      8                               /* the voice it wants: its type, */
+#define T_INSTRUMENT 9                              /*   its instrument, */
+#define T_MASK      10                              /*   the voices it may take */
+#define T_GATE      11                              /* the part of a step a note sounds, in 32nds */
+#define T_TRANSPOSE 12                              /* added to its notes (a word: whole notes high) */
+#define T_VOLUME    14                              /* its volume (the tables at $1200, $1240, by half) */
+#define T_SLIDE     15                              /* a slide's ticks */
 #define T_PRI       16                              /* (+$10) its sound's priority; bit 7 a song's */
+#define T_PAN       17                              /* (+$11) bit 0 silent; bits 6, 7 the pan */
 #define T_NOTES     18                              /* (+$12) notes begun */
-#define T_NOTE_AT   19                              /* (+$13) the step's first note's count */
+#define T_NOTE_AT   19                              /* (+$13) the notes of its last step */
+#define T_STACK     20                              /* (+$14) the loop stack: 3 bytes an entry (where, a count) */
 
 /* ---- the YM2612 ---- */
 
@@ -606,6 +619,348 @@ static void voices_tick(void)
     }
 }
 
+/* ---- the tracks ---- */
+#define BUSY        0x1C00                          /* set while the driver takes a command from the ring */
+#define TICKS3      0x1C02                          /* the ticks left to the tracks' step (of 3) */
+#define SND_FLAGS   0x1C03                          /* bit 0 the song paused, bit 1 fast (not used by the game) */
+#define TICKS       0x1C04                          /* ticks counted (a word) */
+#define SONG_STEPS  0x1C06                          /* the song's steps over the last 3 ticks */
+#define FADE_WORD   0x1C0A                          /* the fade's level, a word (its high byte FADE_LEVEL) */
+#define FADE_DELTA  0x1C0C                          /* added to it each tick (a word) */
+#define FADE_AT     0x1C0E                          /* where the fade's script is */
+#define TEMPO       0x1C14                          /* the song's tempo (a word: steps a tick, times 256) */
+#define TEMPO_SUM   0x1C16                          /* its sum (a word: the fraction, then SONG_TICKS) */
+#define STEP_LEN    0x1C18                          /* the step's length (a word) */
+#define TIE         0x1C1A                          /* the step's notes held into the next */
+#define STEP_NOTES  0x1C1B                          /* the step's notes so far */
+#define REG27       0x1C23                          /* the YM2612's register $27 (the timers) */
+#define NEW_PITCH   0x1C24                          /* the note's pitch (a word) */
+#define TICK_DIV    0x1C2D
+#define RING_AT     0x1C2E                          /* the command ring: where the next is, */
+#define RING_N      0x1C2F                          /*   how many wait, */
+#define RING        0x1C30                          /*   the 16 */
+#define SOUNDS      0x9B01                          /* the sounds' pointers, through the bank window */
+#define DRUMS       0x19F1                          /* the drums: 6 bytes each */
+#define LENGTHS     0x0E35                          /* the lengths of commands $C0-$CF, a third of them */
+
+/* a byte of the sound data: the driver's RAM, or the ROM through the bank window ($8000-$FFFF) */
+static unsigned rd(unsigned a)
+{
+    a &= 0xFFFF;
+    return a & 0x8000 ? snd_io.window((uint16_t)a) : RAM(a);
+}
+static unsigned rd16(unsigned a) { return rd(a) | rd(a + 1) << 8; }
+
+/* $0E45, $0E48: the track's loop stack's entry k */
+static unsigned stack_entry(unsigned track, unsigned k) { return track + ((k * 3 + T_STACK) & 0xFF); }
+
+/* $0E55: an entry pushed: where (a loop's start, or a call's operand) and a count */
+static void stack_push(unsigned track, unsigned at, unsigned count)
+{
+    unsigned e = stack_entry(track, RAM(track + T_DEPTH));
+    SET16(e, at);
+    RAM(e + 2) = (uint8_t)count;
+    RAM(track + T_DEPTH)++;
+}
+
+/* $0E1B: a voice's level from the track's volume (FM: the table at $1200; PSG: $1240) */
+static void voice_level(unsigned track, unsigned voice)
+{
+    RAM(voice + V_LEVEL) = RAM((RAM(voice + V_TYPE) ? 0x1240 : 0x1200) + (RAM(track + T_VOLUME) >> 1));
+}
+
+/* $0DBE-$0DD8: a note's time, the step's length times the gate (32nds), to count up to $8000 */
+static unsigned gate_time(unsigned gate)
+{
+    unsigned len = RAM16(STEP_LEN), t = 0, a = gate;
+    for (int k = 0; k < 5; k++) {
+        unsigned out = t & 1, bit = a & 1;
+        t >>= 1;
+        a = a >> 1 | out << 7;
+        if (bit) t = (t + len) & 0xFFFF;
+    }
+    return (0x8000 - t) & 0xFFFF;
+}
+
+/* $0D15-$0D49: a slide's step a tick: the distance over the slide's ticks (a 16-bit division
+ * with an 8-bit remainder, as the original's) */
+static unsigned slide_step(unsigned from, unsigned to, unsigned ticks)
+{
+    unsigned d = (to - from) & 0xFFFF, a = 0;
+    int down = to < from;
+    if (down) d = -d & 0xFFFF;
+    for (int k = 0; k < 16; k++) {
+        a = (a << 1 | d >> 15) & 0xFF;
+        d = d << 1 & 0xFFFF;
+        if (a >= ticks) { a -= ticks; d |= 1; }
+    }
+    return down ? -d & 0xFFFF : d;
+}
+
+/* $0CA5: a note of the track begun. A drum (the track's flag 0): its record at $19F1 gives the
+ * voice, the instrument, the pan and gate, the pitch. Else the note and the transpose: with
+ * slides, the voice of the same note of the last step slides to it (from where it is; begun
+ * anew unless tied), else a new voice; tied, the voice of the last step's note takes the pitch;
+ * else a new voice. Nothing if the track is silent or no voice is free */
+static void track_note(unsigned t, unsigned note)
+{
+    unsigned v, gate, pan, pitch, f = RAM(t + T_FLAGS);
+    if (RAM(t + T_PAN) & 1) goto done;
+    if (f & 1) {
+        unsigned d = DRUMS + note * 6;
+        RAM(WANT_TYPE) = RAM(d); RAM(WANT_MASK) = RAM(d + 1); RAM(WANT_PRI) = RAM(t + T_PRI) & 0x7F;
+        if (!voice_find(&v)) goto done;
+        RAM(v + V_INSTRUMENT) = RAM(d + 2);
+        pan = RAM(d + 3); gate = pan & 0x3F; pitch = RAM16(d + 4);
+        goto pitched;
+    }
+    pitch = ((note + RAM(t + T_TRANSPOSE + 1)) & 0xFF) << 8 | RAM(t + T_TRANSPOSE);
+    SET16(NEW_PITCH, pitch);
+    RAM(WANT_TYPE) = RAM(t + T_TYPE);
+    if (f & 0x20) {
+        if (!voice_of_note(t, &v)) goto fresh;
+        if (!(f & 0x10)) voice_release(v);
+        SET16(v + V_SLIDE_TO, pitch);
+        SET16(v + V_SLIDE_BY, slide_step(RAM16(v + V_BASE), pitch, RAM(t + T_SLIDE)));
+        if (f & 0x10) goto tied;
+        RAM(v + V_FLAGS) = 0x80;
+        gate = RAM(t + T_GATE); pan = RAM(t + T_PAN);
+        goto begin;
+    }
+    if (!(f & 0x10) || !voice_of_note(t, &v)) goto fresh;
+    SET16(v + V_BASE, pitch);
+tied:
+    voice_level(t, v);
+    RAM(v + V_NOTE) = RAM(t + T_NOTES);
+    goto done;
+fresh:
+    RAM(WANT_MASK) = RAM(t + T_MASK); RAM(WANT_PRI) = RAM(t + T_PRI) & 0x7F;
+    if (!voice_find(&v)) goto done;
+    RAM(v + V_INSTRUMENT) = RAM(t + T_INSTRUMENT);
+    gate = RAM(t + T_GATE); pan = RAM(t + T_PAN); pitch = RAM16(NEW_PITCH);
+pitched:
+    SET16(v + V_BASE, pitch);
+begin:
+    RAM(v + V_PANS) = (uint8_t)pan;
+    voice_level(t, v);
+    SET16(v + V_LEFT, RAM(TIE) & 1 ? 0 : gate_time(gate));
+    if (RAM(WANT_TYPE)) RAM(v + V_TYPE) = RAM(WANT_TYPE);
+    {
+        unsigned pri = RAM(t + T_PRI), flags = 0x80;
+        if (pri & 0x80) { pri &= 0x7F; flags = 0xA0; }
+        if ((RAM(t + T_FLAGS) & 0x20) && (RAM(v + V_FLAGS) & 0x80)) flags |= 0x10;
+        RAM(v + V_PRI) = (uint8_t)pri;
+        RAM(v + V_FLAGS) = (uint8_t)flags;
+        RAM(v + V_TRACK) = RAM(TRACK_NOW);
+        RAM(v + V_NOTE) = RAM(t + T_NOTES);
+    }
+done:
+    RAM(t + T_NOTES)++;
+    RAM(STEP_NOTES)++;
+}
+
+/* $0C79: the step's end: where the track is, its wait the step's length on, the step's notes
+ * counted, tied if the step said so */
+static void step_end(unsigned t, unsigned at)
+{
+    SET16(t + T_AT, at);
+    SET16(t + T_WAIT, RAM16(t + T_WAIT) + RAM16(STEP_LEN));
+    RAM(t + T_NOTE_AT) = RAM(STEP_NOTES);
+    RAM(t + T_FLAGS) = (uint8_t)((RAM(t + T_FLAGS) & ~0x10) | (RAM(TIE) ? 0x10 : 0));
+}
+
+static void track_length(unsigned t, unsigned n)
+{
+    n = n * 3 & 0xFFFF;
+    SET16(STEP_LEN, n);
+    SET16(t + T_LENGTH, n);
+}
+
+/* $0B9C: a playing track's step, when its wait has run down (by the song's steps for a song's,
+ * 9 for an effect's; a song's not while paused), or at once at its start (its fields reset).
+ * Its data read to the step's last note (docs/SOUND.md, the tracks' format): notes ($00-$5F, the
+ * last; $60-$BF, more to come), a length ($C0-$CF), calls and loops ($D0-$DF), the commands
+ * ($E0-$FF) */
+static void track_step(unsigned t)
+{
+    if ((RAM(t + T_PRI) & 0x80) && (RAM(SND_FLAGS) & 1)) return;
+    if (!(RAM(t + T_FLAGS) & 0x40)) {
+        RAM(t + T_FLAGS) |= 0x40;
+        SET16(t + T_WAIT, 0);
+        RAM(t + T_DEPTH) = RAM(t + T_NOTES) = RAM(t + T_NOTE_AT) = 0;
+        RAM(t + T_TYPE) = RAM(t + T_INSTRUMENT) = 0;
+        RAM(t + T_MASK) = 0x0F; RAM(t + T_GATE) = 0x08;
+        SET16(t + T_TRANSPOSE, 0);
+        RAM(t + T_VOLUME) = 0;
+        RAM(t + T_PAN) &= 1;
+    } else {
+        unsigned w = RAM16(t + T_WAIT), e = RAM(t + T_PRI) & 0x80 ? RAM(SONG_STEPS) : 9;
+        SET16(t + T_WAIT, w - e);
+        if (w > e) return;
+    }
+    unsigned at = RAM16(t + T_AT);
+    RAM(TIE) = RAM(STEP_NOTES) = 0;
+    SET16(STEP_LEN, RAM16(t + T_LENGTH));
+    for (;;) {
+        unsigned a = rd(at), e;
+        at = (at + 1) & 0xFFFF;
+        if (a < 0x60) { track_note(t, a); break; }
+        if (a < 0xC0) { track_note(t, a - 0x60); continue; }
+        if (a < 0xD0) { track_length(t, RAM(LENGTHS + (a & 0x0F))); continue; }
+        if (a < 0xD8) { stack_push(t, at, a - 0xCF); at = rd16(at); continue; }
+        if (a < 0xE0) { stack_push(t, at, a - 0xD7); continue; }
+        switch (a) {
+        case 0xE0: RAM(t + T_SLIDE) = (uint8_t)rd(at); at++; RAM(t + T_FLAGS) |= 0x20; continue;
+        case 0xE1: RAM(t + T_FLAGS) &= ~0x20; continue;
+        case 0xE2: track_length(t, rd(at)); at++; continue;
+        case 0xE3: track_length(t, rd16(at)); at += 2; continue;
+        case 0xE4: RAM(TEMPO) = (uint8_t)rd(at); RAM(TEMPO + 1) = (uint8_t)rd(at + 1); at += 2; continue;
+        case 0xF0: RAM(t + T_INSTRUMENT) = (uint8_t)rd(at); at++; continue;
+        case 0xF1: RAM(t + T_GATE) = (uint8_t)rd(at); at++; continue;
+        case 0xF2: RAM(t + T_TRANSPOSE) = (uint8_t)rd(at); RAM(t + T_TRANSPOSE + 1) = (uint8_t)rd(at + 1); at += 2; continue;
+        case 0xF3: SET16(t + T_TRANSPOSE, RAM16(t + T_TRANSPOSE) + rd16(at)); at += 2; continue;
+        case 0xF4: RAM(t + T_VOLUME) = (uint8_t)rd(at); at++; continue;
+        case 0xF5: RAM(t + T_VOLUME) += (uint8_t)rd(at); at++; continue;
+        case 0xF6:
+            e = rd(at); at++;
+            RAM(t + T_TYPE) = (uint8_t)e;
+            RAM(t + T_MASK) = e < 2 ? 0x3F : e == 2 ? 0x07 : 0x01;
+            continue;
+        case 0xF7: RAM(t + T_MASK) = (uint8_t)rd(at); at++; continue;
+        case 0xF8: RAM(t + T_FLAGS) ^= 1; continue;
+        case 0xF9: RAM(t + T_PAN) = (uint8_t)((RAM(t + T_PAN) & 0x3F) | rd(at)); at++; continue;
+        case 0xFA: break;
+        case 0xFB: track_release_voices(t); continue;
+        case 0xFC: RAM(TIE) = 1; continue;
+        case 0xFD: at = rd16(at); continue;
+        case 0xFE:
+            e = stack_entry(t, RAM(t + T_DEPTH)) - 1;
+            if (--RAM(e)) at = RAM16(e - 2); else RAM(t + T_DEPTH)--;
+            continue;
+        case 0xFF:
+            if (!RAM(t + T_DEPTH)) { track_release_voices(t); RAM(t + T_FLAGS) = 0; return; }
+            e = stack_entry(t, RAM(t + T_DEPTH) - 1u);
+            at = RAM16(e);
+            if (--RAM(e + 2)) at = rd16(at); else { RAM(t + T_DEPTH)--; at = (at + 2) & 0xFFFF; }
+            continue;
+        default: continue;                          /* $E5-$EF: nothing */
+        }
+        break;
+    }
+    step_end(t, at);
+}
+
+/* $0B7F: the playing tracks' steps, in order ($1C07 the track's number) */
+static void tracks_tick(void)
+{
+    unsigned t = TRACKS;
+    for (unsigned k = 0; k < TRACK_N; k = RAM(TRACK_NOW) + 1u, t += 0x20) {
+        RAM(TRACK_NOW) = (uint8_t)k;
+        if (RAM(t + T_FLAGS) & 0x80) track_step(t);
+    }
+}
+
+/* ---- the commands, the fade ---- */
+
+/* $0155: the fade each tick: held at $1C2B while $1C2A says so; else while it runs, its step
+ * added to its level, the song stopped when a fade out passes the quietest (the fade over), and
+ * at the end of each of its script's parts the next (its ticks, its step) */
+static void fade_tick(void)
+{
+    if (RAM(FADE_A)) { RAM(FADE_LEVEL) = RAM(FADE_B); return; }
+    if (!RAM(FADE_STEPS)) return;
+    unsigned d = RAM16(FADE_DELTA), l = (RAM16(FADE_WORD) + d) & 0xFFFF;
+    if (l & 0x8000) {
+        if (!(d & 0x8000)) song_stop();
+        RAM(FADE_STEPS) = RAM(FADE_LEVEL) = 0;
+        return;
+    }
+    SET16(FADE_WORD, l);
+    if (--RAM(FADE_STEPS)) return;
+    unsigned at = RAM16(FADE_AT);
+    RAM(FADE_STEPS) = RAM(at);
+    SET16(FADE_DELTA, RAM16(at + 1));
+    SET16(FADE_AT, at + 3);
+}
+
+/* $029F: a fade started from its script ($028D, $02B1) */
+static void fade_start(unsigned script)
+{
+    SET16(FADE_AT, script);
+    SET16(FADE_DELTA, 0);
+    RAM(FADE_A) = RAM(FADE_B) = 0;
+    RAM(FADE_STEPS) = 1;
+}
+
+/* $02BA: the song paused: its tracks' voices let go */
+static void song_pause(void)
+{
+    unsigned t = TRACKS;
+    for (unsigned k = 0; k < TRACK_N; k = RAM(TRACK_NOW) + 1u, t += 0x20) {
+        RAM(TRACK_NOW) = (uint8_t)k;
+        if ((RAM(t + T_FLAGS) & 0x80) && (RAM(t + T_PRI) & 0x80)) track_release_voices(t);
+    }
+    RAM(SND_FLAGS) |= 1;
+}
+
+/* $01D5-$0274: sound n started (its record through the table at $9B01: a priority, then for a
+ * song (bit 7) its tempo and its tracks' data, from track 0, to a 0; for an effect, its tracks'
+ * numbers and data, to $FF, each taking its track unless a higher priority holds it). A song
+ * stops the song and the fade; an effect the tracks of its own priority */
+static void sound_start(unsigned n)
+{
+    unsigned at = rd16(SOUNDS + n * 2), pri = rd(at++);
+    RAM(SOUND_PRI) = (uint8_t)pri;
+    if (pri & 0x80) {
+        RAM(FADE_WORD) = RAM(FADE_LEVEL) = RAM(FADE_STEPS) = RAM(FADE_A) = 0;
+        RAM(TEMPO) = (uint8_t)rd(at); RAM(TEMPO + 1) = (uint8_t)rd(at + 1); at += 2;
+        SET16(TEMPO_SUM, 0);
+        song_stop();
+        for (unsigned t = TRACKS;; t += 0x20) {
+            unsigned p = rd16(at);
+            if (!p) return;
+            at += 2;
+            RAM(t + T_FLAGS) = 0x80; RAM(t + T_PRI) = RAM(SOUND_PRI); SET16(t + T_AT, p);
+        }
+    }
+    priority_stop();
+    for (;;) {
+        unsigned b = rd(at);
+        if (b == 0xFF) return;
+        at++;
+        unsigned rot = (b >> 3 | b << 5) & 0xFF, t = TRACKS + ((rot & 7) << 8 | (rot & 0xE0));
+        if (RAM(t + T_FLAGS) & 0x80) {
+            if (RAM(SOUND_PRI) < RAM(t + T_PRI)) { at += 2; continue; }
+            track_release_voices(t);
+        }
+        RAM(t + T_FLAGS) = 0x80; RAM(t + T_PRI) = RAM(SOUND_PRI);
+        RAM(t + T_AT) = (uint8_t)rd(at); RAM(t + T_AT + 1) = (uint8_t)rd(at + 1);
+        at += 2;
+    }
+}
+
+/* $019C: a command taken from the 68000's ring, if one waits: a sound ($00-$57), or everything
+ * stopped ($FF), a fade out ($FE, $FA: slower), the song resumed ($FD) or paused ($FC), the fade
+ * held ($FB) */
+static void command_take(void)
+{
+    RAM(BUSY) = 0xFF;
+    if (!RAM(RING_N)) { RAM(BUSY) = 0; return; }
+    RAM(RING_N)--;
+    unsigned i = RAM(RING_AT), c = RAM(RING + i);
+    RAM(RING_AT) = (uint8_t)((i + 1) & 0x0F);
+    RAM(BUSY) = 0;
+    switch (c) {
+    case 0xFF: all_stop(); return;
+    case 0xFE: fade_start(0x02B1); return;
+    case 0xFD: RAM(SND_FLAGS) &= ~1; return;
+    case 0xFC: song_pause(); return;
+    case 0xFB: RAM(FADE_A) = 1; return;
+    case 0xFA: fade_start(0x028D); return;
+    }
+    if (c < 0x58) sound_start(c);
+}
+
 /* ---- the start ---- */
 
 /* rst $18, rst $10: register reg (+ *op) of the current half set to value, for the 3 channels
@@ -640,6 +995,64 @@ static void voices_reset(void)
 {
     all_stop();
     for (unsigned k = 0; k < VOICE_N; k++) RAM(VOICES + 0x40 * k + V_TYPE) = k < 6 ? 0 : 2;
+}
+
+/* $0110 from its wait on: the timer's tick counted, timer B restarted ($27); then $0110's start
+ * for the next tick (the divider: 1, or 4 fast). The original's debugging monitor ($0F8C, run
+ * when $1B99 is set, which the game never does) and the fast mode's ticks without a wait are not
+ * here */
+static void tick_wait_end(void)
+{
+    SET16(TICKS, RAM16(TICKS) + 1);
+    ym_write(0x27, RAM(REG27));
+}
+static void tick_wait_start(void)
+{
+    RAM(TICK_DIV) = RAM(SND_FLAGS) & 2 ? 4 : 1;
+}
+
+/* $003B-$00B0: the driver started: its variables cleared ($1B81-$1C7F; the records $FF, their
+ * flags 0, the tracks' silence bit 0), the YM2612's DAC off, timer B at $ED and started, the PSG
+ * silent, the YM2612 quiet, the voices reset; the main loop's first tick awaited. (The bank
+ * window, $98000, is the host's.) */
+void snd_init(void)
+{
+    RAM(0x1B80) = 0xFF;
+    for (unsigned a = 0x1B81; a < 0x1C80; a++) RAM(a) = 0;
+    for (unsigned a = 0x1C80; a < 0x2000; a++) RAM(a) = 0xFF;
+    for (unsigned k = 0; k < VOICE_N; k++) RAM(VOICES + 0x40 * k + V_FLAGS) = 0;
+    for (unsigned k = 0; k < TRACK_N; k++) RAM(TRACKS + 0x20 * k + T_FLAGS) = RAM(TRACKS + 0x20 * k + T_PAN) = 0;
+    ym_write(0x2B, 0);
+    ym_write(0x26, 0xED);
+    RAM(REG27) = 0x2A;
+    ym_write(0x27, 0x2A);
+    snd_io.psg(0x9F); snd_io.psg(0xBF); snd_io.psg(0xDF); snd_io.psg(0xFF);
+    ym_silence();
+    voices_reset();
+    RAM(TICK_DIV) = 1;
+    RAM(BUSY) = 0;
+    RAM(SONG_STEPS) = 0;
+    RAM(TICKS3) = 3;
+    RAM(TICK_DIV)--;
+    tick_wait_start();
+}
+
+/* $00B0-$00E1, a tick of the main loop (timer B's, 175 a second): the fade, a command, the
+ * song's steps by its tempo, the voices; every third tick, the tracks' steps */
+void snd_tick(void)
+{
+    tick_wait_end();
+    fade_tick();
+    command_take();
+    unsigned sum = RAM(TEMPO_SUM) + RAM16(TEMPO);
+    SET16(TEMPO_SUM, sum);
+    RAM(SONG_STEPS) += (uint8_t)(sum >> 8);
+    voices_tick();
+    unsigned n = (RAM(TICKS3) - 1u) & 0xFF;
+    if (!n) { tracks_tick(); RAM(SONG_STEPS) = 0; n = 3; }
+    RAM(TICKS3) = (uint8_t)n;
+    RAM(TICK_DIV)--;
+    tick_wait_start();
 }
 
 /* ---- the routines' Z80 entries, for the shadow check: each adapter takes the routine's
@@ -691,12 +1104,22 @@ static void z_0a08(SndRegs *r) { fm_load(r->ix); }
 static void z_0aa9(SndRegs *r) { noise_load(r->ix); }
 static void z_0ab2(SndRegs *r) { tone_load(r->ix); }
 static void z_0b04(SndRegs *r) { scripts_set(r->ix, (unsigned)(r->h << 8 | r->l)); }
+static void z_0155(SndRegs *r) { (void)r; fade_tick(); }
+static void z_019c(SndRegs *r) { (void)r; command_take(); }
+static void z_0b7f(SndRegs *r) { (void)r; tracks_tick(); }
+static void z_0ca5(SndRegs *r) { track_note(r->ix, r->a); }
+static void z_0e1b(SndRegs *r) { voice_level(r->ix, r->iy); }
 static void z_00e3(SndRegs *r) { (void)r; ym_silence(); }
 static void z_013e(SndRegs *r) { (void)r; voices_reset(); }
 
 const SndRoutine snd_routines[] = {
     {0x00E3, z_00e3, "YmSilence", 0},
     {0x013E, z_013e, "VoicesReset", 0},
+    {0x0155, z_0155, "FadeTick", 0},
+    {0x019C, z_019c, "CommandTake", 0},
+    {0x0B7F, z_0b7f, "TracksTick", 0},
+    {0x0CA5, z_0ca5, "TrackNote", 0},
+    {0x0E1B, z_0e1b, "VoiceLevel", 0},
     {0x02E8, z_02e8, "TrackNumber", SR_A},
     {0x02FA, z_02fa, "TrackReleaseVoices", 0},
     {0x0321, z_0321, "SongStop", 0},
