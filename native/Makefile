@@ -4,7 +4,7 @@
 CC = gcc
 CFLAGS ?= -O2 -Wall -Wno-unused-function -Wno-unused-label -Wno-unused-variable
 OUT = ../work/native
-PORT = ../port/kernel.c ../port/entity.c ../port/anim.c ../port/gfx.c ../port/sprites.c ../port/hitbox.c ../port/map.c ../port/movement.c ../port/player.c ../port/magic.c ../port/hud.c ../port/status.c ../port/message.c ../port/title.c ../port/rooms.c ../port/vblank.c ../port/enemylib.c ../port/objhelp.c ../port/enemygfx.c ../port/kernhelp.c ../port/effects.c ../port/items.c ../port/maths.c ../port/enemies.c ../port/spawns.c ../port/objects.c ../port/people.c ../port/handlers.c ../port/actions.c ../port/world.c ../port/coro.c ../port/task.c ../port/registry.c
+PORT = ../port/kernel.c ../port/entity.c ../port/anim.c ../port/gfx.c ../port/sprites.c ../port/hitbox.c ../port/map.c ../port/movement.c ../port/player.c ../port/magic.c ../port/hud.c ../port/status.c ../port/message.c ../port/title.c ../port/rooms.c ../port/vblank.c ../port/enemylib.c ../port/objhelp.c ../port/enemygfx.c ../port/kernhelp.c ../port/effects.c ../port/items.c ../port/maths.c ../port/enemies.c ../port/spawns.c ../port/objects.c ../port/people.c ../port/handlers.c ../port/actions.c ../port/world.c ../port/coro.c ../port/task.c ../port/registry.c ../port/sounddrv.c
 MACHINE = ../harness/bus.c ../harness/vdp.c ../harness/png.c ../harness/wav.c ../harness/framelog.c ../harness/sound.c ../harness/audio.c
 CXX = g++
 YMFM = ../third_party/ymfm

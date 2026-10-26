@@ -6,6 +6,7 @@
 uint8_t *rom; size_t rom_size;
 uint8_t ram[0x10000];
 uint8_t zram[0x2000];
+uint8_t *bus_zram_marks;                            /* when set, each Z80 RAM byte the 68000 writes is marked (sound.c's shadow check) */
 uint8_t pad_buttons;
 
 /* ---- controller 1, 3-button pad: TH selects which half of the buttons is visible ---- */
@@ -176,7 +177,10 @@ void bus_write8(unsigned int a, unsigned int v)
     a &= 0xFFFFFF; v &= 0xFF;
     if (a >= 0xE00000) { ram[a & 0xFFFF] = v; return; }
     if (a == 0x200001) { eeprom_write(v); return; }
-    if (a >= 0xA00000 && a < 0xA10000) { if ((a & 0x7FFF) < 0x2000) zram[a & 0x1FFF] = v; return; }
+    if (a >= 0xA00000 && a < 0xA10000) {
+        if ((a & 0x7FFF) < 0x2000) { zram[a & 0x1FFF] = v; if (bus_zram_marks) bus_zram_marks[a & 0x1FFF] = 1; }
+        return;
+    }
     if (a == 0xA11100) { sound_set_busreq(v & 1); return; }       /* request the Z80's bus */
     if (a == 0xA11200) { sound_set_reset(!(v & 1)); return; }     /* 0 holds the Z80 (and YM2612) in reset */
     if (a == 0xA10003) { pad_data = v; return; }

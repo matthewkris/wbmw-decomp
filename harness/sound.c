@@ -17,6 +17,7 @@
 #include "md.h"
 #define CHIPS_IMPL
 #include "../third_party/chips/z80.h"
+#include "../port/sounddrv.h"
 
 void ym_reset(void);
 void ym_write(unsigned port, unsigned data);
@@ -162,8 +163,101 @@ static void log_chip(int chip, unsigned port, unsigned d)
     if (chip_log) fprintf(chip_log, "%s%u %02X\n", chip ? "psg" : "ym", port, d);
 }
 
+/* ---- the shadow check of the sound driver in C (port/sounddrv.h), WBMW_Z80_SHADOW=1: when the
+ * Z80 starts a routine of snd_routines, the C runs on a copy of the RAM, its chip writes kept;
+ * when the Z80 has returned from it (its stack pointer back above the return address), the
+ * driver's variables ($1B80-$1FFF) and the chip writes, in order, must be the same. At exit, the
+ * routines' calls and differences. ---- */
+static int sh_on = -1;
+static const SndRoutine *sh_r;                     /* the routine being checked, or none */
+static uint16_t sh_sp;                              /* the Z80's stack pointer at its entry */
+static uint8_t sh_ram[0x2000];
+static uint16_t sh_c[1024], sh_z[1024];             /* the chip writes, C and Z80: port << 8 | data, $800 the PSG */
+static int sh_cn, sh_zn;
+static struct { unsigned calls, bad; } sh_stats[256];
+
+static void sh_ym(unsigned port, unsigned d) { if (sh_cn < 1024) sh_c[sh_cn++] = (uint16_t)((port & 3) << 8 | (d & 0xFF)); }
+static void sh_psg(unsigned d) { if (sh_cn < 1024) sh_c[sh_cn++] = (uint16_t)(0x800 | (d & 0xFF)); }
+static uint8_t sh_window(uint16_t a) { return (uint8_t)bus_read8(bank << 15 | (a & 0x7FFF)); }
+
+static void sh_report(void)
+{
+    int called = 0;
+    for (int i = 0; i < snd_routine_count; i++) {
+        if (!sh_stats[i].calls) continue;
+        called++;
+        fprintf(stderr, "sound shadow: %-20s $%04X  %7u calls  %u differ\n", snd_routines[i].name, snd_routines[i].addr,
+                sh_stats[i].calls, sh_stats[i].bad);
+    }
+    fprintf(stderr, "sound shadow: %d of %d routines called\n", called, snd_routine_count);
+}
+
+static SndRegs sh_out;                              /* the C's results */
+static uint8_t sh_marks[0x2000];                    /* the bytes the 68000 wrote while the Z80 ran the routine: not compared */
+static void sh_start(const SndRoutine *r)
+{
+    SndRegs g = { z80.a, z80.f, z80.b, z80.c, z80.d, z80.e, z80.h, z80.l, z80.ix, z80.iy, z80.sp };
+    memcpy(sh_ram, zram, sizeof sh_ram);
+    SndIO keep = snd_io;
+    snd_io.ram = sh_ram; snd_io.ym = sh_ym; snd_io.psg = sh_psg; snd_io.window = sh_window;
+    sh_cn = sh_zn = 0;
+    r->fn(&g);
+    sh_out = g;
+    snd_io = keep;
+    sh_r = r; sh_sp = z80.sp;
+    memset(sh_marks, 0, sizeof sh_marks); bus_zram_marks = sh_marks;   /* what the 68000 writes meanwhile */
+}
+
+/* the registers the routine answers in, the Z80's against the C's: the first that differs */
+static void sh_regs(char *why, size_t n)
+{
+    unsigned o = sh_r->outs;
+    const SndRegs *c = &sh_out;
+    struct { unsigned bit; const char *name; unsigned z, cc; } t[] = {
+        {SR_A, "a", z80.a, c->a}, {SR_B, "b", z80.b, c->b}, {SR_C, "c", z80.c, c->c}, {SR_D, "d", z80.d, c->d},
+        {SR_E, "e", z80.e, c->e}, {SR_H, "h", z80.h, c->h}, {SR_L, "l", z80.l, c->l}, {SR_IX, "ix", z80.ix, c->ix},
+        {SR_IY, "iy", z80.iy, c->iy}, {SR_ZF, "the zero flag", z80.f >> 6 & 1, c->f >> 6 & 1},
+        {SR_CF, "the carry flag", z80.f & 1, c->f & 1}};
+    for (unsigned k = 0; k < sizeof t / sizeof t[0]; k++)
+        if ((o & t[k].bit) && t[k].z != t[k].cc) { snprintf(why, n, "%s: the Z80's %X, the C's %X", t[k].name, t[k].z, t[k].cc); return; }
+}
+
+static void sh_end(void)
+{
+    int i = (int)(sh_r - snd_routines);
+    char why[160] = "";
+    sh_stats[i].calls++;
+    bus_zram_marks = NULL;
+    for (int a = 0x1B80; a < 0x2000 && !why[0]; a++)
+        if (zram[a] != sh_ram[a] && !sh_marks[a]) snprintf(why, sizeof why, "RAM $%04X: the Z80's %02X, the C's %02X", a, zram[a], sh_ram[a]);
+    for (int k = 0; !why[0] && k < (sh_cn > sh_zn ? sh_cn : sh_zn); k++)
+        if (k >= sh_cn || k >= sh_zn || sh_c[k] != sh_z[k]) {
+            char z[16] = "none", cc[16] = "none";
+            if (k < sh_zn) snprintf(z, sizeof z, sh_z[k] & 0x800 ? "psg %02X" : "ym%d %02X", sh_z[k] & 0x800 ? sh_z[k] & 0xFF : sh_z[k] >> 8, sh_z[k] & 0xFF);
+            if (k < sh_cn) snprintf(cc, sizeof cc, sh_c[k] & 0x800 ? "psg %02X" : "ym%d %02X", sh_c[k] & 0x800 ? sh_c[k] & 0xFF : sh_c[k] >> 8, sh_c[k] & 0xFF);
+            snprintf(why, sizeof why, "chip write %d: the Z80's %s, the C's %s (writes: %d, %d)", k, z, cc, sh_zn, sh_cn);
+        }
+    if (!why[0]) sh_regs(why, sizeof why);
+    if (why[0] && ++sh_stats[i].bad <= 3) fprintf(stderr, "sound shadow: %s ($%04X): %s\n", sh_r->name, sh_r->addr, why);
+    sh_r = NULL;
+}
+
+/* at the start of each Z80 instruction */
+static void sh_step(uint16_t pc)
+{
+    if (sh_on < 0) { sh_on = getenv("WBMW_Z80_SHADOW") != NULL; if (sh_on) atexit(sh_report); }
+    if (!sh_on) return;
+    if (sh_r) { if (z80.sp == (uint16_t)(sh_sp + 2)) sh_end(); else return; }
+    for (int i = 0; i < snd_routine_count; i++)
+        if (snd_routines[i].addr == pc) { sh_start(&snd_routines[i]); return; }
+}
+
 static void z80_write(uint16_t a, uint8_t d)
 {
+    if (sh_r && sh_zn < 1024) {
+        if (a >= 0x4000 && a < 0x6000) sh_z[sh_zn++] = (uint16_t)((a & 3) << 8 | d);
+        else if (a == 0x7F11) sh_z[sh_zn++] = (uint16_t)(0x800 | d);
+    }
     if (a >= 0x4000 && a < 0x6000) log_chip(0, a & 3, d);
     if (a == 0x7F11) log_chip(1, 0, d);
     if (a < 0x4000) zram[a & 0x1FFF] = d;
@@ -177,6 +271,8 @@ static void z80_cycle(void)
 {
     if (int_line) pins |= Z80_INT; else pins &= ~Z80_INT;
     pins = z80_tick(&z80, pins);
+    if ((pins & (Z80_M1 | Z80_MREQ | Z80_RD)) == (Z80_M1 | Z80_MREQ | Z80_RD) && !z80.prefix_active)
+        sh_step(Z80_GET_ADDR(pins));                /* an instruction starts */
     if (pins & Z80_MREQ) {
         uint16_t a = Z80_GET_ADDR(pins);
         if (pins & Z80_RD) { Z80_SET_DATA(pins, z80_read(a)); }
