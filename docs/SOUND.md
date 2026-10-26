@@ -152,6 +152,79 @@ the sword's swings stay with the music at 0 and go with the effects at 0; the ov
   gives the same sound output as from the ROM, sample for sample (`--wav`): the title, and 900
   frames from two save states.
 
+## The sound effects
+
+Named by where the game queues each (`music.EFFECTS`; in `music.json` each effect's `name` and
+`used`, and in `music.txt`): the queue's calls in the C with their numbers, the pickups' table at
+$10BD4, the ocarina's notes at $2B34, the messages' `SOUND` command (message 40's `{SOUND 45}`).
+Five are not queued by the code anywhere found: the three ocarina tunes played whole, a low rumble
+and two low notes (data could still name them; the tunes may be leftovers of a demonstration).
+
+| Sound | Name | Where |
+|---|---|---|
+| $18 | ocarina note A (C5) | $2B08: the ocarina played, button A |
+| $19 | ocarina note B (D5) | $2B08: button B |
+| $1A | ocarina note C (G5) | $2B08: button C |
+| $1B | ocarina tune 0, played whole (B A B A B C B) | not queued by the code |
+| $1C | ocarina tune 1, played whole (A B C B C A B) | not queued by the code |
+| $1D | ocarina tune 2, played whole (A C C A B A B) | not queued by the code |
+| $1E | jump | $EC08: leaving the ground upwards |
+| $1F | an enemy hit | $4986: an enemy hurt by the player; a darter hit ($17EE6) |
+| $20 | sword swing | $ED5C: B swings the sword |
+| $21 | a low rumble, fading over four | not queued by the code |
+| $22 | a door closing | $BD52: the door's frame, closing |
+| $23 | a door opening | $BD0A: the door's frame, opening |
+| $24 | spirit magic | $1194C: a spirit sets off |
+| $25 | cursor | a move in a menu or a message's choice ($8212, the title's menu $71C6, $13BC) |
+| $26 | confirm | a choice made ($13BC, the title's menu $71C6) |
+| $27 | gold dropped, rolling | $10BD4: gold that rolls away appears (pickup kinds $00-$0A) |
+| $28 | gold or an item picked up | $F1EC, $F256 |
+| $29 | a heart picked up | $F262 |
+| $2A | a thud | a sinking step ($12160), a weight ($1234C), a townsperson struck ($1649C) |
+| $2B | a hit spark | $10EC2: an attack's spark, when it hits |
+| $2C | a chest opening | $A666 |
+| $2D | a thing received | message 40: "Oh, it's the ...!" |
+| $2E | quake magic | $11590: the world stops and the screen shakes |
+| $2F | a quake's rock falling | $118BE |
+| $30 | a hit blocked | the shield's spark ($11868); a hit that only pushes back ($E04E, bit 4) |
+| $31 | up attack, or grabbing a ladder or vine | $EA2A, $EC26 |
+| $32 | a thing shaking | $1221C |
+| $33 | a spring | a spring ($12298), a bounce tile ($DFA0), a lift ($B0DA) |
+| $34 | two low notes, alternating | not queued by the code |
+| $35 | buzz: cannot | the status screen: a line that cannot be chosen ($75F8, $7882, $78DC, $7D9C) |
+| $36 | the player hurt | $E12E |
+| $37 | a shot | an enemy's shot ($15456, $18620); $DB36 |
+| $38 | a room's message coming | $9228: the screen fades for a message |
+| $39 | a crash: the screen shaken | $183D4; Gragg and Glagg appearing ($15A86); a landing ($17DB8) |
+| $3A | thunder magic | $11170, kind 2 |
+| $3B | a seeker setting off | handler 25 ($1A0B0) |
+| $3C | leaving by an exit | $F76C; a beaten beast's rider thrown up ($18D74) |
+| $3D | hearts refilling | $F288; a message's command ($15C8) |
+| $3E | healing at the inn | $1BE6, $F2A6 |
+| $3F | a puff of debris | $42EA, $19C34 |
+| $40 | a picture appearing | $CF5A: room script 9 |
+| $41 | a lift starting | $11FD2 |
+| $42 | a lift stopping | $11FD2 |
+| $43 | the companion on the player's head | $FC02: the companion, kind 0, state 10 |
+| $44 | the player transformed | $CA66 |
+| $45 | a beaten beast's rider | $18D74: the pair beaten |
+| $46 | pushed back by a hit | $E04E, bit 6 |
+| $47 | a splash | $DD7C: into or out of the water |
+| $48 | gold appearing | $10BD4: pickup kinds $12-$16 |
+| $49 | the companion turning | $FDAC: the companion, kind 0, state 6 |
+| $4A | a jump (C), swimming up, climbing | $EB9E, $EC26 |
+| $4B | a wall crumbling | $B400 |
+| $4C | room objects let out | $C9B4: room script 0's release |
+| $4D | shield magic | $11170, kinds 4, 6, 7 |
+| $4E | a darter fired | handler 19 ($17EE6) |
+| $4F | a message window opening | $279C |
+| $50 | a diver diving | handler 24 ($19C86) |
+| $51 | the ride | $D48C: room script 13 |
+| $52 | a beaten boss's body | $19946 |
+| $53 | the player's death | $E22E |
+| $56 | the status screen opening | $901C: Start (the music paused first, $FC) |
+| $57 | a lift opened | $2C4E: a puff and four sparks |
+
 ## MIDI
 
 `tools/midi.py` writes every song (and with `--effects` every effect) as a standard MIDI file,
@@ -180,7 +253,6 @@ song or effect.
 ## Not done yet
 
 * The modulation scripts' format, and names for the instruments' unnamed bytes.
-* Names for the effects (where the 68000 queues each).
 * A MIDI import back into `music.json`.
 * The driver in C (replacing the emulated Z80), checked against it by comparing every write to
   the sound chips.

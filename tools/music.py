@@ -159,6 +159,74 @@ CODE_SONGS = {0x14: 'the title ($718A)',
               0x16: "the ending's script ($1B016)",
               0x54: 'the inn: a conversation ended by a fade, the night ($C1E8)'}
 
+# the sound effects: a name, and where the game queues each (found in the C: the queue's calls with
+# their numbers, the pickups' table at $10BD4, the ocarina's at $2B34, the messages' SOUND command;
+# "not queued by the code": none found, though data could still name it)
+EFFECTS = {
+    0x18: ('ocarina note A (C5)', '$2B08: the ocarina played, button A'),
+    0x19: ('ocarina note B (D5)', '$2B08: button B'),
+    0x1A: ('ocarina note C (G5)', '$2B08: button C'),
+    0x1B: ('ocarina tune 0, played whole (B A B A B C B)', 'not queued by the code'),
+    0x1C: ('ocarina tune 1, played whole (A B C B C A B)', 'not queued by the code'),
+    0x1D: ('ocarina tune 2, played whole (A C C A B A B)', 'not queued by the code'),
+    0x1E: ('jump', '$EC08: leaving the ground upwards'),
+    0x1F: ('an enemy hit', '$4986: an enemy hurt by the player; a darter hit ($17EE6)'),
+    0x20: ('sword swing', '$ED5C: B swings the sword'),
+    0x21: ('a low rumble, fading over four', 'not queued by the code'),
+    0x22: ('a door closing', '$BD52: the door\'s frame, closing'),
+    0x23: ('a door opening', '$BD0A: the door\'s frame, opening'),
+    0x24: ('spirit magic', '$1194C: a spirit sets off'),
+    0x25: ('cursor', 'a move in a menu or a message\'s choice ($8212, the title\'s menu $71C6, $13BC)'),
+    0x26: ('confirm', 'a choice made ($13BC, the title\'s menu $71C6)'),
+    0x27: ('gold dropped, rolling', '$10BD4: gold that rolls away appears (pickup kinds $00-$0A)'),
+    0x28: ('gold or an item picked up', '$F1EC, $F256'),
+    0x29: ('a heart picked up', '$F262'),
+    0x2A: ('a thud', 'a sinking step ($12160), a weight ($1234C), a townsperson struck ($1649C)'),
+    0x2B: ('a hit spark', '$10EC2: an attack\'s spark, when it hits'),
+    0x2C: ('a chest opening', '$A666'),
+    0x2D: ('a thing received', 'message 40: "Oh, it\'s the ...!"'),
+    0x2E: ('quake magic', '$11590: the world stops and the screen shakes'),
+    0x2F: ('a quake\'s rock falling', '$118BE'),
+    0x30: ('a hit blocked', 'the shield\'s spark ($11868); a hit that only pushes back ($E04E, bit 4)'),
+    0x31: ('up attack, or grabbing a ladder or vine', '$EA2A, $EC26'),
+    0x32: ('a thing shaking', '$1221C'),
+    0x33: ('a spring', 'a spring ($12298), a bounce tile ($DFA0), a lift ($B0DA)'),
+    0x34: ('two low notes, alternating', 'not queued by the code'),
+    0x35: ('buzz: cannot', 'the status screen: a line that cannot be chosen ($75F8, $7882, $78DC, $7D9C)'),
+    0x36: ('the player hurt', '$E12E'),
+    0x37: ('a shot', 'an enemy\'s shot ($15456, $18620); $DB36'),
+    0x38: ('a room\'s message coming', '$9228: the screen fades for a message'),
+    0x39: ('a crash: the screen shaken', '$183D4; Gragg and Glagg appearing ($15A86); a landing ($17DB8)'),
+    0x3A: ('thunder magic', '$11170, kind 2'),
+    0x3B: ('a seeker setting off', 'handler 25 ($1A0B0)'),
+    0x3C: ('leaving by an exit', '$F76C; a beaten beast\'s rider thrown up ($18D74)'),
+    0x3D: ('hearts refilling', '$F288; a message\'s command ($15C8)'),
+    0x3E: ('healing at the inn', '$1BE6, $F2A6'),
+    0x3F: ('a puff of debris', '$42EA, $19C34'),
+    0x40: ('a picture appearing', '$CF5A: room script 9'),
+    0x41: ('a lift starting', '$11FD2'),
+    0x42: ('a lift stopping', '$11FD2'),
+    0x43: ('the companion on the player\'s head', '$FC02: the companion, kind 0, state 10'),
+    0x44: ('the player transformed', '$CA66'),
+    0x45: ('a beaten beast\'s rider', '$18D74: the pair beaten'),
+    0x46: ('pushed back by a hit', '$E04E, bit 6'),
+    0x47: ('a splash', '$DD7C: into or out of the water'),
+    0x48: ('gold appearing', '$10BD4: pickup kinds $12-$16'),
+    0x49: ('the companion turning', '$FDAC: the companion, kind 0, state 6'),
+    0x4A: ('a jump (C), swimming up, climbing', '$EB9E, $EC26'),
+    0x4B: ('a wall crumbling', '$B400'),
+    0x4C: ('room objects let out', '$C9B4: room script 0\'s release'),
+    0x4D: ('shield magic', '$11170, kinds 4, 6, 7'),
+    0x4E: ('a darter fired', 'handler 19 ($17EE6)'),
+    0x4F: ('a message window opening', '$279C'),
+    0x50: ('a diver diving', 'handler 24 ($19C86)'),
+    0x51: ('the ride', '$D48C: room script 13'),
+    0x52: ('a beaten boss\'s body', '$19946'),
+    0x53: ('the player\'s death', '$E22E'),
+    0x56: ('the status screen opening', '$901C: Start (the music paused first, $FC)'),
+    0x57: ('a lift opened', '$2C4E: a puff and four sparks'),
+}
+
 def uses(d):
     """where each song plays: {song: [text]}, from the rooms' music (the directory's table 3,
     $92D4: a song, $80 + n a pair at $932A by a game flag, $EF by flags $4D/$4E ($DAC8), $F0 up
@@ -233,7 +301,9 @@ def extract(d):
     W = uses(d)
     J = dict(header=d[DATA[0]:rom(TABLE)].hex(),
              sounds=[dict(number=n, address='%04X' % h, kind=k, priority=pri, tempo=tempo,
-                          tracks=[[ch, '%04X' % t] for ch, t in tr], **({'plays': W.get(n, [])} if k == 'song' else {}))
+                          tracks=[[ch, '%04X' % t] for ch, t in tr],
+                          **({'plays': W.get(n, [])} if k == 'song' else
+                             {'name': EFFECTS[n][0], 'used': EFFECTS[n][1]} if n in EFFECTS else {}))
                      for n, h, k, pri, tempo, tr, _ in S],
              tracks={'%04X' % z: dict(items=items, end='%04X' % end, labels=['%04X' % l for l in sorted(labels)])
                      for z, (items, end, labels) in sorted(P.items())},
@@ -244,10 +314,12 @@ def extract(d):
              '# the pitch heard). +X sounds with the next note; lN a length; [N ... ] a loop.', '']
     names = {}
     for n, h, k, pri, tempo, tr, _ in S:
-        for ch, t in tr: names.setdefault(t, []).append('%s $%02X %s %d' % (k, n, 'track' if k == 'song' else 'channel', ch))
+        for ch, t in tr: names.setdefault(t, []).append('%s $%02X%s %s %d' % (k, n, ' "%s"' % EFFECTS[n][0] if n in EFFECTS else '',
+                                                                              'track' if k == 'song' else 'channel', ch))
         lines.append('%s $%02X at $%04X: priority $%02X%s, %d track%s' % (k, n, h, pri, ', tempo %d' % tempo if tempo is not None else '',
                                                                         len(tr), '' if len(tr) == 1 else 's'))
         if k == 'song': lines += ['    plays: ' + w for w in (group(W[n]) if n in W else ['nowhere found'])]
+        elif n in EFFECTS: lines.append('    %s: %s' % EFFECTS[n])
     lines.append('')
     for z, (items, end, labels) in sorted(P.items()):
         lines.append('$%04X (%s):' % (z, '; '.join(names.get(z, ['called or gone to']))))
