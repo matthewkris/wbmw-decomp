@@ -123,7 +123,9 @@ runs that differ only in scratch memory (the pack's decoders write none).
 
 The format is the harness's own (`WBMWST02`, `harness/core.c`): states move freely between
 `play.exe` and `wbmw.exe`, including all the earlier ones (`WBMWST01`). The default file is
-`wbmw.state`. A state is taken only where the game waits for VBlank, called from the frame loop.
+`wbmw.state`, the first of the menu's four slots; the others are beside it with `-2`, `-3`, `-4`
+in their names, each slot with its picture at half size (the state's name with `.png`, written by
+`harness/png.c` and read back by its `png_read_rgb`). F2 and F4 use the current slot. A state is taken only where the game waits for VBlank, called from the frame loop.
 The harness's states stop there too (between frames). F2 saves at the next such point, normally
 the same frame. A loaded state resumes in `machine.c`'s frame wait at its PC. The tasks then
 carry on from the addresses they keep in RAM, as the original's do: every waiting hand port can

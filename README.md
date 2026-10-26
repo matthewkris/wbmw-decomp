@@ -37,8 +37,9 @@ On top of the original game. They are all on by default; each can be turned off 
   talk zoom, enemy health, the volumes, frame rate display, controls.
 * **Volume**: the overall volume, and the music and the sound effects each on their own, from the
   menu.
-* **Quick save and load** of the whole game state, with an on-screen confirmation. Saving over
-  an existing save asks you to press quick save again, so it isn't overwritten by accident.
+* **Four save slots** of the whole game state, each with a picture of the moment it was saved,
+  chosen from the menu (**Save state**, **Load state**), plus quick save and load on the current
+  slot. Saving over a slot shows its picture and asks first.
 * **Full screen** by default, with window mode and whole-pixel scaling.
 * **Frame rate display.**
 * **Enemy health bars and damage numbers**: when you hit an enemy, the damage rises from it as a
@@ -172,6 +173,10 @@ so Start stays the game's own: it opens the item screen.
 
 ### The menu
 
+* **Save state**, **Load state**: the four slots, two by two, each with its picture, its number
+  and when it was saved. Arrows choose one, Enter saves or loads. Saving over a used slot shows
+  its picture with "Overwrite slot N?" (No / Yes). The slot you choose becomes the current one,
+  which quick save and quick load use.
 * **Show FPS, Full screen, Whole pixels** (every pixel the same size), **Widescreen**, **Talk
   zoom**, **Enemy health** (the health bars and damage numbers): on or off. Widescreen is
   experimental: see **Added features** above.
@@ -193,9 +198,12 @@ D-pad, A and B, whatever you set the game's controls to.
 Your settings are saved in `wbmw.ini` next to `wbmw.exe`. Command-line options override them for
 one run without changing the file. Delete the file to go back to the defaults.
 
-Quick save stores the game in `wbmw.state` and quick load returns to it. If there is already a
-save, the first press shows "PRESS SAVE AGAIN TO OVERWRITE"; press it again within two seconds
-to replace it. A message at the bottom of the screen confirms each one. The game's own save,
+The slots are files in the current folder: slot 1 is `wbmw.state`, the others `wbmw-2.state`,
+`wbmw-3.state` and `wbmw-4.state`, each with its picture beside it (`wbmw.png`, `wbmw-2.png`, ...).
+Quick save stores the game in the current slot and quick load returns to it. If the slot is
+already used, the first press shows "SLOT N: PRESS SAVE AGAIN TO OVERWRITE"; press it again within
+two seconds to replace it. A message at the bottom of the screen confirms each one ("SAVED TO
+SLOT 2"). The game's own save,
 kept on the cartridge's EEPROM, is written to `wbmw.sav` in the current folder when you exit.
 Use `--save FILE` for a different file.
 
@@ -215,7 +223,7 @@ wbmw [ROM] [--pack FILE] [--windowed] [--widescreen] [--talk-zoom] [--enemy-heal
 * `--fps`: show the frame rate from the start. `--mute`: no sound. `--volume N`,
   `--music-volume N`, `--effects-volume N`: the volumes for this run (0-100). `--z80-sound`: the
   game's original sound driver on an emulated Z80, in place of the C driver.
-* `--state FILE`: the file quick save and quick load use. `--load`: load it at start.
+* `--state FILE`: slot 1's file (the other slots go beside it). `--load`: load slot 1 at start.
 * `--config FILE`: use this settings file instead of `wbmw.ini`.
 
 `native/README.md` has the rest, including headless runs and frame logs for testing.
