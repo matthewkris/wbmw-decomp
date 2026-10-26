@@ -5,7 +5,7 @@ Each frame of the GIF stores only the rectangle that changed since the last, and
 one palette (the game's pictures have far fewer than 256 colours).
 
 Usage: gif.py OUT.gif FRAME.png... [--scale N] [--delay CS] [--crop X,Y,W,H]
-       gif.py OUT.png FRAME.png [--scale N] [--crop X,Y,W,H]       (a still)
+       gif.py OUT.png FRAME.png... [--scale N] [--crop X,Y,W,H]    (a still; several side by side)
 """
 import sys, zlib, struct, argparse
 
@@ -46,11 +46,26 @@ def transform(rows, scale, crop):
     return [[p for p in r for _ in range(scale)] for r in rows for _ in range(scale)]
 
 def write_png(path, rows):
+    """RGB; a pixel None is transparent (the file is then RGBA)"""
     h, w = len(rows), len(rows[0])
-    raw = b''.join(b'\0' + bytes(c for p in r for c in p) for r in rows)
+    alpha = any(p is None for r in rows for p in r)
+    px = (lambda p: (0, 0, 0, 0) if p is None else p + (255,)) if alpha else (lambda p: p)
+    raw = b''.join(b'\0' + bytes(c for p in r for c in px(p)) for r in rows)
     chunk = lambda k, d: struct.pack('>I', len(d)) + k + d + struct.pack('>I', zlib.crc32(k + d) & 0xFFFFFFFF)
-    open(path, 'wb').write(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0))
+    open(path, 'wb').write(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 6 if alpha else 2, 0, 0, 0))
                            + chunk(b'IDAT', zlib.compress(raw, 9)) + chunk(b'IEND', b''))
+
+def beside(frames, gap):
+    """the stills side by side, top-aligned, a transparent gap between them"""
+    h = max(len(f) for f in frames)
+    rows = []
+    for y in range(h):
+        row = []
+        for i, f in enumerate(frames):
+            if i: row += [None] * gap
+            row += f[y] if y < len(f) else [None] * len(f[0])
+        rows.append(row)
+    return rows
 
 def lzw(indices, bits):
     """GIF's LZW: codes of growing width, a clear code when the table is full"""
@@ -119,7 +134,7 @@ def main():
     A = ap.parse_args()
     crop = tuple(int(v) for v in A.crop.split(',')) if A.crop else None
     frames = [transform(read_png(p), A.scale, crop) for p in A.frames]
-    if A.out.lower().endswith('.png'): write_png(A.out, frames[0])
+    if A.out.lower().endswith('.png'): write_png(A.out, beside(frames, 8 * A.scale) if len(frames) > 1 else frames[0])
     else: write_gif(A.out, frames, A.delay)
 
 if __name__ == '__main__':

@@ -15,10 +15,7 @@ emulated Z80 instead.
 
 **Widescreen** (right), next to the original picture (left):
 
-<p>
-  <img src="docs/images/original.png" alt="The original 4:3 picture" height="300">
-  <img src="docs/images/widescreen.png" alt="The same moment in widescreen, with the one-row status bar" height="300">
-</p>
+<img src="docs/images/widescreen.png" alt="Left: the original 4:3 picture. Right: the same moment in widescreen, with the one-row status bar" width="100%">
 
 **Damage numbers and enemy health bars:**
 
@@ -71,7 +68,7 @@ On top of the original game. They are all on by default; each can be turned off 
 
 **You need your own dump of the cartridge.** This repository contains only source code, tools and
 notes. It contains no ROM, no graphics, maps, text, music or sound, and no file made from the ROM,
-except the four screenshots above (`docs/images/`, made with `tools/gif.py` from the native build's
+except the three screenshots above (`docs/images/`, made with `tools/gif.py` from the native build's
 frames):
 
 * `rom/` (where you put your dump), `work/` (everything built from it) and `assets/` (the data
