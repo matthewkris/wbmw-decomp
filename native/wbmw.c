@@ -22,6 +22,8 @@
 #include <string.h>
 #include <ctype.h>
 #include <math.h>
+#include <time.h>
+#include <sys/stat.h>
 #include "../harness/md.h"
 #include "../port/m68k_rt.h"
 
@@ -37,6 +39,44 @@ static const char *toast; static int toast_frames;   /* a short message over the
 
 static void request_load(const char *path);
 static void maybe_save(Cpu *c, uint32_t pc);
+
+/* the save slots: 4 states, each with a picture of the game at half size. Slot 1 is the --state
+ * file (wbmw.state), the others beside it with -2, -3, -4 in their names; each picture has the
+ * state's name with .png (wbmw.png, wbmw-2.png). Quick save and load use the current slot, the
+ * one last chosen in the menu (kept in wbmw.ini). */
+#define SLOTS 4
+static int slot = 1;                                /* the current slot */
+static int save_slot, load_slot;                    /* the slot being saved or loaded, 0 for another file */
+static const char *slot_file(int n, int picture)
+{
+    static char path[2][SLOTS + 1][1024];
+    size_t len = strlen(state_path);
+    const char *ext = len >= 6 && !strcmp(state_path + len - 6, ".state") ? ".state" : "";
+    char suffix[4] = "";
+    if (n > 1) { suffix[0] = '-'; suffix[1] = (char)('0' + n); suffix[2] = 0; }
+    snprintf(path[picture][n], sizeof path[0][0], "%.*s%s%s", (int)(len - strlen(ext)), state_path, suffix,
+             picture ? ".png" : ext);
+    return path[picture][n];
+}
+
+/* the picture as shown, without the host's messages over it (the window keeps it each frame);
+ * headless runs have only frame_rgb */
+static uint32_t clean_rgb[ACTIVE_LINES][FRAME_STRIDE];
+static int clean_width;
+static void save_picture(const char *path)
+{
+    static uint32_t half[ACTIVE_LINES / 2][FRAME_STRIDE / 2];
+    const uint32_t (*src)[FRAME_STRIDE] = clean_width ? clean_rgb : frame_rgb;
+    int w = (clean_width ? clean_width : frame_width) / 2;
+    for (int y = 0; y < ACTIVE_LINES / 2; y++)
+        for (int x = 0; x < w; x++) {
+            uint32_t p[4] = {src[2 * y][2 * x], src[2 * y][2 * x + 1], src[2 * y + 1][2 * x], src[2 * y + 1][2 * x + 1]}, v = 0;
+            for (int s = 16; s >= 0; s -= 8)
+                v |= (uint32_t)(((p[0] >> s & 255) + (p[1] >> s & 255) + (p[2] >> s & 255) + (p[3] >> s & 255) + 2) / 4) << s;
+            half[y][x] = v;
+        }
+    png_write_rgb(path, &half[0][0], w, ACTIVE_LINES / 2, FRAME_STRIDE / 2);
+}
 
 /* ---- the machine around the code ---- */
 uint8_t rd8(uint32_t a) { return (uint8_t)bus_read8(a); }
@@ -406,6 +446,7 @@ static void settings_save(void)
     fprintf(f, "fullscreen=%d\nshow_fps=%d\ninteger_scale=%d\nwidescreen=%d\ntalk_zoom=%d\nenemy_health=%d\nstick_moves=%d\n",
             cfg.fullscreen, cfg.show_fps, cfg.integer_scale, cfg.widescreen, cfg.talk_zoom, cfg.enemy_health, stick_moves);
     fprintf(f, "volume=%d\nmusic_volume=%d\neffects_volume=%d\n", cfg.volume, cfg.music_volume, cfg.effects_volume);
+    fprintf(f, "slot=%d\n", slot);
     for (int a = 0; a < ACTIONS; a++) {
         char pad[64]; pad_name(pad_bind[a], pad, sizeof pad);
         const char *key = key_bind[a] == SDL_SCANCODE_UNKNOWN ? "" : SDL_GetScancodeName(key_bind[a]);
@@ -439,6 +480,7 @@ static void settings_open(const char *path)
             else if (!strcmp(line, "volume")) cfg.volume = volume_clamp(atoi(v));
             else if (!strcmp(line, "music_volume")) cfg.music_volume = volume_clamp(atoi(v));
             else if (!strcmp(line, "effects_volume")) cfg.effects_volume = volume_clamp(atoi(v));
+            else if (!strcmp(line, "slot")) slot = atoi(v) >= 1 && atoi(v) <= SLOTS ? atoi(v) : 1;
             else for (int a = 0; a < ACTIONS; a++) {
                 if (!strncmp(line, "key.", 4) && !strcmp(line + 4, ACT_INI[a]))
                     key_bind[a] = strcmp(v, "none") ? SDL_GetScancodeFromName(v) : SDL_SCANCODE_UNKNOWN;
@@ -959,12 +1001,57 @@ static void hits_frame(void)
     }
 }
 
-/* the menu's screens: the main one, the exit question, the controls, and the controls waiting
- * for a press (capture) */
-enum { SCR_MAIN, SCR_ASK, SCR_CONTROLS, SCR_CAPTURE };
-enum { MI_FPS, MI_FULL, MI_PIXELS, MI_WIDE, MI_ZOOM, MI_HEALTH, MI_VOLUME, MI_MUSIC, MI_EFFECTS, MI_CONTROLS, MI_EXIT, MAIN_N };
-static const char *const MAIN_ITEM[MAIN_N] = {"SHOW FPS", "FULL SCREEN", "WHOLE PIXELS", "WIDESCREEN", "TALK ZOOM", "ENEMY HEALTH",
-                                              "VOLUME", "  MUSIC", "  EFFECTS", "CONTROLS", "EXIT GAME"};
+/* ---- the save slots in the menu ---- */
+
+/* a slot saved at the next frame wait, or loaded (quick save and load, the menu) */
+static void slot_save(int n) { save_pending = frame; save_to = slot_file(n, 0); save_slot = n; }
+static void slot_load(int n) { load_slot = n; request_load(slot_file(n, 0)); }
+
+/* what the menu shows of each slot: used, when (the state's time), its picture */
+static struct { int used, w, h; char when[24]; uint32_t px[(ACTIVE_LINES / 2) * (FRAME_STRIDE / 2)]; } slot_info[SLOTS + 1];
+static void slots_scan(void)
+{
+    for (int n = 1; n <= SLOTS; n++) {
+        struct stat st;
+        slot_info[n].used = stat(slot_file(n, 0), &st) == 0;
+        slot_info[n].w = 0;
+        if (!slot_info[n].used) continue;
+        strftime(slot_info[n].when, sizeof slot_info[n].when, "%b %d %H:%M", localtime(&st.st_mtime));
+        for (char *p = slot_info[n].when; *p; p++) *p = (char)toupper((unsigned char)*p);
+        if (png_read_rgb(slot_file(n, 1), slot_info[n].px, (int)(sizeof slot_info[n].px / 4), &slot_info[n].w, &slot_info[n].h))
+            slot_info[n].w = 0;                     /* a state without a picture (saved before the slots) */
+    }
+}
+
+/* slot n's picture fitted in the rectangle, centred; or a word where there is none */
+static void draw_slot_picture(int n, int bx, int by, int bw, int bh)
+{
+    int w = slot_info[n].w, h = slot_info[n].h;
+    if (!w) {
+        const char *t = slot_info[n].used ? "NO PICTURE" : "EMPTY";
+        draw_text(bx + bw / 2 - (int)strlen(t) * 3, by + bh / 2 - 3, t, MENU_GREY);
+        return;
+    }
+    int dw = bw, dh = h * bw / w;
+    if (dh > bh) { dh = bh; dw = w * bh / h; }
+    int ox = bx + (bw - dw) / 2, oy = by + (bh - dh) / 2;
+    for (int y = 0; y < dh; y++)
+        for (int x = 0; x < dw; x++) frame_rgb[oy + y][ox + x] = slot_info[n].px[(y * h / dh) * w + x * w / dw];
+}
+
+/* a frame around a rectangle, and black inside */
+static void draw_frame(int x0, int y0, int w, int h, uint32_t edge)
+{
+    for (int y = y0; y < y0 + h; y++) for (int x = x0; x < x0 + w; x++)
+        frame_rgb[y][x] = (y == y0 || y == y0 + h - 1 || x == x0 || x == x0 + w - 1) ? edge : 0;
+}
+
+/* the menu's screens: the main one, the exit question, the controls, the controls waiting for a
+ * press (capture), the slots (to save or to load: col), and the question before a save over one */
+enum { SCR_MAIN, SCR_ASK, SCR_CONTROLS, SCR_CAPTURE, SCR_SLOTS, SCR_OVERWRITE };
+enum { MI_SAVE, MI_LOAD, MI_FPS, MI_FULL, MI_PIXELS, MI_WIDE, MI_ZOOM, MI_HEALTH, MI_VOLUME, MI_MUSIC, MI_EFFECTS, MI_CONTROLS, MI_EXIT, MAIN_N };
+static const char *const MAIN_ITEM[MAIN_N] = {"SAVE STATE", "LOAD STATE", "SHOW FPS", "FULL SCREEN", "WHOLE PIXELS", "WIDESCREEN",
+                                              "TALK ZOOM", "ENEMY HEALTH", "VOLUME", "  MUSIC", "  EFFECTS", "CONTROLS", "EXIT GAME"};
 /* a volume item's value (0-100), or NULL for the others */
 static int *menu_volume(int item)
 {
@@ -982,12 +1069,12 @@ static void draw_menu(const Menu *m)
     for (int y = 0; y < ACTIVE_LINES; y++) for (int x = 0; x < frame_width; x++)
         frame_rgb[y][x] = (frame_rgb[y][x] >> 2) & 0x3F3F3F;
     if (m->screen == SCR_MAIN) {
-        int w = 150, h = 44 + MAIN_N * 14, x0 = frame_width / 2 - w / 2, y0 = ACTIVE_LINES / 2 - h / 2;
+        int w = 150, h = 40 + MAIN_N * 13, x0 = frame_width / 2 - w / 2, y0 = ACTIVE_LINES / 2 - h / 2;
         draw_box(x0, y0, w, h);
-        draw_text_centred(y0 + 8, "PAUSED", MENU_WHITE);
+        draw_text_centred(y0 + 7, "PAUSED", MENU_WHITE);
         for (int i = 0; i < MAIN_N; i++) {
             uint32_t col = i == m->item ? MENU_GOLD : MENU_WHITE;
-            int y = y0 + 24 + i * 14;
+            int y = y0 + 22 + i * 13;
             int on = i == MI_FPS ? show_fps : i == MI_FULL ? fullscreen : i == MI_PIXELS ? integer_scale : i == MI_WIDE ? widescreen : i == MI_ZOOM ? talk_zoom : i == MI_HEALTH ? enemy_health : -1;
             if (i == m->item) draw_text(x0 + 12, y, ">", col);
             draw_text(x0 + 24, y, MAIN_ITEM[i], col);
@@ -1001,7 +1088,34 @@ static void draw_menu(const Menu *m)
                 draw_text(x0 + w - 12 - (int)strlen(pc) * 6, y, pc, col);
             }
         }
-        draw_text_centred(y0 + h - 14, gc ? "ESC/SELECT: RESUME" : "ESC: RESUME", MENU_GREY);
+        draw_text_centred(y0 + h - 13, gc ? "ESC/SELECT: RESUME" : "ESC: RESUME", MENU_GREY);
+    } else if (m->screen == SCR_SLOTS) {             /* the four slots, 2 by 2: picture, number, time */
+        int wide = frame_width >= 400, cw = wide ? 176 : 116, gap = wide ? 8 : 6, th = 76;
+        int w = 2 * cw + 3 * gap, h = 220, x0 = frame_width / 2 - w / 2, y0 = ACTIVE_LINES / 2 - h / 2;
+        draw_box(x0, y0, w, h);
+        draw_text_centred(y0 + 5, m->col ? "LOAD STATE" : "SAVE STATE", MENU_WHITE);
+        for (int k = 0; k < SLOTS; k++) {
+            int n = k + 1, sel = k == m->row, cx = x0 + gap + (k & 1) * (cw + gap), cy = y0 + 16 + (k >> 1) * (th + 19);
+            draw_frame(cx, cy, cw, th, sel ? MENU_GOLD : MENU_GREY);
+            draw_slot_picture(n, cx + 2, cy + 2, cw - 4, th - 4);
+            char label[40]; snprintf(label, sizeof label, "%d  %s", n, slot_info[n].used ? slot_info[n].when : "EMPTY");
+            draw_text(cx + cw / 2 - (int)strlen(label) * 3, cy + th + 3, label, sel ? MENU_GOLD : MENU_WHITE);
+        }
+        const char *keys = m->col ? (gc ? "ENTER/A: LOAD   ESC/B: BACK" : "ENTER: LOAD   ESC: BACK")
+                                  : (gc ? "ENTER/A: SAVE   ESC/B: BACK" : "ENTER: SAVE   ESC: BACK");
+        draw_text_centred(y0 + h - 12, keys, MENU_GREY);
+    } else if (m->screen == SCR_OVERWRITE) {         /* the slot's picture, and the question */
+        int n = m->row + 1, pw = slot_info[n].w ? slot_info[n].w : 128, ph = ACTIVE_LINES / 2;
+        int w = pw + 16 > 170 ? pw + 16 : 170, h = ph + 66, x0 = frame_width / 2 - w / 2, y0 = ACTIVE_LINES / 2 - h / 2;
+        draw_box(x0, y0, w, h);
+        char q[32]; snprintf(q, sizeof q, "OVERWRITE SLOT %d?", n);
+        draw_text_centred(y0 + 6, q, MENU_WHITE);
+        draw_frame(frame_width / 2 - pw / 2 - 1, y0 + 17, pw + 2, ph + 2, MENU_GREY);
+        draw_slot_picture(n, frame_width / 2 - pw / 2, y0 + 18, pw, ph);
+        int y = y0 + ph + 26, cx = frame_width / 2;
+        draw_text(cx - 40, y, m->yes ? " NO" : ">NO", m->yes ? MENU_WHITE : MENU_GOLD);
+        draw_text(cx + 16, y, m->yes ? ">YES" : " YES", m->yes ? MENU_GOLD : MENU_WHITE);
+        draw_text_centred(y0 + h - 12, gc ? "ESC/B: BACK" : "ESC: BACK", MENU_GREY);
     } else if (m->screen == SCR_ASK) {
         int w = 150, h = 74, x0 = frame_width / 2 - w / 2, y0 = ACTIVE_LINES / 2 - h / 2;
         draw_box(x0, y0, w, h);
@@ -1089,6 +1203,9 @@ static int menu_step(Menu *m, int only_asking, int up, int down, int left, int r
         if (up) m->item = (m->item + MAIN_N - 1) % MAIN_N;
         if (down) m->item = (m->item + 1) % MAIN_N;
         if (ok || left || right) switch (m->item) {
+            case MI_SAVE: case MI_LOAD:
+                if (ok) { slots_scan(); m->screen = SCR_SLOTS; m->col = m->item == MI_LOAD; m->row = slot - 1; }
+                break;
             case MI_FPS: toggle_fps(); break;
             case MI_FULL: toggle_fullscreen(); break;
             case MI_PIXELS:
@@ -1117,6 +1234,22 @@ static int menu_step(Menu *m, int only_asking, int up, int down, int left, int r
             if (only_asking) return 0;
             m->screen = SCR_MAIN;
         }
+        break;
+    case SCR_SLOTS:                                 /* the grid: left and right, up and down */
+        if (left || right) m->row ^= 1;
+        if (up || down) m->row ^= 2;
+        if (ok) {
+            int n = m->row + 1;
+            if (m->col) { if (slot_info[n].used) { slot = n; ini_dirty = 1; slot_load(n); return 0; } }
+            else if (slot_info[n].used) { m->screen = SCR_OVERWRITE; m->yes = 0; }
+            else { slot = n; ini_dirty = 1; slot_save(n); return 0; }
+        }
+        if (back) m->screen = SCR_MAIN;
+        break;
+    case SCR_OVERWRITE:
+        if (up || down || left || right) m->yes ^= 1;
+        if (ok && m->yes) { slot = m->row + 1; ini_dirty = 1; slot_save(slot); return 0; }
+        if ((ok && !m->yes) || back) m->screen = SCR_SLOTS;
         break;
     case SCR_CONTROLS:
         if (up) m->row = (m->row + CTRL_N - 1) % CTRL_N;
@@ -1188,8 +1321,8 @@ static int menu(int asking)
         const char *shots = getenv("WBMW_MENU_SHOTS");   /* testing: each screen of the menu as a PNG */
         if (shots) {
             static int n; static unsigned last = ~0u;
-            unsigned state = (unsigned)(m.screen | m.item << 2 | m.yes << 5 | m.row << 6 | m.col << 10 | show_fps << 11
-                                        | fullscreen << 12 | integer_scale << 13 | stick_moves << 15);
+            unsigned state = (unsigned)(m.screen | m.item << 3 | m.yes << 7 | m.row << 8 | m.col << 12 | show_fps << 13
+                                        | fullscreen << 14 | integer_scale << 15 | stick_moves << 16);
             for (int a = 0; a < ACTIONS; a++) state = state * 31 + (unsigned)key_bind[a] * 7 + (unsigned)(pad_bind[a] + 1);
             state = state * 31 + (unsigned)(volume + 101 * music_volume + 10201 * effects_volume);
             if (state != last) {
@@ -1265,17 +1398,19 @@ static void quit(int code)
 static void quick_save(void)
 {
     static Uint32 confirm_until;
-    FILE *f = fopen(state_path, "rb");
+    static char said[48];
+    FILE *f = fopen(slot_file(slot, 0), "rb");
     int exists = f != NULL;
     if (f) fclose(f);
     int confirming = confirm_until && !SDL_TICKS_PASSED(SDL_GetTicks(), confirm_until);
     if (exists && !confirming) {
         confirm_until = SDL_GetTicks() + 2000;
-        toast = "PRESS SAVE AGAIN TO OVERWRITE"; toast_frames = 120;
+        snprintf(said, sizeof said, "SLOT %d: PRESS SAVE AGAIN TO OVERWRITE", slot);
+        toast = said; toast_frames = 120;
         return;
     }
     confirm_until = 0;
-    save_pending = frame; save_to = state_path;
+    slot_save(slot);
 }
 
 static void window_frame(void)
@@ -1305,7 +1440,7 @@ static void window_frame(void)
         if (ld && !was_load) load = 1;
         was_save = sv; was_load = ld;
     }
-    if (load) request_load(state_path);
+    if (load) slot_load(slot);
     if (open_menu >= 0) {
         if (menu(open_menu)) quit(0);
         Uint64 now = SDL_GetPerformanceCounter();   /* carry on as if no time had passed */
@@ -1330,6 +1465,7 @@ static void window_frame(void)
         char title[256]; snprintf(title, sizeof title, "%s  %.1f fps", TITLE, fps);
         SDL_SetWindowTitle(win, title);
     }
+    memcpy(clean_rgb, frame_rgb, sizeof clean_rgb); clean_width = frame_width;   /* for a slot's picture */
     if (show_fps) draw_fps();
     if (toast_frames > 0) { toast_frames--; draw_toast(); }
     zoom_update();
@@ -1555,12 +1691,22 @@ static void maybe_save(Cpu *c, uint32_t pc)
     if (load_pending && resumable(c, pc)) {
         const char *path = load_pending;
         load_pending = NULL;
-        if (load_state(path, the_cpu, &pc) == 0) { resume_pc = pc; __builtin_longjmp(restart, 1); }
+        static char said[32];
+        if (load_state(path, the_cpu, &pc) == 0) {
+            if (load_slot) { snprintf(said, sizeof said, "LOADED SLOT %d", load_slot); toast = said; }
+            load_slot = 0;
+            resume_pc = pc; __builtin_longjmp(restart, 1);
+        }
         toast = "NO STATE TO LOAD"; toast_frames = 90;
+        load_slot = 0;
     }
     if (save_pending < 0 || frame < save_pending || !resumable(c, pc)) return;
-    save_state(save_to, c, pc);
-    save_pending = -1;
+    if (save_state(save_to, c, pc) == 0 && save_slot) {   /* a slot: its picture too */
+        static char said[32];
+        save_picture(slot_file(save_slot, 1));
+        snprintf(said, sizeof said, "SAVED TO SLOT %d", save_slot); toast = said;
+    }
+    save_pending = -1; save_slot = 0;
 }
 
 /* Called by the generated code at a poll point. Without timing, a wait for VBlank ($3DC, $C262)

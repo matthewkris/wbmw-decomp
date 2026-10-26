@@ -122,4 +122,5 @@ void wav_close(void);
 
 /* png.c */
 int png_write_rgb(const char *path, const uint32_t *px, int w, int h, int stride);
+int png_read_rgb(const char *path, uint32_t *px, int max, int *w, int *h);   /* its own files only */
 #endif
