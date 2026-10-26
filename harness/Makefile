@@ -16,7 +16,7 @@ PORT = ../port/kernel.c ../port/entity.c ../port/anim.c ../port/gfx.c ../port/sp
 CPU = $(OUT)/m68kcpu.o $(OUT)/m68kops.o $(OUT)/softfloat.o
 CXX = g++
 YMFM = ../third_party/ymfm
-YMO = $(OUT)/ym2612.o $(OUT)/ymfm_opn.o $(OUT)/ymfm_adpcm.o $(OUT)/ymfm_ssg.o
+YMO = $(OUT)/ym2612.o $(OUT)/ymfm_adpcm.o $(OUT)/ymfm_ssg.o   # (ymfm_opn.cpp is compiled inside ym2612.cpp)
 LDFLAGS = -static-libgcc
 
 all: $(OUT)/harness $(OUT)/play ../work/cycles.bin
@@ -53,7 +53,7 @@ $(OUT)/gen_%.o: ../work/gen/gen_%.c ../work/gen/gen.h ../port/m68k_rt.h ../port/
 	$(CC) $(CFLAGS) -I../port -c $< -o $@
 
 # the YM2612: ymfm (C++, third_party/ymfm) behind a C interface
-$(OUT)/ym2612.o: ym2612.cpp
+$(OUT)/ym2612.o: ym2612.cpp $(YMFM)/ymfm_opn.cpp
 	@mkdir -p $(OUT)
 	$(CXX) -O2 -std=c++14 -I$(YMFM) -c $< -o $@
 $(OUT)/ymfm_%.o: $(YMFM)/ymfm_%.cpp

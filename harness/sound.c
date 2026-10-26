@@ -21,7 +21,13 @@
 void ym_reset(void);
 void ym_write(unsigned port, unsigned data);
 unsigned ym_read(unsigned port);
-void ym_generate(int32_t out[2]);
+void ym_generate(int32_t out[2], const int *gain);
+
+/* the volume: a gain for each channel (the YM2612's six, then the SN76489's three tones and
+ * noise) and for the mix, 256 = as the chips give it (the default: the output is then the
+ * original's, sample for sample). The host sets them (native/wbmw.c: the menu's volumes, the
+ * music's voices and the effects' told apart) */
+int sound_gain[10] = {256, 256, 256, 256, 256, 256, 256, 256, 256, 256}, sound_master = 256;
 void ym_state_io(FILE *f, int saving);
 
 #define Z80_CYCLES_PER_LINE 228
@@ -86,8 +92,11 @@ static void psg_step(void)
 static int32_t psg_sample(void)
 {
     int32_t s = 0;
-    for (int ch = 0; ch < 3; ch++) if (psg.out[ch] || psg.period[ch] <= 1) s += PSG_VOL[psg.vol[ch]];
-    if (psg.out[3]) s += PSG_VOL[psg.vol[3]];
+    for (int ch = 0; ch < 4; ch++) {
+        if (!(ch == 3 ? psg.out[3] : psg.out[ch] || psg.period[ch] <= 1)) continue;
+        int32_t v = PSG_VOL[psg.vol[ch]], g = sound_gain[6 + ch];
+        s += g == 256 ? v : v * g / 256;
+    }
     return s;
 }
 
@@ -100,7 +109,7 @@ static int16_t clamp16(int32_t v) { return (int16_t)(v > 32767 ? 32767 : v < -32
 static void sample(void)
 {
     int32_t fm[2];
-    ym_generate(fm);
+    ym_generate(fm, sound_gain);
     /* the PSG steps 3,579,545 / 16 times a second; one sample is 53,267 Hz: about 4.2 steps */
     psg.acc += 3579545;
     while (psg.acc >= 16u * 53267u) { psg.acc -= 16u * 53267u; psg_step(); }
@@ -113,7 +122,7 @@ static void sample(void)
             double x = fm[ch] * 3.0 + p;
             double y = x - prev_in[ch] + 0.9976 * prev_out[ch];
             prev_in[ch] = x; prev_out[ch] = y;
-            out_buf[out_n][ch] = clamp16((int32_t)y);
+            out_buf[out_n][ch] = clamp16(sound_master == 256 ? (int32_t)y : (int32_t)(y * sound_master / 256));
         }
         out_n++;
     }

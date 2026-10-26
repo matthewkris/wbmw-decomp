@@ -79,6 +79,30 @@ static const char *out_dir = ".", *save_path = "wbmw.sav", *wav_path;
 static int mute;
 static int enemy_health;                            /* the damage numbers and health bars (Enemy health) */
 
+/* The volumes (the menu's Volume, Music and Effects: 0-100, in tens). The music and the effects
+ * come from the same chips, and an effect takes a voice from the music while it plays, so each
+ * frame the sound driver's voices are read from the Z80's RAM (docs/SOUND.md): voice v's record
+ * at $1C80 + $40 v, bit 7 playing, bit 5 for a song's track ($0DF0). Voices 0-5 are the YM2612's
+ * channels 0, 3, 1, 4, 2, 5 ($0446); 6-8 the SN76489's tones, 8 its noise too. A voice not
+ * playing keeps its last owner, so a note's release fades at its own volume. All at 100, the
+ * sound is the original's, sample for sample. */
+static int volume = 100, music_volume = 100, effects_volume = 100;
+static int volume_clamp(int v) { return v < 0 ? 0 : v > 100 ? 100 : v / 10 * 10; }
+static void volume_frame(void)
+{
+    static const int FM_CHANNEL[6] = {0, 3, 1, 4, 2, 5};
+    static int music[9] = {1, 1, 1, 1, 1, 1, 1, 1, 1};
+    for (int v = 0; v < 9; v++) {
+        uint8_t flags = zram[0x1C80 + 0x40 * v];
+        if (flags & 0x80) music[v] = (flags & 0x20) != 0;
+        int g = (music[v] ? music_volume : effects_volume) * 256 / 100;
+        if (v < 6) sound_gain[FM_CHANNEL[v]] = g;
+        else sound_gain[v] = g;
+        if (v == 8) sound_gain[9] = g;
+    }
+    sound_master = volume * 256 / 100;
+}
+
 /* widescreen: the picture 400 wide (16:9 at 224 lines), 72 pixels past each side of the game's
  * 256. Only the rooms wide_room() allows show the game there (port/rooms.c draws their layers
  * wider and keeps the view inside them); elsewhere those sides are black. docs/WIDESCREEN.md. */
@@ -340,7 +364,8 @@ static const char *pad_label(int p)
  * a setting for one run without changing the file: cfg is what the file holds. */
 /* the added features (widescreen, talk zoom, enemy health) on unless turned off; headless runs
  * never read the file, so they stay the original's unless their flags say otherwise */
-static struct { int fullscreen, show_fps, integer_scale, mute, widescreen, talk_zoom, enemy_health; } cfg = {1, 0, 0, 0, 1, 1, 1};
+static struct { int fullscreen, show_fps, integer_scale, mute, widescreen, talk_zoom, enemy_health, volume, music_volume, effects_volume; }
+    cfg = {1, 0, 0, 0, 1, 1, 1, 100, 100, 100};
 static char ini_path[4096];
 static int ini_dirty;
 
@@ -377,6 +402,7 @@ static void settings_save(void)
                "# Keys by SDL's names; controller inputs by SDL's, an axis with + or - before it; none: unbound.\n");
     fprintf(f, "fullscreen=%d\nshow_fps=%d\ninteger_scale=%d\nmute=%d\nwidescreen=%d\ntalk_zoom=%d\nenemy_health=%d\nstick_moves=%d\n",
             cfg.fullscreen, cfg.show_fps, cfg.integer_scale, cfg.mute, cfg.widescreen, cfg.talk_zoom, cfg.enemy_health, stick_moves);
+    fprintf(f, "volume=%d\nmusic_volume=%d\neffects_volume=%d\n", cfg.volume, cfg.music_volume, cfg.effects_volume);
     for (int a = 0; a < ACTIONS; a++) {
         char pad[64]; pad_name(pad_bind[a], pad, sizeof pad);
         const char *key = key_bind[a] == SDL_SCANCODE_UNKNOWN ? "" : SDL_GetScancodeName(key_bind[a]);
@@ -406,6 +432,9 @@ static void settings_open(const char *path)
             else if (!strcmp(line, "talk_zoom")) cfg.talk_zoom = atoi(v);
             else if (!strcmp(line, "enemy_health")) cfg.enemy_health = atoi(v);
             else if (!strcmp(line, "stick_moves")) stick_moves = atoi(v);
+            else if (!strcmp(line, "volume")) cfg.volume = volume_clamp(atoi(v));
+            else if (!strcmp(line, "music_volume")) cfg.music_volume = volume_clamp(atoi(v));
+            else if (!strcmp(line, "effects_volume")) cfg.effects_volume = volume_clamp(atoi(v));
             else for (int a = 0; a < ACTIONS; a++) {
                 if (!strncmp(line, "key.", 4) && !strcmp(line + 4, ACT_INI[a]))
                     key_bind[a] = strcmp(v, "none") ? SDL_GetScancodeFromName(v) : SDL_SCANCODE_UNKNOWN;
@@ -416,6 +445,7 @@ static void settings_open(const char *path)
     }
     fullscreen = cfg.fullscreen; show_fps = cfg.show_fps; integer_scale = cfg.integer_scale; mute = cfg.mute;
     widescreen = cfg.widescreen; talk_zoom = cfg.talk_zoom; enemy_health = cfg.enemy_health;
+    volume = cfg.volume; music_volume = cfg.music_volume; effects_volume = cfg.effects_volume;
 }
 
 /* a controller plugged in (or there at the start) or pulled out: the first one plays */
@@ -927,8 +957,14 @@ static void hits_frame(void)
 /* the menu's screens: the main one, the exit question, the controls, and the controls waiting
  * for a press (capture) */
 enum { SCR_MAIN, SCR_ASK, SCR_CONTROLS, SCR_CAPTURE };
-enum { MI_FPS, MI_FULL, MI_PIXELS, MI_WIDE, MI_ZOOM, MI_HEALTH, MI_SOUND, MI_CONTROLS, MI_EXIT, MAIN_N };
-static const char *const MAIN_ITEM[MAIN_N] = {"SHOW FPS", "FULL SCREEN", "WHOLE PIXELS", "WIDESCREEN", "TALK ZOOM", "ENEMY HEALTH", "SOUND", "CONTROLS", "EXIT GAME"};
+enum { MI_FPS, MI_FULL, MI_PIXELS, MI_WIDE, MI_ZOOM, MI_HEALTH, MI_SOUND, MI_VOLUME, MI_MUSIC, MI_EFFECTS, MI_CONTROLS, MI_EXIT, MAIN_N };
+static const char *const MAIN_ITEM[MAIN_N] = {"SHOW FPS", "FULL SCREEN", "WHOLE PIXELS", "WIDESCREEN", "TALK ZOOM", "ENEMY HEALTH", "SOUND",
+                                              "VOLUME", "  MUSIC", "  EFFECTS", "CONTROLS", "EXIT GAME"};
+/* a volume item's value (0-100), or NULL for the others */
+static int *menu_volume(int item)
+{
+    return item == MI_VOLUME ? &volume : item == MI_MUSIC ? &music_volume : item == MI_EFFECTS ? &effects_volume : NULL;
+}
 static const int CTRL_ROW[ACTIONS] = {ACT_UP, ACT_DOWN, ACT_LEFT, ACT_RIGHT, ACT_A, ACT_B, ACT_C, ACT_START, ACT_SAVE, ACT_LOAD};
 enum { CR_STICK = ACTIONS, CR_RESET, CR_BACK, CTRL_N };   /* the controls' rows after the actions */
 enum { COL_KEY = 80, COL_PAD = 152 };              /* the controls' columns, from the box's left */
@@ -951,6 +987,14 @@ static void draw_menu(const Menu *m)
             if (i == m->item) draw_text(x0 + 12, y, ">", col);
             draw_text(x0 + 24, y, MAIN_ITEM[i], col);
             if (on >= 0) draw_text(x0 + w - 12 - 18, y, on ? "ON" : "OFF", col);
+            int *vol = menu_volume(i);
+            if (vol) {                              /* a bar of ten, then the percent (the font has no %) */
+                char pc[8]; snprintf(pc, sizeof pc, "%d", *vol);
+                for (int k = 0; k < 10; k++)
+                    for (int yy = y + 1; yy < y + 6; yy++) for (int xx = 0; xx < 2; xx++)
+                        frame_rgb[yy][x0 + 82 + k * 3 + xx] = k < *vol / 10 ? col : MENU_GREY;
+                draw_text(x0 + w - 12 - (int)strlen(pc) * 6, y, pc, col);
+            }
         }
         draw_text_centred(y0 + h - 14, gc ? "ESC/SELECT: RESUME" : "ESC: RESUME", MENU_GREY);
     } else if (m->screen == SCR_ASK) {
@@ -1050,6 +1094,13 @@ static int menu_step(Menu *m, int only_asking, int up, int down, int left, int r
             case MI_ZOOM: talk_zoom = cfg.talk_zoom = !talk_zoom; ini_dirty = 1; break;
             case MI_HEALTH: enemy_health = cfg.enemy_health = !enemy_health; ini_dirty = 1; break;
             case MI_SOUND: mute = cfg.mute = !mute; ini_dirty = 1; break;
+            case MI_VOLUME: case MI_MUSIC: case MI_EFFECTS: {
+                int *vol = menu_volume(m->item);
+                *vol = left ? volume_clamp(*vol - 10) : right ? volume_clamp(*vol + 10) : *vol >= 100 ? 0 : *vol + 10;
+                cfg.volume = volume; cfg.music_volume = music_volume; cfg.effects_volume = effects_volume;
+                ini_dirty = 1;
+                break;
+            }
             case MI_CONTROLS: if (ok) { m->screen = SCR_CONTROLS; m->row = 0; m->col = 0; } break;
             case MI_EXIT: if (ok) { m->screen = SCR_ASK; m->yes = 0; } break;
         }
@@ -1293,6 +1344,7 @@ static void frame_done(void)
     hits_frame();                                   /* Enemy health, drawn over the picture */
     gold_frame();                                   /* widescreen: the gold found */
 #endif
+    volume_frame();                                 /* the volumes for the next frame's sound */
     if (headless) {
         if (png_every && frame % png_every == 0) {
             char path[1024]; snprintf(path, sizeof path, "%s/frame_%05d.png", out_dir, frame);
@@ -1814,6 +1866,9 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--windowed")) fullscreen = 0;
         else if (!strcmp(argv[i], "--talk-zoom")) talk_zoom = 1;
         else if (!strcmp(argv[i], "--no-talk-zoom")) talk_zoom = 0;
+        else if (!strcmp(argv[i], "--volume") && i + 1 < argc) volume = volume_clamp(atoi(argv[++i]));
+        else if (!strcmp(argv[i], "--music-volume") && i + 1 < argc) music_volume = volume_clamp(atoi(argv[++i]));
+        else if (!strcmp(argv[i], "--effects-volume") && i + 1 < argc) effects_volume = volume_clamp(atoi(argv[++i]));
         else if (!strcmp(argv[i], "--integer-scale")) integer_scale = 1;
         else if (!strcmp(argv[i], "--fps")) show_fps = 1;
 #endif
