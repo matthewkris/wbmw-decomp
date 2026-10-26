@@ -23,6 +23,77 @@ DRUMS = (0x19F1, 22, 6)             # $0CB3: a drum note: voice type, voices, in
 OPS = ('op1', 'op3', 'op2', 'op4')  # $0A55: the operators in the YM2612's register order
 
 w16 = lambda d, a: d[a] | d[a + 1] << 8
+s8 = lambda v: v - 256 if v & 0x80 else v
+s16 = lambda v: v - 65536 if v & 0x8000 else v
+
+# ---- the modulation scripts. Kind A (`mod_a`, $07D7) moves the voice's pitch offset (+$14, added
+# to the note: 1/256 of a note), kind B (`mod_b`, $08F3) its volume offset (+$1C, added to the
+# attenuation). Every `rate` frames (+$3A / +$38) the offset moves by the step's delta, for the
+# step's count; then the next item is read. Under the first command byte: n, then the delta (A a
+# word, B a byte), n steps of it. The commands: ----
+MOD_CMDS = {0xFF: 'goto',          # a word: the script goes on there
+            0xFE: 'loop_end',      # back to the loop's start until its count runs out
+            0xFD: 'loop',          # a count: the loop's start
+            0xFC: 'reverse',       # the delta turned round, for a count of steps
+            0xFB: 'set',           # the offset set (A a word, B a byte)
+            0xFA: 'stop',          # no more change; the offset held
+            0xF9: 'rate',          # the frames between steps
+            0xF8: 'random'}        # (A only) a random offset of a depth (a shift), for a count of steps ($0B66)
+
+def mod_parse(b, kind, at):
+    """a script's bytes (from Z80 address at) as items; None if they do not parse to their end"""
+    items, p, first = [], 0, 0xF8 if kind == 'a' else 0xF9
+    done = None                                     # (items, place) after the last item that ends the script
+    try:
+        while p < len(b):
+            if items and items[-1].get('cmd') in ('end', 'stop', 'goto'): done = (len(items), p)
+            c = b[p]; p += 1
+            if c == 0: items.append(dict(cmd='end')); continue
+            if c < first:
+                if kind == 'a': items.append(dict(steps=c, delta=s16(w16(b, p)))); p += 2
+                else: items.append(dict(steps=c, delta=s8(b[p]))); p += 1
+                continue
+            name = MOD_CMDS[c]
+            if name == 'goto': items.append(dict(cmd=name, to='%04X' % w16(b, p))); p += 2
+            elif name in ('loop', 'reverse', 'rate'): items.append(dict(cmd=name, n=b[p])); p += 1
+            elif name == 'set':
+                if kind == 'a': items.append(dict(cmd=name, value=s16(w16(b, p)))); p += 2
+                else: items.append(dict(cmd=name, value=s8(b[p]))); p += 1
+            elif name == 'random': items.append(dict(cmd=name, depth=b[p], steps=b[p + 1])); p += 2
+            else: items.append(dict(cmd=name))
+        if p != len(b): raise IndexError
+    except (IndexError, KeyError):
+        # bytes after the script's end that do not parse (never read: $19D3's last, whose step
+        # would run into the next table) kept as they are
+        if done is None: return None
+        return items[:done[0]] + [dict(tail=b[done[1]:].hex())]
+    return items
+
+def mod_encode(items, kind):
+    out = bytearray()
+    codes = {v: k for k, v in MOD_CMDS.items()}
+    for it in items:
+        if 'tail' in it: out += bytes.fromhex(it['tail']); continue
+        if 'steps' in it and 'cmd' not in it:
+            out.append(it['steps'])
+            out += struct.pack('<h', it['delta']) if kind == 'a' else struct.pack('<b', it['delta'])
+            continue
+        c = it['cmd']
+        if c == 'end': out.append(0); continue
+        out.append(codes[c])
+        if c == 'goto': out += struct.pack('<H', int(it['to'], 16))
+        elif c in ('loop', 'reverse', 'rate'): out.append(it['n'])
+        elif c == 'set': out += struct.pack('<h', it['value']) if kind == 'a' else struct.pack('<b', it['value'])
+        elif c == 'random': out += bytes([it['depth'], it['steps']])
+    return bytes(out)
+
+# a PSG volume envelope ($09CF): a byte a step, its high nibble the attenuation (times 8, added to
+# the volume's), its low nibble the frames it lasts (0: held); $F0 the end (the voice let go, $0460)
+def env_parse(b):
+    return [['end'] if v == 0xF0 else [v >> 4, v & 15] for v in b]
+
+def env_encode(steps):
+    return bytes(0xF0 if s == ['end'] else s[0] << 4 | s[1] for s in steps)
 
 def parse(drv):
     J, used = {}, set()
@@ -45,7 +116,12 @@ def parse(drv):
     for name, (tab, n), stop in (('psg_envelopes', PSG_ENV, MOD_A[0]), ('mod_a', MOD_A, MOD_B[0]), ('mod_b', MOD_B, DRUMS[0])):
         ptrs = [w16(drv, tab + 2 * i) for i in range(n)]; take(tab, 2 * n)
         ends = sorted(set(ptrs) | {stop})
-        J[name] = [take(p, ends[ends.index(p) + 1] - p).hex() for p in ptrs]
+        J[name] = []
+        for p in ptrs:
+            b = take(p, ends[ends.index(p) + 1] - p)
+            if name == 'psg_envelopes': J[name].append(dict(address='%04X' % p, steps=env_parse(b))); continue
+            items = mod_parse(b, name[-1], p)
+            J[name].append(dict(address='%04X' % p, items=items) if items is not None else dict(address='%04X' % p, bytes=b.hex()))
     J['drums'] = []
     for i in range(DRUMS[1]):
         r = take(DRUMS[0] + 6 * i, 6)
@@ -68,8 +144,11 @@ def encode(J):
     for i, p in enumerate(J['psg_instruments']): put(PSG_INSTR[0] + 6 * i, bytes(p[k] for k in ('b0', 'b1', 'b2', 'envelope', 'mod_a', 'mod_b')))
     for name, (tab, n), stop in (('psg_envelopes', PSG_ENV, MOD_A[0]), ('mod_a', MOD_A, MOD_B[0]), ('mod_b', MOD_B, DRUMS[0])):
         p = tab + 2 * n                              # the scripts follow their pointers, in order
-        for i, h in enumerate(J[name]):
-            put(tab + 2 * i, struct.pack('<H', p)); put(p, bytes.fromhex(h)); p += len(h) // 2
+        for i, s in enumerate(J[name]):
+            if 'steps' in s: b = env_encode(s['steps'])
+            elif 'items' in s: b = mod_encode(s['items'], name[-1])
+            else: b = bytes.fromhex(s['bytes'])
+            put(tab + 2 * i, struct.pack('<H', p)); put(p, b); p += len(b)
     for i, r in enumerate(J['drums']):
         put(DRUMS[0] + 6 * i, bytes([r['voice_type'], r['voices'], r['instrument'], r['byte3']]) + struct.pack('<H', r['pitch']))
     for a, v in J['filler'].items(): put(int(a, 16), bytes([int(v, 16)]))
