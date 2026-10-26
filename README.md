@@ -5,10 +5,11 @@ with SDL2. The game's 68000 program is not emulated: every routine was rewritten
 checked against the original in a reference harness (shadow runs, fuzzing, coverage). The game
 is playable from start to finish.
 
-One part is still emulated: sound. On the Genesis/Mega Drive, the music and sound effects are
-played by a small program on the console's second CPU, a Z80. The port loads that driver with the
-rest of the game's data (from the pack made from your ROM) and runs it on an emulated Z80, which drives emulated sound chips (ymfm for the YM2612, plus
-the SN76489).
+Sound too: on the Genesis/Mega Drive, the music and sound effects are played by a small program on
+the console's second CPU, a Z80. The port has that driver rewritten in C as well
+(`port/sounddrv.c`, checked against the original tick for tick), and it drives emulated sound
+chips (ymfm for the YM2612, plus the SN76489). `--z80-sound` plays the original driver on an
+emulated Z80 instead.
 
 ## Added features
 
@@ -196,7 +197,8 @@ wbmw [ROM] [--pack FILE] [--windowed] [--widescreen] [--talk-zoom] [--enemy-heal
 * `--no-widescreen`, `--no-talk-zoom`, `--no-enemy-health`: turn that feature off for this run
   (`--widescreen`, `--talk-zoom` and `--enemy-health` turn it on).
 * `--fps`: show the frame rate from the start. `--mute`: no sound. `--volume N`,
-  `--music-volume N`, `--effects-volume N`: the volumes for this run (0-100).
+  `--music-volume N`, `--effects-volume N`: the volumes for this run (0-100). `--z80-sound`: the
+  game's original sound driver on an emulated Z80, in place of the C driver.
 * `--state FILE`: the file quick save and quick load use. `--load`: load it at start.
 * `--config FILE`: use this settings file instead of `wbmw.ini`.
 

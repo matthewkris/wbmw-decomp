@@ -43,6 +43,7 @@ static uint32_t bank;                 /* 9 bits: bits 15-23 of the 68000 address
 static uint32_t acc;                  /* time to the next YM sample */
 static int held;                      /* the harness holds sound still during a shadow check */
 static int owed, owed_vint;           /* scanlines skipped while held, run when released */
+static int c_mode;                    /* the driver in C runs in place of the Z80 (below) */
 
 /* ---- SN76489: three square waves and a noise channel, 16 internal clocks per step ---- */
 static struct {
@@ -175,6 +176,7 @@ static uint8_t sh_ram[0x2000];
 static uint16_t sh_c[1024], sh_z[1024];             /* the chip writes, C and Z80: port << 8 | data, $800 the PSG */
 static int sh_cn, sh_zn;
 static struct { unsigned calls, bad; } sh_stats[256];
+static unsigned sh_skipped;                         /* whole ticks a command reached mid-way */
 
 static void sh_ym(unsigned port, unsigned d) { if (sh_cn < 1024) sh_c[sh_cn++] = (uint16_t)((port & 3) << 8 | (d & 0xFF)); }
 static void sh_psg(unsigned d) { if (sh_cn < 1024) sh_c[sh_cn++] = (uint16_t)(0x800 | (d & 0xFF)); }
@@ -190,6 +192,7 @@ static void sh_report(void)
                 sh_stats[i].calls, sh_stats[i].bad);
     }
     fprintf(stderr, "sound shadow: %d of %d routines called\n", called, snd_routine_count);
+    if (sh_skipped) fprintf(stderr, "sound shadow: %u ticks a command reached mid-way, not compared\n", sh_skipped);
 }
 
 static uint8_t sh_pre[0x2000];                      /* the RAM at the routine's entry, and its ix (WBMW_Z80_SHADOW_DUMP) */
@@ -231,6 +234,9 @@ static void sh_end(void)
     char why[160] = "";
     sh_stats[i].calls++;
     bus_zram_marks = NULL;
+    if (sh_r->end)                                  /* a whole tick: a command queued while the Z80 ran it (the */
+        for (int a = 0x1C2E; a < 0x1C40; a++)       /* 68000 waiting on it) reaches it, not the C: not compared */
+            if (sh_marks[a]) { sh_stats[i].calls--; sh_skipped++; sh_r = NULL; return; }
     for (int a = 0x1B80; a < 0x2000 && !why[0]; a++)
         if (zram[a] != sh_ram[a] && !sh_marks[a]) snprintf(why, sizeof why, "RAM $%04X: the Z80's %02X, the C's %02X", a, zram[a], sh_ram[a]);
     for (int k = 0; !why[0] && k < (sh_cn > sh_zn ? sh_cn : sh_zn); k++)
@@ -258,11 +264,17 @@ static void sh_end(void)
 /* at the start of each Z80 instruction */
 static void sh_step(uint16_t pc)
 {
-    if (sh_on < 0) { sh_on = getenv("WBMW_Z80_SHADOW") != NULL; if (sh_on) atexit(sh_report); }
+    if (sh_on < 0) {
+        const char *e = getenv("WBMW_Z80_SHADOW");
+        sh_on = !e ? 0 : !strcmp(e, "tick") ? 2 : 1;    /* tick: the whole ticks and the start alone */
+        if (sh_on) atexit(sh_report);
+    }
     if (!sh_on) return;
-    if (sh_r) { if (z80.sp == (uint16_t)(sh_sp + 2)) sh_end(); else return; }
+    if (sh_r) {
+        if (sh_r->end ? pc == sh_r->end : z80.sp == (uint16_t)(sh_sp + 2)) sh_end(); else return;
+    }
     for (int i = 0; i < snd_routine_count; i++)
-        if (snd_routines[i].addr == pc) { sh_start(&snd_routines[i]); return; }
+        if (snd_routines[i].addr == pc && !snd_routines[i].end == (sh_on == 1)) { sh_start(&snd_routines[i]); return; }
 }
 
 static void z80_write(uint16_t a, uint8_t d)
@@ -299,8 +311,48 @@ static void z80_cycle(void)
 void sound_reset(void)
 {
     pins = z80_init(&z80);
-    busreq = 0; reset_line = 1; int_line = 0; bank = 0; acc = 0; out_n = 0;
+    busreq = 0; reset_line = 1; int_line = 0; bank = 0; acc = 0; out_n = 0; c_mode = 0;
     ym_reset(); psg_reset();
+}
+
+/* ---- the driver in C (port/sounddrv.c) in place of the Z80, sound_c_driver (the native build's
+ * default): started when the Z80 would first run after its reset (the driver loaded), and a tick of
+ * its main loop each time the YM2612's timer B overflows, as the original's waits for it, while
+ * the 68000 holds neither the bus nor reset. Its state is the Z80's RAM; the Z80 itself is left
+ * where the original waits for the timer ($0127, its return to the main loop on the stack), so a
+ * save state taken here plays on in the harness's Z80 too. Not with WBMW_Z80_SHADOW, which needs
+ * the Z80. ---- */
+int sound_c_driver;
+
+static void c_ym(unsigned port, unsigned d) { log_chip(0, port & 3, d & 0xFF); ym_write(port & 3, d & 0xFF); }
+static void c_psg(unsigned d) { log_chip(1, 0, d & 0xFF); psg_write((uint8_t)d); }
+static uint8_t c_window(uint16_t a) { return (uint8_t)bus_read8(bank << 15 | (a & 0x7FFF)); }
+
+static int c_resume(void)                          /* the C driver to run from here (its state is the RAM) */
+{
+    c_mode = sound_c_driver && !reset_line && !getenv("WBMW_Z80_SHADOW");
+    if (c_mode) { snd_io.ram = zram; snd_io.ym = c_ym; snd_io.psg = c_psg; snd_io.window = c_window; }
+    return c_mode;
+}
+
+/* the driver's start, when the Z80 would first run after its reset (c_mode 2: the reset let go,
+ * the 68000 perhaps still holding the bus) */
+static void c_start(void)
+{
+    if (!c_resume()) return;
+    bank = SND_WINDOW >> 15;                        /* (the driver's start sets it) */
+    snd_init();
+    zram[0x1B7E] = 0xBC; zram[0x1B7F] = 0x00;       /* the Z80: in $0110's wait, called from $00B9 */
+    z80.sp = 0x1B7E;
+    pins = z80_prefetch(&z80, 0x0127);
+}
+
+/* the C driver's start or tick (timer B has overflowed), when the Z80 would run */
+static void c_poll(void)
+{
+    if (!c_mode || busreq || reset_line) return;
+    if (c_mode == 2) c_start();
+    else if (ym_read(0) & 2) snd_tick();
 }
 
 void sound_set_busreq(int on) { busreq = on; }
@@ -308,8 +360,11 @@ int sound_bus_granted(void) { return busreq || reset_line; }   /* the 68000 may 
 void sound_set_reset(int on)
 {
     if (on && !reset_line) ym_reset();                  /* the reset line resets the YM2612 too */
-    if (!on && reset_line) pins = z80_reset(&z80);
+    int start = !on && reset_line;
+    if (start) pins = z80_reset(&z80);
     reset_line = on;
+    if (start && c_resume()) c_mode = 2;
+    else if (on) c_mode = 0;
 }
 /* A check holds sound still while the original routine runs, so that the Z80 changes nothing the
  * check compares. That time still passes in the game, so the sound catches up on release: without
@@ -329,9 +384,9 @@ void sound_psg_write(uint8_t d) { psg_write(d); }
 void sound_idle(void)
 {
     for (int i = 0; i < 64; i++) {
-        if (!busreq && !reset_line) z80_cycle();
+        if (!busreq && !reset_line && !c_mode) z80_cycle();
         acc += YM_PER_Z80;
-        if (acc >= YM_SAMPLE) { acc -= YM_SAMPLE; sample(); }
+        if (acc >= YM_SAMPLE) { acc -= YM_SAMPLE; sample(); c_poll(); }
     }
 }
 
@@ -341,9 +396,9 @@ void sound_run_line(int vint)
     if (held) { owed++; owed_vint |= vint; return; }
     int_line = vint;
     for (int i = 0; i < Z80_CYCLES_PER_LINE; i++) {
-        if (!busreq && !reset_line) z80_cycle();
+        if (!busreq && !reset_line && !c_mode) z80_cycle();
         acc += YM_PER_Z80;
-        if (acc >= YM_SAMPLE) { acc -= YM_SAMPLE; sample(); }
+        if (acc >= YM_SAMPLE) { acc -= YM_SAMPLE; sample(); c_poll(); }
     }
     int_line = 0;
 }
@@ -355,4 +410,5 @@ void sound_state_io(FILE *f, int saving)
     state_io(f, &bank, sizeof bank, saving); state_io(f, &acc, sizeof acc, saving);
     state_io(f, &psg, sizeof psg, saving);
     ym_state_io(f, saving);
+    if (!saving) c_resume();
 }

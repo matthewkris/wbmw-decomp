@@ -7,7 +7,9 @@ frame loop and its scheduler, the frame wait, the VBlank interrupt, and the orig
 None of the original's code is translated or emulated: the build needs nothing from `work/`.
 `wbmw.c` is the host around it: the memory map, save EEPROM, controller and
 VDP come from the harness (`harness/bus.c`, `harness/vdp.c`). Sound is the harness's too
-(`harness/sound.c`: the Z80 running the game's driver, ymfm's YM2612, an SN76489). The game's data
+(`harness/sound.c`: ymfm's YM2612, an SN76489), driven by the game's sound driver written in C
+(`port/sounddrv.c`, a tick each time the YM2612's timer B overflows; `--z80-sound` runs the
+original driver on the emulated Z80 instead; `docs/SOUND.md`). The game's data
 (graphics, maps, text, the sound driver) comes from `assets/game.pak`, which the build makes from
 the ROM, or from the ROM itself when there is no pack (`docs/EXTRACT.md`).
 
@@ -26,7 +28,7 @@ a ROM, it says so and the game reads the ROM).
 
     work/native/wbmw [ROM] [--pack FILE] [--windowed] [--widescreen] [--talk-zoom] [--enemy-health]
                            [--scale N] [--save FILE] [--integer-scale] [--fps] [--mute]
-                           [--state FILE] [--load] [--config FILE]
+                           [--state FILE] [--load] [--config FILE] [--z80-sound]
 
 plays, full screen unless `--windowed` is given. Without ROM, it plays from `assets/game.pak` (or
 `game.pak`) in the current folder, next to the program, or in the repository (`../../assets/` from

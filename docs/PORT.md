@@ -3631,6 +3631,10 @@ With `--timing` (above) it matches exactly.
 
 #### Sound (2026-10-11)
 
+*Since 2026-10-26 the native build runs the driver in C (`port/sounddrv.c`, `docs/SOUND.md`, "The
+driver in C") in place of the Z80 below; `--z80-sound` brings the Z80 back, and the harness and
+the shadow checks still use it.*
+
 The game's sound is the Z80 running the game's own driver (6,775 bytes at `$98000`, uploaded at
 boot), driving a YM2612 (FM) and an SN76489 (tone and noise). The 68000 only queues one-byte
 commands in Z80 RAM. `harness/sound.c` emulates all of it, and both the harness and the native
