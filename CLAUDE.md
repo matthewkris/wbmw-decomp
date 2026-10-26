@@ -238,7 +238,8 @@ How the rebuild works, and what to keep:
 
 - **Nothing derived from the ROM is committed.** `rom/` and `work/` are git-ignored. The
   repository is public. Tools, notes, hand-written port code and symbol names are fine to commit;
-  ROM bytes, the generated listing, and extracted graphics, maps, text or music are not. The port
+  ROM bytes, the generated listing, and extracted graphics, maps, text or music are not. The one
+  exception, the owner's (2026-10-26): the README's screenshots in `docs/images/`. The port
   must extract assets from the owner's ROM at build or run time. Whether the disassembly source
   itself should be committed once it exists is the owner's call. Ask before committing it.
 - **Verify, do not assume.** Every claim about the ROM should be checkable by a script in
