@@ -58,6 +58,14 @@ window): the game's code and RAM are untouched, so the harness's comparisons are
   lines as the HUD slides out: with the camera kept 32 lines below a room's top, the box in area
   5's town covered the characters' heads and, rising only 32, never cleared them, so nothing
   zoomed.
+* The scene is rendered with `vdp_scene` set, so the pixels with nothing drawn are the backdrop
+  beside the HUD's lines too, as they are in the middle. Widescreen paints them black there (a
+  cave's map has gaps the original's HUD covered), and zoomed, those lines came into the picture
+  as a black box at a side: area 12's sky is its backdrop.
+* On the way in and out, every frame keeps `zoom_layout`'s limit at its own zoom (the scene's
+  first line shown at the field's top or above), not only the final layout: the box can rise
+  further than the HUD's lines (64 against 48 under area 12's band), and moved in proportion alone
+  the lines above the band showed for a moment, their black sides as tabs under the HUD.
 * The zoom is drawn by SDL at the window's resolution, so it is smooth.
 
 ## Testing

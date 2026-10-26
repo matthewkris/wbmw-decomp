@@ -519,7 +519,9 @@ static void zoom_render_scene(void)
     memcpy(keep, vram + base, size); memcpy(vram + base, zoom_plane, size);
     vdp_reg[17] = vdp_reg[18] = 0;                  /* no window */
     memcpy(saved, frame_rgb, sizeof saved);
+    vdp_scene = 1;                                  /* the backdrop beside the HUD too, as in the middle (area 12's sky) */
     for (int l = 0; l < ACTIVE_LINES; l++) vdp_render_line(l);
+    vdp_scene = 0;
     memcpy(zoom_rgb, frame_rgb, sizeof zoom_rgb);
     memcpy(frame_rgb, saved, sizeof saved); memcpy(vram + base, keep, size);
     vdp_reg[17] = r17; vdp_reg[18] = r18;
@@ -708,6 +710,11 @@ static void present_frame(int zoomed)
         zoom_layout(zoom.zt, zoom.ay, &up, &dy);
         up *= k; dy *= k;
         int hud_h = zoom_hud(), top = (int)(hud_h - (up < hud_h ? up : hud_h));
+        /* and on the way, zoom_layout's limit at this zoom: the scene's first line shown (hud_h)
+         * at the field's top or above. The box can rise further than the HUD's lines (64 against
+         * 48 under area 12's band), and in proportion alone the lines above the band showed, their
+         * black sides, while it eased in */
+        if (dy > top - hud_h * z) dy = top - hud_h * z;
         SDL_Rect field = {0, top, frame_width, ACTIVE_LINES - top};
         SDL_FRect dst = {zoom.ax * (1 - z), dy, frame_width * z, ACTIVE_LINES * z};
         if (zoom_scene) SDL_UpdateTexture(tex_zoom, NULL, &zoom_rgb[0][0], FRAME_STRIDE * 4);
