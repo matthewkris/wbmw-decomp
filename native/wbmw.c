@@ -364,8 +364,8 @@ static const char *pad_label(int p)
  * a setting for one run without changing the file: cfg is what the file holds. */
 /* the added features (widescreen, talk zoom, enemy health) on unless turned off; headless runs
  * never read the file, so they stay the original's unless their flags say otherwise */
-static struct { int fullscreen, show_fps, integer_scale, mute, widescreen, talk_zoom, enemy_health, volume, music_volume, effects_volume; }
-    cfg = {1, 0, 0, 0, 1, 1, 1, 100, 100, 100};
+static struct { int fullscreen, show_fps, integer_scale, widescreen, talk_zoom, enemy_health, volume, music_volume, effects_volume; }
+    cfg = {1, 0, 0, 1, 1, 1, 100, 100, 100};
 static char ini_path[4096];
 static int ini_dirty;
 
@@ -400,8 +400,8 @@ static void settings_save(void)
     if (!f) { fprintf(stderr, "wbmw: cannot write the settings to %s\n", ini_path); return; }
     fprintf(f, "# Wonder Boy in Monster World (native): settings, written by the game's menu (Esc).\n"
                "# Keys by SDL's names; controller inputs by SDL's, an axis with + or - before it; none: unbound.\n");
-    fprintf(f, "fullscreen=%d\nshow_fps=%d\ninteger_scale=%d\nmute=%d\nwidescreen=%d\ntalk_zoom=%d\nenemy_health=%d\nstick_moves=%d\n",
-            cfg.fullscreen, cfg.show_fps, cfg.integer_scale, cfg.mute, cfg.widescreen, cfg.talk_zoom, cfg.enemy_health, stick_moves);
+    fprintf(f, "fullscreen=%d\nshow_fps=%d\ninteger_scale=%d\nwidescreen=%d\ntalk_zoom=%d\nenemy_health=%d\nstick_moves=%d\n",
+            cfg.fullscreen, cfg.show_fps, cfg.integer_scale, cfg.widescreen, cfg.talk_zoom, cfg.enemy_health, stick_moves);
     fprintf(f, "volume=%d\nmusic_volume=%d\neffects_volume=%d\n", cfg.volume, cfg.music_volume, cfg.effects_volume);
     for (int a = 0; a < ACTIONS; a++) {
         char pad[64]; pad_name(pad_bind[a], pad, sizeof pad);
@@ -418,6 +418,7 @@ static void settings_open(const char *path)
     if (path) snprintf(ini_path, sizeof ini_path, "%s", path);
     else { char *base = SDL_GetBasePath(); snprintf(ini_path, sizeof ini_path, "%swbmw.ini", base ? base : ""); SDL_free(base); }
     FILE *f = fopen(ini_path, "r");
+    int old_mute = 0;                               /* the menu's old Sound off: Volume 0 now, written back */
     if (f) {
         char line[256];
         while (fgets(line, sizeof line, f)) {
@@ -427,7 +428,7 @@ static void settings_open(const char *path)
             if (!strcmp(line, "fullscreen")) cfg.fullscreen = atoi(v);
             else if (!strcmp(line, "show_fps")) cfg.show_fps = atoi(v);
             else if (!strcmp(line, "integer_scale")) cfg.integer_scale = atoi(v);
-            else if (!strcmp(line, "mute")) cfg.mute = atoi(v);
+            else if (!strcmp(line, "mute")) old_mute = atoi(v);
             else if (!strcmp(line, "widescreen")) cfg.widescreen = atoi(v);
             else if (!strcmp(line, "talk_zoom")) cfg.talk_zoom = atoi(v);
             else if (!strcmp(line, "enemy_health")) cfg.enemy_health = atoi(v);
@@ -443,7 +444,8 @@ static void settings_open(const char *path)
         }
         fclose(f);
     }
-    fullscreen = cfg.fullscreen; show_fps = cfg.show_fps; integer_scale = cfg.integer_scale; mute = cfg.mute;
+    if (old_mute) { cfg.volume = 0; ini_dirty = 1; }
+    fullscreen = cfg.fullscreen; show_fps = cfg.show_fps; integer_scale = cfg.integer_scale;
     widescreen = cfg.widescreen; talk_zoom = cfg.talk_zoom; enemy_health = cfg.enemy_health;
     volume = cfg.volume; music_volume = cfg.music_volume; effects_volume = cfg.effects_volume;
 }
@@ -957,8 +959,8 @@ static void hits_frame(void)
 /* the menu's screens: the main one, the exit question, the controls, and the controls waiting
  * for a press (capture) */
 enum { SCR_MAIN, SCR_ASK, SCR_CONTROLS, SCR_CAPTURE };
-enum { MI_FPS, MI_FULL, MI_PIXELS, MI_WIDE, MI_ZOOM, MI_HEALTH, MI_SOUND, MI_VOLUME, MI_MUSIC, MI_EFFECTS, MI_CONTROLS, MI_EXIT, MAIN_N };
-static const char *const MAIN_ITEM[MAIN_N] = {"SHOW FPS", "FULL SCREEN", "WHOLE PIXELS", "WIDESCREEN", "TALK ZOOM", "ENEMY HEALTH", "SOUND",
+enum { MI_FPS, MI_FULL, MI_PIXELS, MI_WIDE, MI_ZOOM, MI_HEALTH, MI_VOLUME, MI_MUSIC, MI_EFFECTS, MI_CONTROLS, MI_EXIT, MAIN_N };
+static const char *const MAIN_ITEM[MAIN_N] = {"SHOW FPS", "FULL SCREEN", "WHOLE PIXELS", "WIDESCREEN", "TALK ZOOM", "ENEMY HEALTH",
                                               "VOLUME", "  MUSIC", "  EFFECTS", "CONTROLS", "EXIT GAME"};
 /* a volume item's value (0-100), or NULL for the others */
 static int *menu_volume(int item)
@@ -983,7 +985,7 @@ static void draw_menu(const Menu *m)
         for (int i = 0; i < MAIN_N; i++) {
             uint32_t col = i == m->item ? MENU_GOLD : MENU_WHITE;
             int y = y0 + 24 + i * 14;
-            int on = i == MI_FPS ? show_fps : i == MI_FULL ? fullscreen : i == MI_PIXELS ? integer_scale : i == MI_WIDE ? widescreen : i == MI_ZOOM ? talk_zoom : i == MI_HEALTH ? enemy_health : i == MI_SOUND ? !mute : -1;
+            int on = i == MI_FPS ? show_fps : i == MI_FULL ? fullscreen : i == MI_PIXELS ? integer_scale : i == MI_WIDE ? widescreen : i == MI_ZOOM ? talk_zoom : i == MI_HEALTH ? enemy_health : -1;
             if (i == m->item) draw_text(x0 + 12, y, ">", col);
             draw_text(x0 + 24, y, MAIN_ITEM[i], col);
             if (on >= 0) draw_text(x0 + w - 12 - 18, y, on ? "ON" : "OFF", col);
@@ -1093,7 +1095,6 @@ static int menu_step(Menu *m, int only_asking, int up, int down, int left, int r
             case MI_WIDE: widescreen = cfg.widescreen = !widescreen; wide_apply(); ini_dirty = 1; break;
             case MI_ZOOM: talk_zoom = cfg.talk_zoom = !talk_zoom; ini_dirty = 1; break;
             case MI_HEALTH: enemy_health = cfg.enemy_health = !enemy_health; ini_dirty = 1; break;
-            case MI_SOUND: mute = cfg.mute = !mute; ini_dirty = 1; break;
             case MI_VOLUME: case MI_MUSIC: case MI_EFFECTS: {
                 int *vol = menu_volume(m->item);
                 *vol = left ? volume_clamp(*vol - 10) : right ? volume_clamp(*vol + 10) : *vol >= 100 ? 0 : *vol + 10;
@@ -1185,8 +1186,9 @@ static int menu(int asking)
         if (shots) {
             static int n; static unsigned last = ~0u;
             unsigned state = (unsigned)(m.screen | m.item << 2 | m.yes << 5 | m.row << 6 | m.col << 10 | show_fps << 11
-                                        | fullscreen << 12 | integer_scale << 13 | mute << 14 | stick_moves << 15);
+                                        | fullscreen << 12 | integer_scale << 13 | stick_moves << 15);
             for (int a = 0; a < ACTIONS; a++) state = state * 31 + (unsigned)key_bind[a] * 7 + (unsigned)(pad_bind[a] + 1);
+            state = state * 31 + (unsigned)(volume + 101 * music_volume + 10201 * effects_volume);
             if (state != last) {
                 char path[1024]; snprintf(path, sizeof path, "%s/menu_%02d.png", shots, n++);
                 png_write_rgb(path, &frame_rgb[0][0], frame_width, ACTIVE_LINES, FRAME_STRIDE);

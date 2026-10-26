@@ -19,7 +19,7 @@ On top of the original game. They are all on by default; each can be turned off 
 * **Custom controls**: set a key and a controller button, stick direction or trigger for each game
   button, and for quick save and quick load.
 * **Settings saved** between sessions (`wbmw.ini`): full screen, whole-pixel scaling, widescreen,
-  talk zoom, enemy health, sound and its volumes, frame rate display, controls.
+  talk zoom, enemy health, the volumes, frame rate display, controls.
 * **Volume**: the overall volume, and the music and the sound effects each on their own, from the
   menu.
 * **Quick save and load** of the whole game state, with an on-screen confirmation. Saving over
@@ -156,9 +156,10 @@ so Start stays the game's own: it opens the item screen.
 ### The menu
 
 * **Show FPS, Full screen, Whole pixels** (every pixel the same size), **Widescreen**, **Talk
-  zoom**, **Enemy health** (the health bars and damage numbers), **Sound**: on or off. Widescreen
-  is experimental: see **Added features** above.
-* **Volume**, **Music**, **Effects**: from 0 to 100 in tens (left and right, or Enter to step up).
+  zoom**, **Enemy health** (the health bars and damage numbers): on or off. Widescreen is
+  experimental: see **Added features** above.
+* **Volume**, **Music**, **Effects**: from 0 to 100 in tens (left and right, or Enter to step up);
+  Volume at 0 is the sound off.
   The music and the effects are kept apart even though they share the same sound chips: an effect
   that takes a voice from the music plays at the effects' volume.
 * **Controls**: a key and a controller input for each button, plus quick save and quick load.

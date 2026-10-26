@@ -55,7 +55,7 @@ $(OUT)/gen_%.o: ../work/gen/gen_%.c ../work/gen/gen.h ../port/m68k_rt.h ../port/
 # the YM2612: ymfm (C++, third_party/ymfm) behind a C interface
 $(OUT)/ym2612.o: ym2612.cpp $(YMFM)/ymfm_opn.cpp
 	@mkdir -p $(OUT)
-	$(CXX) -O2 -std=c++14 -I$(YMFM) -c $< -o $@
+	$(CXX) -O2 -std=c++14 -w -I$(YMFM) -c $< -o $@
 $(OUT)/ymfm_%.o: $(YMFM)/ymfm_%.cpp
 	@mkdir -p $(OUT)
 	$(CXX) -O2 -std=c++14 -w -I$(YMFM) -c $< -o $@
