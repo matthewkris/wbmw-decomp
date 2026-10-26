@@ -19,7 +19,8 @@ typedef struct {
     uint8_t (*window)(uint16_t a);                  /* a read through the bank window ($8000-$FFFF) */
 } SndIO;
 extern SndIO snd_io;
-void snd_init(void);                                /* the driver started (its RAM and the chips) */
+#define SND_WINDOW 0x98000                          /* the 68000 memory the bank window shows (the driver's start sets it) */
+void snd_init(void);                               /* the driver started (its RAM and the chips) */
 void snd_tick(void);                                /* a tick of timer B: the driver's main loop once */
 
 /* the Z80's registers at a routine's entry, for the shadow check's adapters; an adapter leaves
@@ -27,7 +28,9 @@ void snd_tick(void);                                /* a tick of timer B: the dr
 typedef struct { uint8_t a, f, b, c, d, e, h, l; uint16_t ix, iy, sp; } SndRegs;
 enum { SR_A = 1, SR_B = 2, SR_C = 4, SR_D = 8, SR_E = 16, SR_H = 32, SR_L = 64, SR_IX = 128, SR_IY = 256,
        SR_ZF = 512, SR_CF = 1024 };                 /* SR_ZF, SR_CF: the zero and carry flags */
-typedef struct { uint16_t addr; void (*fn)(SndRegs *); const char *name; unsigned outs; } SndRoutine;
+/* end: 0, the routine ends at its return; else where it ends (the whole tick, the start: checked
+ * alone, WBMW_Z80_SHADOW=tick) */
+typedef struct { uint16_t addr; void (*fn)(SndRegs *); const char *name; unsigned outs; uint16_t end; } SndRoutine;
 extern const SndRoutine snd_routines[];
 extern const int snd_routine_count;
 

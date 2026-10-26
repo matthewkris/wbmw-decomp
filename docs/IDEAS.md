@@ -133,8 +133,9 @@ one-time step could unpack the ROM into ordinary files, and the game would load 
     routine whose data access changes. So it comes after the idiomatic rewrite, with a check
     that the extracted files, packed back up, give the same bytes as the ROM.
   * Sound: the music and effects can be extracted as data, but they are commands for the game's
-    Z80 driver, which still runs from the ROM's code. Taking the ROM out completely needs that
-    driver rewritten in C too.
+    Z80 driver. That driver is C now (`port/sounddrv.c`, 2026-10-26); it still reads its tables
+    and the music from the driver's image the 68000 loads into the Z80's RAM and through the
+    bank window, at the original's addresses.
 * **A cheap first step:** an extractor that only writes viewable copies (PNG sheets of the
   tiles, the maps, the text) without the game using them, to see the formats and check the
   decoding.

@@ -77,6 +77,7 @@ void machine_isr(Cpu *c);
 static int frame, frames_max, png_every, headless, scale;            /* scale 0: fit the screen */
 static const char *out_dir = ".", *save_path = "wbmw.sav", *wav_path;
 static int mute;
+static int z80_sound;                                  /* --z80-sound: the original sound driver on the emulated Z80 */
 static int enemy_health;                            /* the damage numbers and health bars (Enemy health) */
 
 /* The volumes (the menu's Volume, Music and Effects: 0-100, in tens). The music and the effects
@@ -1854,6 +1855,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--input-game") && i + 1 < argc) { if (framelog_input(argv[++i])) return 1; }
         else if (!strcmp(argv[i], "--dump-at") && i + 2 < argc) { long n = atol(argv[++i]); framelog_dump_at(n, argv[++i]); }
         else if (!strcmp(argv[i], "--mute")) mute = 1;
+        else if (!strcmp(argv[i], "--z80-sound")) z80_sound = 1;    /* the original driver on the emulated Z80 */
         else if (!strcmp(argv[i], "--verify-graphics") && i + 1 < argc) { verify_graphics = argv[++i]; headless = 1; }
         else if (!strcmp(argv[i], "--rom-reads") && i + 1 < argc) rom_reads_path = argv[++i];
         else if (!strcmp(argv[i], "--pack") && i + 1 < argc) pack_path = argv[++i];
@@ -1932,6 +1934,7 @@ int main(int argc, char **argv)
         atexit(pack_report);
     }
     bus_reset(); vdp_reset(); sound_reset();
+    sound_c_driver = !z80_sound;                    /* the sound driver in C (port/sounddrv.c) */
     if (verify_graphics) return verify_graphics_blocks(verify_graphics);
     if (unpack_req) return unpack_list(unpack_req, unpack_out);
     if (input) load_input(input);

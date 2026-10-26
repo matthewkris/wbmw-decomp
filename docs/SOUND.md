@@ -282,17 +282,18 @@ and song $00's FM and PSG notes the same as the frequencies the driver wrote. `w
 queues sound N (hex) through the game's own `QueueSound` ten frames into a run, to hear or log any
 song or effect.
 
-## The driver in C (in progress)
+## The driver in C
 
-`port/sounddrv.c` is the driver written anew in C, to replace the emulated Z80. It keeps the
+`port/sounddrv.c` is the driver written anew in C; the native build runs it in place of the
+emulated Z80 (2026-10-26; `--z80-sound` brings the Z80 back). It keeps the
 driver's state in the Z80's RAM at the original's addresses (its variables at $1B80-$1FFF: the
 command ring at $1C30, the voices at $1C80, the tracks at $1EC0), so save states and the
 original's RAM compare byte for byte, and reaches the chips and the bank window through `snd_io`.
 It is written by hand from the reading above, not translated: a translation would be derived from
 the ROM.
 
-Until it is whole, the emulated Z80 runs the original and each C routine is checked against it
-as it runs (`WBMW_Z80_SHADOW=1`, `harness/sound.c`): when the Z80 starts a routine of
+With `WBMW_Z80_SHADOW=1` (which runs the Z80, `harness/sound.c`), each C routine is checked
+against the original as it runs (`WBMW_Z80_SHADOW=1`, `harness/sound.c`): when the Z80 starts a routine of
 `snd_routines`, the C runs on a copy of the RAM, its chip writes kept; when the Z80 has returned
 (its stack pointer back above the return address), the driver's variables, the chip writes in
 order, and the registers the routine answers in must be the same (bytes the 68000 wrote in the
@@ -316,14 +317,40 @@ envelope and its release ($0976), and the pitch and volume written: 34 routines,
 187 runs (322,748 whole frames of the voices) the same. A slip in it (a word written a byte at a
 time from a sum that read the word: `SET16` is a function for that reason) was found at once;
 `WBMW_Z80_SHADOW_DUMP=1` prints the voice's record before and after, the Z80's and the C's.
-Batch 4: the tracks ($0B7F, $0B9C: the data's notes, lengths, calls, loops and commands; a note's voice, $0CA5), the commands from the ring ($019C, the sounds started), the fade ($0155): every tick of the 187 runs the same (107,607 track steps, 322,799 commands and fades). `snd_init` and `snd_tick` (the start, and a tick of the main loop) are written, not yet run in place of the Z80. Next: the native build on the C driver. Formerly next: the track interpreter ($0B9C,
-$0CA5, the commands), the main loop's parts (the commands from the 68000, the fades, the timer),
-then the C driver in place of the Z80.
+Batch 4: the tracks ($0B7F, $0B9C: the data's notes, lengths, calls, loops and commands; a
+note's voice, $0CA5), the commands from the ring ($019C, the sounds started), the fade ($0155):
+every tick of the 187 runs the same (107,607 track steps, 322,799 commands and fades).
+
+**The whole driver** (`snd_init`, `snd_tick`): with `WBMW_Z80_SHADOW=tick` (`sndaccept.py
+--tick`), the start (from the reset to the first wait for the timer) and every tick (from the
+timer seen, $012E, to the next wait, $0127) are checked whole: 19 starts and 322,610 ticks, none
+different. A tick in which the 68000 queued a command while the Z80 was in it (the 68000 waiting
+on the driver's busy flag, `sound_idle`) is not compared, since the C's tick takes no time and no
+command can arrive in it (about 125 over the runs).
+
+**In the native build** (`harness/sound.c`, `sound_c_driver`): the C starts when the Z80 would
+first run after the 68000 lets it out of reset (the driver loaded, the bus given back; the 68000
+releases the reset once while still holding the bus, which the Z80 never runs through), and
+ticks each time the YM2612's timer B has overflowed while the 68000 holds neither the bus nor the
+reset. Its state is the Z80's RAM; the emulated Z80 is left where the original waits for the timer
+($0127, the return to $00BC on its stack), so save states move both ways: a state saved on the C
+driver plays on in the Z80 (`--z80-sound`, `play.exe`), and the Z80's states on the C.
+
+The one difference is time. The original's tick takes the Z80 up to half a timer period (an FM
+instrument set up waits on the YM2612's busy flag for each register), and when a tick and the
+68000's holds run past an overflow, that tick is lost: over 1,500 frames from power-on the Z80
+made 4,373 ticks where the timer gave 4,387, its music about 0.3% slower at busy moments. The C
+takes no time and loses none, like the rest of the native build, which never slows down. The chip
+writes are otherwise the same, a few reordered where a command falls on the other side of a
+tick (340 of 15,266 writes over those frames; 16 of 3,696 from a castle state, with the same 2,631
+ticks). Not ported: the original's debugging monitor ($0F8C, and the `rst $20`-`$30` breakpoints
+into it), run only when $1B99 is set, which the game never does; and its fast mode ($1C03 bit 1,
+four ticks to a timer period), which the game never sets either.
 
 ## Not done yet
 
 * Names for the instruments' last unnamed bytes (an FM instrument's `level`'s use beyond the
   carriers, `b0_high`; a PSG instrument's `b0`-`b2`).
 * A MIDI import back into `music.json`.
-* The driver in C, finished (above), replacing the emulated Z80; checked against it by comparing every write to
-  the sound chips.
+* The driver in C as the harness's sound too (it keeps the Z80 for the shadow checks), and a timing
+  model for it (the original's lost ticks).

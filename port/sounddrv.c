@@ -1109,10 +1109,14 @@ static void z_019c(SndRegs *r) { (void)r; command_take(); }
 static void z_0b7f(SndRegs *r) { (void)r; tracks_tick(); }
 static void z_0ca5(SndRegs *r) { track_note(r->ix, r->a); }
 static void z_0e1b(SndRegs *r) { voice_level(r->ix, r->iy); }
+static void z_tick(SndRegs *r) { (void)r; snd_tick(); }
+static void z_init(SndRegs *r) { (void)r; snd_init(); }
 static void z_00e3(SndRegs *r) { (void)r; ym_silence(); }
 static void z_013e(SndRegs *r) { (void)r; voices_reset(); }
 
 const SndRoutine snd_routines[] = {
+    {0x0000, z_init, "Start", 0, 0x0127},           /* the reset to the first wait for the timer */
+    {0x012E, z_tick, "Tick", 0, 0x0127},            /* the timer seen, to the next wait */
     {0x00E3, z_00e3, "YmSilence", 0},
     {0x013E, z_013e, "VoicesReset", 0},
     {0x0155, z_0155, "FadeTick", 0},

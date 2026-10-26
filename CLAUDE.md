@@ -47,7 +47,7 @@ machine core (C in the native build, the 68000's in the harness by design), dead
 Open, all optional: a timing model for the C (`--timing` is off: it counted the translated
 code's cycles; without it the native build plays like the harness's replace mode, never slowing
 down); the music and the driver's tables are decoded (`docs/SOUND.md`: `tools/z80dis.py`,
-`tools/music.py`, `tools/soundtables.py`, `tools/midi.py`: all of it, the effects named, MIDI files); the driver in C in progress (`port/sounddrv.c`, checked by `WBMW_Z80_SHADOW=1` and `tools/sndaccept.py`; `docs/SOUND.md`); the ideas in
+`tools/music.py`, `tools/soundtables.py`, `tools/midi.py`: all of it, the effects named, MIDI files); the driver in C, which the native build plays on (2026-10-26: `port/sounddrv.c`, checked routine by routine with `WBMW_Z80_SHADOW=1` and tick by tick with `=tick`, `tools/sndaccept.py [--tick]`; `--z80-sound` for the emulated Z80; `docs/SOUND.md`); the ideas in
 `docs/IDEAS.md` (a steady camera, save slots); the owner playing the native build
 at length. The history below is kept as it was.
 
@@ -148,8 +148,8 @@ the status screen used throughout, a shop, conversations. Ask the owner for reco
    "Comparing by game frame"). With `--timing` (optional) it counts the 68000's cycles and is
    identical to the original in every byte and every frame, sound included ("Exact timing").
    It has save states in the harness's format (F2/F4, `--load`), so states move between
-   `play.exe` and `wbmw.exe`. The sound driver itself is still Z80 code run by an emulator; translating it is a
-   later, separate project.
+   `play.exe` and `wbmw.exe`. The sound driver is C too since 2026-10-26 (`port/sounddrv.c`; the harness keeps
+   the Z80).
 3. The idiomatic rewrite, subsystem by subsystem, checked against the original the same way
    (`docs/PORT.md`, "The idiomatic rewrite"); that is where the coroutine library belongs.
    Movement and collision is done: all of it ($2E38-$3E1F, the conveyors and the water

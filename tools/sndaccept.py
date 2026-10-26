@@ -3,7 +3,10 @@ native build run with WBMW_Z80_SHADOW=1 from power-on, from every save state, an
 song and effect (--play-sound) from a state, in parallel; the routines' calls and differences
 added up.
 
-Usage: sndaccept.py [--frames N] [--jobs N] [--state FILE]   (defaults: 600, 12, work/castle.state)
+With --tick, the driver's whole ticks and its start are checked instead (WBMW_Z80_SHADOW=tick:
+each tick from the timer seen to the next wait, snd_tick and snd_init against the Z80).
+
+Usage: sndaccept.py [--frames N] [--jobs N] [--state FILE] [--tick]   (defaults: 600, 12, work/castle.state)
 """
 import sys, os, re, glob, struct, subprocess, argparse, collections
 from concurrent.futures import ThreadPoolExecutor
@@ -14,8 +17,10 @@ LINE = re.compile(r'sound shadow: (\S+)\s+\$([0-9A-F]{4})\s+(\d+) calls\s+(\d+) 
 def frame_of(state):
     return struct.unpack_from('<i', open(state, 'rb').read(), 8)[0]
 
+MODE = '1'
+
 def run(args):
-    env = dict(os.environ, WBMW_Z80_SHADOW='1')
+    env = dict(os.environ, WBMW_Z80_SHADOW=MODE)
     r = subprocess.run([EXE] + args + ['--mute'], capture_output=True, text=True, env=env)
     return [l for l in r.stderr.splitlines() if l.startswith('sound shadow')]
 
@@ -23,7 +28,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--frames', type=int, default=600); ap.add_argument('--jobs', type=int, default=12)
     ap.add_argument('--state', default=os.path.join('work', 'castle.state'))
+    ap.add_argument('--tick', action='store_true')
     A = ap.parse_args()
+    global MODE
+    if A.tick: MODE = 'tick'
     runs = [['--frames', '1500']]
     for s in sorted(glob.glob(os.path.join('work', '*.state'))):
         runs.append(['--load-state', s, '--frames', str(frame_of(s) + A.frames)])

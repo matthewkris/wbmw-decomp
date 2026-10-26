@@ -33,7 +33,8 @@ void sound_set_busreq(int on);
 void sound_set_reset(int on);
 int sound_bus_granted(void);
 void sound_psg_write(uint8_t d);
-void sound_hold(int on);                /* hold the Z80 and the chips still (shadow checks) */
+extern int sound_c_driver;              /* the driver in C (port/sounddrv.c) in place of the Z80 (the native build's) */
+void sound_hold(int on);               /* hold the Z80 and the chips still (shadow checks) */
 void sound_run_line(int vint);          /* one scanline; vint: raise the Z80's VBlank interrupt */
 void sound_idle(void);                  /* let some sound time pass, even while held */
 int sound_take(int16_t *dst, int max);  /* take up to max stereo samples (53,267 Hz) */
