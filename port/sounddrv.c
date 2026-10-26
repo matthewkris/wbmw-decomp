@@ -210,6 +210,157 @@ static unsigned table_pitch(unsigned table, unsigned semi, unsigned frac, int fa
     return hi << 8 | lo;
 }
 
+/* ---- a voice's pitch and volume on its chip ---- */
+#define V_LEVEL     2                               /* (+$02) the note's velocity, as attenuation (FM) */
+#define V_PITCH     8                               /* (+$08) the pitch now: fraction, then whole notes */
+#define V_WRITTEN   10                              /* (+$0A) the pitch last written: fraction (to 1/8), whole notes */
+#define V_VOL_MOD   28                              /* (+$1C) the volume script's offset */
+#define V_ALGORITHM 36                              /* (+$24) the FM instrument's algorithm and feedback (register $B0) */
+#define V_OPS       40                              /* (+$28) the 4 operators: their level, its last written, 2 more */
+#define FADE_NOW    0x1C0B                          /* the fade's level, added to a song's voices */
+#define FM_LEVEL    0x1C08                          /* the FM voice's level for its carriers, this time */
+#define FM_TABLE    0x107B                          /* the FM frequency numbers */
+#define PSG_TABLE   0x113D                          /* the PSG periods */
+#define CARRIERS    0x0674                          /* each algorithm's carriers, a bit an operator */
+
+/* $059B, $05A3: whether the voice's pitch (to an eighth of a semitone) differs from the one last
+ * written; if so it is kept as written. *note and *frac: the pitch */
+static int pitch_changed(unsigned voice, unsigned *note, unsigned *frac)
+{
+    *frac = RAM(voice + V_PITCH) & 0xF8; *note = RAM(voice + V_PITCH + 1);
+    if (*frac == RAM(voice + V_WRITTEN) && *note == RAM(voice + V_WRITTEN + 1)) return 0;
+    RAM(voice + V_WRITTEN) = (uint8_t)*frac; RAM(voice + V_WRITTEN + 1) = (uint8_t)*note;
+    return 1;
+}
+
+/* $053C, $0579: the voice's pitch written, if it changed: an FM voice's block and frequency
+ * number ($A4 + its channel, then $A0); a PSG voice's period, its octave's entry halved by the
+ * block, in the PSG's two bytes ($80 + the channel and the low 4 bits, then the high 6) */
+static void voice_pitch(unsigned voice)
+{
+    unsigned note, frac, block;
+    if (!pitch_changed(voice, &note, &frac)) return;
+    unsigned semi = note_split(note, &block, &frac);
+    if (RAM(voice + V_TYPE) == 0) {
+        unsigned reg = (0xA4 + RAM(YM_CHANNEL)) & 0xFF, f = table_pitch(FM_TABLE, semi, frac, 0);
+        ym_write_half(reg, (block << 3 | f >> 8) & 0xFF);
+        ym_write_half(reg & ~4u, f & 0xFF);
+        return;
+    }
+    unsigned period = table_pitch(PSG_TABLE, semi, frac, 1) >> block;
+    snd_io.psg((unsigned)(RAM(YM_CHANNEL) << 5 | (period & 0x0F) | 0x80) & 0xFF);
+    snd_io.psg(period >> 4 & 0x3F);
+}
+
+/* $0667: the voice's FM algorithm's carriers (the table at $0674): a bit an operator */
+static unsigned carriers(unsigned voice) { return CARRIERS + (RAM(voice + V_ALGORITHM) & 7); }
+
+/* add a and b as the original's signed bytes, at most $7F: the PSG's (a result with bit 7, $7F) */
+static unsigned level_sum(unsigned a, unsigned b)
+{
+    unsigned s = (a + b) & 0xFF;
+    return s & 0x80 ? 0x7F : s;
+}
+
+/* $05BA: the voice's volume written, if it changed: a PSG tone's attenuation ($90 + its channel),
+ * the noise's ($F0); an FM voice's carriers' levels ($40 + the operator), each its own level and
+ * the voice's (its velocity, its volume script's offset); a song's voices the fade's level too */
+static void voice_volume(unsigned voice)
+{
+    unsigned type = RAM(voice + V_TYPE), fade = RAM(voice + V_FLAGS) & 0x20 ? RAM(FADE_NOW) : 0;
+    if (type == 2) {
+        unsigned a = level_sum(fade, RAM(voice + V_OPS)) & 0x78;
+        if (a == RAM(voice + V_PSG_LEVEL)) return;
+        RAM(voice + V_PSG_LEVEL) = (uint8_t)a;
+        snd_io.psg(RAM(YM_CHANNEL) << 5 | 0x90 | a >> 3);
+        return;
+    }
+    if (type > 2) {
+        unsigned a = level_sum(fade, RAM(voice + V_OPS)) & 0x78;
+        if (a == RAM(NOISE_LEVEL)) return;
+        RAM(NOISE_LEVEL) = (uint8_t)a;
+        snd_io.psg(0xF0 | a >> 3);
+        return;
+    }
+    unsigned mask = RAM(carriers(voice)), c = (RAM(voice + V_LEVEL) + RAM(voice + V_VOL_MOD)) & 0xFF;
+    int s = (int8_t)fade + (int8_t)c;               /* (add, then jp po: $7F on a signed overflow) */
+    RAM(FM_LEVEL) = (uint8_t)(s < -128 || s > 127 ? 0x7F : s & 0xFF);
+    for (unsigned op = 0; op < 4; op++, mask >>= 1) {
+        unsigned at = voice + V_OPS + 4 * op;
+        if (!(mask & 1)) continue;
+        unsigned a = level_sum(RAM(FM_LEVEL), RAM(at));
+        if (a == RAM(at + 1)) continue;
+        RAM(at + 1) = (uint8_t)a;
+        ym_write_channel(0x40 | (op >> 1 | (op & 1) << 1) << 2, a);   /* the operators' registers: 0, 8, 4, $C */
+    }
+}
+
+/* $067C: an FM operator set from an instrument's three bytes (src: its level, its detune and
+ * multiple, its envelope's number), with the voice's copy (dst: 4 bytes: the level, the level
+ * last written, the detune and multiple, the envelope) written only where they changed; its
+ * release ($80) always. op: its registers' offset ($1C12). *src and *dst move on past them */
+static void operator_set(unsigned op, unsigned *src, unsigned *dst)
+{
+    unsigned s = *src, d = *dst;
+    RAM(YM_OPERATOR) = (uint8_t)op;
+    RAM(d) = RAM(s);
+    if (RAM(d + 2) != RAM(s + 1)) { RAM(d + 2) = RAM(s + 1); ym_write_operator(0x30, RAM(s + 1)); }
+    unsigned env = RAM(s + 2), e = 0x164B + env * 4;
+    if (RAM(d + 3) != env) {
+        RAM(d + 3) = (uint8_t)env;
+        ym_write_operator(0x50, RAM(e)); ym_write_operator(0x60, RAM(e + 1)); ym_write_operator(0x70, RAM(e + 2));
+    }
+    ym_write_operator(0x80, RAM(e + 3));
+    *src = s + 3; *dst = d + 4;
+}
+
+/* $0B5B, $0B66: the voice's random number ($1BF7 + the voice's number, $1BF6) stepped: times
+ * 117, and $7F added */
+#define VOICE_NOW   0x1BF6
+static unsigned random_at(void) { return 0x1BF7 + RAM(VOICE_NOW); }
+static unsigned random_step(void)
+{
+    unsigned at = random_at(), v = (RAM(at) * 117 + 0x7F) & 0xFF;
+    RAM(at) = (uint8_t)v;
+    return v;
+}
+
+/* ---- the start ---- */
+
+/* rst $18, rst $10: register reg (+ *op) of the current half set to value, for the 3 channels
+ * of an operator (*op then 4 on) */
+static void ym_write_3(unsigned reg, unsigned *op, unsigned value)
+{
+    for (int k = 0; k < 3; k++) { ym_write_half(reg | *op, value); *op = (*op + 1) & 0xFF; }
+    *op = (*op + 1) & 0xFF;
+}
+
+/* $0106, $0100: register reg of every operator of the half (and of both), set to value */
+static void ym_write_all_ops(unsigned half, unsigned reg, unsigned value)
+{
+    unsigned op = 0;
+    RAM(YM_BANK) = (uint8_t)half;
+    for (int k = 0; k < 4; k++) ym_write_3(reg, &op, value);
+}
+static void ym_write_both(unsigned reg, unsigned value) { ym_write_all_ops(0, reg, value); ym_write_all_ops(2, reg, value); }
+
+/* $00E3: the YM2612 quietened: the SSG envelopes off ($90), the releases at the most ($80: $FF),
+ * the six channels keyed off */
+static void ym_silence(void)
+{
+    ym_write_both(0x90, 0);
+    ym_write_both(0x80, 0xFF);
+    for (unsigned ch = 0; ch < 3; ch++) ym_write(0x28, ch);
+    for (unsigned ch = 4; ch < 7; ch++) ym_write(0x28, ch);
+}
+
+/* $013E: everything stopped, and the voices' types set: six FM, three PSG */
+static void voices_reset(void)
+{
+    all_stop();
+    for (unsigned k = 0; k < VOICE_N; k++) RAM(VOICES + 0x40 * k + V_TYPE) = k < 6 ? 0 : 2;
+}
+
 /* ---- the routines' Z80 entries, for the shadow check: each adapter takes the routine's
  * arguments from the registers the original takes them in, and leaves its results where the
  * original does ---- */
@@ -238,8 +389,25 @@ static void z_0516(SndRegs *r)
 }
 static void z_04b1(SndRegs *r) { unsigned f = table_pitch((unsigned)(r->h << 8 | r->l), r->d, r->e, 0); r->d = (uint8_t)(f >> 8); r->e = (uint8_t)f; }
 static void z_04e4(SndRegs *r) { unsigned f = table_pitch((unsigned)(r->h << 8 | r->l), r->d, r->e, 1); r->d = (uint8_t)(f >> 8); r->e = (uint8_t)f; }
+#define HL(r, v)   ((r)->h = (uint8_t)((v) >> 8), (r)->l = (uint8_t)(v))
+#define DE(r, v)   ((r)->d = (uint8_t)((v) >> 8), (r)->e = (uint8_t)(v))
+static void z_053c(SndRegs *r) { voice_pitch(r->ix); }
+static void z_05ba(SndRegs *r) { voice_volume(r->ix); }
+static void z_0667(SndRegs *r) { HL(r, carriers(r->ix)); }
+static void z_067c(SndRegs *r)
+{
+    unsigned s = (unsigned)(r->h << 8 | r->l), d = (unsigned)(r->d << 8 | r->e);
+    operator_set(r->a, &s, &d);
+    HL(r, s); DE(r, d);
+}
+static void z_0b5b(SndRegs *r) { HL(r, random_at()); }
+static void z_0b66(SndRegs *r) { HL(r, random_at()); r->a = (uint8_t)random_step(); }
+static void z_00e3(SndRegs *r) { (void)r; ym_silence(); }
+static void z_013e(SndRegs *r) { (void)r; voices_reset(); }
 
 const SndRoutine snd_routines[] = {
+    {0x00E3, z_00e3, "YmSilence", 0},
+    {0x013E, z_013e, "VoicesReset", 0},
     {0x02E8, z_02e8, "TrackNumber", SR_A},
     {0x02FA, z_02fa, "TrackReleaseVoices", 0},
     {0x0321, z_0321, "SongStop", 0},
@@ -252,6 +420,10 @@ const SndRoutine snd_routines[] = {
     {0x04B1, z_04b1, "FmPitch", SR_D | SR_E},
     {0x04E4, z_04e4, "PsgPitch", SR_D | SR_E},
     {0x0516, z_0516, "NoteSplit", SR_C | SR_D | SR_E},
+    {0x053C, z_053c, "VoicePitch", 0},
+    {0x05BA, z_05ba, "VoiceVolume", 0},
+    {0x0667, z_0667, "Carriers", SR_H | SR_L},
+    {0x067C, z_067c, "OperatorSet", SR_H | SR_L | SR_D | SR_E},
     {0x06C3, z_06c3, "YmWriteOperator", 0},
     {0x06C7, z_06c7, "YmWriteChannelA", 0},
     {0x06C8, z_06c8, "YmWriteChannel", 0},
@@ -259,5 +431,7 @@ const SndRoutine snd_routines[] = {
     {0x06CD, z_06cd, "YmWriteHalf", 0},
     {0x06E2, z_06e2, "YmKey", 0},
     {0x06F7, z_06f7, "YmWrite", 0},
+    {0x0B5B, z_0b5b, "RandomAt", SR_H | SR_L},
+    {0x0B66, z_0b66, "Random", SR_A | SR_H | SR_L},
 };
 const int snd_routine_count = sizeof snd_routines / sizeof snd_routines[0];

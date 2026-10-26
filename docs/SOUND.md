@@ -304,8 +304,12 @@ Done (batches 1-2): the YM2612's writes ($06C3-$06F7, the key $06E2), the record
 ($02E8, $0436), letting voices go ($0446, $02FA), stopping the song, a priority or all ($0321,
 $0344, $0369), finding a voice ($0393, $040D), and the pitch ($0516, $04B1, $04E4): 19 routines,
 over a million calls in 187 runs, none different. A mutation (the key's second half left out)
-was caught at once. Next: the rest of the helpers (the frequencies written, the operators set,
-the random numbers), the voices' frame ($070B, $0756, $0976), the track interpreter ($0B9C,
+was caught at once. Batch 2b: a voice's pitch and volume written ($053C/$0579 with $05A3, $05BA,
+the carriers $0667), an FM operator set from an instrument ($067C), the random numbers ($0B5B,
+$0B66: times 117, plus $7F), and the start's silencing and reset ($00E3 with $0100/$0106 and the
+`rst $10`/`rst $18` it uses, $013E): 27 routines, 3.6 million calls in 187 runs, none different
+(routines only ever reached inside another, like $05A3 or the `rst`s, are checked as part of it).
+Next: the voices' frame ($070B, $0756, $0976), the track interpreter ($0B9C,
 $0CA5, the commands), the main loop's parts (the commands from the 68000, the fades, the timer),
 then the C driver in place of the Z80.
 
