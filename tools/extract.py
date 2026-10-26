@@ -61,7 +61,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 import gfx, rooms, text, sprites, assetfmt, codetables, music, soundtables, gfxpng, msgtext
 
 EXPECTED_SHA1 = '87a968f773c7e807e647c0737132457b06b78276'
-FORMAT = 10                                  # raised whenever what this writes changes: pack.py wants the same
+FORMAT = 11                                  # raised whenever what this writes changes: pack.py wants the same
 Z80_DRIVER = (0x098000, 0x099A77)            # docs/NOTES.md, the memory map; the data after it: music.DATA
 
 def sheet(d, rows, tile, colours, base=0):
@@ -164,6 +164,11 @@ def room_lists(d, allrooms, extra=()):
                     w, end = assetfmt.tile_anim_parse(d, a); out['tile_anims'][key] = dict(words=w, end='%06X' % end)
                 elif c == 0x0B and key not in out['cell_anims']:
                     b, end = assetfmt.cell_anim_parse(d, a); out['cell_anims'][key] = dict(bytes=b, end='%06X' % end)
+    # jumps and offsets as what they lead to, so that items can be added or taken out (docs/MODDING.md)
+    for kind, fmt, kind_of in (('events', assetfmt.event_fmt, assetfmt.event_kind),
+                               ('spawns', assetfmt.spawn_fmt, assetfmt.spawn_kind),
+                               ('walk_scripts', lambda it: assetfmt.WALK_FMT[it['code']], lambda it: None)):
+        for key, v in out[kind].items(): v['items'] = assetfmt.flow_symbolic(v['items'], fmt, int(key, 16), kind_of)
     return out, odd
 
 def main():

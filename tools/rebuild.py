@@ -18,11 +18,13 @@ native build no 68000 code runs, so a read in the code region ($0-$1C601) is a t
 """
 import sys, os, json, struct, argparse, subprocess, tempfile
 sys.path.insert(0, os.path.dirname(__file__))
-import assetfmt, gfx, sprites, codetables, music, soundtables, msgtext
+import assetfmt, gfx, sprites, codetables, music, soundtables, msgtext, levels
 
-def build_pieces(J, assets):
+def build_pieces(J, assets, moves=None):
     """every piece of the ROM the files hold, built from them: [(name, [(address, bytes)])].
-    rebuild.py compares them with the ROM; pack.py places them in the game's data image"""
+    rebuild.py compares them with the ROM; pack.py places them in the game's data image. moves:
+    the rooms' lists and areas to move past the ROM's data (levels.py; pack.py finds them)"""
+    moves = moves or dict(lists=set(), children=set(), areas=set())
     out = []
     add = lambda name, pieces: out.append((name, list(pieces)))
     msgs = J('text', 'messages.json')
@@ -38,10 +40,11 @@ def build_pieces(J, assets):
     dirs[5] = dirs[5] & 0xFF000000 | mtable
     pt = [v & 0xFF000000 | t for v, t in zip(pt, ptables)]
     for name in ('messages', 'message table', 'phrases', 'text fragments'): add(name, texts[name])
+    ext = max([msgtext.EXTENSION] + [a + len(b) for ps in texts.values() for a, b in ps if a >= msgtext.EXTENSION])
+    ext += ext & 1                                  # what moves next goes after the text
     pals = J('palettes', 'palettes.json')
     add('palettes', [(gfx.PALETTES + 17 * p['number'], assetfmt.palette_encode([int(w, 16) for w in p['words']])) for p in pals])
     rms = J('rooms', 'rooms.json')
-    add('room scripts', [(int(r['address'], 16), assetfmt.room_script_encode(r['items'])) for r in rms])
     an = J('sprites', 'animations.json')
     add('animation scripts', [(int(v['address'], 16), assetfmt.anim_encode(v['items'])) for v in an['animations'].values()])
     add('sprite mappings', [(int(v['address'], 16), assetfmt.mapping_encode(v)) for v in an['mappings'].values()])
@@ -49,24 +52,24 @@ def build_pieces(J, assets):
     add('sound driver tables', [(0x098000 + soundtables.CODE_END, soundtables.encode(J('sound', 'instruments.json')))])
     add('music and effects', music.build(J('sound', 'music.json')))
 
-    # the lists the room scripts point at, and what those point at
+    # the lists the room scripts point at, what those point at, and the room scripts (levels.py:
+    # each in place, or moved past the ROM's data when it grew)
     LS = J('rooms', 'lists.json')
-    w16s = lambda ws: b''.join(struct.pack('>H', v) for v in ws)
-    enc = dict(events=lambda v: assetfmt.flow_encode(v['items'], assetfmt.event_fmt),
-               spawns=lambda v: assetfmt.flow_encode(v['items'], assetfmt.spawn_fmt),
-               slots=lambda v: assetfmt.slots_encode(v['items']), tile_anims=lambda v: w16s(v['words']),
-               cell_anims=lambda v: bytes(v['bytes']), cell_lists=lambda v: w16s(v['words']),
-               pictures=assetfmt.picture_encode, item_lists=lambda v: bytes(v['bytes']),
-               walk_scripts=lambda v: assetfmt.walk_script_encode(v['items']))
-    for kind, f in enc.items():
-        add('room ' + kind.replace('_', ' '), [(int(a, 16), f(v)) for a, v in LS[kind].items()])
+    lists, moved, ext = levels.place_lists(LS, moves, ext)
+    for kind in levels.TOP + levels.CHILD: add('room ' + kind.replace('_', ' '), lists[kind])
+    scripts, blocks, ext = levels.place_rooms(rms, dirs, moved, moves, ext)
+    add('room scripts', scripts)
 
     # the ending's scenes (from their fields) and the houses' pictures (their records as they are:
     # some fields are not named yet); the extra raw tiles after the raw graphics blocks
     sc = J('rooms', 'scenes.json')
     add('scene records', [(int(x['address'], 16), struct.pack('>IIHHI', int(x['layer_a'], 16), int(x['layer_b'], 16),
-                                                                 x['palette'], x['word_8B56'], int(x['slots'], 16))) for x in sc])
+                                                                 x['palette'], x['word_8B56'], moved.get(int(x['slots'], 16), int(x['slots'], 16)))) for x in sc])
     hp = J('rooms', 'house_pictures.json')
+    for x in hp['records']:                         # their lists by offsets from the houses' table: not movable yet
+        for k in ('events', 'spawns'):
+            if x[k] and int(x[k], 16) in moved:
+                raise levels.LevelError('the %s list at $%s grew, but a house picture points at it: it cannot move yet' % (k, x[k]))
     add('house picture records', [(int(x['address'], 16), bytes.fromhex(x['raw'])) for x in hp['records']])
     sp = J('rooms', 'start_points.json'); t0 = int(sp['table'], 16)
     add('start points', [(t0 - 2, struct.pack('>H', sp['count_before']) + b''.join(struct.pack('>h', o) for o in sp['offsets']))]
@@ -90,11 +93,7 @@ def build_pieces(J, assets):
     W = J('text', 'windows.json')
     add('window table', [(base(6) + 4 * int(w), bytes([v['col'], v['row'], v['width'], v['lines']])) for w, v in W.items()])
     add('phrase tables', [(base(4), b''.join(struct.pack('>I', v) for v in pt))] + texts['phrase tables'])
-    pieces = []
-    for area in range(19):
-        rs = sorted((r for r in rms if r['area'] == area), key=lambda r: r['room'])
-        pieces.append((base(8 + area), b''.join(struct.pack('>h', int(r['address'], 16) - base(8 + area)) for r in rs)))
-    add('area room tables', pieces)
+    add('area room tables', blocks)
     words = lambda vs: b''.join(struct.pack('>h', v) for v in vs)
     add('animation tree', [(sprites.ANIM, words(L['anim_level1']))]
           + [(sprites.ANIM + int(k), words(v)) for k, v in L['anim_level2'].items()]

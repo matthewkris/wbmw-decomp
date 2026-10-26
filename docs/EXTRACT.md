@@ -30,7 +30,7 @@ ROM is, and are never committed.
 | `rooms/areaAA_roomRR.png` | every room's map, drawn with its own graphics and palettes | |
 | `rooms/maps.json` | every layer's map as data: its block table (4 tile words and an attribute a block) and its chunks (16 x 12 block numbers a place on the map) | the layers' data ($9F6A, $A068) |
 | `rooms/shared_blocks.json` | the three block tables every room shares | the directory's table 1 |
-| `rooms/lists.json` | the other lists room scripts point at: 199 event lists (exits, doors, things, jumps on flags), 139 spawn lists (the enemies), 71 graphics slot lists, 33 tile animations; and the 60 pictures, 9 item lists and 12 townspeople's walk scripts they point at | room commands 2, 4, 5, 8, 11 |
+| `rooms/lists.json` | the other lists room scripts point at: 199 event lists (exits, doors, things, jumps on flags), 139 spawn lists (the enemies), 71 graphics slot lists, 33 tile animations; and the 60 pictures, 9 item lists and 12 townspeople's walk scripts they point at; jumps and offsets written as what they lead to (an item's `label`, `KIND/ADDRESS`), so items can be added (`docs/MODDING.md`, "Levels"; `tools/levels.py`) | room commands 2, 4, 5, 8, 11 |
 | `rooms/scenes.json` | the ending's six scenes: each one's layers, palette and graphics | the directory's table 7 ($96D6) |
 | `rooms/house_pictures.json` | the 29 houses' and shops' pictures: place and size, frame, triggers, things | the directory's table 2 ($B986) |
 | `graphics/extra_NNN.bin` | the 6 raw tiles after each of the 20 raw blocks, which `CopyRawTiles` copies with it (the shields) | |

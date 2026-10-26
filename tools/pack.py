@@ -23,9 +23,9 @@ left as it was; its 4 tile words; its attribute byte); the layers: their number,
 data's address (4), its block table's address (4), its places' number (1), and each place in the
 data's order: its place on the map (1) and its chunk's 192 cells (words).
 """
-import sys, os, json, struct
+import sys, os, re, json, struct
 sys.path.insert(0, os.path.dirname(__file__))
-import rebuild, extract, gfxpng, pngio, msgtext
+import rebuild, extract, gfxpng, pngio, msgtext, levels
 
 SIZE = 0xC0000                                      # the ROM's address space: 786,432 bytes
 
@@ -61,23 +61,15 @@ def conflicts(found):
               '      shorten it (docs/MODDING.md, "What can be changed").' % len(found))
     return bool(found)
 
-def main():
-    assets = sys.argv[1] if len(sys.argv) > 1 else 'assets'
-    out = sys.argv[2] if len(sys.argv) > 2 else os.path.join(assets, 'game.pak')
-    J = lambda *p: json.load(open(os.path.join(assets, *p), encoding='utf-8'))
-    fmt = J('manifest.json').get('format') if os.path.exists(os.path.join(assets, 'manifest.json')) else None
-    if fmt != extract.FORMAT:                       # written by an older extract.py, or not at all
-        print('%s: written by another version of tools/extract.py (format %s, this one wants %d): extract again'
-              % (assets, fmt, extract.FORMAT))
-        return 3
-    try: built = rebuild.build_pieces(J, assets)
-    except msgtext.TextError as e:
-        print('pack: text/messages.txt: %s\npack: nothing packed (docs/MODDING.md, "Text")' % e); return 1
-    # the image: the ROM's address space, and past it what has moved there (msgtext.EXTENSION)
+def build_image(J, assets, blocks, moves):
+    """the data image from the files: (image, mask, size, conflicts, pieces); image None when the
+    data is too large"""
+    built = rebuild.build_pieces(J, assets, moves)
+    # the ROM's address space, and past it what has moved there (msgtext.EXTENSION, levels.py)
     size = max([SIZE] + [a + len(b) for _, ps in built for a, b in ps])
     size = (size + 0xFFFF) & ~0xFFFF
     if size > 0x400000:
-        print('pack: the data reaches $%06X, past the cartridge\'s 4 MB: nothing packed' % size); return 1
+        print('pack: the data reaches $%06X, past the cartridge\'s 4 MB: nothing packed' % size); return None, None, 0, [], 0
     image, mask = bytearray(size), bytearray(size)
     owner, found = {}, []                           # who wrote a byte (where they disagree), conflicts
 
@@ -94,12 +86,50 @@ def main():
     pieces = 0
     for name, ps in built:
         for a, b in ps: put(a, b, '%s at $%06X (%d bytes)' % (name, a, len(b))); pieces += 1
-    blocks = read_blocks(assets)
-    if blocks is None: return 1
     for i, e in enumerate(J('graphics', 'table.json')):
         e = int(e, 16)
         if e != 0xFFFFFFFF and e >> 24 & 1: put(e & 0xFFFFFF, blocks[i], 'graphics block %d (raw)' % i)
+    return image, mask, size, found, pieces
+
+def main():
+    assets = sys.argv[1] if len(sys.argv) > 1 else 'assets'
+    out = sys.argv[2] if len(sys.argv) > 2 else os.path.join(assets, 'game.pak')
+    J = lambda *p: json.load(open(os.path.join(assets, *p), encoding='utf-8'))
+    fmt = J('manifest.json').get('format') if os.path.exists(os.path.join(assets, 'manifest.json')) else None
+    if fmt != extract.FORMAT:                       # written by an older extract.py, or not at all
+        print('%s: written by another version of tools/extract.py (format %s, this one wants %d): extract again'
+              % (assets, fmt, extract.FORMAT))
+        return 3
+    blocks = read_blocks(assets)
+    if blocks is None: return 1
+    # a list or a room script that grew into its neighbours moves past the ROM's data (levels.py):
+    # build, find them, build again, until nothing more can move
+    moves, rooms_at = dict(lists=set(), children=set(), areas=set()), {int(r['address'], 16): r['area'] for r in J('rooms', 'rooms.json')}
+    parents = levels.parents_of(J('rooms', 'lists.json'))
+    for attempt in range(10):
+        try: image, mask, size, found, pieces = build_image(J, assets, blocks, moves)
+        except msgtext.TextError as e:
+            print('pack: the text: %s\npack: nothing packed (docs/MODDING.md, "Text")' % e); return 1
+        except (levels.LevelError, ValueError) as e:
+            print('pack: the rooms: %s\npack: nothing packed (docs/MODDING.md, "Levels")' % e); return 1
+        if image is None: return 1
+        grown = False
+        for what, other, a in found:
+            for name in (what, other or ''):
+                m = re.match(r'room ([a-z ]+) at \$([0-9A-F]{6})', name)
+                if not m: continue
+                kind, key = m.group(1).replace(' ', '_'), '%s/%s' % (m.group(1).replace(' ', '_'), m.group(2))
+                if kind == 'scripts':
+                    area = rooms_at.get(int(m.group(2), 16))
+                    if area is not None and area not in moves['areas']: moves['areas'].add(area); grown = True
+                elif kind in levels.TOP and key not in moves['lists']: moves['lists'].add(key); grown = True
+                elif kind in levels.CHILD and key not in moves['children']:
+                    moves['children'].add(key); moves['lists'].update(parents.get(key, [])); grown = True
+        if not found or not grown: break
     if conflicts(found): return 1
+    if moves['lists'] or moves.get('placed_areas'):
+        print('pack: moved past the ROM\'s data: %d lists, the rooms of area %s' % (
+            len(moves['lists']), ', '.join(str(a) for a in moves.get('placed_areas', [])) or '-'))
 
     tables = {}
     for t in J('rooms', 'shared_blocks.json'): tables[int(t['address'], 16)] = t['blocks']
