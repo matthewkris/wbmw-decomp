@@ -11,6 +11,23 @@ the console's second CPU, a Z80. The port has that driver rewritten in C as well
 chips (ymfm for the YM2612, plus the SN76489). `--z80-sound` plays the original driver on an
 emulated Z80 instead.
 
+## Screenshots
+
+**Widescreen** (right), next to the original picture (left):
+
+<p>
+  <img src="docs/images/original.png" alt="The original 4:3 picture" height="300">
+  <img src="docs/images/widescreen.png" alt="The same moment in widescreen, with the one-row status bar" height="300">
+</p>
+
+**Damage numbers and enemy health bars:**
+
+<img src="docs/images/damage-numbers.gif" alt="Wonder Boy fighting crabs: damage numbers rise from each hit and a health bar shows over the enemy" width="800">
+
+**The menu** (Esc, or Back/Select on a controller):
+
+<img src="docs/images/menu.png" alt="The pause menu: display options, the added features, volumes, controls" width="800">
+
 ## Added features
 
 On top of the original game. They are all on by default; each can be turned off in the menu
@@ -53,13 +70,15 @@ On top of the original game. They are all on by default; each can be turned off 
 ## No ROM data is in this repository
 
 **You need your own dump of the cartridge.** This repository contains only source code, tools and
-notes. It contains no ROM, no graphics, maps, text, music or sound, and no file made from the ROM:
+notes. It contains no ROM, no graphics, maps, text, music or sound, and no file made from the ROM,
+except the four screenshots above (`docs/images/`, made with `tools/gif.py` from the native build's
+frames):
 
 * `rom/` (where you put your dump), `work/` (everything built from it) and `assets/` (the data
   `tools/extract.py` writes out of it) are listed in `.gitignore`. So are save files (`*.sav`)
   and save states (`*.state`).
-* The build reads all of the game's data (graphics, maps, text, music, sound, and the Z80 sound
-  driver) out of your ROM into `assets/` and packs it into `assets/game.pak`, which the game plays
+* The build reads all of the game's data (graphics, maps, text, music, sound, and the sound
+  driver's tables) out of your ROM into `assets/` and packs it into `assets/game.pak`, which the game plays
   from; without the pack, the game reads your ROM file directly. The C code holds only the game's
   logic, with a few small numeric tables (jump targets, lookup tables) as part of that logic.
 
@@ -186,7 +205,7 @@ Use `--save FILE` for a different file.
 ### Options
 
 ```
-wbmw [ROM] [--pack FILE] [--windowed] [--widescreen] [--talk-zoom] [--enemy-health] [--scale N] [--integer-scale] [--fps] [--mute] [--save FILE] [--state FILE] [--load] [--config FILE]
+wbmw [ROM] [--pack FILE] [--windowed] [--widescreen] [--talk-zoom] [--enemy-health] [--scale N] [--integer-scale] [--fps] [--mute] [--save FILE] [--state FILE] [--load] [--config FILE] [--z80-sound]
 ```
 
 * `ROM`: play from this ROM instead of `assets/game.pak`. `--pack FILE`: play from this pack.
@@ -238,7 +257,8 @@ How the port was made, and how to check it against the original:
   (`machine.c`) and the SDL host (`wbmw.c`).
 * `harness/`: the reference harness. It runs the original 68000 code (Musashi) with the C routines
   checked against it (shadow mode) or used in its place (replace mode). See `harness/README.md`.
-* `tools/`: the disassembler, code/data mapper and test tools. These also need Python 3 with
+* `tools/`: the disassembler, code/data mapper and test tools (`tools/sndaccept.py` checks the
+  sound driver in C against the original; `tools/gif.py` turns frames into GIFs). These also need Python 3 with
   `capstone` (`pip install capstone`); `tools/fixpoint.sh "rom/Wonder Boy in Monster World (USA,
   Europe).md"` writes the code/data map to `work/`. Running `make` at the repository root rebuilds
   the ROM from generated assembly (it needs vasm's `vasmm68k_mot`) and checks that it's
@@ -254,7 +274,7 @@ How the port was made, and how to check it against the original:
   changed by hand in `assets/` are packed, not overwritten. See `docs/EXTRACT.md`.
 * Documentation: `docs/NOTES.md` (what the game does), `docs/PORT.md` (the port and how each routine
   is verified), `docs/PROCESS.md` (the process as a whole), `docs/EXTRACT.md` (the extracted data
-  and the pack), `docs/SOUND.md` (the Z80 sound driver and the music's format), `native/README.md` (the native build), the added features (`docs/WIDESCREEN.md`,
+  and the pack), `docs/SOUND.md` (the sound driver, its rewrite in C and the music's format), `native/README.md` (the native build), the added features (`docs/WIDESCREEN.md`,
   `docs/TALKZOOM.md`, `docs/ENEMYHEALTH.md`) and `docs/IDEAS.md` (what was asked for, done and to
   do).
 
