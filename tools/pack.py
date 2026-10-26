@@ -29,6 +29,19 @@ import rebuild, extract
 
 SIZE = 0xC0000                                      # the ROM's address space: 786,432 bytes
 
+def conflicts(found):
+    """Every piece goes back at its own address, so one made longer by an edit runs into the next
+    and breaks it without a word (docs/MODDING.md). The game's own data shares bytes (a phrase
+    listed twice, a terminator two lists end on), so pieces may overlap where they agree; two that
+    disagree about a byte are an error: say so and pack nothing. 1 if any"""
+    for what, other, a in found[:20]:
+        print('pack: %s and %s disagree from $%06X: one of them was made longer?' % (what, other, a)
+              if other else 'pack: %s runs past the end of the image' % what)
+    if found:
+        print('pack: %d conflicts, nothing packed. An edited piece can only be as long as it was for now:\n'
+              '      shorten it (docs/MODDING.md, "What can be changed").' % len(found))
+    return bool(found)
+
 def main():
     assets = sys.argv[1] if len(sys.argv) > 1 else 'assets'
     out = sys.argv[2] if len(sys.argv) > 2 else os.path.join(assets, 'game.pak')
@@ -39,18 +52,26 @@ def main():
               % (assets, fmt, extract.FORMAT))
         return 3
     image, mask = bytearray(SIZE), bytearray(SIZE)
+    owner, found = {}, []                           # who wrote a byte (where they disagree), conflicts
 
-    def put(a, b):
+    def put(a, b, what):
+        if a + len(b) > SIZE: found.append((what, None, a)); return
+        old = image[a:a + len(b)]
+        for k in range(len(b)):
+            if mask[a + k] and old[k] != b[k]:
+                found.append((what, owner.get(a + k, 'another piece'), a + k)); break
         image[a:a + len(b)] = b
         mask[a:a + len(b)] = b'\x01' * len(b)
+        for k in range(len(b)): owner.setdefault(a + k, what)
 
     pieces = 0
     for name, ps in rebuild.build_pieces(J, assets):
-        for a, b in ps: put(a, b); pieces += 1
+        for a, b in ps: put(a, b, '%s at $%06X (%d bytes)' % (name, a, len(b))); pieces += 1
     blocks = [open(os.path.join(assets, 'graphics', 'block_%03d.bin' % i), 'rb').read() for i in range(768)]
     for i, e in enumerate(J('graphics', 'table.json')):
         e = int(e, 16)
-        if e != 0xFFFFFFFF and e >> 24 & 1: put(e & 0xFFFFFF, blocks[i])     # raw: read as it is
+        if e != 0xFFFFFFFF and e >> 24 & 1: put(e & 0xFFFFFF, blocks[i], 'graphics block %d (raw)' % i)
+    if conflicts(found): return 1
 
     tables = {}
     for t in J('rooms', 'shared_blocks.json'): tables[int(t['address'], 16)] = t['blocks']
