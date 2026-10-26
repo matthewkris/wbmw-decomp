@@ -18,7 +18,7 @@ native build no 68000 code runs, so a read in the code region ($0-$1C601) is a t
 """
 import sys, os, json, struct, argparse, subprocess, tempfile
 sys.path.insert(0, os.path.dirname(__file__))
-import assetfmt, gfx, sprites, codetables, music, soundtables, msgtext, levels
+import assetfmt, gfx, sprites, codetables, music, soundtables, msgtext, levels, balance
 
 def build_pieces(J, assets, moves=None):
     """every piece of the ROM the files hold, built from them: [(name, [(address, bytes)])].
@@ -100,7 +100,11 @@ def build_pieces(J, assets, moves=None):
           + [(sprites.ANIM + int(k), words(v)) for k, v in L['anim_level3'].items()])
 
     # the tables in the code region the game reads as data, from their rows
-    add('code tables', [(int(t['address'], 16), codetables.encode(t['rows'], t['element'])) for t in J('tables', 'code_tables.json')])
+    ct = J('tables', 'code_tables.json')
+    pieces = [(int(t['address'], 16), codetables.encode(t['rows'], t['element'])) for t in ct]
+    if os.path.exists(os.path.join(assets, 'tables', 'balance.json')):   # the balance by name, over them (balance.py)
+        pieces = balance.apply(J('tables', 'balance.json'), ct, pieces)
+    add('code tables', pieces)
     return out
 
 def main():

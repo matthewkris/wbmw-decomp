@@ -279,7 +279,8 @@ How the port was made, and how to check it against the original:
   changed by hand in `assets/` are packed, not overwritten. See `docs/EXTRACT.md`.
 * **Modding:** change the files in `assets/` and build again; the game plays with your changes.
   `docs/MODDING.md` says what can be changed so far, with examples (all the text at any length,
-  enemies and things in the rooms, the graphics as pictures in their real colours, palettes, prices, monsters' health, maps, music) and the safety checks.
+  enemies and things in the rooms, monsters' health and damage and the prices by name, the graphics
+  as pictures in their real colours, palettes, maps, music) and the safety checks.
 * Documentation: `docs/NOTES.md` (what the game does), `docs/PORT.md` (the port and how each routine
   is verified), `docs/PROCESS.md` (the process as a whole), `docs/EXTRACT.md` (the extracted data
   and the pack), `docs/SOUND.md` (the sound driver, its rewrite in C and the music's format), `native/README.md` (the native build), the added features (`docs/WIDESCREEN.md`,

@@ -25,7 +25,7 @@ data's order: its place on the map (1) and its chunk's 192 cells (words).
 """
 import sys, os, re, json, struct
 sys.path.insert(0, os.path.dirname(__file__))
-import rebuild, extract, gfxpng, pngio, msgtext, levels
+import rebuild, extract, gfxpng, pngio, msgtext, levels, balance
 
 SIZE = 0xC0000                                      # the ROM's address space: 786,432 bytes
 
@@ -110,6 +110,8 @@ def main():
         try: image, mask, size, found, pieces = build_image(J, assets, blocks, moves)
         except msgtext.TextError as e:
             print('pack: the text: %s\npack: nothing packed (docs/MODDING.md, "Text")' % e); return 1
+        except balance.BalanceError as e:
+            print('pack: tables/balance.json: %s\npack: nothing packed (docs/MODDING.md, "Balance")' % e); return 1
         except (levels.LevelError, ValueError) as e:
             print('pack: the rooms: %s\npack: nothing packed (docs/MODDING.md, "Levels")' % e); return 1
         if image is None: return 1
