@@ -46,8 +46,9 @@ The save EEPROM is read from FILE at start and written at exit (default `wbmw.sa
   window title always shows the rate. The game itself always runs 60 frames a second of game
   time; the display tells whether the PC keeps up.
 * **Esc** opens the menu over the picture: **Show FPS**, **Full screen**, **Whole pixels**,
-  **Widescreen**, **Talk zoom**, **Enemy health** and **Sound** (on/off), **Volume**, **Music** and
-  **Effects** (0-100 in tens: left and right, or Enter to step up), **Controls**, and **Exit game**, which asks "Exit the game?" (No first).
+  **Widescreen**, **Talk zoom** and **Enemy health** (on/off), **Volume**, **Music** and
+  **Effects** (0-100 in tens: left and right, or Enter to step up; Volume 0 is the sound off: an
+  old `mute=1` in `wbmw.ini` becomes it), **Controls**, and **Exit game**, which asks "Exit the game?" (No first).
   Up/Down choose, Enter (or Z, Space) selects, Esc goes back or resumes. On a controller,
   **Back/Select** (View, Share/Create, Minus) opens it, as the Genesis pad has no such button and
   Start stays the game's (the item screen); in the menu the D-pad (or left stick) chooses, A

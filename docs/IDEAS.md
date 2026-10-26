@@ -23,7 +23,8 @@ comparisons with the original keep working.
 * **Volume sliders** (asked 2026-10-11, done 2026-10-26): the menu's Volume, Music and Effects
   (0-100 in tens), kept in `wbmw.ini`. The music and the effects are told apart by the sound
   driver's voices (`docs/SOUND.md`, "Volume"). At 100 the sound is the original's, sample for
-  sample.
+  sample. The menu's Sound on/off went with them (asked 2026-10-26): Volume 0 is the
+  sound off; `--mute` stays for a run.
 * **Quick save asks before overwriting** (asked 2026-10-22): with a save already there, the first
   press shows "PRESS SAVE AGAIN TO OVERWRITE"; a second within two seconds replaces it.
 * **A state load clears the host's overlays** (asked 2026-10-22): health bars, damage and gold
