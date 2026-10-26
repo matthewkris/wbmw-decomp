@@ -34,8 +34,8 @@ ROM is, and are never committed.
 | `rooms/scenes.json` | the ending's six scenes: each one's layers, palette and graphics | the directory's table 7 ($96D6) |
 | `rooms/house_pictures.json` | the 29 houses' and shops' pictures: place and size, frame, triggers, things | the directory's table 2 ($B986) |
 | `graphics/extra_NNN.bin` | the 6 raw tiles after each of the 20 raw blocks, which `CopyRawTiles` copies with it (the shields) | |
-| `text/messages.txt`, `messages.json` | the 131 messages: readable, and parsed | $1CC14 (`tools/text.py`) |
-| `text/phrases.txt`, `phrases.json` | the phrases messages share (4 tables) | $1CC10 |
+| `text/messages.txt`, `messages.json` | the 131 messages: as text to edit (jumps as labels; the pack reads it back, `tools/msgtext.py`, `docs/MODDING.md`), and parsed as they are | $1CC14 (`tools/text.py`) |
+| `text/phrases.txt`, `phrases.json` | the phrases messages share (4 tables) and the fragments they jump to: as text to edit, and parsed | $1CC10 |
 | `text/fragments.json` | three texts messages jump to that lie outside them (after the phrases) | |
 | `rooms/start_points.json` | the 138 start points: where the player appears after a door, an exit or a new game (area, room, kind, place, a word) | the directory's table 0 ($A37E) |
 | `rooms/music.json` | each area's rooms' music | the directory's table 3 ($92D4) |

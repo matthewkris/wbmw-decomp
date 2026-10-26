@@ -29,9 +29,10 @@ never committed):
   layout.json           the tables that point at the data: the data directory, the phrase
                         tables' bases, the animation tree's offset tables
   graphics/table.json   the graphics table ($41000): each block's format and address
-  text/messages.txt     every message, readable, codes as {TAGS}, phrases expanded
+  text/messages.txt     every message as text to edit: codes as {TAGS}, phrases written out, jumps
+                        as labels; the pack reads it back (msgtext.py, docs/MODDING.md)
   text/messages.json    the same parsed (characters, codes, commands, phrase references)
-  text/phrases.txt, text/windows.json
+  text/phrases.txt     the shared phrases and the fragments, to edit as messages.txt; text/windows.json
   text/fragments.json   texts messages jump to that lie outside them (after the phrases)
   rooms/start_points.json  where the player starts in a room after a door, an exit or a new game
                         (the directory's table 0, $A37E): area, room, kind, place, a word
@@ -57,10 +58,10 @@ tools/sprites.py.
 """
 import sys, os, json, hashlib, argparse
 sys.path.insert(0, os.path.dirname(__file__))
-import gfx, rooms, text, sprites, assetfmt, codetables, music, soundtables, gfxpng
+import gfx, rooms, text, sprites, assetfmt, codetables, music, soundtables, gfxpng, msgtext
 
 EXPECTED_SHA1 = '87a968f773c7e807e647c0737132457b06b78276'
-FORMAT = 9                                   # raised whenever what this writes changes: pack.py wants the same
+FORMAT = 10                                  # raised whenever what this writes changes: pack.py wants the same
 Z80_DRIVER = (0x098000, 0x099A77)            # docs/NOTES.md, the memory map; the data after it: music.DATA
 
 def sheet(d, rows, tile, colours, base=0):
@@ -260,23 +261,25 @@ def main():
 
     # text
     msgs, phrases = text.all_messages(d)
-    with open(path('text', 'messages.txt'), 'w', encoding='utf-8') as f:
-        for m in msgs:
-            f.write('--- message %d (window %d, at $%06X)\n%s\n\n' % (m['number'], m['window'], m['address'], m['text']))
-    json.dump([dict(number=m['number'], window=m['window'], address='%06X' % m['address'], end='%06X' % m['end'],
-                    text=m['text'], parsed=m['parsed']) for m in msgs], open(path('text', 'messages.json'), 'w'), indent=1)
+    mjson = [dict(number=m['number'], window=m['window'], address='%06X' % m['address'], end='%06X' % m['end'],
+                  text=m['text'], parsed=m['parsed']) for m in msgs]
+    json.dump(mjson, open(path('text', 'messages.json'), 'w'), indent=1)
     plist = []
     for k, lst in enumerate(phrases):
         for j, a in enumerate(lst):
             t, parsed, end = text.decode(d, a)
             plist.append(dict(table=k, number=j, address='%06X' % a, end='%06X' % end, text=t, parsed=parsed))
     json.dump(plist, open(path('text', 'phrases.json'), 'w'), indent=1)
-    with open(path('text', 'phrases.txt'), 'w', encoding='utf-8') as f:
-        for k, lst in enumerate(phrases):
-            for j, a in enumerate(lst): f.write('%d.%d $%06X %r\n' % (k, j, a, text.decode(d, a, phrases=phrases)[0]))
     frags = text.fragments(d, msgs, phrases)
-    json.dump([dict(address='%06X' % f['address'], end='%06X' % f['end'], text=f['text'], parsed=f['parsed']) for f in frags],
-              open(path('text', 'fragments.json'), 'w'), indent=1)
+    fjson = [dict(address='%06X' % f['address'], end='%06X' % f['end'], text=f['text'], parsed=f['parsed']) for f in frags]
+    json.dump(fjson, open(path('text', 'fragments.json'), 'w'), indent=1)
+    # messages.txt and phrases.txt, to edit: the pack reads them back (msgtext.py)
+    as_json = lambda v: json.loads(json.dumps(v))   # (lists, as the pack will read them)
+    tb = text.be32(d, text.DIR + 0x10) & 0xFFFFFF
+    units = msgtext.units_of(as_json(mjson), as_json(plist), as_json(fjson), [text.be32(d, tb + 4 * k) & 0xFFFFFF for k in range(4)])
+    pdict = {(p['table'], p['number']): as_json(p['parsed']) for p in plist}
+    msgtext.write(path('text', 'messages.txt'), 'messages', units, pdict)
+    msgtext.write(path('text', 'phrases.txt'), 'phrases', units, pdict)
     windows = sorted(set(m['window'] for m in msgs))
     json.dump({str(w): text.window(d, w) for w in windows}, open(path('text', 'windows.json'), 'w'), indent=1)
     unknown = sum(m['text'].count('{x') for m in msgs)

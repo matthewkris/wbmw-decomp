@@ -37,7 +37,7 @@ extract() {
 
 [ -f assets/manifest.json ] || extract
 if [ -f "$PAK" ] && [ -z "$(find assets tools/extract.py tools/pack.py tools/rebuild.py tools/assetfmt.py tools/codetables.py \
-        tools/midi.py tools/gfxpng.py tools/pngio.py -newer "$PAK" -type f ! -name game.pak 2>/dev/null | head -1)" ]; then
+        tools/midi.py tools/gfxpng.py tools/pngio.py tools/msgtext.py -newer "$PAK" -type f ! -name game.pak 2>/dev/null | head -1)" ]; then
     exit 0                                      # up to date
 fi
 pack() {                                        # the music as MIDI first (assets/sound/midi), so the pack is the newest

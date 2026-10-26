@@ -32,7 +32,7 @@ as many entries. Values can change freely.
 |---|---|---|
 | `palettes/palettes.json` | `words`: the 16 colours of each of the 160 palettes | Genesis colours, `0BGR` in hex with even digits `0`-`E` (`0E0E` is magenta). `rgb` is only for reading: it is not packed. A palette is loaded when a room (or screen) loads, so a loaded save state keeps the old colours until the next room. |
 | `tables/code_tables.json` | `rows`: the values of the 447 tables in the code, in hex | The game's balance is here: `prices` (each thing's price, 4 bytes, gold), `kind_fighting` (each monster kind's record: health / 32, level, damage, points), `kind_movement` (speeds), `sword_swing` (the sword's hit points), `demo_input`, the colour scripts. `note` and `used_by` say what each table is and which routine reads it. |
-| `text/messages.json` | `parsed`: each message as characters, phrases and codes | Not `messages.txt`: that one is written for reading and is not read back yet (the text phase below). A character is `["char", code]`, ASCII for letters. |
+| `text/messages.txt`, `text/phrases.txt` | all the game's text, as text | Any length: see "Text" below. (`messages.json` and `phrases.json` are the same as the game had it, for reference; the pack reads the `.txt` files.) |
 | `rooms/maps.json` | each layer's `blocks` (its block table: 4 tile words and an attribute a block) and `places` (16 x 12 block numbers each) | The game reads these already unpacked, so any block numbers work. |
 | `rooms/lists.json` | the rooms' event lists (doors, exits, things), spawn lists (enemies and where), graphics slots, tile animations | Same number of entries. |
 | `rooms/rooms.json`, `start_points.json`, `music.json` | room scripts, where the player appears, each room's music | |
@@ -40,8 +40,54 @@ as many entries. Values can change freely.
 | `sound/music.json`, `instruments.json` | the songs' and effects' notes and commands, the instruments | Same length; `tools/music.py` and `docs/SOUND.md` explain the format. |
 | `graphics/png/block_NNN.png` | the 768 blocks of 32 tiles as pictures | See "Graphics" below. |
 
-Not yet: making anything longer, new rooms or bigger maps, and editing the text as text. See
-"Next" below.
+Not yet: making other things longer (lists, maps), new rooms. See "Next" below.
+
+## Text
+
+All the game's text is in two files, `text/messages.txt` and `text/phrases.txt`. Change the
+words, build, and the game says what you wrote. A text can be any length.
+
+* **Messages** (`messages.txt`) are what people say, signs, the story: 131 of them, each starting
+  with a line `--- message N (window W)`. The game asks for them by number, so keep every number;
+  W is the window it opens in (`text/windows.json`), which can be changed too.
+* **Phrases** (`phrases.txt`) are texts the game shares: words many messages use, the things'
+  names (table 1: `phrase 1.N` is thing N's name, as the status screen and shops show it), and
+  whole conversations that many people have, like the shops' and the inn's (`phrase 3.0`,
+  `phrase 3.1`). A phrase changed here changes everywhere it is used. `--- fragment N` are three
+  texts phrases jump to.
+* **What is in a text:**
+  * the words, as they show; a new line is a new line. The game does not wrap lines: keep each
+    line within its window (window 0, which most messages use, is 23 columns with its frame
+    and margin: the game's own lines are up to 21 characters with the margin), and use `{MORE}` (wait for
+    a button) to go on in the next box;
+  * `{INDENT}` at the start of a line, and `{INDENT 2}`, set the left margin; `{SPACES n}` moves on
+    n places;
+  * `{END}` ends the text the window shows; text after it is reached only by a jump;
+  * the other `{TAGS}` are the game's codes and commands, with their numbers: `{SPEED 6}`,
+    `{ATTR 160}` (another colour, `{ATTR 128}` back), `{THING_NAME}`, `{GIVE 255}`, `{SET_FLAG 54}`,
+    ... (`docs/EXTRACT.md`, "The text", and `tools/text.py` list them);
+  * **jumps**: a choice's answer, a check (`{IF_FLAG 54 >2.1}`: if game flag 54 is set, go on at
+    label 2.1) or a `{JUMP >...}` leads to a label, written `{@2.1}` where it leads. A label can be
+    in another message. Move a label with the text it marks; a new label is any name (`{@mine}`,
+    `>mine`) as long as it is put once;
+  * `{PHRASE 3.0}`: a shared phrase that has jumps of its own, kept as it is (edit it in
+    `phrases.txt`). Other phrases are written out in the messages: what you write is put back into
+    phrases wherever it matches one, to save room.
+  * Characters: ASCII, and the font's other signs as `tools/text.py` names them (Ⓐ, Ⅰ, kana);
+    `{x7B}` for a sign with no name.
+* **Room.** The text goes back where it was when it fits. When it does not (the messages grew
+  past the room they had, or any phrase changed), the text moves past the end of the cartridge's
+  data, with its tables, and the game finds it there. All the messages must stay within 32 KB.
+* **Mistakes are named.** A tag that is not a code, a label put twice or nowhere, a character the
+  font does not have: `pack.py` names the message and the place, and packs nothing.
+* **Save states and text changes.** A quick save taken during a conversation remembers where in
+  the text it was. After a text change, that place is somewhere else: finish conversations before
+  taking a save you want to keep across text changes (the game's own save at the inn is not
+  affected).
+
+Example: in `phrases.txt`, phrase 3.0 is the shops' conversation. Change its first lines,
+`You have a` / `discriminating eye.`, to `Ah, a fine choice,` / `young traveller!` and build: every
+shopkeeper greets you so (the title screen's demo shows one).
 
 ## Graphics
 
@@ -100,8 +146,7 @@ The plan, in the order the owner chose (2026-10-26):
 
 1. **Safety and this guide** (done).
 2. **Graphics as pictures** (done): the tiles as PNG files in their real colours, read back.
-3. **Text as text**: `messages.txt` read back, and messages of any length (the data moved where
-   it fits, and the tables that point at it updated).
+3. **Text as text** (done): `messages.txt` and `phrases.txt` read back, at any length.
 4. **Levels**: longer lists (more enemies, doors, things in a room), then bigger maps and new
    rooms.
 5. **Balance by name**: the monsters' records and the prices as named fields (a monster's name,

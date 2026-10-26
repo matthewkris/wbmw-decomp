@@ -18,7 +18,7 @@ native build no 68000 code runs, so a read in the code region ($0-$1C601) is a t
 """
 import sys, os, json, struct, argparse, subprocess, tempfile
 sys.path.insert(0, os.path.dirname(__file__))
-import assetfmt, gfx, sprites, codetables, music, soundtables
+import assetfmt, gfx, sprites, codetables, music, soundtables, msgtext
 
 def build_pieces(J, assets):
     """every piece of the ROM the files hold, built from them: [(name, [(address, bytes)])].
@@ -26,10 +26,18 @@ def build_pieces(J, assets):
     out = []
     add = lambda name, pieces: out.append((name, list(pieces)))
     msgs = J('text', 'messages.json')
-    add('messages', [(int(m['address'], 16), assetfmt.text_encode(m['parsed'])) for m in msgs])
     ph = J('text', 'phrases.json')
-    add('phrases', [(int(p['address'], 16), assetfmt.text_encode(p['parsed'])) for p in ph])
-    add('text fragments', [(int(f['address'], 16), assetfmt.text_encode(f['parsed'])) for f in J('text', 'fragments.json')])
+    L = J('layout.json')
+    dirs = [int(v, 16) for v in L['directory']]
+    # the text from messages.txt and phrases.txt (msgtext.py: any length; what no longer fits moves
+    # past the ROM's data with its tables, and the pointers to them follow)
+    pt = [int(v, 16) for v in L['phrase_tables']]
+    files = [os.path.join(assets, 'text', f) for f in ('messages.txt', 'phrases.txt')]
+    texts, mtable, ptables, _ = msgtext.build(msgs, ph, J('text', 'fragments.json'), dirs[5] & 0xFFFFFF,
+                                              [v & 0xFFFFFF for v in pt], [f if os.path.exists(f) else None for f in files])
+    dirs[5] = dirs[5] & 0xFF000000 | mtable
+    pt = [v & 0xFF000000 | t for v, t in zip(pt, ptables)]
+    for name in ('messages', 'message table', 'phrases', 'text fragments'): add(name, texts[name])
     pals = J('palettes', 'palettes.json')
     add('palettes', [(gfx.PALETTES + 17 * p['number'], assetfmt.palette_encode([int(w, 16) for w in p['words']])) for p in pals])
     rms = J('rooms', 'rooms.json')
@@ -76,20 +84,12 @@ def build_pieces(J, assets):
 
     # the tables that point at the data, from the files (the layout's own addresses: the data
     # directory at $1CC00, the graphics table at $41000, the animation data at $A0000)
-    L = J('layout.json')
-    dirs = [int(v, 16) for v in L['directory']]
     base = lambda i: dirs[i] & 0xFFFFFF
     add('data directory', [(0x1CC00, b''.join(struct.pack('>I', v) for v in dirs))])
     add('graphics table', [(gfx.TABLE, b''.join(struct.pack('>I', int(v, 16)) for v in J('graphics', 'table.json')))])
-    add('message table', [(base(5), b''.join(bytes([m['window']]) + struct.pack('>H', int(m['address'], 16) - base(5)) for m in msgs))])
     W = J('text', 'windows.json')
     add('window table', [(base(6) + 4 * int(w), bytes([v['col'], v['row'], v['width'], v['lines']])) for w, v in W.items()])
-    pt = [int(v, 16) for v in L['phrase_tables']]
-    pieces = [(base(4), b''.join(struct.pack('>I', v) for v in pt))]
-    for k in range(4):
-        offs = [int(p['address'], 16) - (pt[k] & 0xFFFFFF) for p in sorted((p for p in ph if p['table'] == k), key=lambda p: p['number'])]
-        pieces.append((pt[k] & 0xFFFFFF, b''.join(struct.pack('>h', o) for o in offs)))
-    add('phrase tables', pieces)
+    add('phrase tables', [(base(4), b''.join(struct.pack('>I', v) for v in pt))] + texts['phrase tables'])
     pieces = []
     for area in range(19):
         rs = sorted((r for r in rms if r['area'] == area), key=lambda r: r['room'])
