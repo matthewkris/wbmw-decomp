@@ -147,3 +147,21 @@ its view (onto a higher ledge), as most later platformers do. It would change th
 (`layer_y` in `port/rooms.c` reads it; the camera itself is the game's), so it goes behind a
 setting with the normal camera kept for comparisons. The cost: it hides terrain above that the
 original shows.
+
+### Widescreen pictures for one-screen rooms (asked 2026-10-26): on hold
+
+Rooms too narrow for widescreen (one-screen rooms, such as area 0 room 0, where a new game
+starts: start point 0) keep black sides. The idea: an extended 400 x 224 picture of the room,
+its sides filled by an AI outpainting tool, drawn by the host in the sides when widescreen is on.
+
+* The plan: export the room's picture and a 400 x 224 template (the original 256 in the middle);
+  the sides filled outside the project; a tool puts the original pixels back in the middle and
+  snaps the sides to the room's palette and pixel grid; the picture kept as palette indices
+  (CRAM entries), so the game's fades and flashes apply to it as to the room; packed with the
+  room's other files and drawn where the sides are black. Sprites stay over it. One-screen rooms
+  first (they never scroll); a scrolling room would need a picture per layer, moved at its
+  parallax.
+* Tools: Anthropic has no image generator. Free: Krita with the Krita AI Diffusion plugin, or
+  Stable Diffusion (ComfyUI, Forge) with a pixel-art LoRA; Adobe Firefly's Generative Expand has
+  a small free allowance; PixelLab and Retro Diffusion are made for pixel art (mostly paid).
+* The pictures come from the game's graphics: they stay in `assets/` and are never committed.
