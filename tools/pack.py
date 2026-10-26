@@ -25,7 +25,7 @@ data's order: its place on the map (1) and its chunk's 192 cells (words).
 """
 import sys, os, json, struct
 sys.path.insert(0, os.path.dirname(__file__))
-import rebuild, extract, gfxpng, pngio
+import rebuild, extract, gfxpng, pngio, msgtext
 
 SIZE = 0xC0000                                      # the ROM's address space: 786,432 bytes
 
@@ -70,11 +70,19 @@ def main():
         print('%s: written by another version of tools/extract.py (format %s, this one wants %d): extract again'
               % (assets, fmt, extract.FORMAT))
         return 3
-    image, mask = bytearray(SIZE), bytearray(SIZE)
+    try: built = rebuild.build_pieces(J, assets)
+    except msgtext.TextError as e:
+        print('pack: text/messages.txt: %s\npack: nothing packed (docs/MODDING.md, "Text")' % e); return 1
+    # the image: the ROM's address space, and past it what has moved there (msgtext.EXTENSION)
+    size = max([SIZE] + [a + len(b) for _, ps in built for a, b in ps])
+    size = (size + 0xFFFF) & ~0xFFFF
+    if size > 0x400000:
+        print('pack: the data reaches $%06X, past the cartridge\'s 4 MB: nothing packed' % size); return 1
+    image, mask = bytearray(size), bytearray(size)
     owner, found = {}, []                           # who wrote a byte (where they disagree), conflicts
 
     def put(a, b, what):
-        if a + len(b) > SIZE: found.append((what, None, a)); return
+        if a + len(b) > size: found.append((what, None, a)); return
         old = image[a:a + len(b)]
         for k in range(len(b)):
             if mask[a + k] and old[k] != b[k]:
@@ -84,7 +92,7 @@ def main():
         for k in range(len(b)): owner.setdefault(a + k, what)
 
     pieces = 0
-    for name, ps in rebuild.build_pieces(J, assets):
+    for name, ps in built:
         for a, b in ps: put(a, b, '%s at $%06X (%d bytes)' % (name, a, len(b))); pieces += 1
     blocks = read_blocks(assets)
     if blocks is None: return 1
@@ -103,7 +111,7 @@ def main():
     layers = list({src: (src, bt, pl) for src, bt, pl in layers}.values())
 
     with open(out, 'wb') as f:
-        f.write(b'WBMWPAK1' + struct.pack('>I', SIZE) + image + mask)
+        f.write(b"WBMWPAK1" + struct.pack(">I", size) + image + mask)
         for b in blocks: f.write(b)
         f.write(struct.pack('>I', len(tables)))
         for a, bl in sorted(tables.items()):
