@@ -25,9 +25,28 @@ data's order: its place on the map (1) and its chunk's 192 cells (words).
 """
 import sys, os, json, struct
 sys.path.insert(0, os.path.dirname(__file__))
-import rebuild, extract
+import rebuild, extract, gfxpng, pngio
 
 SIZE = 0xC0000                                      # the ROM's address space: 786,432 bytes
+
+def read_blocks(assets):
+    """the 768 graphics blocks: from their pictures (graphics/png, gfxpng.py), which are what one
+    edits; a block without one from its .bin. None, and why, if a picture cannot be read"""
+    g = os.path.join(assets, 'graphics')
+    index_path = os.path.join(g, 'png', 'blocks.json')
+    index = json.load(open(index_path)) if os.path.exists(index_path) else {}
+    blocks, bad = [], 0
+    for i in range(768):
+        png, info = os.path.join(g, 'png', 'block_%03d.png' % i), index.get('%03d' % i)
+        if info and os.path.exists(png):
+            try:
+                blocks.append(gfxpng.read_block(png, [tuple(bytes.fromhex(c)) for c in info['colours']], info['layout']))
+                continue
+            except (pngio.PngError, OSError, ValueError, KeyError) as e:
+                print('pack: graphics/png/block_%03d.png: %s' % (i, e)); bad += 1
+        blocks.append(open(os.path.join(g, 'block_%03d.bin' % i), 'rb').read())
+    if bad: print('pack: %d pictures could not be read, nothing packed (docs/MODDING.md, "Graphics")' % bad)
+    return None if bad else blocks
 
 def conflicts(found):
     """Every piece goes back at its own address, so one made longer by an edit runs into the next
@@ -67,7 +86,8 @@ def main():
     pieces = 0
     for name, ps in rebuild.build_pieces(J, assets):
         for a, b in ps: put(a, b, '%s at $%06X (%d bytes)' % (name, a, len(b))); pieces += 1
-    blocks = [open(os.path.join(assets, 'graphics', 'block_%03d.bin' % i), 'rb').read() for i in range(768)]
+    blocks = read_blocks(assets)
+    if blocks is None: return 1
     for i, e in enumerate(J('graphics', 'table.json')):
         e = int(e, 16)
         if e != 0xFFFFFFFF and e >> 24 & 1: put(e & 0xFFFFFF, blocks[i], 'graphics block %d (raw)' % i)

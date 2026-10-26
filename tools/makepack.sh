@@ -27,8 +27,9 @@ extract() {
     fi
     if [ -f assets/manifest.json ]; then        # never over files someone may have edited: keep them aside
         old="assets-old-$(date +%Y%m%d-%H%M%S)"
-        mv assets "$old" || { echo "makepack: could not move assets/ aside"; exit 1; }
-        echo "makepack: this extractor writes a new format: the old assets/ is kept as $old/ (copy any edits over)"
+        cp -r assets "$old" || { echo "makepack: could not copy assets/ aside"; exit 1; }   # (a copy: Windows will not
+                                                # rename a folder while any program has a file in it open)
+        echo "makepack: this extractor writes a new format: a copy of the old assets/ is kept as $old/ (copy any edits back)"
     fi
     echo "makepack: extracting the game's data from $ROM into assets/"
     "$PY" tools/extract.py "$ROM" assets --no-rooms >/dev/null || { echo "makepack: extracting failed"; exit 1; }
@@ -36,7 +37,7 @@ extract() {
 
 [ -f assets/manifest.json ] || extract
 if [ -f "$PAK" ] && [ -z "$(find assets tools/extract.py tools/pack.py tools/rebuild.py tools/assetfmt.py tools/codetables.py \
-        tools/midi.py -newer "$PAK" -type f ! -name game.pak 2>/dev/null | head -1)" ]; then
+        tools/midi.py tools/gfxpng.py tools/pngio.py -newer "$PAK" -type f ! -name game.pak 2>/dev/null | head -1)" ]; then
     exit 0                                      # up to date
 fi
 pack() {                                        # the music as MIDI first (assets/sound/midi), so the pack is the newest
