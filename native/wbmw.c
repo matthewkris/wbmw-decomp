@@ -87,6 +87,8 @@ static int enemy_health;                            /* the damage numbers and he
  * playing keeps its last owner, so a note's release fades at its own volume. All at 100, the
  * sound is the original's, sample for sample. */
 static int volume = 100, music_volume = 100, effects_volume = 100;
+static int play_sound = -1;                         /* --play-sound N: a song or effect queued after the first frame */
+void QueueSound(Cpu *c);                            /* port/kernel.c, $366 */
 static int volume_clamp(int v) { return v < 0 ? 0 : v > 100 ? 100 : v / 10 * 10; }
 static void volume_frame(void)
 {
@@ -1347,6 +1349,11 @@ static void frame_done(void)
     gold_frame();                                   /* widescreen: the gold found */
 #endif
     volume_frame();                                 /* the volumes for the next frame's sound */
+    static int play_sound_wait = 10;
+    if (play_sound >= 0 && --play_sound_wait <= 0) {   /* --play-sound N: sound N queued, as the game does, once, 10 frames in */
+        Cpu t; memset(&t, 0, sizeof t); t.d[0] = (uint32_t)play_sound; play_sound = -1;
+        QueueSound(&t);
+    }
     if (headless) {
         if (png_every && frame % png_every == 0) {
             char path[1024]; snprintf(path, sizeof path, "%s/frame_%05d.png", out_dir, frame);
@@ -1868,6 +1875,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--windowed")) fullscreen = 0;
         else if (!strcmp(argv[i], "--talk-zoom")) talk_zoom = 1;
         else if (!strcmp(argv[i], "--no-talk-zoom")) talk_zoom = 0;
+        else if (!strcmp(argv[i], "--play-sound") && i + 1 < argc) play_sound = (int)strtol(argv[++i], NULL, 16) & 0xFF;   /* hex, as the sound table numbers them */
         else if (!strcmp(argv[i], "--volume") && i + 1 < argc) volume = volume_clamp(atoi(argv[++i]));
         else if (!strcmp(argv[i], "--music-volume") && i + 1 < argc) music_volume = volume_clamp(atoi(argv[++i]));
         else if (!strcmp(argv[i], "--effects-volume") && i + 1 < argc) effects_volume = volume_clamp(atoi(argv[++i]));

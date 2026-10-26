@@ -95,7 +95,7 @@ reads are kept as they are (`filler`). They encode back byte for byte.
 | `fm_frequencies` | $107B | $0586 | 97 FM frequency numbers: 8 steps a semitone, from a C |
 | `psg_periods` | $113D | $0549 | 97 PSG periods, the same steps |
 | `attenuation_fm`, `attenuation_psg` | $1200, $1240 | $0E1B | a track's volume (`volume`, halved) to an FM level (0-127) or a PSG one (steps of 8) |
-| `fm_instruments` | $1281 | $0A08 | 51 instruments of 19 bytes: algorithm and feedback (register $B0), a level, the LFO sensitivity ($B4, the pan added); for each operator, in register order (1, 3, 2, 4), its level, its detune and multiple ($30) and an envelope's number; two bytes not named yet (the voice's +$26, +$27); a script of each kind (`mod_a`, `mod_b`) |
+| `fm_instruments` | $1281 | $0A08 | 51 instruments of 19 bytes: algorithm and feedback (register $B0), a level, the LFO sensitivity ($B4, the pan added); for each operator, in register order (1, 3, 2, 4), its level, its detune and multiple ($30) and an envelope's number; its pitch offset (`pitch_lo`, `pitch_hi`: a word, the voice's +$26/+$27, added to every note: whole notes in the high byte, so most instruments' $F400 is an octave down; a PSG voice's is always $E800, $0AFC); a script of each kind (`mod_a`, `mod_b`) |
 | `envelopes` | $164B | $0698 | 119 operator envelopes: registers $50 (key scale, attack), $60 (AM, decay), $70 (sustain rate), $80 (sustain level, release) |
 | `psg_instruments` | $1828 | $0AB2 | 17 instruments of 6 bytes: three not named yet (the voice's +$2F, +$2D, +$2E), a volume envelope's number, a script of each kind |
 | `psg_envelopes` | $188F | $0AD6, $09CF | 8 volume envelopes, by pointers: a byte a step, its high nibble the attenuation (times 8), its low the frames it lasts (0: held), $F0 the end |
@@ -152,10 +152,35 @@ the sword's swings stay with the music at 0 and go with the effects at 0; the ov
   gives the same sound output as from the ROM, sample for sample (`--wav`): the title, and 900
   frames from two save states.
 
+## MIDI
+
+`tools/midi.py` writes every song (and with `--effects` every effect) as a standard MIDI file,
+`assets/sound/midi/song_NN.mid` and `sound_NN.mid` (the build writes them with the pack). Each of
+a song's tracks is played as the driver plays it, from `music.json` and `instruments.json`: the
+lengths, loops, calls, notes that sound with the next, ties, the gate, rests, key offs, the
+detune's whole notes, tempo changes; a song's loop is played twice (`--loops N`).
+
+* Time: the driver steps its tracks every three ticks of timer B ($ED: 175.27 Hz), a song's track
+  by what its tempo adds up over them (tempo / 256 a tick, $00C2), an effect's by 9; a length is
+  its byte times 3. A MIDI tick is one of those units, 144 to a quarter note.
+* Pitch: FM note n sounds at MIDI n + 12 plus its instrument's offset (most, -12); PSG note n at
+  MIDI n - 24 + 48 (the period table starts at C3). Drum mode and the noise go to the drum channel.
+* Volume: the attenuation tables in dB (an FM level's step 0.75 dB, a PSG one's 2 dB), as velocity.
+* Not carried over: the chips' instruments (no General MIDI match: an FM track gets a lead, or low
+  a synth bass, the PSG a square lead; each MIDI track is named for its FM instruments), slides,
+  modulation, the detune's fraction, the pan.
+
+Checked against the emulated chips (the sound log with `WBMW_SOUND_LOG_TIME=1`, which adds the
+samples made to each write): the title's note starts, 69 of 73 in its first 12 seconds within
+20 ms of a key-on (the rest drift by the ticks the driver misses while busy, 0.6%); its FM notes
+and song $00's FM and PSG notes the same as the frequencies the driver wrote. `wbmw --play-sound N`
+queues sound N (hex) through the game's own `QueueSound` ten frames into a run, to hear or log any
+song or effect.
+
 ## Not done yet
 
 * The modulation scripts' format, and names for the instruments' unnamed bytes.
 * Names for the effects (where the 68000 queues each).
-* A MIDI export for listening and editing in other tools, and an import back.
+* A MIDI import back into `music.json`.
 * The driver in C (replacing the emulated Z80), checked against it by comparing every write to
   the sound chips.

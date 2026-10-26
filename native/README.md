@@ -85,6 +85,8 @@ The save EEPROM is read from FILE at start and written at exit (default `wbmw.sa
   from the Z80's RAM to tell the music's from the effects' (`docs/SOUND.md`). All at 100 (the
   default, and always in headless runs unless `--volume`, `--music-volume` or `--effects-volume`
   are given) the sound is the original's, sample for sample.
+* `--play-sound N`: queue sound N (hex: a song $00-$17, $54, $55, or an effect) ten frames into
+  the run, through the game's own `QueueSound`, to hear or log it (`docs/SOUND.md`).
 * The settings are kept in `wbmw.ini` next to the program (`--config FILE` for another), written
   when the menu closes or the game exits after a change. The command line overrides a setting for
   one run without changing the file; headless runs (`--frames`) do not read it.
