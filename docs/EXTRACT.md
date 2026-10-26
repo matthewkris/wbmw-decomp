@@ -48,6 +48,7 @@ ROM is, and are never committed.
 | `sound/instruments.json` | the driver's tables: frequencies, attenuation, 51 FM and 17 PSG instruments, 119 operator envelopes, PSG envelopes, modulation scripts, 22 drums (`tools/soundtables.py`, `docs/SOUND.md`) | $9907B (Z80 $107B) |
 | `sound/music.json`, `music.txt` | the music and sound effects: the sound table, the 88 sounds' headers (26 songs, 62 effects), their 636 tracks and sections as notes and commands, and 12 unused tracks; each song's places and each effect's name and use; `music.txt` readable, notes by name (`tools/music.py`, `docs/SOUND.md`) | $99A77 (Z80 $9A77, the sound table at $9B01) |
 | `sound/midi/song_NN.mid`, `sound_NN.mid` | the songs and effects as MIDI files, written by the build from `music.json` and `instruments.json` (`tools/midi.py`, `docs/SOUND.md`) | |
+| `tables/balance.json` | the monsters' fighting records (health, defence, contact damage) and the things' prices, by name, to edit; the pack writes them over `kind_fighting` and `prices` (`tools/balance.py`, `docs/MODDING.md`) | $1BA6C, $1DAE |
 | `tables/code_tables.json` | the 447 tables in the code region (the data among the code): each one's name, place, size, the routines that point at it, a note, and its values in hex | the code region (`tools/codetables.py`) |
 
 ## The checks

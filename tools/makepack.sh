@@ -25,7 +25,10 @@ extract() {
         echo "makepack: no ROM at $ROM, so no $PAK: put your dump there and build again"
         exit 0
     fi
-    if [ -f assets/manifest.json ]; then        # never over files someone may have edited: keep them aside
+    # never over files someone may have edited: keep a copy (when any file is newer than the
+    # extraction, besides what the build itself writes: the pack, the MIDI files)
+    if [ -f assets/manifest.json ] && [ -n "$(find assets -newer assets/manifest.json -type f ! -name game.pak \
+            ! -path '*/midi/*' 2>/dev/null | head -1)" ]; then
         old="assets-old-$(date +%Y%m%d-%H%M%S)"
         cp -r assets "$old" || { echo "makepack: could not copy assets/ aside"; exit 1; }   # (a copy: Windows will not
                                                 # rename a folder while any program has a file in it open)
@@ -37,7 +40,7 @@ extract() {
 
 [ -f assets/manifest.json ] || extract
 if [ -f "$PAK" ] && [ -z "$(find assets tools/extract.py tools/pack.py tools/rebuild.py tools/assetfmt.py tools/codetables.py \
-        tools/midi.py tools/gfxpng.py tools/pngio.py tools/msgtext.py -newer "$PAK" -type f ! -name game.pak 2>/dev/null | head -1)" ]; then
+        tools/midi.py tools/gfxpng.py tools/pngio.py tools/msgtext.py tools/levels.py tools/balance.py -newer "$PAK" -type f ! -name game.pak 2>/dev/null | head -1)" ]; then
     exit 0                                      # up to date
 fi
 pack() {                                        # the music as MIDI first (assets/sound/midi), so the pack is the newest

@@ -49,6 +49,8 @@ never committed):
   sound/music.json      the music and sound effects (tools/music.py): the sound table, each song's
                         and effect's header, every track and section as notes and commands
   sound/music.txt       the same, readable: notes by name
+  tables/balance.json   the monsters' fighting records and the things' prices by name, to edit
+                        (tools/balance.py, docs/MODDING.md)
   tables/code_tables.json  the tables in the code region the game reads as data (tools/codetables.py):
                         each one's name, place, size, who reads it, and its values
 
@@ -56,12 +58,12 @@ This first step only writes the data out so that it can be looked at and its dec
 the game still reads the ROM. The decoders are tools/gfx.py, tools/rooms.py, tools/text.py and
 tools/sprites.py.
 """
-import sys, os, json, hashlib, argparse
+import sys, os, re, json, hashlib, argparse
 sys.path.insert(0, os.path.dirname(__file__))
-import gfx, rooms, text, sprites, assetfmt, codetables, music, soundtables, gfxpng, msgtext
+import gfx, rooms, text, sprites, assetfmt, codetables, music, soundtables, gfxpng, msgtext, balance
 
 EXPECTED_SHA1 = '87a968f773c7e807e647c0737132457b06b78276'
-FORMAT = 11                                  # raised whenever what this writes changes: pack.py wants the same
+FORMAT = 12                                  # raised whenever what this writes changes: pack.py wants the same
 Z80_DRIVER = (0x098000, 0x099A77)            # docs/NOTES.md, the memory map; the data after it: music.DATA
 
 def sheet(d, rows, tile, colours, base=0):
@@ -366,7 +368,11 @@ def main():
                            unused_tracks=len(mj['unused']))
 
     # the tables in the code region the game reads as data
-    json.dump(codetables.extract(d), open(path('tables', 'code_tables.json'), 'w'), indent=1)
+    ctables = codetables.extract(d)
+    json.dump(ctables, open(path('tables', 'code_tables.json'), 'w'), indent=1)
+    # the balance by name: the monsters' records and the prices (balance.py; the pack writes it back)
+    names = {p['number']: re.sub(r'\{[^}]*\}', '', p['text']).replace('\n', ' ').strip() for p in plist if p['table'] == 1}
+    json.dump(balance.extract(d, ctables, index, names), open(path('tables', 'balance.json'), 'w'), indent=1)
     checks['code tables'] = dict(tables=len(codetables.TABLES), bytes=sum(t[1] for t in codetables.TABLES))
 
     # the tables that point at the data
