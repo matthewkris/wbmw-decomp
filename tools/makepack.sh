@@ -25,6 +25,11 @@ extract() {
         echo "makepack: no ROM at $ROM, so no $PAK: put your dump there and build again"
         exit 0
     fi
+    if [ -f assets/manifest.json ]; then        # never over files someone may have edited: keep them aside
+        old="assets-old-$(date +%Y%m%d-%H%M%S)"
+        mv assets "$old" || { echo "makepack: could not move assets/ aside"; exit 1; }
+        echo "makepack: this extractor writes a new format: the old assets/ is kept as $old/ (copy any edits over)"
+    fi
     echo "makepack: extracting the game's data from $ROM into assets/"
     "$PY" tools/extract.py "$ROM" assets --no-rooms >/dev/null || { echo "makepack: extracting failed"; exit 1; }
 }

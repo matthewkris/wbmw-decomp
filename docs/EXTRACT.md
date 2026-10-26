@@ -174,7 +174,9 @@ The build (`make -C native`) runs `tools/makepack.sh`, which extracts the ROM in
 `assets/` is missing or was written by another version of the extractor (its manifest's
 `format`, `extract.FORMAT`), and packs `assets/` when the pack is missing or older than the files
 and tools it is made from. Otherwise `assets/` is left as it is, so files changed by hand are
-packed rather than overwritten. Without a ROM or without Python it makes nothing, and the game
+packed rather than overwritten; when it does extract again over an `assets/`, it first moves that
+one aside as `assets-old-DATE-TIME/`. `pack.py` refuses pieces that disagree about a byte (an
+edit made one longer). What can be changed: `docs/MODDING.md`. Without a ROM or without Python it makes nothing, and the game
 reads the ROM. The game plays from `assets/game.pak` (or `game.pak` beside it) unless a ROM is
 named on the command line; `--pack FILE` names a pack, and then says at exit that every byte read
 was held, as well as when one was not.
