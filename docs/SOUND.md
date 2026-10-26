@@ -282,10 +282,37 @@ and song $00's FM and PSG notes the same as the frequencies the driver wrote. `w
 queues sound N (hex) through the game's own `QueueSound` ten frames into a run, to hear or log any
 song or effect.
 
+## The driver in C (in progress)
+
+`port/sounddrv.c` is the driver written anew in C, to replace the emulated Z80. It keeps the
+driver's state in the Z80's RAM at the original's addresses (its variables at $1B80-$1FFF: the
+command ring at $1C30, the voices at $1C80, the tracks at $1EC0), so save states and the
+original's RAM compare byte for byte, and reaches the chips and the bank window through `snd_io`.
+It is written by hand from the reading above, not translated: a translation would be derived from
+the ROM.
+
+Until it is whole, the emulated Z80 runs the original and each C routine is checked against it
+as it runs (`WBMW_Z80_SHADOW=1`, `harness/sound.c`): when the Z80 starts a routine of
+`snd_routines`, the C runs on a copy of the RAM, its chip writes kept; when the Z80 has returned
+(its stack pointer back above the return address), the driver's variables, the chip writes in
+order, and the registers the routine answers in must be the same (bytes the 68000 wrote in the
+meantime, through `bus_zram_marks`, are not compared). `tools/sndaccept.py` runs it from power-on,
+from every save state and playing every song and effect (`--play-sound`), and adds up the
+routines' calls and differences.
+
+Done (batches 1-2): the YM2612's writes ($06C3-$06F7, the key $06E2), the records' numbers
+($02E8, $0436), letting voices go ($0446, $02FA), stopping the song, a priority or all ($0321,
+$0344, $0369), finding a voice ($0393, $040D), and the pitch ($0516, $04B1, $04E4): 19 routines,
+over a million calls in 187 runs, none different. A mutation (the key's second half left out)
+was caught at once. Next: the rest of the helpers (the frequencies written, the operators set,
+the random numbers), the voices' frame ($070B, $0756, $0976), the track interpreter ($0B9C,
+$0CA5, the commands), the main loop's parts (the commands from the 68000, the fades, the timer),
+then the C driver in place of the Z80.
+
 ## Not done yet
 
 * Names for the instruments' last unnamed bytes (an FM instrument's `level`'s use beyond the
   carriers, `b0_high`; a PSG instrument's `b0`-`b2`).
 * A MIDI import back into `music.json`.
-* The driver in C (replacing the emulated Z80), checked against it by comparing every write to
+* The driver in C, finished (above), replacing the emulated Z80; checked against it by comparing every write to
   the sound chips.
