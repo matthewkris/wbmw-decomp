@@ -38,10 +38,44 @@ as many entries. Values can change freely.
 | `rooms/rooms.json`, `start_points.json`, `music.json` | room scripts, where the player appears, each room's music | |
 | `sprites/animations.json` | animations (frames, durations) and sprite mappings (pieces) | |
 | `sound/music.json`, `instruments.json` | the songs' and effects' notes and commands, the instruments | Same length; `tools/music.py` and `docs/SOUND.md` explain the format. |
-| `graphics/block_NNN.bin` | the 768 blocks of 32 tiles, 1,024 bytes each (8 x 8 pixels a tile, 4 bits a pixel, a colour number) | Any change works, but there is no picture editing yet: `sheet.png` is only for looking at (the graphics phase below). |
+| `graphics/png/block_NNN.png` | the 768 blocks of 32 tiles as pictures | See "Graphics" below. |
 
-Not yet: making anything longer, new rooms or bigger maps, editing the graphics as pictures, and
-editing the text as text. See "Next" below.
+Not yet: making anything longer, new rooms or bigger maps, and editing the text as text. See
+"Next" below.
+
+## Graphics
+
+The game's graphics are 768 blocks of 32 tiles (8 x 8 pixels each). Each block is a picture in
+`graphics/png/`, `block_000.png` to `block_767.png`, to open in any paint program that keeps
+indexed colours (Aseprite, GIMP, Photoshop in Indexed Color mode, Paint.NET with a plugin, ...).
+Change it, save it under the same name, build, and the game draws your version everywhere it uses
+those tiles.
+
+* **Colours.** A tile pixel is a colour number, 0 to 15, from one of the palettes; the same tiles
+  can be drawn with different palettes in different places. Each picture comes in the palette the
+  game uses most for it (counted over every room's map and the sprites); `blocks.json` says which
+  (`palette`, a record of `palettes/palettes.json`) and lists its 16 colours. Colour 0 is
+  transparent, as in the game. Draw with these 16 only. Blocks the counting never sees (the
+  title's, the ending's, the font) are in grey levels: colour number n is grey level n.
+* **Keep it indexed** if you can: then the colour numbers are read directly. A picture saved in
+  full colour (RGB) still works when every colour in it is one of the block's 16, matched exactly;
+  where two of the 16 are the same colour, the first is taken. Any other colour is an error that
+  names the picture and the pixel.
+* **Keep the size.** A block drawn mostly as map tiles is 128 x 16: two rows of 16 tiles, so a map
+  cell's 2 x 2 tiles (n, n+1, n+16, n+17) show whole. A block drawn mostly as sprites is 64 x 32:
+  8 columns of 4 tiles going down, as a sprite's pieces take their tiles (down each column, up to 4
+  tiles tall), so most characters show whole. `blocks.json` gives each block's `layout`.
+* **To find a block**, look through the pictures (they are in colour), or see which blocks a room
+  or a monster uses: `rooms/rooms.json` (a room's graphics slot lists), `sprites/enemies/enemies.json`
+  (a monster type's `graphics`).
+* **When it shows.** Graphics are loaded when a room loads: after a quick load, walk into another
+  room (or start from the title) to see a change.
+
+`block_NNN.bin` beside them is the same data as bytes (32 bytes a tile, 4 bits a pixel); the pack
+takes the picture when there is one. `sheet.png` is all the blocks in grey, for looking only.
+
+Example: Wonder Boy is drawn from blocks 8 to 11, in palette 0, where colours 2 and 3 are his blue.
+Repaint those pixels with colours 11 and 12 and he has red hair from the next room on.
 
 ## Examples
 
@@ -65,8 +99,7 @@ below will make this a named field.
 The plan, in the order the owner chose (2026-10-26):
 
 1. **Safety and this guide** (done).
-2. **Graphics as pictures**: the tiles written as PNG files in their real colours, and a changed
-   picture read back into the blocks.
+2. **Graphics as pictures** (done): the tiles as PNG files in their real colours, read back.
 3. **Text as text**: `messages.txt` read back, and messages of any length (the data moved where
    it fits, and the tables that point at it updated).
 4. **Levels**: longer lists (more enemies, doors, things in a room), then bigger maps and new

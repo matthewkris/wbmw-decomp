@@ -8,6 +8,8 @@ never committed):
   manifest.json         the ROM's name, size and SHA-1, what was written, the decoders' checks
   graphics/block_NNN.bin  the 768 blocks of 32 tiles (1,024 bytes of VRAM data each), decoded
   graphics/sheet.png    all of them, a row of 32 tiles a block, in grey levels
+  graphics/png/block_NNN.png  each block as a picture to edit, in the colours the game uses most
+                        for it (16 x 2 tiles, indexed); blocks.json: each one's palette (gfxpng.py)
   palettes/palettes.json  the 160 palette records, 16 colours each (Genesis words and RGB)
   palettes/swatches.png
   rooms/rooms.json      every room's script (layers, graphics, palettes, objects and so on)
@@ -55,10 +57,10 @@ tools/sprites.py.
 """
 import sys, os, json, hashlib, argparse
 sys.path.insert(0, os.path.dirname(__file__))
-import gfx, rooms, text, sprites, assetfmt, codetables, music, soundtables
+import gfx, rooms, text, sprites, assetfmt, codetables, music, soundtables, gfxpng
 
 EXPECTED_SHA1 = '87a968f773c7e807e647c0737132457b06b78276'
-FORMAT = 8                                   # raised whenever what this writes changes: pack.py wants the same
+FORMAT = 9                                   # raised whenever what this writes changes: pack.py wants the same
 Z80_DRIVER = (0x098000, 0x099A77)            # docs/NOTES.md, the memory map; the data after it: music.DATA
 
 def sheet(d, rows, tile, colours, base=0):
@@ -336,6 +338,8 @@ def main():
         rooms.write(path('sprites', 'enemies', 'enemy_%04X.png' % t), sheet(d, rows, tile, colours, first * 32))
         index['%04X' % t] = dict(set=st, group=g, graphics=ids, palette=pal, area=area, room=room, animations=len(al))
     json.dump(index, open(path('sprites', 'enemies', 'enemies.json'), 'w'), indent=1)
+    coloured = gfxpng.export(d, blocks, os.path.dirname(path('graphics', 'png', 'blocks.json')), T)
+    checks['graphics']['coloured'] = coloured     # the blocks drawn in a palette the game uses for them
     if not A.no_rooms:
         for r in allrooms:
             rooms.write(path('sprites', 'rooms', 'area%02d_room%02d.png' % (r['area'], r['room'])),

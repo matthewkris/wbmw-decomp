@@ -23,6 +23,7 @@ ROM is, and are never committed.
 | `layout.json` | the tables that point at the data: the data directory, the phrase tables' bases, the animation tree's offset tables | $1CC00, $1CC10, $A0000 |
 | `graphics/block_NNN.bin` | the 768 blocks of 32 tiles (1,024 bytes of VRAM data each), decoded | the table at $41000 (`tools/gfx.py`) |
 | `graphics/sheet.png` | all of them, a row of 32 tiles a block, in grey levels | |
+| `graphics/png/block_NNN.png`, `blocks.json` | each block as an indexed picture to edit, in the palette the game draws it with most (counted over the rooms' maps and the sprites), laid out as map tiles (128 x 16) or as sprite tiles (64 x 32); the pack reads them back (`tools/gfxpng.py`, `docs/MODDING.md`) | |
 | `graphics/table.json` | the graphics table: each block's format and address | $41000 |
 | `palettes/palettes.json`, `swatches.png` | the 160 palette records, 16 colours each | $599C |
 | `rooms/rooms.json` | every room's script: layers, graphics, palettes, objects | the area blocks (`tools/rooms.py`) |
