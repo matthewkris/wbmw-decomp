@@ -169,13 +169,70 @@ def flow_parse(d, start, step, limit=4096):
         if ends and reach < p: break
     return items, p, data
 
-def flow_encode(items, fmt):
-    """fmt(item) -> its arguments' format"""
+FIELD_SIZE = {'b': 1, 'n': 1, 'w': 2, 'j': 2, 'o': 2, 'l': 4}
+
+def flow_encode(items, fmt, at=0, where=None):
+    """fmt(item) -> its arguments' format. A jump or offset may be given by what it leads to
+    (docs/MODDING.md, "Levels"): {'j': N} the list's item N, {'o': 'KIND/ADDRESS'} data of
+    lists.json (where it is now: where[key], else its address), {'at': address} an address; a
+    jump may name an item by its "label" ({'j': 'L9'}; 'end': past the last). at: the list's own
+    address, which offsets need"""
+    starts, p = [], at
+    for it in items:
+        starts.append(p)
+        p += 2 * len(it['words']) if 'words' in it else 1 + sum(FIELD_SIZE[f] for f in fmt(it))
+    labels = {it['label']: s for it, s in zip(items, starts) if 'label' in it}
+    labels['end'] = p
     out = bytearray()
     for it in items:
         if 'words' in it: out += b''.join(w16(v) for v in it['words']); continue
-        out.append(it['code']); out += _put(fmt(it), it['args'])
+        out.append(it['code'])
+        vals, q = [], at + len(out)
+        for f, v in zip(fmt(it), it['args']):
+            if isinstance(v, dict):
+                if 'j' in v and isinstance(v['j'], str):
+                    if v['j'] not in labels: raise ValueError('a jump to "%s": no item has that label' % v['j'])
+                    t = labels[v['j']]
+                elif 'j' in v: t = starts[v['j']] if v['j'] < len(starts) else p
+                elif 'o' in v: t = (where or {}).get(v['o'], int(v['o'].split('/')[1], 16))
+                else: t = int(v['at'], 16)
+                v = t - q
+                if not -32768 <= v < 32768: raise ValueError('an offset to $%06X is too far from $%06X' % (t, q))
+            vals.append(v); q += FIELD_SIZE[f]
+        out += _put(fmt(it), vals)
     return bytes(out)
+
+def flow_symbolic(items, fmt, at, kind_of):
+    """a parsed list's jumps and offsets as what they lead to (flow_encode's forms); kind_of(item)
+    names what an item's offset points at ('item_lists', ...; None for data not decoded: {'at': ...})"""
+    starts, p = [], at
+    for it in items:
+        starts.append(p)
+        p += 2 * len(it['words']) if 'words' in it else 1 + sum(FIELD_SIZE[f] for f in fmt(it))
+    index = {s: i for i, s in enumerate(starts)}
+    out, targets = [], set()
+    for it, s in zip(items, starts):
+        if 'words' in it: out.append(it); continue
+        args, q = [], s + 1
+        for f, v in zip(fmt(it), it['args']):
+            if f == 'j':
+                i = index.get(q + v, len(items)); targets.add(i)
+                v = {'j': 'L%d' % i if i < len(items) else 'end'}
+            elif f == 'o' and v:
+                k = kind_of(it)
+                v = {'o': '%s/%06X' % (k, q + v)} if k else {'at': '%06X' % (q + v)}
+            args.append(v); q += FIELD_SIZE[f]
+        out.append(dict(it, args=args))
+    for i in sorted(targets):                       # the items jumps lead to, by name: items can come and go
+        if i < len(out): out[i] = dict(label='L%d' % i, **out[i])
+    return out
+
+def event_kind(it):
+    c = it['code']
+    return 'item_lists' if c < 0xC0 else 'cell_lists' if c == 0xE9 else 'pictures' if c == 0xEC else None
+
+def spawn_kind(it):
+    return 'walk_scripts' if it['code'] == 5 else None      # (14: its waves, not decoded)
 
 # the room's event list ($996C: $ABBE as it loads, $A3D8 each frame)
 EVENT_SIZES = [5, 5, 5, 7, 2, 3, 4, 3, 3, 4, 2, 0, 7, 6, 1, 0]          # $A480, by the event's low nibble

@@ -34,13 +34,51 @@ as many entries. Values can change freely.
 | `tables/code_tables.json` | `rows`: the values of the 447 tables in the code, in hex | The game's balance is here: `prices` (each thing's price, 4 bytes, gold), `kind_fighting` (each monster kind's record: health / 32, level, damage, points), `kind_movement` (speeds), `sword_swing` (the sword's hit points), `demo_input`, the colour scripts. `note` and `used_by` say what each table is and which routine reads it. |
 | `text/messages.txt`, `text/phrases.txt` | all the game's text, as text | Any length: see "Text" below. (`messages.json` and `phrases.json` are the same as the game had it, for reference; the pack reads the `.txt` files.) |
 | `rooms/maps.json` | each layer's `blocks` (its block table: 4 tile words and an attribute a block) and `places` (16 x 12 block numbers each) | The game reads these already unpacked, so any block numbers work. |
-| `rooms/lists.json` | the rooms' event lists (doors, exits, things), spawn lists (enemies and where), graphics slots, tile animations | Same number of entries. |
-| `rooms/rooms.json`, `start_points.json`, `music.json` | room scripts, where the player appears, each room's music | |
+| `rooms/lists.json`, `rooms/rooms.json` | the rooms' lists (enemies, doors, things) and scripts | Any length: see "Levels" below. |
+| `rooms/start_points.json`, `music.json` | where the player appears, each room's music | |
 | `sprites/animations.json` | animations (frames, durations) and sprite mappings (pieces) | |
 | `sound/music.json`, `instruments.json` | the songs' and effects' notes and commands, the instruments | Same length; `tools/music.py` and `docs/SOUND.md` explain the format. |
 | `graphics/png/block_NNN.png` | the 768 blocks of 32 tiles as pictures | See "Graphics" below. |
 
-Not yet: making other things longer (lists, maps), new rooms. See "Next" below.
+Not yet: bigger maps, new rooms. See "Next" below.
+
+## Levels
+
+A room is its script (`rooms/rooms.json`) and the lists the script points at
+(`rooms/lists.json`, by address): which enemies appear and where (a spawn list), doors, exits,
+chests and other things (an event list), which graphics it loads (a graphics slot list), its
+animated tiles. Lists and scripts can be any length: add enemies, take some away, add things.
+
+* **Spawn lists** (`spawns`): first `words`, the kinds of enemy whose graphics the room loads
+  (a negative word ends them; a kind you add must be among them), then the spawn points, each a
+  `code` (how it appears: 0-15) and its `args`; for most codes the last three are the enemy's
+  kind, x and y, in the room's coordinates as its neighbours have them. Copy an entry and change
+  its x to add one more. Codes $F8-$FE are commands (some jump on game flags) and $FF the end.
+  `sprites/enemies/enemies.json` names the kinds (`GGKK`).
+* **Event lists** (`events`): the room's doors, exits, chests, signs, things to pick up and their
+  conditions, read by the game as `tools/assetfmt.py` (`event_fmt`) lays them out.
+* **Jumps and pointers by name.** A jump in a list goes to an entry by its label: `{"j": "L9"}`
+  goes to the entry with `"label": "L9"` (`"end"`: past the last). Move the label with its
+  entry; a new label is any name, put once. An entry that points at other data names it:
+  `{"o": "walk_scripts/026780"}` is the walk script of `lists.json` at that key (item lists,
+  pictures and walk scripts the same way); `{"at": "XXXXXX"}` is data at an address.
+* **Room scripts** (`rooms.json`, `items`): the commands that set a room up, in order: its layers,
+  palette, graphics, lists (`args` with `flag`: 0 an offset from the area's block, 1 an address
+  in `long`), objects. `script` beside them is the same, read for you (addresses worked out); the
+  pack reads `items`.
+* **Room.** A list or script that grew moves past the end of the cartridge's data, taking along a
+  copy of the data it points at; a room script then points at it by address, and its whole area
+  (all its rooms' scripts and the table of them) moves too. `pack.py` says what moved. The houses'
+  and shops' event lists cannot move yet (an error says so: keep those the same length).
+* **Seeing it.** A room reads its lists when it loads: walk into it (a quick save taken inside a
+  room keeps the old place of its lists in memory; after changing a room, load a save from
+  outside it). The title screen's demo plays in area 2, room 0 (the first village): its spawn
+  list is the one at `026714`. To see every room with its enemies, extract into another folder
+  (`python tools/extract.py ROM work/view`, without `--no-rooms`): `sprites/rooms/` has them.
+
+Example: in the village's spawn list (`spawns`, `026714`), copy the entry
+`{"code": 2, "args": [0, 112, 2, 6, 4416, 4224]}` (a mushroom, kind 6) twice before it with x
+4180 and 4340, and build: the demo has three mushrooms by the inn, and Wonder Boy walks into them.
 
 ## Text
 
@@ -147,7 +185,7 @@ The plan, in the order the owner chose (2026-10-26):
 1. **Safety and this guide** (done).
 2. **Graphics as pictures** (done): the tiles as PNG files in their real colours, read back.
 3. **Text as text** (done): `messages.txt` and `phrases.txt` read back, at any length.
-4. **Levels**: longer lists (more enemies, doors, things in a room), then bigger maps and new
-   rooms.
+4. **Levels**: lists and room scripts of any length (done); then bigger maps and new rooms, and
+   the houses' lists.
 5. **Balance by name**: the monsters' records and the prices as named fields (a monster's name,
    a thing's name) instead of hex rows.
