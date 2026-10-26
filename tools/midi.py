@@ -152,7 +152,9 @@ def song_midi(J, inst, sound, loops):
         us = round(PPQ * 1e6 / units_per_second(tempo, song)) if song else round(PPQ * 1e6 / units_per_second(0, False))
         return b'\xff\x51\x03' + us.to_bytes(3, 'big')
     head = [(t, tempo_event(v)) for t, v in tempo_map]
-    head.append((0, b'\xff\x03' + vlq(len('sound %02X' % sound['number'])) + ('sound %02X' % sound['number']).encode()))
+    title = ('song %02X' if song else 'sound %02X') % sound['number'] + (': ' + sound['name'] if sound.get('name') else '')
+    title = title.encode('ascii', 'replace')
+    head.append((0, b'\xff\x03' + vlq(len(title)) + title))
     chunks = [track_chunk(head)]
     ch = 0
     for k, (out, _, program, name) in enumerate(played):
