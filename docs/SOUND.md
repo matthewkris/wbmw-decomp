@@ -309,7 +309,14 @@ the carriers $0667), an FM operator set from an instrument ($067C), the random n
 $0B66: times 117, plus $7F), and the start's silencing and reset ($00E3 with $0100/$0106 and the
 `rst $10`/`rst $18` it uses, $013E): 27 routines, 3.6 million calls in 187 runs, none different
 (routines only ever reached inside another, like $05A3 or the `rst`s, are checked as part of it).
-Next: the voices' frame ($070B, $0756, $0976), the track interpreter ($0B9C,
+Batch 3: the voices each tick ($070B): a voice's instrument set up at its first tick (FM $0A08,
+PSG $0AB2, the noise $0AA9, the scripts $0B04), its time counted (the note ended at $8000, the
+voice let go at 0, $0460), the two modulation scripts, a slide, the random spread, the PSG
+envelope and its release ($0976), and the pitch and volume written: 34 routines, every tick of
+187 runs (322,748 whole frames of the voices) the same. A slip in it (a word written a byte at a
+time from a sum that read the word: `SET16` is a function for that reason) was found at once;
+`WBMW_Z80_SHADOW_DUMP=1` prints the voice's record before and after, the Z80's and the C's.
+Next: the track interpreter ($0B9C,
 $0CA5, the commands), the main loop's parts (the commands from the 68000, the fades, the timer),
 then the C driver in place of the Z80.
 

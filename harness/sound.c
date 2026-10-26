@@ -192,12 +192,15 @@ static void sh_report(void)
     fprintf(stderr, "sound shadow: %d of %d routines called\n", called, snd_routine_count);
 }
 
+static uint8_t sh_pre[0x2000];                      /* the RAM at the routine's entry, and its ix (WBMW_Z80_SHADOW_DUMP) */
+static uint16_t sh_ix;
 static SndRegs sh_out;                              /* the C's results */
 static uint8_t sh_marks[0x2000];                    /* the bytes the 68000 wrote while the Z80 ran the routine: not compared */
 static void sh_start(const SndRoutine *r)
 {
     SndRegs g = { z80.a, z80.f, z80.b, z80.c, z80.d, z80.e, z80.h, z80.l, z80.ix, z80.iy, z80.sp };
     memcpy(sh_ram, zram, sizeof sh_ram);
+    memcpy(sh_pre, zram, sizeof sh_pre); sh_ix = z80.ix;
     SndIO keep = snd_io;
     snd_io.ram = sh_ram; snd_io.ym = sh_ym; snd_io.psg = sh_psg; snd_io.window = sh_window;
     sh_cn = sh_zn = 0;
@@ -238,7 +241,17 @@ static void sh_end(void)
             snprintf(why, sizeof why, "chip write %d: the Z80's %s, the C's %s (writes: %d, %d)", k, z, cc, sh_zn, sh_cn);
         }
     if (!why[0]) sh_regs(why, sizeof why);
-    if (why[0] && ++sh_stats[i].bad <= 3) fprintf(stderr, "sound shadow: %s ($%04X): %s\n", sh_r->name, sh_r->addr, why);
+    if (why[0] && ++sh_stats[i].bad <= 3) {
+        fprintf(stderr, "sound shadow: %s ($%04X): %s\n", sh_r->name, sh_r->addr, why);
+        if (getenv("WBMW_Z80_SHADOW_DUMP")) {       /* the record at ix: before, the Z80's after, the C's after */
+            const uint8_t *b[3] = {sh_pre, zram, sh_ram};
+            for (int q = 0; q < 3; q++) {
+                fprintf(stderr, "  %04X:", sh_ix);
+                for (int k = 0; k < 64; k++) fprintf(stderr, " %02X", b[q][(sh_ix + k) & 0x1FFF]);
+                fprintf(stderr, "\n");
+            }
+        }
+    }
     sh_r = NULL;
 }
 

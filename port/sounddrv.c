@@ -12,7 +12,11 @@ SndIO snd_io;
 
 #define RAM(a)      snd_io.ram[(a) & 0x1FFF]
 #define RAM16(a)    (RAM(a) | RAM((a) + 1) << 8)
-#define SET16(a, v) (RAM(a) = (uint8_t)(v), RAM((a) + 1) = (uint8_t)((v) >> 8))
+static void SET16(unsigned a, unsigned v)           /* (a function: v may read the word it replaces) */
+{
+    RAM(a) = (uint8_t)v;
+    RAM(a + 1) = (uint8_t)(v >> 8);
+}
 
 #define YM_BANK     0x1C10                          /* the YM2612's half for this voice: 0 (channels 1-3) or 2 (4-6) */
 #define YM_CHANNEL  0x1C11                          /* the channel within the half (0-2), or the PSG's (0-2) */
@@ -90,11 +94,18 @@ static unsigned voice_number(unsigned voice) { return (voice - VOICES) >> 6 & 0x
 /* $0446: voice let go: its chip told ($1C10/$1C11 set for it), its flags cleared. An FM voice:
  * its operators' release at the most ($80-$8C: $FF), keyed off unless bit 1 says it was not
  * keyed; a PSG tone: silent ($9F + its channel), its level kept at $78; the noise: silent ($FF) */
+static void voice_silence(unsigned voice);
 static void voice_release(unsigned voice)
 {
     unsigned n = voice_number(voice);
     if (n >= 6) RAM(YM_CHANNEL) = (uint8_t)(n - 6);
     else { RAM(YM_CHANNEL) = (uint8_t)(n >> 1); RAM(YM_BANK) = (uint8_t)((n & 1) << 1); }
+    voice_silence(voice);
+}
+
+/* $0460: the same, its chip already told (the voices' frame) */
+static void voice_silence(unsigned voice)
+{
     unsigned type = RAM(voice + V_TYPE);
     if (type < 2) {
         for (unsigned op = 0x80; op <= 0x8C; op += 4) ym_write_channel(op, 0xFF);
@@ -255,6 +266,9 @@ static void voice_pitch(unsigned voice)
 /* $0667: the voice's FM algorithm's carriers (the table at $0674): a bit an operator */
 static unsigned carriers(unsigned voice) { return CARRIERS + (RAM(voice + V_ALGORITHM) & 7); }
 
+/* the voice's operator op (0-3, as its record keeps them)'s registers' offset: 0, 8, 4, $C */
+static unsigned op_offset(unsigned op) { return (op >> 1 | (op & 1) << 1) << 2; }
+
 /* add a and b as the original's signed bytes, at most $7F: the PSG's (a result with bit 7, $7F) */
 static unsigned level_sum(unsigned a, unsigned b)
 {
@@ -291,7 +305,7 @@ static void voice_volume(unsigned voice)
         unsigned a = level_sum(RAM(FM_LEVEL), RAM(at));
         if (a == RAM(at + 1)) continue;
         RAM(at + 1) = (uint8_t)a;
-        ym_write_channel(0x40 | (op >> 1 | (op & 1) << 1) << 2, a);   /* the operators' registers: 0, 8, 4, $C */
+        ym_write_channel(0x40 | op_offset(op), a);
     }
 }
 
@@ -323,6 +337,273 @@ static unsigned random_step(void)
     unsigned at = random_at(), v = (RAM(at) * 117 + 0x7F) & 0xFF;
     RAM(at) = (uint8_t)v;
     return v;
+}
+
+/* ---- the voices each tick ---- */
+#define SONG_TICKS  0x1C17                          /* the song's steps this tick (its tempo's whole part) */
+#define V_INSTRUMENT 3                              /* the instrument's number */
+#define V_KEY_OPS   5                               /* FM: the operators keyed on (register $28's high nibble) */
+#define V_BASE      12                              /* (+$0C) the note's pitch, a word (whole notes in the high byte) */
+#define A_COUNT     14                              /* the pitch script: the ticks left of its step (0 stopped), */
+#define A_LOOPS     15                              /*   its loop's count, */
+#define A_AT        16                              /*   where it is (a word), */
+#define A_LOOP_AT   18                              /*   where its loop starts (a word), */
+#define A_VALUE     20                              /*   the pitch it adds (a word), */
+#define A_DELTA     22                              /*   the step added to that (a word) */
+#define V_SLIDE_TO  24                              /* (+$18) a slide's last pitch (a word) */
+#define V_SLIDE_BY  26                              /* (+$1A) a slide's step a tick (a word) */
+#define B_DELTA     29                              /* the volume script: the step added to its offset (+$1C), */
+#define B_COUNT     30                              /*   the ticks left of its step, */
+#define B_LOOPS     31                              /*   its loop's count, */
+#define B_AT        32                              /*   where it is, */
+#define B_LOOP_AT   34                              /*   where its loop starts */
+#define V_PAN       37                              /* (+$25) FM: register $B4 as written */
+#define V_OFFSET    38                              /* (+$26) the instrument's pitch offset (a word) */
+#define V_TONE      40                              /* (+$28) PSG: the level to write, the envelope's and the script's */
+#define E_AT        42                              /* the PSG envelope: where it is (a word), */
+#define E_COUNT     44                              /*   the ticks left of its step, */
+#define E_RATE      45                              /*   the ticks a release step lasts, */
+#define E_RELEASE   46                              /*   a release step's change, */
+#define E_SUSTAIN   47                              /*   the release's last level (0: to silence), */
+#define E_LEVEL     48                              /*   its level now */
+#define B_RATE      56                              /* the volume script's ticks a step, and the count */
+#define B_TICK      57
+#define A_RATE      58                              /* the pitch script's */
+#define A_TICK      59
+#define V_PANS      62                              /* (+$3E) the track's pan (bits 6, 7) */
+#define A_RANDOM    63                              /* (+$3F) the pitch script's random spread (0 none) */
+#define FM_INSTRUMENTS  0x1281                      /* 19 bytes each */
+#define PSG_INSTRUMENTS 0x1828                      /* 6 bytes each */
+#define PSG_ENVELOPES   0x188F                      /* pointers */
+#define PITCH_SCRIPTS   0x1901                      /* pointers */
+#define VOLUME_SCRIPTS  0x19D8                      /* pointers */
+
+/* $07A2-$086C: the pitch script each tick, at its rate: the step added to the value; at the end of
+ * a step, its items read on (docs/SOUND.md, `mod_a`): a step ($00-$F7: its ticks, then the step,
+ * a word), a goto ($FF), a loop's end and start ($FE, $FD), the step reversed ($FC), the value set
+ * ($FB), a stop ($FA), the rate ($F9), a random spread ($F8); 0 ends it */
+static void pitch_script(unsigned v)
+{
+    if (--RAM(v + A_TICK)) return;
+    RAM(v + A_TICK) = RAM(v + A_RATE);
+    SET16(v + A_VALUE, RAM16(v + A_VALUE) + RAM16(v + A_DELTA));
+    if (!RAM(v + A_COUNT) || --RAM(v + A_COUNT)) return;
+    RAM(v + A_RANDOM) = 0;
+    unsigned at = RAM16(v + A_AT), a, count;
+    for (;;) {
+        a = RAM(at); at++;
+        if (a == 0) return;
+        if (a < 0xF8) { SET16(v + A_DELTA, RAM16(at)); at += 2; count = a; break; }
+        if (a == 0xFF) { at = RAM16(at); continue; }
+        if (a == 0xFE) { if (--RAM(v + A_LOOPS)) at = RAM16(v + A_LOOP_AT); continue; }
+        if (a == 0xFD) { RAM(v + A_LOOPS) = RAM(at); at++; SET16(v + A_LOOP_AT, at); continue; }
+        if (a == 0xFC) { SET16(v + A_DELTA, -RAM16(v + A_DELTA)); count = RAM(at); at++; break; }
+        if (a == 0xFB) { SET16(v + A_VALUE, RAM16(at)); at += 2; continue; }
+        if (a == 0xFA) { SET16(v + A_DELTA, 0); RAM(v + A_COUNT) = 0; return; }
+        if (a == 0xF9) { RAM(v + A_TICK) = RAM(v + A_RATE) = RAM(at); at++; continue; }
+        SET16(v + A_DELTA, 0); RAM(v + A_RANDOM) = RAM(at); count = RAM(at + 1); at += 2;   /* $F8 */
+        break;
+    }
+    RAM(v + A_COUNT) = (uint8_t)count;
+    SET16(v + A_AT, at);
+}
+
+/* $086D-$08CC: the voice's pitch this tick: its note's (moved by a slide, which stops at its
+ * end), the pitch script's value (or with a random spread, a random number shifted up by it),
+ * the instrument's offset */
+static void pitch_now(unsigned v)
+{
+    unsigned p = RAM16(v + V_BASE), add;
+    if (RAM(v + V_FLAGS) & 0x10) {
+        unsigned by = RAM16(v + V_SLIDE_BY), to = RAM16(v + V_SLIDE_TO);
+        p = (p + by) & 0xFFFF;
+        if (p == to || (by & 0x8000 ? p < to : p > to)) { p = to; RAM(v + V_FLAGS) &= ~0x10; }
+        SET16(v + V_BASE, p);
+    }
+    if (RAM(v + A_RANDOM)) {
+        unsigned n = RAM(v + A_RANDOM), r = random_step();
+        add = r & 0x80 ? 0xFF00 | r : r;
+        add = n < 16 ? add << n & 0xFFFF : 0;
+    } else add = RAM16(v + A_VALUE);
+    SET16(v + V_PITCH, p + add + RAM16(v + V_OFFSET));
+}
+
+/* $08CD-$0961: the volume script each tick, at its rate: the step added to the offset; at the end
+ * of a step its items read on (`mod_b`): a step ($00-$F8: its ticks, then the step), a goto
+ * ($FF), a loop's end and start ($FE, $FD), the step reversed ($FC), the offset set ($FB), a stop
+ * ($FA), the rate ($F9); 0 ends it */
+static void volume_script(unsigned v)
+{
+    if (--RAM(v + B_TICK)) return;
+    RAM(v + B_TICK) = RAM(v + B_RATE);
+    RAM(v + V_VOL_MOD) += RAM(v + B_DELTA);
+    if (!RAM(v + B_COUNT) || --RAM(v + B_COUNT)) return;
+    unsigned at = RAM16(v + B_AT), a, count;
+    for (;;) {
+        a = RAM(at); at++;
+        if (a == 0) return;
+        if (a < 0xF9) { RAM(v + B_DELTA) = RAM(at); at++; count = a; break; }
+        if (a == 0xFF) { at = RAM16(at); continue; }
+        if (a == 0xFE) { if (--RAM(v + B_LOOPS)) at = RAM16(v + B_LOOP_AT); continue; }
+        if (a == 0xFD) { RAM(v + B_LOOPS) = RAM(at); at++; SET16(v + B_LOOP_AT, at); continue; }
+        if (a == 0xFC) { RAM(v + B_DELTA) = (uint8_t)-RAM(v + B_DELTA); count = RAM(at); at++; break; }
+        if (a == 0xFB) { RAM(v + V_VOL_MOD) = RAM(at); at++; continue; }
+        if (a == 0xFA) { RAM(v + B_DELTA) = RAM(v + B_COUNT) = 0; return; }
+        RAM(v + B_TICK) = RAM(v + B_RATE) = RAM(at); at++;                                  /* $F9 */
+    }
+    RAM(v + B_COUNT) = (uint8_t)count;
+    SET16(v + B_AT, at);
+}
+
+/* $0976: a PSG voice's envelope each tick: its steps (a level, its ticks) until the note ends;
+ * then the release, a step each E_RATE ticks, down to its last level (held there) or to silence
+ * (the voice let go, as at the envelope's $F0); its level and the volume script's to V_TONE */
+static void tone_envelope(unsigned v)
+{
+    unsigned f = RAM(v + V_FLAGS), level;
+    if (f & 2) {
+        if ((f & 4) || --RAM(v + E_COUNT)) goto done;
+        goto release;
+    }
+    if (f & 1) {
+        RAM(v + V_FLAGS) |= 2;
+        unsigned s = RAM(v + E_SUSTAIN);
+        if (s && s < RAM(v + E_LEVEL)) { RAM(v + V_FLAGS) |= 4; goto done; }
+        goto release;
+    }
+    if (!RAM(v + E_COUNT) || --RAM(v + E_COUNT)) goto done;
+    {
+        unsigned at = RAM16(v + E_AT), a = RAM(at);
+        if (a == 0xF0) { voice_silence(v); return; }
+        RAM(v + E_COUNT) = a & 0x0F;
+        SET16(v + E_AT, at + 1);
+        level = level_sum(a >> 1 & 0x78, RAM(v + V_LEVEL));
+        goto set;
+    }
+release:
+    level = (RAM(v + E_LEVEL) + RAM(v + E_RELEASE)) & 0xFF;
+    if (!RAM(v + E_SUSTAIN)) { if (level & 0x80) { voice_silence(v); return; } }
+    else if ((level & 0x80) || level >= RAM(v + E_SUSTAIN)) { level = RAM(v + E_SUSTAIN); RAM(v + V_FLAGS) |= 4; }
+    RAM(v + E_COUNT) = RAM(v + E_RATE);
+set:
+    RAM(v + E_LEVEL) = (uint8_t)level;
+done:
+    RAM(v + V_TONE) = (uint8_t)(RAM(v + E_LEVEL) + RAM(v + V_VOL_MOD));
+}
+
+/* $0B04: the instrument's two scripts (their numbers at src) started, the voice's random seed $32 */
+static void scripts_set(unsigned v, unsigned src)
+{
+    SET16(v + A_AT, RAM16(PITCH_SCRIPTS + RAM(src) * 2));
+    SET16(v + B_AT, RAM16(VOLUME_SCRIPTS + RAM(src + 1) * 2));
+    SET16(v + A_VALUE, 0); SET16(v + A_DELTA, 0);
+    RAM(v + V_VOL_MOD) = RAM(v + B_DELTA) = RAM(v + A_RANDOM) = 0;
+    RAM(v + A_COUNT) = RAM(v + A_RATE) = RAM(v + A_TICK) = RAM(v + B_COUNT) = RAM(v + B_RATE) = RAM(v + B_TICK) = 1;
+    RAM(random_at()) = 0x32;
+}
+
+/* $0A08: an FM voice's instrument set up (the table at $1281): its algorithm ($B0) and pan and LFO
+ * ($B4, the track's pan in place of the instrument's when it has one) where they changed, the four
+ * operators, the pitch offset, the scripts, the modulators' levels where they changed (the
+ * carriers' are the volume's, $05BA); then keyed on */
+static void fm_load(unsigned v)
+{
+    unsigned at = FM_INSTRUMENTS + RAM(v + V_INSTRUMENT) * 19, a = RAM(at++);
+    if (a != RAM(v + V_ALGORITHM)) { RAM(v + V_ALGORITHM) = (uint8_t)a; ym_write_channel(0xB0, a); }
+    RAM(v + V_KEY_OPS) = RAM(at++);
+    unsigned pan = RAM(v + V_PANS) & 0xC0;
+    a = (RAM(at++) & ~(pan ? 0xC0u : 0u)) | pan;
+    if (a != RAM(v + V_PAN)) { RAM(v + V_PAN) = (uint8_t)a; ym_write_channel(0xB4, a); }
+    unsigned dst = v + V_OPS;
+    for (unsigned op = 0; op < 4; op++) operator_set(op_offset(op), &at, &dst);
+    RAM(v + V_OFFSET) = RAM(at); RAM(v + V_OFFSET + 1) = RAM(at + 1);
+    scripts_set(v, at + 2);
+    unsigned mask = RAM(carriers(v));
+    for (unsigned op = 0; op < 4; op++, mask >>= 1) {
+        unsigned o = v + V_OPS + 4 * op;
+        if (mask & 1 || RAM(o) == RAM(o + 1)) continue;
+        RAM(o + 1) = RAM(o);
+        ym_write_channel(0x40 | op_offset(op), RAM(o));
+    }
+    ym_key(RAM(v + V_KEY_OPS));
+}
+
+/* $0AB2: a PSG voice's instrument set up (the table at $1828): its release (last level, rate,
+ * step), its envelope started, the pitch offset two octaves down, the scripts */
+static void tone_load(unsigned v)
+{
+    unsigned at = PSG_INSTRUMENTS + RAM(v + V_INSTRUMENT) * 6;
+    RAM(v + E_SUSTAIN) = RAM(at); RAM(v + E_RATE) = RAM(at + 1); RAM(v + E_RELEASE) = RAM(at + 2);
+    unsigned env = RAM16(PSG_ENVELOPES + RAM(at + 3) * 2), a = RAM(env);
+    SET16(v + E_AT, env + 1);
+    RAM(v + E_COUNT) = a & 0x0F;
+    RAM(v + E_LEVEL) = (uint8_t)level_sum(a >> 1 & 0x78, RAM(v + V_LEVEL));
+    SET16(v + V_OFFSET, 0xE800);
+    scripts_set(v, at + 4);
+}
+
+/* $0AA9: the noise's: the third tone silenced first (its level $78 as written, $DF) */
+static void noise_load(unsigned v)
+{
+    RAM(v + V_PSG_LEVEL) = 0x78;
+    snd_io.psg(0xDF);
+    tone_load(v);
+}
+
+/* $0756: a playing voice's tick: its instrument set up at its first; its time counted (a song's
+ * by the song's steps, an effect's by one), the note ended at $8000 (an FM voice keyed off, and
+ * nothing more this tick) and the voice let go at 0; the scripts, the pitch, a PSG voice's
+ * envelope; the pitch and the volume written */
+static void voice_tick(unsigned v)
+{
+    if (!(RAM(v + V_FLAGS) & 0x40)) {
+        RAM(v + V_FLAGS) |= 0x40;
+        unsigned t = RAM(v + V_TYPE);
+        if (t < 2) fm_load(v); else if (t == 2) tone_load(v); else noise_load(v);
+    }
+    unsigned lo = RAM(v + V_LEFT) + (RAM(v + V_FLAGS) & 0x20 ? RAM(SONG_TICKS) : 1);
+    RAM(v + V_LEFT) = (uint8_t)lo;
+    if (lo > 0xFF) {
+        unsigned hi = (RAM(v + V_LEFT + 1) + 1) & 0xFF;
+        RAM(v + V_LEFT + 1) = (uint8_t)hi;
+        if (hi == 0) { voice_silence(v); return; }
+        if (hi == 0x80) {
+            RAM(v + V_FLAGS) |= 1;
+            if (RAM(v + V_TYPE) == 0) { ym_key(0); return; }
+        }
+    }
+    pitch_script(v);
+    pitch_now(v);
+    volume_script(v);
+    if (RAM(v + V_TYPE)) {
+        tone_envelope(v);
+        if (!(RAM(v + V_FLAGS) & 0x80)) return;
+    }
+    voice_pitch(v);
+    voice_volume(v);
+}
+
+/* $070B: every playing voice's tick, in their order (the FM channels' halves in turn, then the
+ * PSG's), the chips' channel ($1C10/$1C11) and the voice's number ($1BF6) set for each */
+static void voices_tick(void)
+{
+    unsigned v = VOICES;
+    RAM(VOICE_NOW) = 0;
+    for (unsigned ch = 0; ch < 3; ch = RAM(YM_CHANNEL) + 1u) {
+        RAM(YM_CHANNEL) = (uint8_t)ch;
+        unsigned half = 0;
+        do {
+            RAM(YM_BANK) = (uint8_t)half;
+            if (RAM(v + V_FLAGS) & 0x80) voice_tick(v);
+            v += 0x40; RAM(VOICE_NOW)++;
+            half = RAM(YM_BANK) ^ 2;
+        } while (half);
+    }
+    for (unsigned ch = 0; ch < 3; ch = RAM(YM_CHANNEL) + 1u) {
+        RAM(YM_CHANNEL) = (uint8_t)ch;
+        if (RAM(v + V_FLAGS) & 0x80) voice_tick(v);
+        v += 0x40; RAM(VOICE_NOW)++;
+    }
 }
 
 /* ---- the start ---- */
@@ -402,6 +683,14 @@ static void z_067c(SndRegs *r)
 }
 static void z_0b5b(SndRegs *r) { HL(r, random_at()); }
 static void z_0b66(SndRegs *r) { HL(r, random_at()); r->a = (uint8_t)random_step(); }
+static void z_0460(SndRegs *r) { voice_silence(r->ix); }
+static void z_070b(SndRegs *r) { (void)r; voices_tick(); }
+static void z_0756(SndRegs *r) { voice_tick(r->ix); }
+static void z_0976(SndRegs *r) { tone_envelope(r->ix); }
+static void z_0a08(SndRegs *r) { fm_load(r->ix); }
+static void z_0aa9(SndRegs *r) { noise_load(r->ix); }
+static void z_0ab2(SndRegs *r) { tone_load(r->ix); }
+static void z_0b04(SndRegs *r) { scripts_set(r->ix, (unsigned)(r->h << 8 | r->l)); }
 static void z_00e3(SndRegs *r) { (void)r; ym_silence(); }
 static void z_013e(SndRegs *r) { (void)r; voices_reset(); }
 
@@ -417,6 +706,7 @@ const SndRoutine snd_routines[] = {
     {0x040D, z_040d, "VoiceOfNote", SR_CF | SR_IY},
     {0x0436, z_0436, "VoiceNumber", SR_A},
     {0x0446, z_0446, "VoiceRelease", 0},
+    {0x0460, z_0460, "VoiceSilence", 0},
     {0x04B1, z_04b1, "FmPitch", SR_D | SR_E},
     {0x04E4, z_04e4, "PsgPitch", SR_D | SR_E},
     {0x0516, z_0516, "NoteSplit", SR_C | SR_D | SR_E},
@@ -431,6 +721,13 @@ const SndRoutine snd_routines[] = {
     {0x06CD, z_06cd, "YmWriteHalf", 0},
     {0x06E2, z_06e2, "YmKey", 0},
     {0x06F7, z_06f7, "YmWrite", 0},
+    {0x070B, z_070b, "VoicesTick", 0},
+    {0x0756, z_0756, "VoiceTick", 0},
+    {0x0976, z_0976, "ToneEnvelope", 0},
+    {0x0A08, z_0a08, "FmLoad", 0},
+    {0x0AA9, z_0aa9, "NoiseLoad", 0},
+    {0x0AB2, z_0ab2, "ToneLoad", 0},
+    {0x0B04, z_0b04, "ScriptsSet", 0},
     {0x0B5B, z_0b5b, "RandomAt", SR_H | SR_L},
     {0x0B66, z_0b66, "Random", SR_A | SR_H | SR_L},
 };
