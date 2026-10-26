@@ -8,3 +8,6 @@ __pycache__/
 wbmw.ini
 assets/
 assets-old-*/
+# the save slots' pictures (beside their states)
+wbmw.png
+wbmw-[0-9].png
