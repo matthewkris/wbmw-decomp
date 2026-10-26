@@ -13,7 +13,7 @@ uint16_t cram[64], vsram[40];
 int vdp_line, vdp_line_cycle;
 uint32_t frame_rgb[240][FRAME_STRIDE];
 int frame_width = 320;
-int vdp_pad, vdp_pad_fill, vdp_band_top = 64, vdp_hud_wide, vdp_hide_msg;
+int vdp_pad, vdp_pad_fill, vdp_band_top = 64, vdp_hud_wide, vdp_hide_msg, vdp_scene;
 
 static int pending, code;
 static unsigned addr;
@@ -469,7 +469,7 @@ void vdp_render_line(int line)
         /* beside the HUD (its lines, wide): where nothing is drawn, black, not the backdrop. Rooms
          * leave gaps in their maps where the HUD always covered them (area 12's cave has its
          * purple backdrop in one, seen as a line beside the HUD when jumping) */
-        if (!c && line < HUD_LINES && fill && (hw || x < pad || x >= pad + width)) { frame_rgb[line][x] = 0; continue; }
+        if (!c && !vdp_scene && line < HUD_LINES && fill && (hw || x < pad || x >= pad + width)) { frame_rgb[line][x] = 0; continue; }
         frame_rgb[line][x] = c ? rgb(cram[c & 0x3F]) : bg;
     }
     for (int x = total; x < FRAME_STRIDE; x++) frame_rgb[line][x] = 0;

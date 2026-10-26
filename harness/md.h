@@ -50,8 +50,10 @@ extern int frame_width;
  * the first of the HUD's lines whose sides show the scene (the map is drawn there), the lines
  * above it black at the sides (64, the default: the whole band); vdp_hud_wide: the HUD laid out
  * for the wide picture (its top row only, the gold beside the items; vdp.c); vdp_hide_msg: with it,
- * the window's rows under the HUD not drawn (the host shows the gold found its own way) */
-extern int vdp_pad, vdp_pad_fill, vdp_band_top, vdp_hud_wide, vdp_hide_msg;
+ * the window's rows under the HUD not drawn (the host shows the gold found its own way);
+ * vdp_scene: the scene alone, as the host's talk zoom shows it (its pixels with nothing drawn the
+ * backdrop beside the HUD too, not black: the zoom brings those lines into the picture) */
+extern int vdp_pad, vdp_pad_fill, vdp_band_top, vdp_hud_wide, vdp_hide_msg, vdp_scene;
 void vdp_reset(void);
 void vdp_write_ctrl(uint16_t w);
 void vdp_write_data(uint16_t w);
