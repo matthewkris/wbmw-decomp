@@ -37,7 +37,7 @@ def parse(drv):
         r = take(FM_INSTR[0] + FM_INSTR[2] * i, FM_INSTR[2])
         fm.append(dict(algorithm=r[0] & 7, feedback=r[0] >> 3 & 7, b0_high=r[0] >> 6, level=r[1], lfo=r[2],
                        operators={OPS[k]: dict(level=r[3 + 3 * k], detune_multiple=r[4 + 3 * k], envelope=r[5 + 3 * k]) for k in range(4)},
-                       b15=r[15], b16=r[16], mod_a=r[17], mod_b=r[18]))
+                       pitch_lo=r[15], pitch_hi=r[16], mod_a=r[17], mod_b=r[18]))
     J['fm_instruments'] = fm
     J['envelopes'] = [list(take(ENVELOPES[0] + 4 * i, 4)) for i in range(ENVELOPES[1])]
     J['psg_instruments'] = [dict(zip(('b0', 'b1', 'b2', 'envelope', 'mod_a', 'mod_b'), take(PSG_INSTR[0] + 6 * i, 6)))
@@ -63,7 +63,7 @@ def encode(J):
     for i, f in enumerate(J['fm_instruments']):
         ops = b''.join(bytes([f['operators'][o]['level'], f['operators'][o]['detune_multiple'], f['operators'][o]['envelope']]) for o in OPS)
         put(FM_INSTR[0] + FM_INSTR[2] * i, bytes([f['b0_high'] << 6 | f['feedback'] << 3 | f['algorithm'], f['level'], f['lfo']]) + ops
-            + bytes([f['b15'], f['b16'], f['mod_a'], f['mod_b']]))
+            + bytes([f['pitch_lo'], f['pitch_hi'], f['mod_a'], f['mod_b']]))
     for i, e in enumerate(J['envelopes']): put(ENVELOPES[0] + 4 * i, bytes(e))
     for i, p in enumerate(J['psg_instruments']): put(PSG_INSTR[0] + 6 * i, bytes(p[k] for k in ('b0', 'b1', 'b2', 'envelope', 'mod_a', 'mod_b')))
     for name, (tab, n), stop in (('psg_envelopes', PSG_ENV, MOD_A[0]), ('mod_a', MOD_A, MOD_B[0]), ('mod_b', MOD_B, DRUMS[0])):

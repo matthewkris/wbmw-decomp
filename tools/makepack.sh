@@ -1,6 +1,7 @@
 #!/bin/sh
 # Usage: tools/makepack.sh [ROM]       (run by `make -C native`; from anywhere)
-# Makes assets/game.pak, the game's data that wbmw plays from (docs/EXTRACT.md): extracts the
+# Makes assets/game.pak, the game's data that wbmw plays from (docs/EXTRACT.md), and the music as
+# MIDI files (assets/sound/midi, tools/midi.py): extracts the
 # ROM into assets/ when assets/ is missing or was written by another version of the extractor,
 # then packs assets/ when the pack is missing or older than what it is made from. assets/ is
 # otherwise left as it is, so files changed by hand are packed, not overwritten. Without a ROM
@@ -30,14 +31,18 @@ extract() {
 
 [ -f assets/manifest.json ] || extract
 if [ -f "$PAK" ] && [ -z "$(find assets tools/extract.py tools/pack.py tools/rebuild.py tools/assetfmt.py tools/codetables.py \
-        -newer "$PAK" -type f ! -name game.pak 2>/dev/null | head -1)" ]; then
+        tools/midi.py -newer "$PAK" -type f ! -name game.pak 2>/dev/null | head -1)" ]; then
     exit 0                                      # up to date
 fi
-"$PY" tools/pack.py assets "$PAK"
+pack() {                                        # the music as MIDI first (assets/sound/midi), so the pack is the newest
+    "$PY" tools/midi.py assets assets/sound/midi --effects >/dev/null || echo "makepack: the MIDI files failed (the pack goes on)"
+    "$PY" tools/pack.py assets "$PAK"
+}
+pack
 r=$?
 if [ $r = 3 ]; then                             # assets/ from another version of the extractor
     extract
-    "$PY" tools/pack.py assets "$PAK" || exit 1
+    pack || exit 1
 elif [ $r != 0 ]; then
     exit 1
 fi

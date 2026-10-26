@@ -245,7 +245,8 @@ How the port was made, and how to check it against the original:
   of your ROM into `assets/` (graphics, palettes, every room's map, all the text, the sprites and
   their animations, the tables in the code, the music and sound effects; git-ignored, as the ROM
   is), as images, JSON and text that
-  can be looked at and changed. `tools/rebuild.py` checks the files are complete by building the
+  can be looked at and changed (and the music as MIDI files, `assets/sound/midi`, to play or edit in
+  any music program: `tools/midi.py`). `tools/rebuild.py` checks the files are complete by building the
   ROM's bytes back from them, and `tools/pack.py` packs them into `assets/game.pak`, which the game
   plays from. `tools/makepack.sh`, which the build runs, extracts and packs when needed; files
   changed by hand in `assets/` are packed, not overwritten. See `docs/EXTRACT.md`.

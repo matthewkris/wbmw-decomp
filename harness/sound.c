@@ -106,8 +106,10 @@ static int16_t out_buf[OUT_MAX][2]; static int out_n;
 
 static int16_t clamp16(int32_t v) { return (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v); }
 
+static unsigned long long samples_made;            /* for the chip log's times */
 static void sample(void)
 {
+    samples_made++;
     int32_t fm[2];
     ym_generate(fm, sound_gain);
     /* the PSG steps 3,579,545 / 16 times a second; one sample is 53,267 Hz: about 4.2 steps */
@@ -146,11 +148,17 @@ static uint8_t z80_read(uint16_t a)
     return 0xFF;
 }
 
-/* WBMW_SOUND_LOG=FILE: every write to the sound chips, in order (no timing), to compare runs */
-static FILE *chip_log; static int chip_log_init;
+/* WBMW_SOUND_LOG=FILE: every write to the sound chips, in order (no timing), to compare runs;
+ * with WBMW_SOUND_LOG_TIME=1 too, each line starts with the samples made so far (53,267 a second),
+ * to time the driver against (tools/midi.py) */
+static FILE *chip_log; static int chip_log_init, chip_log_time;
 static void log_chip(int chip, unsigned port, unsigned d)
 {
-    if (!chip_log_init) { chip_log_init = 1; const char *p = getenv("WBMW_SOUND_LOG"); if (p) chip_log = fopen(p, "w"); }
+    if (!chip_log_init) {
+        chip_log_init = 1; const char *p = getenv("WBMW_SOUND_LOG"); if (p) chip_log = fopen(p, "w");
+        chip_log_time = getenv("WBMW_SOUND_LOG_TIME") != NULL;
+    }
+    if (chip_log && chip_log_time) fprintf(chip_log, "%llu ", samples_made);
     if (chip_log) fprintf(chip_log, "%s%u %02X\n", chip ? "psg" : "ym", port, d);
 }
 

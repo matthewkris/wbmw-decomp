@@ -238,8 +238,10 @@ def extract(d):
              tracks={'%04X' % z: dict(items=items, end='%04X' % end, labels=['%04X' % l for l in sorted(labels)])
                      for z, (items, end, labels) in sorted(P.items())},
              unused={'%04X' % z: dict(items=items, end='%04X' % end) for z, items, end in U})
-    lines = ['# The music and sound effects (tools/music.py; docs/SOUND.md). Notes by name (note 0 is',
-             '# C0, note 48 C4); +X sounds with the next note; lN a length; [N ... ] a loop.', '']
+    lines = ['# The music and sound effects (tools/music.py; docs/SOUND.md). Notes by name, as the tracks',
+             '# number them (note 0 C0, note 48 C4); what sounds is shifted by the instrument (most FM ones an',
+             '# octave down) and, on the PSG, an octave up (the MIDI files, tools/midi.py, give',
+             '# the pitch heard). +X sounds with the next note; lN a length; [N ... ] a loop.', '']
     names = {}
     for n, h, k, pri, tempo, tr, _ in S:
         for ch, t in tr: names.setdefault(t, []).append('%s $%02X %s %d' % (k, n, 'track' if k == 'song' else 'channel', ch))
