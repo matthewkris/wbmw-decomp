@@ -46,7 +46,8 @@ The save EEPROM is read from FILE at start and written at exit (default `wbmw.sa
   window title always shows the rate. The game itself always runs 60 frames a second of game
   time; the display tells whether the PC keeps up.
 * **Esc** opens the menu over the picture: **Show FPS**, **Full screen**, **Whole pixels**,
-  **Widescreen**, **Talk zoom**, **Enemy health** and **Sound** (on/off), **Controls**, and **Exit game**, which asks "Exit the game?" (No first).
+  **Widescreen**, **Talk zoom**, **Enemy health** and **Sound** (on/off), **Volume**, **Music** and
+  **Effects** (0-100 in tens: left and right, or Enter to step up), **Controls**, and **Exit game**, which asks "Exit the game?" (No first).
   Up/Down choose, Enter (or Z, Space) selects, Esc goes back or resumes. On a controller,
   **Back/Select** (View, Share/Create, Minus) opens it, as the Genesis pad has no such button and
   Start stays the game's (the item screen); in the menu the D-pad (or left stick) chooses, A
@@ -77,6 +78,12 @@ The save EEPROM is read from FILE at start and written at exit (default `wbmw.sa
   the scene in on the two, the HUD and the box slid up (`docs/TALKZOOM.md`). For testing it,
   `--input FILE` works in a window too, and `WBMW_SHOT_EVERY=N WBMW_SHOT_EVERY_DIR=DIR` writes the
   window's own picture every N frames.
+* The volumes (`volume_frame`): a gain for each sound chip channel and for the mix (`harness/sound.c`,
+  `sound_gain`, `sound_master`; the YM2612's channels weighted in `harness/ym2612.cpp`, which
+  compiles ymfm's OPN code itself to reach its FM engine). Each frame the driver's voices are read
+  from the Z80's RAM to tell the music's from the effects' (`docs/SOUND.md`). All at 100 (the
+  default, and always in headless runs unless `--volume`, `--music-volume` or `--effects-volume`
+  are given) the sound is the original's, sample for sample.
 * The settings are kept in `wbmw.ini` next to the program (`--config FILE` for another), written
   when the menu closes or the game exits after a change. The command line overrides a setting for
   one run without changing the file; headless runs (`--frames`) do not read it.

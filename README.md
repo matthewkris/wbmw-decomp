@@ -19,7 +19,9 @@ On top of the original game. They are all on by default; each can be turned off 
 * **Custom controls**: set a key and a controller button, stick direction or trigger for each game
   button, and for quick save and quick load.
 * **Settings saved** between sessions (`wbmw.ini`): full screen, whole-pixel scaling, widescreen,
-  talk zoom, enemy health, sound, frame rate display, controls.
+  talk zoom, enemy health, sound and its volumes, frame rate display, controls.
+* **Volume**: the overall volume, and the music and the sound effects each on their own, from the
+  menu.
 * **Quick save and load** of the whole game state, with an on-screen confirmation. Saving over
   an existing save asks you to press quick save again, so it isn't overwritten by accident.
 * **Full screen** by default, with window mode and whole-pixel scaling.
@@ -156,6 +158,9 @@ so Start stays the game's own: it opens the item screen.
 * **Show FPS, Full screen, Whole pixels** (every pixel the same size), **Widescreen**, **Talk
   zoom**, **Enemy health** (the health bars and damage numbers), **Sound**: on or off. Widescreen
   is experimental: see **Added features** above.
+* **Volume**, **Music**, **Effects**: from 0 to 100 in tens (left and right, or Enter to step up).
+  The music and the effects are kept apart even though they share the same sound chips: an effect
+  that takes a voice from the music plays at the effects' volume.
 * **Controls**: a key and a controller input for each button, plus quick save and quick load.
   Choose one and press Enter (A on a controller), then press the new key or button; on the
   controller side, a stick direction or a trigger works too. A key already used elsewhere swaps
@@ -189,7 +194,8 @@ wbmw [ROM] [--pack FILE] [--windowed] [--widescreen] [--talk-zoom] [--enemy-heal
 * `--integer-scale`: scale only by whole numbers, so every pixel is the same size.
 * `--no-widescreen`, `--no-talk-zoom`, `--no-enemy-health`: turn that feature off for this run
   (`--widescreen`, `--talk-zoom` and `--enemy-health` turn it on).
-* `--fps`: show the frame rate from the start. `--mute`: no sound.
+* `--fps`: show the frame rate from the start. `--mute`: no sound. `--volume N`,
+  `--music-volume N`, `--effects-volume N`: the volumes for this run (0-100).
 * `--state FILE`: the file quick save and quick load use. `--load`: load it at start.
 * `--config FILE`: use this settings file instead of `wbmw.ini`.
 

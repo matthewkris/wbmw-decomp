@@ -8,7 +8,7 @@ PORT = ../port/kernel.c ../port/entity.c ../port/anim.c ../port/gfx.c ../port/sp
 MACHINE = ../harness/bus.c ../harness/vdp.c ../harness/png.c ../harness/wav.c ../harness/framelog.c ../harness/sound.c ../harness/audio.c
 CXX = g++
 YMFM = ../third_party/ymfm
-YMO = $(OUT)/ym2612.o $(OUT)/ymfm_opn.o $(OUT)/ymfm_adpcm.o $(OUT)/ymfm_ssg.o
+YMO = $(OUT)/ym2612.o $(OUT)/ymfm_adpcm.o $(OUT)/ymfm_ssg.o   # (ymfm_opn.cpp is compiled inside ym2612.cpp)
 
 all: $(OUT)/wbmw pack
 
@@ -20,7 +20,7 @@ pack:
 	@sh ../tools/makepack.sh
 
 # the YM2612: ymfm (C++) behind harness/ym2612.cpp
-$(OUT)/ym2612.o: ../harness/ym2612.cpp
+$(OUT)/ym2612.o: ../harness/ym2612.cpp $(YMFM)/ymfm_opn.cpp
 	@mkdir -p $(OUT)
 	$(CXX) -O2 -std=c++14 -I$(YMFM) -c $< -o $@
 $(OUT)/ymfm_%.o: $(YMFM)/ymfm_%.cpp

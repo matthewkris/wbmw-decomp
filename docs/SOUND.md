@@ -128,6 +128,22 @@ All 26 songs are accounted for. Found by logging every sound command over all th
 (a temporary hook in `QueueSound`) and then from the code: a state starts with its music
 playing, so the log showed only the title's and room changes'.
 
+## Volume: the music's and the effects' apart
+
+The native build's menu has a volume for the music and one for the effects (`native/wbmw.c`,
+`volume_frame`). Both come from the same chips, and an effect takes a voice from the music while
+it plays, so the split follows the driver's voices: each frame, voice v's record (Z80 $1C80 +
+$40 v) says whether it is playing (bit 7) and whether a song's track has it (bit 5, set with the
+note at $0DF0). Voices 0-5 are the YM2612's channels 0, 3, 1, 4, 2, 5 (`$0446`: the two halves
+alternate), 6-8 the SN76489's tones, and voice 8 its noise too (a noise track takes that record).
+A voice not playing keeps its last owner, so a note's release fades at its own volume. Each chip
+channel is then weighted (`harness/sound.c`, `sound_gain`; the YM2612's in `harness/ym2612.cpp`,
+ymfm's sum of its channels with a gain each), and the mix by the overall volume. At 100 nothing is
+multiplied: the sound is the original's, sample for sample (checked on the title and a boss).
+Checked: the title with the music at 0 is near silence until the demo's effects start; in play,
+the sword's swings stay with the music at 0 and go with the effects at 0; the overall volume at
+50 halves the level.
+
 ## Checked
 
 * `tools/rebuild.py`: the 737 pieces (header, table, headers, tracks) built from `music.json`

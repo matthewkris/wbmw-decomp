@@ -36,6 +36,7 @@ void sound_hold(int on);                /* hold the Z80 and the chips still (sha
 void sound_run_line(int vint);          /* one scanline; vint: raise the Z80's VBlank interrupt */
 void sound_idle(void);                  /* let some sound time pass, even while held */
 int sound_take(int16_t *dst, int max);  /* take up to max stereo samples (53,267 Hz) */
+extern int sound_gain[10], sound_master; /* volumes, 256 as it is: YM2612 channels 0-5, SN76489 tones 0-2 and noise; the mix */
 #define SOUND_RATE 53267
 void sound_state_io(FILE *f, int saving);
 

@@ -17,9 +17,13 @@ comparisons with the original keep working.
 * **Settings and controls** (asked 2026-10-21): the menu has Full screen, Whole pixels and Sound
   toggles and a Controls screen (a key and a controller input for each button and for quick save
   and load, swapping on conflict, clear, left stick on/off, reset), all kept in `wbmw.ini`. Quick
-  save and load show a message. Still to do from the settings menu below: volume sliders, save
-  state slots, and the same menu in `play.exe`. The menu has since grown the Widescreen, Talk
-  zoom and Enemy health toggles.
+  save and load show a message. Still to do from the settings menu below: save state slots, and
+  the same menu in `play.exe`. The menu has since grown the Widescreen, Talk zoom and Enemy health
+  toggles.
+* **Volume sliders** (asked 2026-10-11, done 2026-10-26): the menu's Volume, Music and Effects
+  (0-100 in tens), kept in `wbmw.ini`. The music and the effects are told apart by the sound
+  driver's voices (`docs/SOUND.md`, "Volume"). At 100 the sound is the original's, sample for
+  sample.
 * **Quick save asks before overwriting** (asked 2026-10-22): with a save already there, the first
   press shows "PRESS SAVE AGAIN TO OVERWRITE"; a second within two seconds replaces it.
 * **A state load clears the host's overlays** (asked 2026-10-22): health bars, damage and gold
@@ -33,10 +37,7 @@ A host menu that opens over the paused game, with settings that are kept between
 
 * **Toggles first:** show FPS (today F3 and `--fps`), then the other window options that exist
   as keys or command-line flags (full screen, whole-number scaling, mute).
-* **Volume sliders later:** master, and probably music and sound effects separately. Master is
-  simple (the host mixes the output). Music versus effects is harder: both come from the same
-  sound driver on the Z80 and the same two chips, so splitting them means knowing which
-  channels the driver gives to effects, or reading the driver's own state.
+* **Volume sliders:** done (above), by reading the driver's own state.
 * **More options later**, as they come up (key bindings, controller setup, save state slots).
 * **Design points:**
   * The game has its own pause on Start. The host menu should be separate (Escape, say), stop

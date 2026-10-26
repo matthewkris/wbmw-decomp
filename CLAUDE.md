@@ -48,7 +48,7 @@ Open, all optional: a timing model for the C (`--timing` is off: it counted the 
 code's cycles; without it the native build plays like the harness's replace mode, never slowing
 down); the music and the driver's tables are decoded (`docs/SOUND.md`: `tools/z80dis.py`,
 `tools/music.py`, `tools/soundtables.py`), the modulation scripts and a C driver not yet; the ideas in
-`docs/IDEAS.md` (a steady camera, volume sliders, save slots); the owner playing the native build
+`docs/IDEAS.md` (a steady camera, save slots); the owner playing the native build
 at length. The history below is kept as it was.
 
 Done (the early stages):
