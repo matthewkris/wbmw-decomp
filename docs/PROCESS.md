@@ -6,8 +6,9 @@ parts are general and which belong to this game. Decisions in this repository sh
 with a second game in mind: when a choice is otherwise even, prefer the one that keeps the
 general parts general.
 
-Written after the reference harness and before the C port (October 2026). Update it at each
-major milestone.
+Written after the reference harness and before the C port (October 2026), last brought up to
+date after the modding formats and the widescreen surveys (2026-10-27). Update it at each major
+milestone.
 
 ## The pipeline, in the order it ran
 
@@ -27,6 +28,8 @@ major milestone.
 | 12 | Native build: the C alone, no 68000 | `native/` (`machine.c`, `wbmw.c`), batches N1-N5 | frame logs by game frame equal the original's |
 | 13 | Added features, behind options | the menu, enemy health, talk zoom, widescreen | with them off, still the original frame for frame |
 | 14 | Extract the data, play from the files | `extract.py`, `rebuild.py`, `pack.py`, `makepack.sh` | built back against the ROM; every byte read held; frame logs equal the ROM's |
+| 15 | Modding formats: text, levels, maps (Tiled), balance | `msgtext.py`, `levels.py`, `tiled.py`, `balance.py`, `docs/MODDING.md` | unedited files pack to the identical image; each edit seen in the game, headless |
+| 16 | Per-room host choices, surveyed | `bandsurvey.py`, `analysis/warp.json`, `band_colours` | every room visited and rendered both ways; the owner picks from one page |
 
 Each stage made the next one cheaper or checkable. Stage 3 is what made stage 2 trustworthy;
 stage 7 is what made stage 5 trustworthy; stage 8 is what made stages 9 and 10 trustworthy.
@@ -128,6 +131,12 @@ runnable as early as possible and ask for specific checks.
 | A fuzz run "hung": random animation data sent the animation interpreter round forever, in the port, where the cycle budget that stops the original does not reach. | Give fuzzed entities real data from the game's tables; time a small run (50 cases) before starting thousands. |
 | Rewriting a dispatcher into C hid its jump table from the translator, so the routines it jumps to were no longer generated, and calling one stopped the program. | When a jump table moves into C, list its targets as translation roots (read them from the ROM's tables with a script, so the list is exact). |
 | Following stored code pointers pulled in the whole game at once. | Let the translator leave to the original code for anything untranslated (always correct in the harness), and defer big subsystems explicitly, to keep each step's checks fine-grained. |
+| I handed the owner "try it" steps for painted widescreen sides after a test that copied the room's own columns into the margin: it looked right whether the feature worked or not. Asked whether I had tested it, marker blocks showed it did nothing in rooms that never scroll. | Test the way the owner will (their tool, a room reached the normal way) with a result that differs when the feature is broken (distinct markers, before and after); say plainly what was not tested. |
+| A host decision keyed on the room number blacked out the sides for the fade: the game sets the next room's number as the player walks out, while the old room is still loaded and on screen. | Key host decisions on what is loaded and shown (the layers in RAM), not on a number the game changes ahead of time; keep the loaded room's answer until the next one loads. |
+| Visual choices per room (what to show where the HUD used to be) cannot be judged from one screenshot, and walking to 170 rooms is not possible here. | Warp: poke what an exit stores (`analysis/warp.json`), render every room twice (as is, and with the change), diff, and give the owner one page with a suggestion per room. Re-run the same survey after each change and list every room whose picture moved. |
+| "When I jump I disappear" first matched the game's own blinking after a hit, the only case my scripted jumps reached; the owner meant his head vanishing above a line, which no scripted jump reached. | Reproduce the owner's description, not the nearest thing that happens; when input cannot reach the situation, push the state to it (poke the position mid-jump) and compare before and after. |
+| Picking the sea's navy by its CRAM word, I chose `$008`: Mega Drive colours are written blue, green, red, so that is dark red. | Convert colours with the tool that renders them, and look at the render before calling it done. |
+| One "first line with a map" for both planes, the lower plane's, cut the front plane's rock off where the sky behind began. | A property that differs per layer (where its map starts) is kept per layer; a shared threshold hides the case where they differ. |
 
 ## General versus game-specific
 
@@ -148,6 +157,9 @@ What is reusable as it stands, what is reusable after changes, and what belongs 
   any 68000 game. The fuzz input generators in `hybrid.c` are this game's and should move to a
   game file when a second game starts.
 * `tools/gfx.py`'s PNG writing and palette conversion; `tools/header.py`.
+* The survey method (`tools/bandsurvey.py`): visit every room by pokes, render each two ways,
+  diff, one review page. The pokes (`analysis/warp.json`) are this game's; the native build's
+  `--poke-at`/`--png-at` and the per-room colour in the renderer (`vdp_band_colour`) are general.
 * The extraction's checks and the pack: the method of `tools/rebuild.py` (each piece built back
   from the files and compared, coverage counted, `--reads` against the native build's
   `--rom-reads`), `tools/pack.py`'s data image and mask, `port_pack_find` for the decoders, and
