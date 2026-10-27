@@ -25,7 +25,8 @@ data's order: its place on the map (1) and its chunk's 192 cells (words).
 """
 import sys, os, re, json, struct
 sys.path.insert(0, os.path.dirname(__file__))
-import rebuild, extract, gfxpng, pngio, msgtext, levels, balance
+import rebuild, extract, gfxpng, pngio, msgtext, levels, balance, tiled
+import xml.etree.ElementTree as ET
 
 SIZE = 0xC0000                                      # the ROM's address space: 786,432 bytes
 
@@ -61,10 +62,10 @@ def conflicts(found):
               '      shorten it (docs/MODDING.md, "What can be changed").' % len(found))
     return bool(found)
 
-def build_image(J, assets, blocks, moves):
+def build_image(J, assets, blocks, moves, maps=None):
     """the data image from the files: (image, mask, size, conflicts, pieces); image None when the
     data is too large"""
-    built = rebuild.build_pieces(J, assets, moves)
+    built = rebuild.build_pieces(J, assets, moves, maps)
     # the ROM's address space, and past it what has moved there (msgtext.EXTENSION, levels.py)
     size = max([SIZE] + [a + len(b) for _, ps in built for a, b in ps])
     size = (size + 0xFFFF) & ~0xFFFF
@@ -102,12 +103,15 @@ def main():
         return 3
     blocks = read_blocks(assets)
     if blocks is None: return 1
+    try: maps = tiled.read(assets)                  # the maps changed in Tiled (rooms/tiled)
+    except (tiled.TiledError, ET.ParseError, ValueError, OSError) as e:
+        print('pack: rooms/tiled: %s\npack: nothing packed (docs/MODDING.md, "Maps")' % e); return 1
     # a list or a room script that grew into its neighbours moves past the ROM's data (levels.py):
     # build, find them, build again, until nothing more can move
     moves, rooms_at = dict(lists=set(), children=set(), areas=set()), {int(r['address'], 16): r['area'] for r in J('rooms', 'rooms.json')}
     parents = levels.parents_of(J('rooms', 'lists.json'))
     for attempt in range(10):
-        try: image, mask, size, found, pieces = build_image(J, assets, blocks, moves)
+        try: image, mask, size, found, pieces = build_image(J, assets, blocks, moves, maps)
         except msgtext.TextError as e:
             print('pack: the text: %s\npack: nothing packed (docs/MODDING.md, "Text")' % e); return 1
         except balance.BalanceError as e:
@@ -144,6 +148,9 @@ def main():
             bt = int(lay['blocks_at'], 16); tables[bt] = lay['blocks']
             layers.append((int(lay['src'], 16), bt, lay['places']))
     layers = list({src: (src, bt, pl) for src, bt, pl in layers}.values())
+    layers = [(src, bt, maps[k]['places'] if k in maps else pl) for src, bt, pl in layers for k in ['%06X' % src]]
+    if maps: print('pack: maps from Tiled: %s' % ', '.join(m['file'] + (' (now %dx%d places)' % m['size'] if m['size'] else '')
+                                                         for m in maps.values()))
 
     with open(out, 'wb') as f:
         f.write(b"WBMWPAK1" + struct.pack(">I", size) + image + mask)

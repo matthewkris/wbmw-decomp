@@ -18,12 +18,13 @@ native build no 68000 code runs, so a read in the code region ($0-$1C601) is a t
 """
 import sys, os, json, struct, argparse, subprocess, tempfile
 sys.path.insert(0, os.path.dirname(__file__))
-import assetfmt, gfx, sprites, codetables, music, soundtables, msgtext, levels, balance
+import assetfmt, gfx, sprites, codetables, music, soundtables, msgtext, levels, balance, tiled
 
-def build_pieces(J, assets, moves=None):
+def build_pieces(J, assets, moves=None, maps=None):
     """every piece of the ROM the files hold, built from them: [(name, [(address, bytes)])].
     rebuild.py compares them with the ROM; pack.py places them in the game's data image. moves:
-    the rooms' lists and areas to move past the ROM's data (levels.py; pack.py finds them)"""
+    the rooms' lists and areas to move past the ROM's data (levels.py; pack.py finds them); maps:
+    the maps changed in Tiled (tiled.read), for their sizes"""
     moves = moves or dict(lists=set(), children=set(), areas=set())
     out = []
     add = lambda name, pieces: out.append((name, list(pieces)))
@@ -57,6 +58,10 @@ def build_pieces(J, assets, moves=None):
     LS = J('rooms', 'lists.json')
     lists, moved, ext = levels.place_lists(LS, moves, ext)
     for kind in levels.TOP + levels.CHILD: add('room ' + kind.replace('_', ' '), lists[kind])
+    for r in rms:                                   # a map resized in Tiled: its rooms' layers that size
+        for it in r['items']:
+            m = (maps or {}).get('%06X' % tiled.layer_src(r, it, dirs)) if 'kind' in it else None
+            if m and m['size']: it['w'], it['h'] = m['size']
     scripts, blocks, ext = levels.place_rooms(rms, dirs, moved, moves, ext)
     add('room scripts', scripts)
 
