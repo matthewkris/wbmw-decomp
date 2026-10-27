@@ -247,9 +247,19 @@ static void gold_found(int amount);
 /* what the HUD's band shows beside it where the map draws nothing (vdp_band_colour): black, as
  * rooms leave gaps in their maps' top rows that the 64-line HUD always covered (area 12's cave
  * has its purple backdrop there); or, where a room's sky is its backdrop, that (the tops of
- * clouds drawn in its map's first rows, over black, looked cut out) */
+ * clouds drawn in its map's first rows, over black, looked cut out). Chosen by the owner from
+ * tools/bandsurvey.py's pictures (2026-10-27): skies and open water the backdrop, area 6's forest
+ * too; caves, walls and rooms whose backdrop only shows through gaps stay black */
 static const struct { uint8_t area, room; int8_t colour; } band_colours[] = {
     {1, 0, 64},                                     /* the meadow past the village: the sky ($E60, entry 0) */
+    {0, 0, 64}, {1, 1, 64},                         /* the village, the castle wall: their skies */
+    {1, 2, 64}, {1, 3, 64}, {1, 4, 64},             /* open water */
+    {4, 2, 64}, {4, 3, 64}, {4, 4, 64}, {5, 0, 64}, {5, 2, 64}, {5, 3, 64},   /* skies */
+    {6, 0, 64}, {6, 1, 64}, {6, 2, 64}, {6, 3, 64}, {6, 6, 64}, {6, 7, 64}, {6, 8, 64},   /* the forest: purple behind its leaves */
+    {8, 1, 64}, {8, 2, 64}, {8, 6, 64}, {8, 8, 64}, /* open water */
+    {10, 0, 64}, {10, 3, 64}, {10, 4, 64}, {10, 5, 64}, {10, 6, 64}, {10, 8, 64},   /* the purple sky */
+    {12, 0, 64}, {12, 1, 64}, {12, 2, 64}, {12, 5, 64}, {12, 7, 64}, {12, 10, 64}, /* the orange sky (not room 8, the cave) */
+    {14, 0, 64}, {14, 2, 64}, {14, 3, 64}, {14, 5, 64}, {14, 7, 64}, {14, 8, 64},  /* the pink crystals */
 };
 static int band_colour(int area, int room)
 {
