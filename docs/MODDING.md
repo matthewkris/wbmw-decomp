@@ -218,6 +218,9 @@ to a shared one shows in all of them). Open a map in Tiled, draw with its tilese
   Map Properties, Tile Layer Format).
 * **Seeing it.** A room's map is read when the room loads: walk into it. The title screen's demo
   starts in `area02_room00_A`.
+* **Starting over.** `python tools/tiled.py export --only area00_room00` writes that room's maps
+  (its `_A` and `_B`) again as the game has them, leaving every other map alone; build, and the
+  room is the original again. Copy the old files aside first if you may want them back.
 
 Example: in `area02_room00_A.tmx`, copy the second place's houses over the first, resize the
 map from 64 to 80 cells across (one more place) and set `room_places` to `5x1`: the demo starts

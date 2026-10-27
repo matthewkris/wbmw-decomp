@@ -2,6 +2,9 @@
 as a Tiled map, read back by the pack.
 
     python tools/tiled.py export [ASSETS]     writes ASSETS/rooms/tiled/ (a minute or so)
+    python tools/tiled.py export [ASSETS] --only area00_room00
+                                              only the maps whose names start so (a room's _A and _B),
+                                              back as the game has them: a fresh start for that room
 
 A layer (a room's plane A or B; rooms can share one, the backgrounds mostly) is a grid of places,
 8 by 8 at most, each 16 x 12 blocks of 16 x 16 pixels; a block is four tiles and an attribute (its
@@ -160,7 +163,7 @@ def write_tmx(path, entry, w, h, tiles_png):
            prop('exported_places', '%dx%d' % (w, h)) + prop('room_places', '%dx%d' % room_size(entry)),
            tiles_png, name_of(entry)[-1], w * PLACE_W, h * PLACE_H, data))
 
-def export(assets):
+def export(assets, only=None):
     D = load(assets)
     import pack
     blocks = pack.read_blocks(assets)
@@ -173,6 +176,7 @@ def export(assets):
     looks, cache, n = {}, {}, 0
     index = {}
     for src, entry in sorted(layers_of(D).items()):
+        if only and not name_of(entry).startswith(only): continue
         a, r = entry['rooms'][0][:2]
         if (a, r) not in looks: looks[(a, r)] = room_look(D, a, r)
         own = (entry['layer']['blocks'] + [None] * 256)[:256]
@@ -182,7 +186,7 @@ def export(assets):
         write_tmx(os.path.join(out, name + '.tmx'), entry, w, h, name + '_blocks.png')
         index[name] = dict(layer=src, rooms=['area %d room %d %s' % x[:3] for x in entry['rooms']], places='%dx%d' % (w, h))
         n += 1
-    json.dump(index, open(os.path.join(out, 'index.json'), 'w'), indent=1)
+    if not only: json.dump(index, open(os.path.join(out, 'index.json'), 'w'), indent=1)
     return n
 
 def read_tmx(path):
@@ -247,5 +251,11 @@ def read(assets):
 if __name__ == '__main__':
     if len(sys.argv) < 2 or sys.argv[1] != 'export':
         print(__doc__); sys.exit(1)
-    assets = sys.argv[2] if len(sys.argv) > 2 else 'assets'
-    print('wrote %d maps to %s' % (export(assets), os.path.join(assets, 'rooms', 'tiled')))
+    args = sys.argv[2:]
+    only = None
+    if '--only' in args:
+        k = args.index('--only'); only = args[k + 1]; del args[k:k + 2]
+    assets = args[0] if args else 'assets'
+    n = export(assets, only)
+    if only and not n: print('no map named %s...' % only); sys.exit(1)
+    print('wrote %d maps to %s' % (n, os.path.join(assets, 'rooms', 'tiled')))
