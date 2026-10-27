@@ -370,7 +370,10 @@ static void draw_sprites(uint8_t *out, int line, int lo, int hi, int pad, int wi
      * the sprites up to its mask (its cursor, the mask) are too. */
     int sides_any = lo < pad || hi > pad + width;
     int side_ok = line < HUD_LINES && sides_any, mask_at = -1, mask_n = -1;
-    int sides_shown = line >= vdp_band_top;         /* the map beside the HUD on this line, not the black */
+    /* the map beside the HUD on this line, not the black; or a band in the room's colour
+     * (vdp_band_colour), the sky going on above the map, where Wonder Boy jumping up lost his
+     * head and body at the map's top row */
+    int sides_shown = line >= vdp_band_top || (vdp_pad_fill && vdp_band_colour >= 0);
     int hw = hud_wide(width, pad), hx0 = hud_x0(pad);   /* the wide HUD: it covers only its row's boxes */
     int menu = hw && hud_covered();
     if (sides_any || menu) {
