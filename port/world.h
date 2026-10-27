@@ -40,6 +40,7 @@ int port_wide_sides(void);          /* rooms.c: port_wide_px where it is wide by
 /* map.c: set while rooms.c draws a wide view: columns past a narrow layer's width come from a
  * screen painted beyond it, where there is one (docs/MODDING.md, "Widescreen sides") */
 extern int port_margin_draw;
+int port_margin_top(Cpu *c);        /* map.c: whether layer a3 has rows painted above its top (rows_wide draws them) */
 /* message.c: the "Found ..." box under the HUD, for the host (only noted: the game is unchanged):
  * port_found_gold the gold found ($1FCA, its amount), port_found_thing a thing found ($1FD0); the
  * host clears them */
