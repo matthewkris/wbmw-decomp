@@ -134,7 +134,8 @@ in the map's first rows looked cut out of black (2026-10-27: area 1's room 0, th
 $E60). `tools/bandsurvey.py` enters every room (`analysis/warp.json`) and draws the band black and
 in the backdrop: 58 more rooms have empty pixels there; the owner chose the backdrop for 40 of them (skies, open
 water, area 6's forest), the other 18 (caves, walls, area 2's purple forest, area 12's cave) stay
-black. The seas (area 1's rooms 2-4, area 8's 1, 2, 6, 8) take their sky's navy instead (CRAM
+black. Area 6's forest takes its canopy's dark green (CRAM entry 43, $040; the owner's choice: its
+purple backdrop above the treetops looked wrong). The seas (area 1's rooms 2-4, area 8's 1, 2, 6, 8) take their sky's navy instead (CRAM
 entry 26, $800): their sky is a gradient of tiles whose bottom is the backdrop, and the backdrop's
 bright blue beside the HUD's row sat over the navy (the survey's check: the pixel beside the HUD's
 row and the one under it agree in every listed room). Each plane has its own top there (`vdp_band_top_a`, `_b`); above it that plane draws nothing

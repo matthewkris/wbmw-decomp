@@ -255,7 +255,7 @@ static const struct { uint8_t area, room; int8_t colour; } band_colours[] = {
     {0, 0, 64}, {1, 1, 64},                         /* the village, the castle wall: their skies */
     {1, 2, 26}, {1, 3, 26}, {1, 4, 26},             /* the sea: its sky's navy (line 1 entry 10, $800), its gradient's top: the backdrop ($E00) is its bottom */
     {4, 2, 64}, {4, 3, 64}, {4, 4, 64}, {5, 0, 64}, {5, 2, 64}, {5, 3, 64},   /* skies */
-    {6, 0, 64}, {6, 1, 64}, {6, 2, 64}, {6, 3, 64}, {6, 6, 64}, {6, 7, 64}, {6, 8, 64},   /* the forest: purple behind its leaves */
+    {6, 0, 43}, {6, 1, 43}, {6, 2, 43}, {6, 3, 43}, {6, 6, 43}, {6, 7, 43}, {6, 8, 43},   /* the forest: its canopy's dark green (line 2 entry 11, $040; the owner's choice over the purple backdrop) */
     {8, 1, 26}, {8, 2, 26}, {8, 6, 26}, {8, 8, 26}, /* the sea: its sky's navy, as area 1's */
     {10, 0, 64}, {10, 3, 64}, {10, 4, 64}, {10, 5, 64}, {10, 6, 64}, {10, 8, 64},   /* the purple sky */
     {12, 0, 64}, {12, 1, 64}, {12, 2, 64}, {12, 5, 64}, {12, 7, 64}, {12, 10, 64}, /* the orange sky (not room 8, the cave) */
