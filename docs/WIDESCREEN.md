@@ -83,11 +83,14 @@ sides. 121 of the 170 rooms qualify. A narrow room also qualifies when its sides
 (2026-10-27, `docs/MODDING.md`, "Widescreen sides"): each narrow plane drawn as screens (and a
 plane A that stays put) has a place just beyond its width in every band of its map, which the
 camera never reaches; `port/map.c` (`port_margin_draw`, set only while `port/rooms.c` draws the
-wide view's columns and rows) reads the sides' columns from it, the right side from its left end,
+wide view: the whole layer as a room loads, `draw_layer`, and the columns and rows scrolling in) reads the sides' columns from it, the right side from its left end,
 the left side from its right end, instead of the edge's column repeated (`MapBlockAt` clamps).
 The game's own lookups never see it. It is asked of the loaded room's maps each time (`wide_room`,
 `layer_margin`); area 13's room 7 is left out, its plane A having places beyond its width of its
-own. One exception: area
+own. Checked (2026-10-27): marker blocks in a margin's left and right columns show at the right
+and left sides, its middle nowhere; a room entered through an exit (area 14's room 6, from area
+12's room 8) is wide from its first frame; the strip under the one-row HUD shows the map's top
+rows, as in every wide room. One exception: area
 15 (its moving floor is placed from the screen's edge, `$18C8C`). Houses and shops are not rooms
 of their own: their picture opens over the room outside (`$BE6C`, which sets `$9659` bit 4 while
 inside), so they stay as wide as it. (At first bit 4 was taken for "a boss's scripted room" and

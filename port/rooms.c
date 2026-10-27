@@ -1325,6 +1325,7 @@ add:
 /* $9A58: the whole of layer a3 drawn: rows from $C ($E of them, in $40s), columns from $8 ($A) */
 static void draw_layer(void)
 {
+    port_margin_draw = wide_layer() != 0;           /* widescreen: the sides from a margin screen, where painted (map.c) */
     link(-4);
     c->d[7] = set_w(c->d[7], rd16(c->a[3] + 0xC)); F_W(c->d[7]);
     put16m(c->a[6] - 4, rd16(c->a[3] + 0xE));
@@ -1340,6 +1341,7 @@ static void draw_layer(void)
         c->d[7] = set_w(c->d[7], add_w(&c->ccr, c->d[0], c->d[7]));
     } while (mem_sub_w(c->a[6] - 4, c->d[0]));
     unlk();
+    port_margin_draw = 0;
 }
 
 /* $9AA4, $9ABE: a layer at a parallax: from the camera, its scroll */
