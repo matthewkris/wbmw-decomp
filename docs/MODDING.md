@@ -38,13 +38,14 @@ committed. Keep a copy of your changes somewhere else too.
 | `rooms/lists.json`, `rooms/rooms.json` | the rooms' lists (enemies, doors, things) and scripts | Any length: see "Levels". |
 | `tables/balance.json` | the monsters' health, defence and damage, and the things' prices, by name | See "Balance". |
 | `palettes/palettes.json` | `words`: the 16 colours of each of the 160 palettes | Genesis colours, `0BGR` in hex with even digits `0`-`E` (`0E0E` is magenta). `rgb` is only for reading: it is not packed. A palette is loaded when a room (or screen) loads. |
-| `rooms/maps.json` | each layer's `blocks` (its block table: 4 tile words and an attribute a block) and `places` (16 x 12 block numbers each) | The game reads these already unpacked, so any block numbers work; the same number of places. |
+| `rooms/tiled/*.tmx` | the rooms' maps, for Tiled | See "Maps". |
+| `rooms/maps.json` | each layer's `blocks` (its block table: 4 tile words and an attribute a block: what a block looks like and how solid it is) and `places` | The maps themselves are best edited in Tiled ("Maps"); the blocks here, the same number of them. |
 | `rooms/start_points.json`, `music.json` | where the player appears, each room's music | |
 | `sprites/animations.json` | animations (frames, durations) and sprite mappings (pieces) | The same length. |
 | `sound/music.json`, `instruments.json` | the songs' and effects' notes and commands, the instruments | The same length; `tools/music.py` and `docs/SOUND.md` explain the format. |
 | `tables/code_tables.json` | `rows`: the values of the 447 tables in the code, in hex | More of the game's workings: `kind_movement` (the monsters' speeds), `sword_swing` (the sword's hit points), `demo_input`, the colour scripts, ... `note` and `used_by` say what each table is and which routine reads it. `balance.json` is written over `kind_fighting` and `prices`. |
 
-Not yet: bigger maps, new rooms. See "Next".
+Not yet: new rooms (rebuild an existing one instead: "Maps"). See "Next".
 
 A quick one to start: in `palettes/palettes.json`, set colour 2 of every palette to `0E0E` and
 build: from the title screen on, everything drawn in colour 2 is magenta.
@@ -164,6 +165,47 @@ Example: in the village's spawn list (`spawns`, `026714`), copy the entry
 `{"code": 2, "args": [0, 112, 2, 6, 4416, 4224]}` (a mushroom, kind 6) twice before it with x
 4180 and 4340, and build: the demo has three mushrooms by the inn, and Wonder Boy walks into them.
 
+## Maps
+
+The rooms' maps can be drawn in [Tiled](https://www.mapeditor.org), a free map editor. First
+write them out (about a minute; not part of the build, since it draws every block):
+
+    python tools/tiled.py export
+
+That makes `rooms/tiled/`: a Tiled map (`.tmx`) for each layer of the rooms, named after the first
+room that uses it (`area02_room00_A.tmx`: area 2, room 0, plane A, the front one; `_B` is the one
+behind), and beside each its tileset, every block it can use, drawn in that room's colours.
+`index.json` lists them with the rooms that use each (many rooms share their backgrounds: a change
+to a shared one shows in all of them). Open a map in Tiled, draw with its tileset, save, build.
+
+* **Blocks.** A tile is one of the game's blocks: 16 x 16 pixels with its collision (its attribute:
+  how solid it is), so the room plays as it looks. The tileset's rows 0-23 are the
+  blocks every room shares, rows 24-31 the layer's own. Keep to that one tileset, and do not flip
+  or rotate tiles (Tiled's flips are not the game's: a flipped block is another block).
+* **Places.** A map is a grid of places, each 16 x 12 blocks (one screen); a room has up to 8 x 8
+  of them (2,048 x 1,536 pixels), of which at most 16 can be used: a place left all empty is not.
+  Tiled's grid shows the blocks; a place starts every 16 blocks across and 12 down.
+* **Size.** Map > Resize Map, by whole places (a width a multiple of 16, a height of 12): every
+  room that uses the layer takes that size (its script's layer command), which is how far it
+  scrolls. Its exits stay where they were: they are events in the room's event list, at their
+  places (see "Levels"); move them to the new edge.
+* **What is read.** A map whose cells or size changed replaces that layer's places; a map left as
+  it was changes nothing. Keep each map's one tile layer and its properties (`layer` names the
+  layer; `exported_places`, its size when written out). The data can be CSV or base64 (Map >
+  Map Properties, Tile Layer Format).
+* **Seeing it.** A room's map is read when the room loads: walk into it. The title screen's demo
+  starts in `area02_room00_A`.
+
+Example: in `area02_room00_A.tmx`, copy the second place's houses over the first, and resize the
+map from 64 to 80 cells across (one more place): the demo starts among two houses, with the ground
+raised as they are, and the village is a screen longer.
+
+**New rooms.** The game's rooms are numbered in their areas, and a new one would need its own
+number, a script, its music, start points and doors leading to it, and the game keeps some of
+that per room in tables made for the rooms it has: that is not done yet. To make a room of your
+own, rebuild one: its map in Tiled (any size up to 8 x 8 places), its enemies and things in its
+lists, its exits and doors in its event list.
+
 ## Balance
 
 `tables/balance.json` holds the numbers most mods want, by name:
@@ -205,7 +247,8 @@ The plan, in the order the owner chose (2026-10-26):
 1. **Safety and this guide** (done).
 2. **Graphics as pictures** (done): the tiles as PNG files in their real colours, read back.
 3. **Text as text** (done): `messages.txt` and `phrases.txt` read back, at any length.
-4. **Levels**: lists, room scripts and the houses' lists of any length (done); then bigger maps
-   and new rooms.
+4. **Levels**: lists, room scripts and the houses' lists of any length (done); the maps in
+   Tiled, any size up to 8 x 8 places (done). Open: new rooms (their numbers, and the tables the
+   game keeps per room), and the events' formats by name.
 5. **Balance by name** (done): the monsters' health, defence, damage, speeds and drops, and the
    prices, in `tables/balance.json`.
