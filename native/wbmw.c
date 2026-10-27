@@ -222,6 +222,10 @@ static int wide_room(int area, int room)
 {
     static signed char known[19][64];               /* 0 not yet, 1 yes, -1 no, else 2 + its narrow planes */
     if (area < 0 || area >= 19 || room < 0 || room >= 64 || area == 15) return 0;
+    /* the attract demo ($8A50 bit 7: its input from a recording, $4DE2) plays as the original:
+     * a recording of buttons only fits the original's game, and things waking at the wider
+     * view's edges threw it off (Wonder Boy stuck at the start, hurt, instead of in the shop) */
+    if (ram[0x8A50] & 0x80) return 0;
     if (!known[area][room]) {
         int narrow, wide = layers_wide_why(area, room, &narrow);
         known[area][room] = (signed char)(wide ? 1 : narrow ? 2 + narrow : -1);

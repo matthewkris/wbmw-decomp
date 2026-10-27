@@ -108,7 +108,10 @@ exit (arrival 2) near such a room's edge, the player starts as far out (`wide_ar
 walks out, before its maps load, and the sides went black for the fade. Checked (2026-10-27,
 area 0's room 0): walking right, the room changes at x $1148 instead of $1100, wide through the
 fade; walking back from area 1 the player arrives at $1140 instead of $10F8, wide through the
-fade in; with widescreen off at $1100 and $10F8 as before. One exception: area
+fade in; with widescreen off at $1100 and $10F8 as before. The attract demo is never wide (`$8A50` bit 7, its recorded input): a recording of buttons only
+fits the original's game, and things waking at the wider view's edges threw it off (2026-10-27:
+Wonder Boy stuck at the start and hurt instead of walking into the shop); with it narrow the
+game's RAM is identical to a run with widescreen off at every frame checked. One exception: area
 15 (its moving floor is placed from the screen's edge, `$18C8C`). Houses and shops are not rooms
 of their own: their picture opens over the room outside (`$BE6C`, which sets `$9659` bit 4 while
 inside), so they stay as wide as it. (At first bit 4 was taken for "a boss's scripted room" and
