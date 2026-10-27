@@ -79,7 +79,15 @@ fixed plane B is one screen that stays put, but the map lookup wraps its columns
 show it repeated: area 5's castle wall behind its bridge carries on seamlessly (at first these
 six rooms were left at the 256). A narrower plane A, or one that stays put, would show what is
 beyond its map at the sides: those rooms (one-screen rooms, shafts) keep the 256 with black
-sides. 121 of the 170 rooms qualify. One exception: area
+sides. 121 of the 170 rooms qualify. A narrow room also qualifies when its sides are painted
+(2026-10-27, `docs/MODDING.md`, "Widescreen sides"): each narrow plane drawn as screens (and a
+plane A that stays put) has a place just beyond its width in every band of its map, which the
+camera never reaches; `port/map.c` (`port_margin_draw`, set only while `port/rooms.c` draws the
+wide view's columns and rows) reads the sides' columns from it, the right side from its left end,
+the left side from its right end, instead of the edge's column repeated (`MapBlockAt` clamps).
+The game's own lookups never see it. It is asked of the loaded room's maps each time (`wide_room`,
+`layer_margin`); area 13's room 7 is left out, its plane A having places beyond its width of its
+own. One exception: area
 15 (its moving floor is placed from the screen's edge, `$18C8C`). Houses and shops are not rooms
 of their own: their picture opens over the room outside (`$BE6C`, which sets `$9659` bit 4 while
 inside), so they stay as wide as it. (At first bit 4 was taken for "a boss's scripted room" and

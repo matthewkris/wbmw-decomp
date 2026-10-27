@@ -1571,6 +1571,7 @@ static void draw_row(void)
  * left, keeping at most the plane's 32 ($8: the first, $A: how many) */
 static void columns_in_wide(int w)
 {
+    port_margin_draw = 1;                           /* the sides from a margin screen, where painted (map.c) */
     link(-6);
     int x = rd16(c->a[3] + 4), lo = (x - w) >> 4, hi = (x + 256 + w + 15) >> 4;
     int first = rd16(c->a[3] + 8), n = rd16(c->a[3] + 0xA);
@@ -1590,6 +1591,7 @@ static void columns_in_wide(int w)
     put16m(c->a[3] + 8, (uint16_t)first);
     put16m(c->a[3] + 0xA, (uint16_t)n);
     unlk();
+    port_margin_draw = 0;
 }
 
 /* $9D46: the columns that scrolled into view drawn (to the right, or left), up to 32 kept ($8, $A) */
@@ -1647,6 +1649,7 @@ static void columns_in(void)
  * 16 ($C: the first, $E: how many, both in 64s) */
 static void rows_in_wide(void)
 {
+    port_margin_draw = 1;
     link(-6);
     int lo, hi;
     rows_wide(&lo, &hi);
@@ -1667,6 +1670,7 @@ static void rows_in_wide(void)
     put16m(c->a[3] + 0xC, (uint16_t)(first << 6));
     put16m(c->a[3] + 0xE, (uint16_t)(n << 6));
     unlk();
+    port_margin_draw = 0;
 }
 
 /* $9E60: the rows that scrolled into view drawn (down, or up), up to $400 kept ($C, $E) */

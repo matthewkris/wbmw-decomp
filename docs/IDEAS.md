@@ -175,7 +175,7 @@ its sides filled by an AI outpainting tool, drawn by the host in the sides when 
   a small free allowance; PixelLab and Retro Diffusion are made for pixel art (mostly paid).
 * The pictures come from the game's graphics: they stay in `assets/` and are never committed.
 
-**Another way (asked 2026-10-27):** paint the sides in Tiled (`docs/MODDING.md`, "Maps"): a
+**Another way (asked 2026-10-27; done the same day, `docs/MODDING.md`, "Widescreen sides"):** paint the sides in Tiled (`docs/MODDING.md`, "Maps"): a
 narrow room's layer gets a screen beyond its declared width, which the camera never scrolls to;
 the widescreen sides would show it (the right side its left edge, the left side, wrapping, its
 right edge: to be checked in the map lookup), and the widescreen rule would let a narrow room with

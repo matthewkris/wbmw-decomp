@@ -36,6 +36,9 @@ int world_despawn_offscreen(Cpu *c);
 extern int port_wide_px;
 extern int (*port_wide_room)(int area, int room);
 int port_wide_now(void);            /* rooms.c: port_wide_px where the room allows it, else 0 */
+/* map.c: set while rooms.c draws a wide view: columns past a narrow layer's width come from a
+ * screen painted beyond it, where there is one (docs/MODDING.md, "Widescreen sides") */
+extern int port_margin_draw;
 /* message.c: the "Found ..." box under the HUD, for the host (only noted: the game is unchanged):
  * port_found_gold the gold found ($1FCA, its amount), port_found_thing a thing found ($1FD0); the
  * host clears them */

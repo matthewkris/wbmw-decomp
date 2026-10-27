@@ -161,8 +161,27 @@ static int widescreen;
  * so the sides show it repeated: area 5's castle wall behind its bridge carries on seamlessly)
  * or, drawn as screens, two screens wide too. A narrower plane A would show what is beyond its
  * map at the sides. */
-static int layers_wide(int area, int room)
+static int layers_wide_why(int area, int room, int *narrow);
+static int layers_wide(int area, int room) { int narrow; return layers_wide_why(area, room, &narrow); }
+
+/* A narrow layer drawn as screens can have its sides painted (docs/MODDING.md, "Widescreen
+ * sides"): a screen beyond its width in every band of its map, which the camera never reaches;
+ * port/map.c reads the wide view's sides from it. Whether the loaded room's layer (plane A's
+ * record at $FF9754, B's at $FF97D4) has one */
+static int layer_margin(int plane)
 {
+    uint32_t rec = plane ? 0xFF97D4 : 0xFF9754;
+    int cols = rd16(rec + 0x44) + 1, rows = rd16(rec + 0x46) / 64 + 1;
+    uint32_t map = 0xFFFF0000u | rd16(rec + 0x22);
+    if (cols & 15 || cols / 16 >= 8) return 0;
+    for (int band = 0; band * 12 < rows && band < 8; band++)
+        if (rd8(map + (uint32_t)(band * 8 + cols / 16)) & 0x80) return 0;
+    return 1;
+}
+
+static int layers_wide_why(int area, int room, int *narrow)
+{
+    *narrow = 0;                                    /* bit 0 plane A, bit 1 plane B: narrow, drawn as screens */
     static const signed char args[0x15] = {   /* the commands' argument bytes; -1 a pointer (a flag byte, then a long or a word) */
         7, 7, -1, 3, -1, -1, 1, 5, -1, 1, 1, -3, 1, 1, 1, 3, 9, 9, 1, 9, 9};
     uint32_t a1 = rd32(0x1CC00 + 4 * (8 + (uint32_t)area)) & 0xFFFFFF;
@@ -175,14 +194,22 @@ static int layers_wide(int area, int room)
         if (c > 0x14) return 0;
         if (c <= 1 || c == 0x10 || c == 0x11) {     /* a layer: kind, width, height (screens), word, its data */
             uint8_t kind = rd8(p), w = rd8(p + 1);
-            if (c & 1) b_ok = kind == 1 || kind == 3 || kind == 4 || kind == 5 || kind == 7 || ((kind == 0 || kind == 2) && w >= 2);
-            else a_ok = (kind == 0 || kind == 2) && w >= 2;
+            if (c & 1) {
+                b_ok = kind == 1 || kind == 3 || kind == 4 || kind == 5 || kind == 7 || ((kind == 0 || kind == 2) && w >= 2);
+                if (kind == 0 || kind == 2) *narrow = (*narrow & 1) | (w < 2) << 1;
+            } else {
+                a_ok = (kind == 0 || kind == 2) && w >= 2;
+                *narrow = (*narrow & 2) | ((kind <= 2 && w < 2) || kind == 1);   /* (fixed: one screen that stays) */
+            }
         }
         int n = args[c];
         if (n == -1) n = rd8(p) ? 5 : 3;            /* a pointer */
         else if (n == -3) n = (rd8(p) ? 5 : 3) + 2; /* command 11: a pointer and two bytes */
         p += (uint32_t)n;
     }
+    if (!(a_ok || (*narrow & 1)) || !(b_ok || (*narrow & 2))) *narrow = 0;   /* narrow is not all that stops it */
+    if (a_ok) *narrow &= ~1;
+    if (b_ok) *narrow &= ~2;
     return a_ok && b_ok;
 }
 
@@ -193,10 +220,20 @@ static int layers_wide(int area, int room)
  * once as the player went through a door) */
 static int wide_room(int area, int room)
 {
-    static signed char known[19][64];               /* 0 not yet, 1 yes, -1 no */
+    static signed char known[19][64];               /* 0 not yet, 1 yes, -1 no, else 2 + its narrow planes */
     if (area < 0 || area >= 19 || room < 0 || room >= 64 || area == 15) return 0;
-    if (!known[area][room]) known[area][room] = layers_wide(area, room) ? 1 : -1;
-    return known[area][room] > 0;
+    if (!known[area][room]) {
+        int narrow, wide = layers_wide_why(area, room, &narrow);
+        known[area][room] = (signed char)(wide ? 1 : narrow ? 2 + narrow : -1);
+    }
+    if (known[area][room] < 2) return known[area][room] > 0;
+    if (area == 13 && room == 7) return 0;          /* its plane A has places beyond its width of its own (3 x 2 for 1 x 1) */
+    /* narrow, but its sides may be painted: asked of the loaded room's maps, each time (they are
+     * what the room has once it is loaded; before, RAM holds the last room's or nothing) */
+    if (ram[0x9668] != area || ram[0x9669] != room) return 0;
+    for (int k = 0; k < 2; k++)
+        if ((known[area][room] - 2) >> k & 1 && !layer_margin(k)) return 0;
+    return 1;
 }
 /* each frame: whether the room is shown wide, and how much of the HUD's band beside it shows the
  * map. In a wide room port/rooms.c draws each layer's rows up to 64 lines above the play field, as

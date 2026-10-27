@@ -51,10 +51,43 @@ void MapBlockAtRaw(Cpu *c)
     c->d[1] = d1; c->d[2] = d2; c->d[3] = d3; c->d[4] = d4; c->d[5] = d5; c->ccr = cc;
 }
 
+/* widescreen (port.h): set while port/rooms.c draws a wide view's columns and rows. A narrow
+ * room's layer may have a screen beyond its width, painted for the sides (docs/MODDING.md,
+ * "Widescreen sides"): its columns past the right edge are read from it, and those past the
+ * left edge from its right end, instead of the edge's column repeated. The game's own lookups
+ * (collision, things) never see it: they run with this clear. */
+int port_margin_draw;
+
+/* the column to read for relative column rel of layer a3 in a wide view's drawing, or -1 to
+ * clamp as the original does (no screen beyond the layer's width there) */
+static int margin_column(Cpu *c, int rel, uint16_t row)
+{
+    int cols = rd16(c->a[3] + 0x44) + 1, band = (row >= 0x4000 ? (row - 0x4000) / 0x300 : 0);
+    if (rel >= 0 && rel < cols) return -1;
+    if (cols & 15 || cols / 16 >= 8 || band >= 8) return -1;
+    uint8_t place = rd8(SEXT(rd16(c->a[3] + 0x22)) + (uint32_t)(band * 8 + cols / 16));
+    if (place & 0x80) return -1;
+    if (rel < 0 && rel >= -16) return cols + 16 + rel;
+    if (rel >= cols && rel < cols + 16) return rel;
+    return -1;
+}
+
 /* MapBlockAt ($2542): clamp d6/d7 into the layer, then MapBlockAtRaw */
 void MapBlockAt(Cpu *c)
 {
     uint16_t cc = c->ccr;
+    if (port_margin_draw) {                         /* widescreen: the sides from the layer's margin screen */
+        int col = margin_column(c, (int16_t)(c->d[6] - 0x100), (uint16_t)c->d[7]);
+        if (col >= 0) {
+            c->d[0] = 0;
+            c->d[2] = set_w(c->d[2], (uint16_t)col);
+            c->d[3] = set_w(c->d[3], (uint16_t)(c->d[7] - 0x4000));
+            if ((int16_t)c->d[3] < 0) c->d[3] = set_w(c->d[3], 0);
+            else if ((uint16_t)c->d[3] > rd16(c->a[3] + 0x46)) c->d[3] = set_w(c->d[3], rd16(c->a[3] + 0x46));
+            MapBlockAtRaw(c);
+            return;
+        }
+    }
     c->d[0] = 0; cc = tst_l(cc, 0);
     c->d[2] = set_w(c->d[2], c->d[6]); cc = tst_w(cc, c->d[6]);
     c->d[2] = set_w(c->d[2], sub_w(&cc, 0x100, c->d[2]));

@@ -201,20 +201,44 @@ to a shared one shows in all of them). Open a map in Tiled, draw with its tilese
 * **Places.** A map is a grid of places, each 16 x 12 blocks (one screen); a room has up to 8 x 8
   of them (2,048 x 1,536 pixels), of which at most 16 can be used: a place left all empty is not.
   Tiled's grid shows the blocks; a place starts every 16 blocks across and 12 down.
-* **Size.** Map > Resize Map, by whole places (a width a multiple of 16, a height of 12): every
-  room that uses the layer takes that size (its script's layer command), which is how far it
-  scrolls. Its exits stay where they were: they are events in the room's event list, at their
-  places (see "Levels"); move them to the new edge.
+* **Size.** Two sizes, both in places: the map's (Map > Resize Map, by whole places: a width a
+  multiple of 16, a height of 12), which is the room you can paint; and the room's own, how far it
+  scrolls, the map property `room_places` (Map > Map Properties: `4x1` is four screens across,
+  one down). To make a room bigger, make the map bigger and set `room_places` to match: every room
+  that uses the layer takes it (its script's layer command). Places beyond `room_places` are never
+  scrolled to (see "Widescreen sides" for what they are good for). A room's exits stay where they
+  were: they are events in its event list, at their places (see "Levels"); move them to the new
+  edge.
 * **What is read.** A map whose cells or size changed replaces that layer's places; a map left as
   it was changes nothing. Keep each map's one tile layer and its properties (`layer` names the
-  layer; `exported_places`, its size when written out). The data can be CSV or base64 (Map >
+  layer; `exported_places`, the map's size when written out). The data can be CSV or base64 (Map >
   Map Properties, Tile Layer Format).
 * **Seeing it.** A room's map is read when the room loads: walk into it. The title screen's demo
   starts in `area02_room00_A`.
 
-Example: in `area02_room00_A.tmx`, copy the second place's houses over the first, and resize the
-map from 64 to 80 cells across (one more place): the demo starts among two houses, with the ground
-raised as they are, and the village is a screen longer.
+Example: in `area02_room00_A.tmx`, copy the second place's houses over the first, resize the
+map from 64 to 80 cells across (one more place) and set `room_places` to `5x1`: the demo starts
+among two houses, with the ground raised as they are, and the village is a screen longer.
+
+## Widescreen sides
+
+With widescreen on, rooms whose maps are at least two screens wide fill the wide picture; a
+one-screen room (and a shaft) shows black sides, since there is nothing beside its screen. You can
+paint what its sides show, in Tiled, without changing the room:
+
+1. Open its map (`rooms/tiled/`, the room's `_A`, and its `_B` too if that is drawn as screens:
+   one that stays put or repeats needs nothing), and make the map one place wider (Map > Resize
+   Map: 16 more cells across). Leave `room_places` as it is: the room still does not scroll.
+2. Paint the new place, beside the room's screen: its **left five columns** show at the right of
+   the wide picture, its **right five columns** at the left (the sides are 72 pixels, four and a
+   half blocks each). The middle of it is never seen.
+3. Build. The room shows wide once it is loaded, the sides from your place; the game itself is
+   unchanged (it plays only on the room's screen, and its blocks' collision there).
+
+Every band of 12 rows the room has needs its place painted (a room one screen high: just the one).
+Example: the first room of a new game (area 0, room 0): make `area00_room00_A.tmx` 32 cells wide,
+copy the room's 16 columns into the new place, build: its ground and fence carry on at both sides,
+and its tree and sky (plane B, which stays put) repeat as they do in other rooms.
 
 **New rooms.** The game's rooms are numbered in their areas, and a new one would need its own
 number, a script, its music, start points and doors leading to it, and the game keeps some of
@@ -264,7 +288,8 @@ The plan, in the order the owner chose (2026-10-26):
 2. **Graphics as pictures** (done): the tiles as PNG files in their real colours, read back.
 3. **Text as text** (done): `messages.txt` and `phrases.txt` read back, at any length.
 4. **Levels**: lists, room scripts and the houses' lists of any length (done); the maps in
-   Tiled, any size up to 8 x 8 places (done); the events by name (done). Open: new rooms (their
-   numbers, and the tables the game keeps per room).
+   Tiled, any size up to 8 x 8 places (done); the events by name (done); a narrow room's
+   widescreen sides painted (done). Open: new rooms (their numbers, and the tables the game keeps
+   per room).
 5. **Balance by name** (done): the monsters' health, defence, damage, speeds and drops, and the
    prices, in `tables/balance.json`.
