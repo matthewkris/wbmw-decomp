@@ -842,6 +842,13 @@ int port_wide_now(void)
     if (!port_wide_px || !port_wide_room) return 0;
     return port_wide_room(rd8(0xFFFF9668u), rd8(0xFFFF9669u)) ? port_wide_px : 0;
 }
+/* a narrow room widened by its painted sides (port_wide_room answers 2): the sides are walked
+ * into, its exits beyond its columns moved out by as much (trig_exit) */
+int port_wide_sides(void)
+{
+    if (!port_wide_px || !port_wide_room) return 0;
+    return port_wide_room(rd8(0xFFFF9668u), rd8(0xFFFF9669u)) == 2 ? port_wide_px : 0;
+}
 static int wide_layer(void) { return port_wide_now(); }
 
 /* asr: like lsr, but the sign is kept */
@@ -2149,7 +2156,9 @@ static void zone_place(void)
     c->d[1] = set_w(c->d[1], add_w(&c->ccr, rd16(ZONE_Y), c->d[1]));
 }
 
-/* $A92C: whether the player is in the zone (cs: yes; d2, d3 its place in it) */
+/* $A92C: whether the player is in the zone (cs: yes; d2, d3 its place in it). zone_dx moves the
+ * zone across (widescreen: an exit beyond a room's painted side; 0 in the original) */
+static int zone_dx;
 static void in_zone(void)
 {
     move_b(1, rd8(c->a[2]));
@@ -2157,7 +2166,7 @@ static void in_zone(void)
     and_w(0, c->d[1]);
     c->d[0] = set_w(c->d[0], lsl_n(&c->ccr, c->d[0], 4, 16));
     c->d[0] = set_w(c->d[0], add_w(&c->ccr, rd16(ZONE_X), c->d[0]));
-    c->d[2] = set_w(c->d[2], rd16(c->a[4] - 0x3800)); F_W(c->d[2]);
+    c->d[2] = set_w(c->d[2], (uint16_t)(rd16(c->a[4] - 0x3800) - zone_dx)); F_W(c->d[2]);
     c->d[2] = set_w(c->d[2], sub_w(&c->ccr, c->d[0], c->d[2]));
     if (c->ccr & CC_C) { c->ccr &= ~CC_C; return; }
     cmp_w(&c->ccr, rd16(ZONE_W), c->d[2]);
@@ -2212,7 +2221,13 @@ static void armed(uint32_t routine, uint32_t cell, uint32_t on)   /* a routine f
  * leave $A3D8 */
 static int trig_exit(int kind)       /* $A4EE, $A506, $A51E, $A52E: exits by zone */
 {
+    int w = port_wide_sides();
+    if (w) {                                        /* widescreen: an exit beyond the room's columns, out past its painted side */
+        int x = rd16(ZONE_X) + (rd8(c->a[2]) & 15) * 16, right = 0x1000 + (rd16(LAYER_A + 0x44) + 1) * 16;
+        zone_dx = x >= right ? w : x + rd16(ZONE_W) <= 0x1000 ? -w : 0;
+    }
     push32(kind == 0 ? 0xA4F2 : kind == 1 ? 0xA50A : kind == 2 ? 0xA522 : 0xA532); in_zone(); c->a[7] += 4;
+    zone_dx = 0;
     if (!(c->ccr & CC_C)) return 1;
     switch (kind) {
     case 0: case 3:                                 /* kept across, from the zone's middle */

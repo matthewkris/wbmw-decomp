@@ -36,6 +36,7 @@ int world_despawn_offscreen(Cpu *c);
 extern int port_wide_px;
 extern int (*port_wide_room)(int area, int room);
 int port_wide_now(void);            /* rooms.c: port_wide_px where the room allows it, else 0 */
+int port_wide_sides(void);          /* rooms.c: port_wide_px where it is wide by painted sides (port_wide_room 2), else 0 */
 /* map.c: set while rooms.c draws a wide view: columns past a narrow layer's width come from a
  * screen painted beyond it, where there is one (docs/MODDING.md, "Widescreen sides") */
 extern int port_margin_draw;
