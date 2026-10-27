@@ -57,8 +57,10 @@ extern int frame_width;
  * vdp_scene: the scene alone, as the host's talk zoom shows it (its pixels with nothing drawn the
  * backdrop beside the HUD too, not black: the zoom brings those lines into the picture);
  * vdp_band_colour: in a filled picture, what the HUD's lines show beside it where nothing is drawn
- * (and above vdp_band_top): -1 black (the default), 64 the backdrop, else that CRAM entry */
-extern int vdp_pad, vdp_pad_fill, vdp_band_top, vdp_hud_wide, vdp_hide_msg, vdp_scene, vdp_band_colour;
+ * (and above vdp_band_top): -1 black (the default), 64 the backdrop, else that CRAM entry;
+ * vdp_band_top_a, _b: each plane's own first line there (vdp_band_top: the lower of them, where
+ * either map is drawn); above it the plane draws nothing beside the HUD */
+extern int vdp_pad, vdp_pad_fill, vdp_band_top, vdp_band_top_a, vdp_band_top_b, vdp_hud_wide, vdp_hide_msg, vdp_scene, vdp_band_colour;
 void vdp_reset(void);
 void vdp_write_ctrl(uint16_t w);
 void vdp_write_data(uint16_t w);

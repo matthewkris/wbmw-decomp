@@ -130,7 +130,10 @@ water, area 6's forest), the other 18 (caves, walls, area 2's purple forest, are
 black. The seas (area 1's rooms 2-4, area 8's 1, 2, 6, 8) take their sky's navy instead (CRAM
 entry 26, $800): their sky is a gradient of tiles whose bottom is the backdrop, and the backdrop's
 bright blue beside the HUD's row sat over the navy (the survey's check: the pixel beside the HUD's
-row and the one under it agree in every listed room). Where the map is drawn there is the band's top
+row and the one under it agree in every listed room). Each plane has its own top there (`vdp_band_top_a`, `_b`); above it that plane draws nothing
+beside the HUD (its wrapped rows), and the band starts where either map does (2026-10-27: with one
+top for both, the lower plane's, area 12's rock was cut off where its sky's mountains begin; 25 rooms
+changed, each a plane carrying on up). Where the map is drawn there is the band's top
 (`vdp_band_top`, from each layer's first drawn row and its y), taken as the higher of this frame's
 and the frame before's: the picture shows the scroll the game sent the frame before (in VBlank),
 so coming back down from a jump near a room's top (area 12 room 0), this frame's alone let a few

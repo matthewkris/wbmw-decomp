@@ -13,7 +13,7 @@ uint16_t cram[64], vsram[40];
 int vdp_line, vdp_line_cycle;
 uint32_t frame_rgb[240][FRAME_STRIDE];
 int frame_width = 320;
-int vdp_pad, vdp_pad_fill, vdp_band_top = 64, vdp_hud_wide, vdp_hide_msg, vdp_scene, vdp_band_colour = -1;
+int vdp_pad, vdp_pad_fill, vdp_band_top = 64, vdp_band_top_a = 64, vdp_band_top_b = 64, vdp_hud_wide, vdp_hide_msg, vdp_scene, vdp_band_colour = -1;
 
 static int pending, code;
 static unsigned addr;
@@ -453,6 +453,11 @@ void vdp_render_line(int line)
     draw_window(lay_a, line, width, lo, hi, pad, &wf, &wt);
     draw_plane(lay_a, (vdp_reg[2] & 0x38) << 10, line, lo, hi, pad, width, 1, wf, wt);
     draw_plane(lay_b, (vdp_reg[4] & 0x07) << 13, line, lo, hi, pad, width, 0, 0, 0);
+    if (fill && line < HUD_LINES) {                 /* a plane above its own map's top: nothing there (its wrapped rows), the */
+        if (line < vdp_band_top_b) memset(lay_b, 0, sizeof lay_b);   /* other drawn where its map is (area 12's rock, cut */
+        if (line < vdp_band_top_a)                  /* at the sky's top when the band was one line for both) */
+            for (int x = 0; x < total; x++) if (!(wt > wf && x >= wf && x < wt)) lay_a[x] = 0;
+    }
     draw_sprites(lay_s, line, lo, hi, pad, width);
     for (int x = 0; x < total; x++) {
         int boxes = line < HUD_TOP ? x >= hx0 && x < hx0 + HUD_W : wt > wf && x >= wf && x < wt;
