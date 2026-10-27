@@ -297,7 +297,11 @@ static void wide_frame(void)
     int top[2] = {0, 0};                            /* each plane's first line with its map (a repeated one: 0) */
     for (int k = 0; k < 2 && vdp_pad_fill; k++) {
         const uint8_t *l = &ram[k ? 0x97D4 : 0x9754];
-        if (l[0x33] == 2) continue;
+        /* a layer repeated down the plane ($33 = 2) fills the band with its repeat (walls, patterns
+         * carry on), but not in a room whose band has a colour: there the repeat brought a sky's
+         * bottom, its mountains, round again above it (area 12 room 10), so it stops at its map's
+         * top and the colour carries on */
+        if (l[0x33] == 2 && vdp_band_colour < 0) continue;
         int y = l[6] << 8 | l[7], first = (l[0xC] << 8 | l[0xD]) >> 2;
         top[k] = 64 - (y - first);
     }
