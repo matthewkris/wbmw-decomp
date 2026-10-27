@@ -253,10 +253,10 @@ static void gold_found(int amount);
 static const struct { uint8_t area, room; int8_t colour; } band_colours[] = {
     {1, 0, 64},                                     /* the meadow past the village: the sky ($E60, entry 0) */
     {0, 0, 64}, {1, 1, 64},                         /* the village, the castle wall: their skies */
-    {1, 2, 64}, {1, 3, 64}, {1, 4, 64},             /* open water */
+    {1, 2, 26}, {1, 3, 26}, {1, 4, 26},             /* the sea: its sky's navy (line 1 entry 10, $800), its gradient's top: the backdrop ($E00) is its bottom */
     {4, 2, 64}, {4, 3, 64}, {4, 4, 64}, {5, 0, 64}, {5, 2, 64}, {5, 3, 64},   /* skies */
     {6, 0, 64}, {6, 1, 64}, {6, 2, 64}, {6, 3, 64}, {6, 6, 64}, {6, 7, 64}, {6, 8, 64},   /* the forest: purple behind its leaves */
-    {8, 1, 64}, {8, 2, 64}, {8, 6, 64}, {8, 8, 64}, /* open water */
+    {8, 1, 26}, {8, 2, 26}, {8, 6, 26}, {8, 8, 26}, /* the sea: its sky's navy, as area 1's */
     {10, 0, 64}, {10, 3, 64}, {10, 4, 64}, {10, 5, 64}, {10, 6, 64}, {10, 8, 64},   /* the purple sky */
     {12, 0, 64}, {12, 1, 64}, {12, 2, 64}, {12, 5, 64}, {12, 7, 64}, {12, 10, 64}, /* the orange sky (not room 8, the cave) */
     {14, 0, 64}, {14, 2, 64}, {14, 3, 64}, {14, 5, 64}, {14, 7, 64}, {14, 8, 64},  /* the pink crystals */

@@ -127,7 +127,10 @@ in the map's first rows looked cut out of black (2026-10-27: area 1's room 0, th
 $E60). `tools/bandsurvey.py` enters every room (`analysis/warp.json`) and draws the band black and
 in the backdrop: 58 more rooms have empty pixels there; the owner chose the backdrop for 40 of them (skies, open
 water, area 6's forest), the other 18 (caves, walls, area 2's purple forest, area 12's cave) stay
-black. Where the map is drawn there is the band's top
+black. The seas (area 1's rooms 2-4, area 8's 1, 2, 6, 8) take their sky's navy instead (CRAM
+entry 26, $800): their sky is a gradient of tiles whose bottom is the backdrop, and the backdrop's
+bright blue beside the HUD's row sat over the navy (the survey's check: the pixel beside the HUD's
+row and the one under it agree in every listed room). Where the map is drawn there is the band's top
 (`vdp_band_top`, from each layer's first drawn row and its y), taken as the higher of this frame's
 and the frame before's: the picture shows the scroll the game sent the frame before (in VBlank),
 so coming back down from a jump near a room's top (area 12 room 0), this frame's alone let a few
