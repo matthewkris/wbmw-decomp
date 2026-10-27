@@ -213,7 +213,7 @@ static int layers_wide_why(int area, int room, int *narrow)
     return a_ok && b_ok;
 }
 
-/* the rooms shown wide: every room whose layers allow it, but not area 15 (its moving floor is
+/* the rooms shown wide (1, or 2 for a narrow room with its sides painted): every room whose layers allow it, but not area 15 (its moving floor is
  * placed from the screen's edge, $18C8C). Inside a house or shop ($9659 bit 4, set by $BE6C and
  * $C634) the room stays wide: the house's picture is drawn over the room, which shows around it
  * as in the original (at first bit 4 was taken for a boss's room, and the sides went black at
@@ -233,7 +233,7 @@ static int wide_room(int area, int room)
     if (ram[0x9668] != area || ram[0x9669] != room) return 0;
     for (int k = 0; k < 2; k++)
         if ((known[area][room] - 2) >> k & 1 && !layer_margin(k)) return 0;
-    return 1;
+    return 2;                                       /* wide by its sides: its exits move out to them (port/rooms.c) */
 }
 /* each frame: whether the room is shown wide, and how much of the HUD's band beside it shows the
  * map. In a wide room port/rooms.c draws each layer's rows up to 64 lines above the play field, as

@@ -235,8 +235,10 @@ paint what its sides show, in Tiled, without changing the room:
 2. Paint the new place, beside the room's screen: its **left five columns** show at the right of
    the wide picture, its **right five columns** at the left (the sides are 72 pixels, four and a
    half blocks each). The middle of it is never seen.
-3. Build. The room shows wide once it is loaded, the sides from your place; the game itself is
-   unchanged (it plays only on the room's screen, and its blocks' collision there).
+3. Build. The room shows wide once it is loaded, the sides from your place. The player can walk
+   into the sides: an exit beyond the room's edge moves out to the wide picture's edge. What is
+   solid there is the room's edge column carried on (its ground continues; a wall stays a wall),
+   not the blocks you painted, so paint ground where the edge has ground.
 
 Every band of 12 rows the room has needs its place painted (a room one screen high: just the one).
 Example: the first room of a new game (area 0, room 0): make `area00_room00_A.tmx` 32 cells wide,
