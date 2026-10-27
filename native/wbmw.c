@@ -290,12 +290,12 @@ static void wide_frame(void)
     last_frame = frame;
     vdp_pad_fill = widescreen && wide_room(shown_area, shown_room);
     vdp_band_colour = band_colour(shown_area, shown_room);
-    int top = 0;
+    int top[2] = {0, 0};                            /* each plane's first line with its map (a repeated one: 0) */
     for (int k = 0; k < 2 && vdp_pad_fill; k++) {
         const uint8_t *l = &ram[k ? 0x97D4 : 0x9754];
         if (l[0x33] == 2) continue;
-        int y = l[6] << 8 | l[7], first = (l[0xC] << 8 | l[0xD]) >> 2, t = 64 - (y - first);
-        if (t > top) top = t;
+        int y = l[6] << 8 | l[7], first = (l[0xC] << 8 | l[0xD]) >> 2;
+        top[k] = 64 - (y - first);
     }
     /* widescreen: the "Found 5 GOLD." box hidden (its amount rises from Wonder Boy instead) until
      * the game closes it, or another found thing's box opens */
@@ -313,10 +313,18 @@ static void wide_frame(void)
      * band is the higher of this frame's and that one's: coming back down from a jump near a
      * room's top, this frame's alone let lines above the map show beside the HUD, the plane's
      * wrapped rows (area 12's floor) */
-    static int last_top;
-    int shown_top = top > last_top ? top : last_top;
-    last_top = top;
-    vdp_band_top = !vdp_pad_fill ? 64 : shown_top < 0 ? 0 : shown_top > 64 ? 64 : shown_top;   /* a room not wide: black (the wide HUD leaves its bottom row's lines to it) */
+    static int last_top[2];
+    int shown[2];
+    for (int k = 0; k < 2; k++) {                   /* a room not wide: black (the wide HUD leaves its bottom row's lines to it) */
+        int t = top[k] > last_top[k] ? top[k] : last_top[k];
+        last_top[k] = top[k];
+        shown[k] = !vdp_pad_fill ? 64 : t < 0 ? 0 : t > 64 ? 64 : t;
+    }
+    /* each plane from its own top (area 12's rock goes up to the HUD, its sky's mountains start
+     * lower: with one top for both, the higher, the rock was cut off there); the band from the
+     * first line with either */
+    vdp_band_top_a = shown[0]; vdp_band_top_b = shown[1];
+    vdp_band_top = shown[0] < shown[1] ? shown[0] : shown[1];
 }
 static void wide_apply(void)
 {
