@@ -120,7 +120,11 @@ is hit (`docs/ENEMYHEALTH.md`). The bottom row's lines (32-63) are the play fiel
 is drawn there, black elsewhere, as beside the HUD. Where the map is drawn but a pixel has
 nothing on it, it is black there too, not the room's backdrop colour: area 12's cave has gaps in
 its map that the original's 64-line HUD always covered, and its purple backdrop showed through
-them as a line beside the one-row HUD when Wonder Boy jumped. Where the map is drawn there is the band's top
+them as a line beside the one-row HUD when Wonder Boy jumped. Rooms whose sky is their backdrop
+show it there instead, from a per-room list (`band_colours` in `native/wbmw.c`, into
+`vdp_band_colour`: black, the backdrop, or a CRAM entry), since in them the tops of clouds drawn
+in the map's first rows looked cut out of black (2026-10-27: area 1's room 0, the backdrop
+$E60). Where the map is drawn there is the band's top
 (`vdp_band_top`, from each layer's first drawn row and its y), taken as the higher of this frame's
 and the frame before's: the picture shows the scroll the game sent the frame before (in VBlank),
 so coming back down from a jump near a room's top (area 12 room 0), this frame's alone let a few
