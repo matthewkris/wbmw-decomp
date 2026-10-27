@@ -127,6 +127,13 @@ match.
    make -C native
    ```
 
+   That is in the MSYS2 UCRT64 shell. From PowerShell instead, in the repository's folder, put
+   MSYS2's tools on the path first (for that window only):
+
+   ```powershell
+   $env:PATH = "C:\msys64\ucrt64\bin;C:\msys64\usr\bin;" + $env:PATH; make -C native
+   ```
+
    This makes `work/native/wbmw.exe` and copies `SDL2.dll` next to it. Then it reads the game's
    data out of your ROM into `assets/` and packs it into `assets/game.pak` (about 15 seconds, the
    first time only), which the game plays from. Without Python it skips this, and the game reads
