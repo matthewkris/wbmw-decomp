@@ -39,7 +39,7 @@ On top of the original game. They are all on by default; each can be turned off 
   menu.
 * **Four save slots** of the whole game state, each with a picture of the moment it was saved,
   chosen from the menu (**Save state**, **Load state**), plus quick save and load on the current
-  slot. Saving over a slot shows its picture and asks first.
+  slot. Saving over a slot shows its picture and asks first; so does quick load (F4).
 * **Full screen** by default, with window mode and whole-pixel scaling.
 * **Frame rate display.**
 * **Enemy health bars and damage numbers**: when you hit an enemy, the damage rises from it as a
@@ -52,7 +52,8 @@ On top of the original game. They are all on by default; each can be turned off 
   black, such as the inn's. See `docs/TALKZOOM.md`.
 * **Widescreen (experimental)**: a 16:9 picture. See `docs/WIDESCREEN.md`.
   * **Most rooms fill it**: 121 of the 170, those whose maps are wide enough. One-screen rooms
-    keep the original picture with black sides. Houses and shops open over the room outside, as
+    keep the original picture with black sides, unless their sides are painted (in Tiled:
+    `docs/MODDING.md`, "Widescreen sides"); then they fill it too, and you can walk into the sides. Houses and shops open over the room outside, as
     in the original, so they stay wide. Rooms switch between wide and narrow only while the
     screen is black during a transition.
   * **A one-row status bar**: hearts, items and gold side by side across the top, in every room.
@@ -61,9 +62,10 @@ On top of the original game. They are all on by default; each can be turned off 
   * **Gold as a number**: gold you pick up rises from you as a gold number, in the same style as
     the damage numbers, instead of a "Found ... GOLD" box.
   * **Above the play field**: below and beside the status bar, the scenery shows where the
-    room's map reaches that high, and it is black where it doesn't (most rooms), so nothing
-    looks cut off. Wonder Boy and enemies stay visible there; what the original hides behind the
-    status bar stays hidden.
+    room's map reaches that high, each layer as far up as its own map goes. Above that, rooms
+    with an open sky or sea show its colour (41 rooms); caves, walls and the rest show black, so
+    nothing looks cut off. Wonder Boy and enemies stay visible there; what the original hides
+    behind the status bar stays hidden.
 
 ## No ROM data is in this repository
 
@@ -287,7 +289,8 @@ How the port was made, and how to check it against the original:
   changed by hand in `assets/` are packed, not overwritten. See `docs/EXTRACT.md`.
 * **Modding:** change the files in `assets/` and build again; the game plays with your changes.
   `docs/MODDING.md` says what can be changed so far, with examples (all the text at any length,
-  the rooms' maps in the Tiled map editor (bigger too), enemies and things in the rooms, monsters' health and damage and the prices by name, the graphics
+  the rooms' maps in the Tiled map editor (bigger too, and the widescreen sides and the rows above
+  a one-screen room painted; `tools/tiled.py export --only areaNN_roomNN` starts a room over), enemies and things in the rooms, monsters' health and damage and the prices by name, the graphics
   as pictures in their real colours, palettes, maps, music) and the safety checks.
 * Documentation: `docs/NOTES.md` (what the game does), `docs/PORT.md` (the port and how each routine
   is verified), `docs/PROCESS.md` (the process as a whole), `docs/EXTRACT.md` (the extracted data
