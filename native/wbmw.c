@@ -244,6 +244,19 @@ static int wide_room(int area, int room)
  * first row drawn, in 64s of 16 lines; a repeated layer, $33 = 2, fills the plane) the band's
  * sides are black, as the HUD covers the scene there in the original. */
 static void gold_found(int amount);
+/* what the HUD's band shows beside it where the map draws nothing (vdp_band_colour): black, as
+ * rooms leave gaps in their maps' top rows that the 64-line HUD always covered (area 12's cave
+ * has its purple backdrop there); or, where a room's sky is its backdrop, that (the tops of
+ * clouds drawn in its map's first rows, over black, looked cut out) */
+static const struct { uint8_t area, room; int8_t colour; } band_colours[] = {
+    {1, 0, 64},                                     /* the meadow past the village: the sky ($E60, entry 0) */
+};
+static int band_colour(int area, int room)
+{
+    for (size_t k = 0; k < sizeof band_colours / sizeof band_colours[0]; k++)
+        if (band_colours[k].area == area && band_colours[k].room == room) return band_colours[k].colour;
+    return -1;
+}
 static void wide_frame(void)
 {
     /* The room shown: the game sets the next room's number as the player walks out, while the
@@ -263,6 +276,7 @@ static void wide_frame(void)
     if (shown_area < 0 || dark || same >= 60 || frame != last_frame + 1) { shown_area = area; shown_room = room; }
     last_frame = frame;
     vdp_pad_fill = widescreen && wide_room(shown_area, shown_room);
+    vdp_band_colour = band_colour(shown_area, shown_room);
     int top = 0;
     for (int k = 0; k < 2 && vdp_pad_fill; k++) {
         const uint8_t *l = &ram[k ? 0x97D4 : 0x9754];

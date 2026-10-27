@@ -13,7 +13,7 @@ uint16_t cram[64], vsram[40];
 int vdp_line, vdp_line_cycle;
 uint32_t frame_rgb[240][FRAME_STRIDE];
 int frame_width = 320;
-int vdp_pad, vdp_pad_fill, vdp_band_top = 64, vdp_hud_wide, vdp_hide_msg, vdp_scene;
+int vdp_pad, vdp_pad_fill, vdp_band_top = 64, vdp_hud_wide, vdp_hide_msg, vdp_scene, vdp_band_colour = -1;
 
 static int pending, code;
 static unsigned addr;
@@ -440,6 +440,7 @@ void vdp_render_line(int line)
     int total = width + 2 * pad;
     frame_width = total;
     uint32_t bg = rgb(cram[vdp_reg[7] & 0x3F]);
+    uint32_t band = !fill || vdp_band_colour < 0 ? 0 : vdp_band_colour >= 64 ? bg : rgb(cram[vdp_band_colour & 0x3F]);   /* beside the HUD, nothing drawn */
     if (!(vdp_reg[1] & 0x40)) {                       /* display off */
         for (int x = 0; x < FRAME_STRIDE; x++) frame_rgb[line][x] = 0;
         return;
@@ -454,12 +455,12 @@ void vdp_render_line(int line)
         int boxes = line < HUD_TOP ? x >= hx0 && x < hx0 + HUD_W : wt > wf && x >= wf && x < wt;
         if (hw && !boxes) {                         /* the wide HUD's lines, outside its boxes (or the screen over them) */
             if (!(fill && line >= vdp_band_top)) {  /* no map there: black, the sprites over it */
-                frame_rgb[line][x] = lay_s[x] ? rgb(cram[lay_s[x] & 0x3F]) : 0;
+                frame_rgb[line][x] = lay_s[x] ? rgb(cram[lay_s[x] & 0x3F]) : band;
                 continue;
             }
         } else if (!hw && (x < lo || x >= hi)) { frame_rgb[line][x] = 0; continue; }   /* the sides of a picture not wide */
         if (!hw && bar && (x < pad || x >= pad + width)) {   /* the bar: no scenery, but the sprites over it */
-            frame_rgb[line][x] = lay_s[x] ? rgb(cram[lay_s[x] & 0x3F]) : 0;
+            frame_rgb[line][x] = lay_s[x] ? rgb(cram[lay_s[x] & 0x3F]) : band;
             continue;
         }
         uint8_t a = lay_a[x], b = lay_b[x], s = lay_s[x], c = 0;
@@ -469,7 +470,7 @@ void vdp_render_line(int line)
         /* beside the HUD (its lines, wide): where nothing is drawn, black, not the backdrop. Rooms
          * leave gaps in their maps where the HUD always covered them (area 12's cave has its
          * purple backdrop in one, seen as a line beside the HUD when jumping) */
-        if (!c && !vdp_scene && line < HUD_LINES && fill && (hw || x < pad || x >= pad + width)) { frame_rgb[line][x] = 0; continue; }
+        if (!c && !vdp_scene && line < HUD_LINES && fill && (hw || x < pad || x >= pad + width)) { frame_rgb[line][x] = band; continue; }
         frame_rgb[line][x] = c ? rgb(cram[c & 0x3F]) : bg;
     }
     for (int x = total; x < FRAME_STRIDE; x++) frame_rgb[line][x] = 0;

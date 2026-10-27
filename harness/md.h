@@ -55,8 +55,10 @@ extern int frame_width;
  * for the wide picture (its top row only, the gold beside the items; vdp.c); vdp_hide_msg: with it,
  * the window's rows under the HUD not drawn (the host shows the gold found its own way);
  * vdp_scene: the scene alone, as the host's talk zoom shows it (its pixels with nothing drawn the
- * backdrop beside the HUD too, not black: the zoom brings those lines into the picture) */
-extern int vdp_pad, vdp_pad_fill, vdp_band_top, vdp_hud_wide, vdp_hide_msg, vdp_scene;
+ * backdrop beside the HUD too, not black: the zoom brings those lines into the picture);
+ * vdp_band_colour: in a filled picture, what the HUD's lines show beside it where nothing is drawn
+ * (and above vdp_band_top): -1 black (the default), 64 the backdrop, else that CRAM entry */
+extern int vdp_pad, vdp_pad_fill, vdp_band_top, vdp_hud_wide, vdp_hide_msg, vdp_scene, vdp_band_colour;
 void vdp_reset(void);
 void vdp_write_ctrl(uint16_t w);
 void vdp_write_data(uint16_t w);
