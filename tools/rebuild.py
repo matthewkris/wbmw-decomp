@@ -66,11 +66,10 @@ def build_pieces(J, assets, moves=None):
     add('scene records', [(int(x['address'], 16), struct.pack('>IIHHI', int(x['layer_a'], 16), int(x['layer_b'], 16),
                                                                  x['palette'], x['word_8B56'], moved.get(int(x['slots'], 16), int(x['slots'], 16)))) for x in sc])
     hp = J('rooms', 'house_pictures.json')
-    for x in hp['records']:                         # their lists by offsets from the houses' table: not movable yet
-        for k in ('events', 'spawns'):
-            if x[k] and int(x[k], 16) in moved:
-                raise levels.LevelError('the %s list at $%s grew, but a house picture points at it: it cannot move yet' % (k, x[k]))
-    add('house picture records', [(int(x['address'], 16), bytes.fromhex(x['raw'])) for x in hp['records']])
+    # (their lists by offsets from their table: the table moves with copies of them when one must)
+    houses, copies, ext = levels.place_houses(hp, LS, moves, dirs, ext)
+    add('house picture records', houses)
+    for kind, ps in copies.items(): add('room %s (houses\')' % kind.replace('_', ' '), ps)
     sp = J('rooms', 'start_points.json'); t0 = int(sp['table'], 16)
     add('start points', [(t0 - 2, struct.pack('>H', sp['count_before']) + b''.join(struct.pack('>h', o) for o in sp['offsets']))]
           + [(t0 + int(o), bytes([v['area'], v['room']]) + struct.pack('>H', v['kind']) + bytes([v['x'], v['y']]) + struct.pack('>H', v['word']))

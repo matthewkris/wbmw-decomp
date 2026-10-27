@@ -11,9 +11,9 @@ the ROM's data, after the text.
   the offsets of its rooms' scripts. So an area with a room script that grew, or that points at a
   list that moved, moves whole: its block (the offsets) and all its rooms' scripts, every pointer
   in them an address, and the data directory's pointer to the block with it.
-* The houses' pictures point at their event and spawn lists by offsets from their table: those
-  lists cannot move yet (an error says which). The ending's scenes point at their slot lists by
-  address, which follows.
+* The houses' pictures point at their spawn and event lists and pictures by offsets from their
+  table: when one of those has to move, the table moves with a copy of each (place_houses). The
+  ending's scenes point at their slot lists by address, which follows.
 
 moves: dict(lists={'KIND/ADDRESS'}, children={'KIND/ADDRESS'}, areas={area}).
 """
@@ -71,7 +71,7 @@ def place_lists(LS, moves, at):
             key = '%s/%s' % (kind, a)
             if key in keep_children and key in moves['children']:
                 raise LevelError('%s grew, but a list that cannot move points at it' % key)
-            if key in keep_children or key not in parents:
+            if key in keep_children or key not in parents and key not in moves['children']:
                 pieces[kind].append((int(a, 16), encode(kind, v, int(a, 16))))
     for kind in TOP:                                # those that move, each with its own copy of its data
         for a, v in LS[kind].items():
@@ -129,6 +129,53 @@ def place_rooms(rms, dirs, moved, moves, at):
         dirs[8 + area] = dirs[8 + area] & 0xFF000000 | new_base
         at = p + (p & 1)
     return scripts, blocks, at
+
+HOUSE_FIELDS = (('spawns', 8), ('events', 12), ('pictures', 14))   # a record's offsets from the table
+
+def place_houses(hp, LS, moves, dirs, at):
+    """the houses' and shops' pictures (directory table 2): records of 16 bytes pointing at their
+    spawn list, event list and picture by offsets from the table. In place; but when one of those
+    lists has to move, the table moves too, past the ROM's data, with a copy of every list its
+    records point at (and of what those point at), all within the offsets' reach; the data
+    directory's pointer follows. Returns (records, the copies by kind, where the extension ends)"""
+    key = lambda kind, a: '%s/%s' % (kind, a)
+    rec_keys = [{kind: key(kind, x[{'pictures': 'picture'}.get(kind, kind)]) for kind, _ in HOUSE_FIELDS
+                 if x[{'pictures': 'picture'}.get(kind, kind)]} for x in hp['records']]
+    if not any(k in moves['lists'] or k in moves['children'] for ks in rec_keys for k in ks.values()):
+        return [(int(x['address'], 16), bytes.fromhex(x['raw'])) for x in hp['records']], {}, at
+    table, n = at, len(hp['records'])
+    q = at + 16 * n
+    where, copies = {}, {}
+    def put(k):
+        nonlocal q
+        if k in where: return
+        kind, a = k.split('/')
+        if kind not in LS or a not in LS[kind]: raise LevelError('a house picture points at %s, which lists.json does not have' % k)
+        v = LS[kind][a]
+        where[k] = q
+        sub = {}
+        size = len(encode(kind, v, q, {c: q for c in children(v)}))
+        p = q + size; p += p & 1
+        for c in children(v):                       # what the list points at, after it
+            ck, ca = c.split('/')
+            sub[c] = p; p += len(encode(ck, LS[ck][ca], p)); p += p & 1
+        copies.setdefault(kind, []).append((q, encode(kind, v, q, sub)))
+        for c, ca in sub.items():
+            ck, cs = c.split('/'); copies.setdefault(ck, []).append((ca, encode(ck, LS[ck][cs], ca)))
+        q = p
+    records = []
+    for x, ks in zip(hp['records'], rec_keys):
+        raw = bytearray.fromhex(x['raw'])
+        for kind, off in HOUSE_FIELDS:
+            if kind in ks:
+                put(ks[kind])
+                o = where[ks[kind]] - table
+                if o >= 32768: raise LevelError('the houses\' lists are too large to keep within reach of their table')
+                raw[off:off + 2] = struct.pack('>h', o)
+        records.append((table + 16 * len(records), bytes(raw)))
+    dirs[2] = dirs[2] & 0xFF000000 | table
+    moves['houses_moved'] = True
+    return records, copies, q + (q & 1)
 
 def pointer(r, it, a, dirs):
     return a['long'] & 0xFFFFFF if a['flag'] else (dirs[8 + r['area']] & 0xFFFFFF) + a['offset']

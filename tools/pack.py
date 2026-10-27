@@ -129,9 +129,12 @@ def main():
                     moves['children'].add(key); moves['lists'].update(parents.get(key, [])); grown = True
         if not found or not grown: break
     if conflicts(found): return 1
-    if moves['lists'] or moves.get('placed_areas'):
-        print('pack: moved past the ROM\'s data: %d lists, the rooms of area %s' % (
-            len(moves['lists']), ', '.join(str(a) for a in moves.get('placed_areas', [])) or '-'))
+    if moves['lists'] or moves['children'] or moves.get('placed_areas'):
+        areas = moves.get('placed_areas', [])
+        print('pack: moved past the ROM\'s data: %d lists%s%s' % (
+            len(moves['lists']) + len(moves['children']),
+            ', the rooms of area%s %s' % ('s' if len(areas) > 1 else '', ', '.join(str(a) for a in areas)) if areas else '',
+            ', the houses\' table' if moves.get('houses_moved') else ''))
 
     tables = {}
     for t in J('rooms', 'shared_blocks.json'): tables[int(t['address'], 16)] = t['blocks']
