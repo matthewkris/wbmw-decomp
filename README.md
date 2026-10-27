@@ -209,7 +209,8 @@ The slots are files in the current folder: slot 1 is `wbmw.state`, the others `w
 `wbmw-3.state` and `wbmw-4.state`, each with its picture beside it (`wbmw.png`, `wbmw-2.png`, ...).
 Quick save stores the game in the current slot and quick load returns to it. If the slot is
 already used, the first press shows "SLOT N: PRESS SAVE AGAIN TO OVERWRITE"; press it again within
-two seconds to replace it. A message at the bottom of the screen confirms each one ("SAVED TO
+two seconds to replace it. Quick load asks first: the slot's picture with "Load slot N?" (No /
+Yes, No selected). A message at the bottom of the screen confirms each one ("SAVED TO
 SLOT 2"). The game's own save,
 kept on the cartridge's EEPROM, is written to `wbmw.sav` in the current folder when you exit.
 Use `--save FILE` for a different file.

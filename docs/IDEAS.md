@@ -27,6 +27,8 @@ comparisons with the original keep working.
   sound off; `--mute` stays for a run.
 * **Quick save asks before overwriting** (asked 2026-10-22): with a save already there, the first
   press shows "PRESS SAVE AGAIN TO OVERWRITE"; a second within two seconds replaces it.
+* **Quick load asks first** (asked 2026-10-27, done): F4 (or the controller's load) shows the
+  slot's picture and "Load slot N?", No selected; an empty slot just says so.
 * **Save state slots** (asked 2026-10-11, done 2026-10-26): four, in the menu's Save state and
   Load state screens, two by two, each with a half-size picture of the moment it was saved (a
   PNG beside the state), its number and its time; saving over one shows its picture and asks.

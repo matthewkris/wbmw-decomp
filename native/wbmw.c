@@ -1115,7 +1115,7 @@ static void draw_frame(int x0, int y0, int w, int h, uint32_t edge)
 
 /* the menu's screens: the main one, the exit question, the controls, the controls waiting for a
  * press (capture), the slots (to save or to load: col), and the question before a save over one */
-enum { SCR_MAIN, SCR_ASK, SCR_CONTROLS, SCR_CAPTURE, SCR_SLOTS, SCR_OVERWRITE };
+enum { SCR_MAIN, SCR_ASK, SCR_CONTROLS, SCR_CAPTURE, SCR_SLOTS, SCR_OVERWRITE, SCR_LOAD_ASK };
 enum { MI_SAVE, MI_LOAD, MI_FPS, MI_FULL, MI_PIXELS, MI_WIDE, MI_ZOOM, MI_HEALTH, MI_VOLUME, MI_MUSIC, MI_EFFECTS, MI_CONTROLS, MI_EXIT, MAIN_N };
 static const char *const MAIN_ITEM[MAIN_N] = {"SAVE STATE", "LOAD STATE", "SHOW FPS", "FULL SCREEN", "WHOLE PIXELS", "WIDESCREEN",
                                               "TALK ZOOM", "ENEMY HEALTH", "VOLUME", "  MUSIC", "  EFFECTS", "CONTROLS", "EXIT GAME"};
@@ -1171,11 +1171,11 @@ static void draw_menu(const Menu *m)
         const char *keys = m->col ? (gc ? "ENTER/A: LOAD   ESC/B: BACK" : "ENTER: LOAD   ESC: BACK")
                                   : (gc ? "ENTER/A: SAVE   ESC/B: BACK" : "ENTER: SAVE   ESC: BACK");
         draw_text_centred(y0 + h - 12, keys, MENU_GREY);
-    } else if (m->screen == SCR_OVERWRITE) {         /* the slot's picture, and the question */
+    } else if (m->screen == SCR_OVERWRITE || m->screen == SCR_LOAD_ASK) {   /* the slot's picture, and the question */
         int n = m->row + 1, pw = slot_info[n].w ? slot_info[n].w : 128, ph = ACTIVE_LINES / 2;
         int w = pw + 16 > 170 ? pw + 16 : 170, h = ph + 66, x0 = frame_width / 2 - w / 2, y0 = ACTIVE_LINES / 2 - h / 2;
         draw_box(x0, y0, w, h);
-        char q[32]; snprintf(q, sizeof q, "OVERWRITE SLOT %d?", n);
+        char q[32]; snprintf(q, sizeof q, m->screen == SCR_LOAD_ASK ? "LOAD SLOT %d?" : "OVERWRITE SLOT %d?", n);
         draw_text_centred(y0 + 6, q, MENU_WHITE);
         draw_frame(frame_width / 2 - pw / 2 - 1, y0 + 17, pw + 2, ph + 2, MENU_GREY);
         draw_slot_picture(n, frame_width / 2 - pw / 2, y0 + 18, pw, ph);
@@ -1313,6 +1313,11 @@ static int menu_step(Menu *m, int only_asking, int up, int down, int left, int r
         }
         if (back) m->screen = SCR_MAIN;
         break;
+    case SCR_LOAD_ASK:                              /* the quick load (F4), asked first */
+        if (up || down || left || right) m->yes ^= 1;
+        if (ok && m->yes) slot_load(m->row + 1);
+        if (ok || back) return 0;
+        break;
     case SCR_OVERWRITE:
         if (up || down || left || right) m->yes ^= 1;
         if (ok && m->yes) { slot = m->row + 1; ini_dirty = 1; slot_save(slot); return 0; }
@@ -1345,7 +1350,7 @@ static int menu(int asking)
 {
     static uint32_t saved[ACTIVE_LINES][FRAME_STRIDE];
     memcpy(saved, frame_rgb, sizeof saved);
-    Menu m = {asking ? SCR_ASK : SCR_MAIN, 0, 0, 0, 0, 0};
+    Menu m = {asking == 2 ? SCR_LOAD_ASK : asking ? SCR_ASK : SCR_MAIN, 0, 0, slot - 1, 0, 0};   /* asking 1: exit, 2: load */
     int only_asking = asking, result = -1;
     while (result < 0) {
         SDL_Event e;
@@ -1484,7 +1489,7 @@ static void window_frame(void)
 {
     SDL_Event e;
     menu_test_keys();
-    int open_menu = -1, load = 0;                   /* open_menu 0: the menu, 1: straight to the exit question */
+    int open_menu = -1, load = 0;                   /* open_menu 0: the menu, 1: straight to the exit question, 2: to the load's */
     while (SDL_PollEvent(&e)) {
         if (e.type == SDL_QUIT) open_menu = 1;
         if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE && !e.key.repeat) open_menu = 0;
@@ -1507,7 +1512,10 @@ static void window_frame(void)
         if (ld && !was_load) load = 1;
         was_save = sv; was_load = ld;
     }
-    if (load) slot_load(slot);
+    if (load) {                                     /* asked first, with the slot's picture (none saved: loaded, which says so) */
+        slots_scan();
+        if (slot_info[slot].used && open_menu < 0) open_menu = 2; else if (!slot_info[slot].used) slot_load(slot);
+    }
     if (open_menu >= 0) {
         if (menu(open_menu)) quit(0);
         Uint64 now = SDL_GetPerformanceCounter();   /* carry on as if no time had passed */
