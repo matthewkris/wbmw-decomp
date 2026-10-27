@@ -124,7 +124,10 @@ them as a line beside the one-row HUD when Wonder Boy jumped. Rooms whose sky is
 show it there instead, from a per-room list (`band_colours` in `native/wbmw.c`, into
 `vdp_band_colour`: black, the backdrop, or a CRAM entry), since in them the tops of clouds drawn
 in the map's first rows looked cut out of black (2026-10-27: area 1's room 0, the backdrop
-$E60). Where the map is drawn there is the band's top
+$E60). `tools/bandsurvey.py` enters every room (`analysis/warp.json`) and draws the band black and
+in the backdrop: 58 rooms have empty pixels there; the owner chose the backdrop for 41 (skies, open
+water, area 6's forest), the other 17 (caves, walls, area 2's purple forest, area 12's cave) stay
+black. Where the map is drawn there is the band's top
 (`vdp_band_top`, from each layer's first drawn row and its y), taken as the higher of this frame's
 and the frame before's: the picture shows the scroll the game sent the frame before (in VBlank),
 so coming back down from a jump near a room's top (area 12 room 0), this frame's alone let a few
