@@ -264,6 +264,10 @@ static const struct { uint8_t area, room; int8_t colour; } band_colours[] = {
     {10, 0, 64}, {10, 3, 64}, {10, 4, 64}, {10, 5, 64}, {10, 6, 64}, {10, 8, 64},   /* the purple sky */
     {12, 0, 64}, {12, 1, 64}, {12, 2, 64}, {12, 5, 64}, {12, 7, 64}, {12, 10, 64}, /* the orange sky (not room 8, the cave) */
     {14, 0, 64}, {14, 2, 64}, {14, 3, 64}, {14, 5, 64}, {14, 7, 64}, {14, 8, 64},  /* the pink crystals */
+    {1, 6, 34}, {8, 4, 34},                         /* caves with water: their ceiling's dark navy (line 2 entry 2, $200) */
+    {8, 7, 26},                                     /* the sea by a rock wall: the sea's navy, as the other seas */
+    {14, 1, 64},                                    /* the dark crystal room: its dark purple sky */
+    {2, 1, 58},                                     /* the red-striped sky: its red (line 3 entry 10) */
 };
 static int band_colour(int area, int room)
 {
