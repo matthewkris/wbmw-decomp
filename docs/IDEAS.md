@@ -174,3 +174,9 @@ its sides filled by an AI outpainting tool, drawn by the host in the sides when 
   Stable Diffusion (ComfyUI, Forge) with a pixel-art LoRA; Adobe Firefly's Generative Expand has
   a small free allowance; PixelLab and Retro Diffusion are made for pixel art (mostly paid).
 * The pictures come from the game's graphics: they stay in `assets/` and are never committed.
+
+**Another way (asked 2026-10-27):** paint the sides in Tiled (`docs/MODDING.md`, "Maps"): a
+narrow room's layer gets a screen beyond its declared width, which the camera never scrolls to;
+the widescreen sides would show it (the right side its left edge, the left side, wrapping, its
+right edge: to be checked in the map lookup), and the widescreen rule would let a narrow room with
+such a margin be wide. Hand-painted margins for exactly the rooms wanted, instead of generated ones.
