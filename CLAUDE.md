@@ -29,7 +29,7 @@ power-on and from every save state taken between frames. The harness's checklist
 machine core (C in the native build, the 68000's in the harness by design), dead code (`$C67E`,
 `$1B930`, `$13578`) and one data byte (`$24D8`).
 
-**Since (2026-10-21 to 23):**
+**Since (2026-10-21 to 27):**
 
 - **Added features**, all in the host or behind an option, on by default, each in the menu and
   `wbmw.ini`: settings and controls, quick save and load (asking before an overwrite), enemy
@@ -42,14 +42,29 @@ machine core (C in the native build, the 68000's in the harness by design), dead
   into `assets/game.pak`, and the build makes it (`tools/makepack.sh`). `wbmw` plays from the pack
   by default (the ROM when there is none, or one is named), identical to the ROM's runs frame by
   frame. See `docs/EXTRACT.md`. Raise `extract.FORMAT` whenever what `extract.py` writes changes.
+- **Modding** (2026-10-26/27, `docs/MODDING.md`): graphics as PNG (`tools/gfxpng.py`), text
+  (`tools/msgtext.py`: messages and phrases as text files, recompressed), levels (`tools/levels.py`:
+  spawn and event lists by name, rooms and houses relocated), maps in Tiled (`tools/tiled.py`, one
+  TMX per layer, `room_places` for a room's size), balance by name (`tools/balance.py`: monsters,
+  drops, prices). An unedited `assets/` packs to the identical image; `extract.FORMAT` is 14.
+- **Save slots** (2026-10-27): four, each with a half-size picture, in a 2 x 2 grid in the menu;
+  F2 asks before an overwrite, F4 asks before loading ("Load slot N?" with its picture).
+- **Widescreen, more of it** (2026-10-27, `docs/WIDESCREEN.md`): a narrow room's sides can be
+  painted in Tiled (a margin screen beyond its width; `port/map.c` `port_margin_draw`), walked
+  into, its exits and arrivals moved out to the wide edge; the HUD band (the lines the one-row HUD
+  frees) shows a per-room colour (`band_colours` in `native/wbmw.c`: 41 rooms the backdrop or
+  their sky's navy, chosen by the owner from `tools/bandsurvey.py`, which warps into every room by
+  `analysis/warp.json`'s pokes and compares renders), sprites show there, and each plane starts
+  at its own map's top. The native build takes `--poke-at F ADDR=HEX` and `--png-at F`.
 - `docs/IDEAS.md` lists what the owner asked for, done and to do.
 
 Open, all optional: a timing model for the C (`--timing` is off: it counted the translated
 code's cycles; without it the native build plays like the harness's replace mode, never slowing
 down); the music and the driver's tables are decoded (`docs/SOUND.md`: `tools/z80dis.py`,
 `tools/music.py`, `tools/soundtables.py`, `tools/midi.py`: all of it, the effects named, MIDI files); the driver in C, which the native build plays on (2026-10-26: `port/sounddrv.c`, checked routine by routine with `WBMW_Z80_SHADOW=1` and tick by tick with `=tick`, `tools/sndaccept.py [--tick]`; `--z80-sound` for the emulated Z80; `docs/SOUND.md`); the ideas in
-`docs/IDEAS.md` (a steady camera, save slots); the owner playing the native build
-at length. The history below is kept as it was.
+`docs/IDEAS.md` (a steady camera, new room slots for modding); the owner playing the native
+build at length, and sending a save state (they keep slot 2 for that) whenever something looks
+off: each has found a case the headless checks missed. The history below is kept as it was.
 
 Done (the early stages):
 
