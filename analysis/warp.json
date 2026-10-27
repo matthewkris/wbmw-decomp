@@ -1,0 +1,5 @@
+{
+  "comment": "A room change as an exit makes it ($A962, port/rooms.c exit_to), for tools that visit rooms (tools/bandsurvey.py): pokes after a gameplay frame, {area} and {room} as two hex digits each. The player starts at x $1080, y $1040 (near the room's top-left: the camera at the map's top), arrival 2 (walked in), the area's data reloaded, room change 1 (the next room).",
+  "pokes": ["9668={area}{room}", "9678=02", "967A=10801040", "967E=00000000", "966A=01", "9962=0001"],
+  "settle": 50
+}
