@@ -245,6 +245,15 @@ Example: the first room of a new game (area 0, room 0): make `area00_room00_A.tm
 copy the room's 16 columns into the new place, build: its ground and fence carry on at both sides,
 and its tree and sky (plane B, which stays put) repeat as they do in other rooms.
 
+**Above the room.** In a room that does not scroll down, the wide picture also shows a few lines
+above the map's top: a strip under the one-row HUD (16 lines in the first room) and the two
+corners beside the HUD. Paint them the same way: make the map one place taller (Map > Resize
+Map: 12 more rows down; `room_places` stays as it is). The new place's **last row** shows just
+above the room's top row, the row before it above that, and so on (three rows at most are ever
+seen; the rest of the place never is). The places below the side places give the corners, so the
+place under the left side's place paints the top-left corner. Scenery only: nothing up there is
+solid. A place left all empty changes nothing.
+
 **New rooms.** The game's rooms are numbered in their areas, and a new one would need its own
 number, a script, its music, start points and doors leading to it, and the game keeps some of
 that per room in tables made for the rooms it has: that is not done yet. To make a room of your

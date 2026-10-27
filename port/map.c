@@ -72,18 +72,43 @@ static int margin_column(Cpu *c, int rel, uint16_t row)
     return -1;
 }
 
+/* the row to read for relative row rel (< 0: above the layer's top) of layer a3 in a wide view's
+ * drawing, in the place column place_col, or -1: the rows above the top come from the bottom of
+ * a place painted below the layer's height, as the sides' columns come from a place beyond its
+ * width (docs/MODDING.md, "Widescreen sides": row -1 is that place's last row) */
+static int margin_row(Cpu *c, int rel, int place_col)
+{
+    int rows = rd16(c->a[3] + 0x46) / 64 + 1;
+    if (rel >= 0 || rel < -12 || rows % 12 || rows / 12 >= 8 || place_col < 0 || place_col >= 8) return -1;
+    if (rd8(c->a[3]) & 2) return -1;                /* one row of places: no place below */
+    uint8_t place = rd8(SEXT(rd16(c->a[3] + 0x22)) + (uint32_t)(rows / 12 * 8 + place_col));
+    return place & 0x80 ? -1 : rows + 12 + rel;
+}
+/* whether layer a3 has its rows above the top painted (rooms.c draws them then) */
+int port_margin_top(Cpu *c) { return margin_row(c, -1, 0) >= 0; }
+
 /* MapBlockAt ($2542): clamp d6/d7 into the layer, then MapBlockAtRaw */
 void MapBlockAt(Cpu *c)
 {
     uint16_t cc = c->ccr;
-    if (port_margin_draw) {                         /* widescreen: the sides from the layer's margin screen */
-        int col = margin_column(c, (int16_t)(c->d[6] - 0x100), (uint16_t)c->d[7]);
-        if (col >= 0) {
+    if (port_margin_draw) {                         /* widescreen: the sides and the top from the layer's margin places */
+        int relc = (int16_t)(c->d[6] - 0x100), relr = (int16_t)(c->d[7] - 0x4000) >> 6, cols = rd16(c->a[3] + 0x44) + 1;
+        int col = margin_column(c, relc, (uint16_t)c->d[7]);
+        int colr = col >= 0 ? col : relc < 0 ? 0 : relc >= cols ? cols - 1 : relc;
+        int row = relr < 0 ? margin_row(c, relr, colr / 16) : -1;
+        if (relr < 0 && row < 0) {                  /* above the top, nothing painted there: empty (as an empty chunk) */
+            c->d[0] = 0; c->d[4] = set_b(c->d[4], 0x80);
+            return;
+        }
+        if (col >= 0 || row >= 0) {
             c->d[0] = 0;
-            c->d[2] = set_w(c->d[2], (uint16_t)col);
-            c->d[3] = set_w(c->d[3], (uint16_t)(c->d[7] - 0x4000));
-            if ((int16_t)c->d[3] < 0) c->d[3] = set_w(c->d[3], 0);
-            else if ((uint16_t)c->d[3] > rd16(c->a[3] + 0x46)) c->d[3] = set_w(c->d[3], rd16(c->a[3] + 0x46));
+            c->d[2] = set_w(c->d[2], (uint16_t)colr);
+            if (row >= 0) c->d[3] = set_w(c->d[3], (uint16_t)(row * 64));
+            else {
+                c->d[3] = set_w(c->d[3], (uint16_t)(c->d[7] - 0x4000));
+                if ((int16_t)c->d[3] < 0) c->d[3] = set_w(c->d[3], 0);
+                else if ((uint16_t)c->d[3] > rd16(c->a[3] + 0x46)) c->d[3] = set_w(c->d[3], rd16(c->a[3] + 0x46));
+            }
             MapBlockAtRaw(c);
             return;
         }

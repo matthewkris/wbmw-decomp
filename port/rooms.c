@@ -1124,10 +1124,12 @@ static void columns_strip(void)     /* $99C8: one screen wide, repeated: the map
     put16m(c->a[3] + 0xA, 32);
 }
 /* widescreen: the rows of the play field (its 160 lines from the y) and of the 64 lines beside the
- * HUD above it, down to the map's top: [*lo, *hi) */
+ * HUD above it, down to the map's top, or above it where the layer has those rows painted (a place
+ * below its height: map.c, margin_row): [*lo, *hi) */
 static void rows_wide(int *lo, int *hi)
 {
-    int y = rd16(c->a[3] + 6), top = y - 64 < 0x1000 ? 0x1000 : y - 64;
+    int y = rd16(c->a[3] + 6), least = port_margin_top(c) ? 0x1000 - 12 * 16 : 0x1000;
+    int top = y - 64 < least ? least : y - 64;
     *lo = top >> 4; *hi = ((y + 159) >> 4) + 1;
 }
 static void rows_screens(void)      /* $99F6: the rows shown, from the y */
@@ -1515,6 +1517,8 @@ static void draw_column(void)
         c->d[0] = swap_l(c->d[0]);
         c->d[0] = set_w(c->d[0], neg_w(&c->ccr, c->d[0]));
         c->d[0] = set_w(c->d[0], add_w(&c->ccr, 0x300, c->d[0]));
+        if ((int16_t)(c->d[7] - 0x4000) < 0)        /* widescreen: rows above the top (map.c's margin_row), read as far as row 0 */
+            c->d[0] = set_w(c->d[0], (uint16_t)(0x4000 - (c->d[7] & 0xFFFF)));
         put16m(c->a[6] - 2, c->d[0]);
         call(MAP_BLOCK_AT);
         F_B(c->d[4]);

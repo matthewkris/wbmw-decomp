@@ -94,7 +94,14 @@ rows, as in every wide room. Such a room's sides are walked into: `wide_room` an
 and the room's triggers (`trig_exit`, `port_wide_sides`) move an exit whose zone lies beyond the
 room's columns out by the side's 72 pixels, so the room changes at the wide picture's edge, not
 at the 256's (at first it changed there, with the painted side still ahead of the player).
-Collision past the room's edge is the edge column's, as in the original. Walking in through an
+Collision past the room's edge is the edge column's, as in the original. The rows above a
+layer's top come the same way from a place painted below its height (`margin_row` in
+`port/map.c`: row -1 is that place's last row; `port_margin_top` lets `rows_wide` draw up to 64
+lines above the play field there; `draw_column` reads such rows only as far as row 0; nothing
+painted reads as an empty chunk). Checked (2026-10-27, area 0's room 0, its map 24 rows with
+markers in rows 21-23 and in the corners): every visible pixel of the strip above the map and of
+the corners matched its marker (5,053 pixels), the room's height ($46) stayed 12 rows, and no
+other room's picture changed in the band survey. Walking in through an
 exit (arrival 2) near such a room's edge, the player starts as far out (`wide_arrival`, in
 `room_enter` once `$9808` has set the layers up, which the sides' check reads). For the fade out
 `wide_room` keeps the loaded room's answer: the game sets the next room's number as the player
