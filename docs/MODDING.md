@@ -44,7 +44,7 @@ committed. Keep a copy of your changes somewhere else too.
 | `sound/music.json`, `instruments.json` | the songs' and effects' notes and commands, the instruments | The same length; `tools/music.py` and `docs/SOUND.md` explain the format. |
 | `tables/code_tables.json` | `rows`: the values of the 447 tables in the code, in hex | More of the game's workings: `kind_movement` (the monsters' speeds), `sword_swing` (the sword's hit points), `demo_input`, the colour scripts, ... `note` and `used_by` say what each table is and which routine reads it. `balance.json` is written over `kind_fighting` and `prices`. |
 
-Not yet: bigger maps, new rooms, the houses' lists at another length. See "Next".
+Not yet: bigger maps, new rooms. See "Next".
 
 A quick one to start: in `palettes/palettes.json`, set colour 2 of every palette to `0E0E` and
 build: from the title screen on, everything drawn in colour 2 is magenta.
@@ -152,8 +152,9 @@ animated tiles. Lists and scripts can be any length: add enemies, take some away
   pack reads `items`.
 * **Room.** A list or script that grew moves past the end of the cartridge's data, taking along a
   copy of the data it points at; a room script then points at it by address, and its whole area
-  (all its rooms' scripts and the table of them) moves too. `pack.py` says what moved. The houses'
-  and shops' event lists cannot move yet (an error says so: keep those the same length).
+  (all its rooms' scripts and the table of them) moves too. The houses' and shops' lists are pointed
+  at by the houses' table: when one of them moves, the table moves too, with a copy of each.
+  `pack.py` says what moved.
 * **Seeing it.** A room reads its lists when it loads: walk into it. The title screen's demo plays
   in area 2, room 0 (the first village): its spawn list is the one at `026714`. To see every room
   with its enemies, extract into another folder (`python tools/extract.py ROM work/view`, without
@@ -175,9 +176,17 @@ Example: in the village's spawn list (`spawns`, `026714`), copy the entry
     3 five eighths, 4 a half, then less, down to 15 about a tenth;
   * `damage`: what touching it costs you;
   * `flags`: a word the game reads with the record; its meaning is not all known yet (bits 6-7
-    shorten a double hit's time), so leave it.
+    shorten a double hit's time), so leave it;
+  * `speed` and `acceleration`: `[x, y]`, the speed it moves at at most and how fast it gets there
+    (in the game's own units: higher is faster; an acceleration can be negative); a townsperson
+    has one `speed` and a `palette`; `spawn`: two bytes the game reads with them (leave them);
+    `moves_like`: other types that share this movement record, which must keep the same values;
+  * `drops`: what it leaves when beaten, four choices taken with the chances 3/4, 3/16, 3/64 and
+    1/64: `"nothing"`, `"heart"`, `"full health"`, `"magic charge"`, gold (`"gold 50-81"`; the
+    smaller amounts roll away: `"gold 3-6, rolling"`), or `"$XX"` for another item kind. The list
+    `drops` at the top of the file has every name.
 
-  Some types have only `damage` (their categories keep no more).
+  Some types have only `damage`, or only speeds (their categories keep no more).
 * **`prices`**: each thing's price in gold (`thing`: its number; `name`: as the game names it).
 
 A monster reads its numbers when it appears: walk into its room again to see a change. A shop
@@ -185,7 +194,9 @@ shows a new price at once.
 
 Examples: give the mushrooms (`0006`, first seen in area 2, room 0) `"health": 320` instead of
 96: they take ten hits instead of three, and their health bars show it (the title screen's demo
-hits one). Set the Potion's `"price"` to 1 and every shop sells it for 1 gold.
+hits one). Give them `"drops": ["heart", "heart", "heart", "heart"]` and `"speed": [48, 64]`:
+they leave a heart every time and run at three times their speed. Set the Potion's `"price"` to 1
+and every shop sells it for 1 gold.
 
 ## Next
 
@@ -194,8 +205,7 @@ The plan, in the order the owner chose (2026-10-26):
 1. **Safety and this guide** (done).
 2. **Graphics as pictures** (done): the tiles as PNG files in their real colours, read back.
 3. **Text as text** (done): `messages.txt` and `phrases.txt` read back, at any length.
-4. **Levels**: lists and room scripts of any length (done); then bigger maps and new rooms, and
-   the houses' lists.
-5. **Balance by name** (done): the monsters' records and the prices in `tables/balance.json`.
-   Still as hex in `code_tables.json`: the monsters' drops (`defeat_records`, three each, which
-   overlap the next kind's), their speeds (`kind_movement`).
+4. **Levels**: lists, room scripts and the houses' lists of any length (done); then bigger maps
+   and new rooms.
+5. **Balance by name** (done): the monsters' health, defence, damage, speeds and drops, and the
+   prices, in `tables/balance.json`.
