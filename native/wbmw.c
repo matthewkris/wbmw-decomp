@@ -253,6 +253,9 @@ static const struct { uint8_t area, room; int8_t colour; } band_colours[] = {
 };
 static int band_colour(int area, int room)
 {
+    static const char *all = (const char *)1;       /* WBMW_BAND_COLOUR=N: every room N (a survey's comparison) */
+    if (all == (const char *)1) all = getenv("WBMW_BAND_COLOUR");
+    if (all) return atoi(all);
     for (size_t k = 0; k < sizeof band_colours / sizeof band_colours[0]; k++)
         if (band_colours[k].area == area && band_colours[k].room == room) return band_colours[k].colour;
     return -1;
@@ -1531,6 +1534,17 @@ static void window_frame(void)
 }
 #endif
 
+/* --poke-at F ADDR=HEX (headless, as the harness's): RAM bytes set after frame F is drawn, before
+ * the next; --png-at F: that frame's picture written out (for surveys: tools/bandsurvey.py) */
+static const char *pokes[64]; static int poke_at[64], npokes, png_at[64], npng_at;
+static void apply_pokes(void)
+{
+    for (int k = 0; k < npokes; k++) {
+        unsigned a; const char *eq = strchr(pokes[k], '=');
+        if (poke_at[k] != frame || !eq || sscanf(pokes[k], "%x", &a) != 1) continue;
+        for (const char *h = eq + 1; h[0] && h[1]; h += 2, a++) { unsigned b; sscanf(h, "%2x", &b); ram[a & 0xFFFF] = (uint8_t)b; }
+    }
+}
 /* A frame is complete (drawn): write it out or show it, and keep the frame count. */
 static void frame_done(void)
 {
@@ -1546,10 +1560,13 @@ static void frame_done(void)
         QueueSound(&t);
     }
     if (headless) {
-        if (png_every && frame % png_every == 0) {
+        int at = 0;
+        for (int k = 0; k < npng_at; k++) if (png_at[k] == frame) at = 1;
+        if ((png_every && frame % png_every == 0) || at) {
             char path[1024]; snprintf(path, sizeof path, "%s/frame_%05d.png", out_dir, frame);
             png_write_rgb(path, &frame_rgb[0][0], frame_width, ACTIVE_LINES, FRAME_STRIDE);
         }
+        apply_pokes();
         { static int16_t snd[4096 * 2]; int n = sound_take(snd, 4096); if (wav_path) wav_write(snd, n); }
         if (frame >= frames_max) { wav_close(); framelog_close(); exit(0); }
         if (!framelog_input_active()) pad_buttons = buttons_at(frame + 1);
@@ -2044,6 +2061,8 @@ int main(int argc, char **argv)
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--frames") && i + 1 < argc) { frames_max = atoi(argv[++i]); headless = 1; }
         else if (!strcmp(argv[i], "--png-every") && i + 1 < argc) png_every = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--png-at") && i + 1 < argc && npng_at < 64) png_at[npng_at++] = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--poke-at") && i + 2 < argc && npokes < 64) { poke_at[npokes] = atoi(argv[++i]); pokes[npokes++] = argv[++i]; }
         else if (!strcmp(argv[i], "--out") && i + 1 < argc) out_dir = argv[++i];
         else if (!strcmp(argv[i], "--input") && i + 1 < argc) input = argv[++i];
         else if (!strcmp(argv[i], "--wav") && i + 1 < argc) wav_path = argv[++i];
