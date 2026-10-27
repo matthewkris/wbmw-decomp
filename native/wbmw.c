@@ -230,10 +230,13 @@ static int wide_room(int area, int room)
     if (area == 13 && room == 7) return 0;          /* its plane A has places beyond its width of its own (3 x 2 for 1 x 1) */
     /* narrow, but its sides may be painted: asked of the loaded room's maps, each time (they are
      * what the room has once it is loaded; before, RAM holds the last room's or nothing) */
-    if (ram[0x9668] != area || ram[0x9669] != room) return 0;
+    static int last_area = -1, last_room, last_ok;  /* the loaded room's answer, kept for its fade out: the game sets */
+    if (ram[0x9668] != area || ram[0x9669] != room) /* the next room's number as the player walks out, its maps loaded later */
+        return area == last_area && room == last_room && last_ok ? 2 : 0;
+    last_area = area; last_room = room; last_ok = 1;
     for (int k = 0; k < 2; k++)
-        if ((known[area][room] - 2) >> k & 1 && !layer_margin(k)) return 0;
-    return 2;                                       /* wide by its sides: its exits move out to them (port/rooms.c) */
+        if ((known[area][room] - 2) >> k & 1 && !layer_margin(k)) last_ok = 0;
+    return last_ok ? 2 : 0;                         /* wide by its sides: its exits move out to them (port/rooms.c) */
 }
 /* each frame: whether the room is shown wide, and how much of the HUD's band beside it shows the
  * map. In a wide room port/rooms.c draws each layer's rows up to 64 lines above the play field, as
