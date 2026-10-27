@@ -14,9 +14,10 @@ collision), from one of four tables: the three every room shares and the layer's
   cell's word (Tiled's gid less one): rows 0-7 the first shared table, 8-15 the second, 16-23 the
   third, 24-31 the layer's own. Places the layer does not use are empty cells.
 * Read back (read): a map whose cells or size differ from the layer's becomes its places (an empty
-  place, all its cells empty, is not used; at most 16 used). A map made larger or smaller (whole
-  places: a multiple of 16 x 12 cells) gives every room that uses the layer that size (the room
-  scripts' layer commands).
+  place, all its cells empty, is not used; at most 16 used). The map can be larger than the
+  rooms (whole places: a multiple of 16 x 12 cells), for places the camera does not reach (a
+  narrow room's widescreen sides); the map property `room_places` (WxH) is the rooms' own size,
+  how far they scroll: changed, every room that uses the layer takes it (its layer command).
 """
 import sys, os, json, struct, base64, zlib, gzip
 import xml.etree.ElementTree as ET
@@ -64,6 +65,10 @@ def layers_of(D):
             src = '%06X' % layer_src(r, it, D['dirs'])
             if src in out: out[src]['rooms'].append((r['area'], r['room'], 'B' if it['code'] & 1 else 'A', it['w'], it['h']))
     return {k: v for k, v in out.items() if v['rooms']}
+
+def room_size(entry):
+    """the rooms' own size in places (how far they scroll): their layer commands', the largest"""
+    return max(x[3] for x in entry['rooms']), max(x[4] for x in entry['rooms'])
 
 def grid_size(entry):
     """the map's size in places: the rooms' largest, and every place it has"""
@@ -152,7 +157,8 @@ def write_tmx(path, entry, w, h, tiles_png):
         '    <image source="%s" width="512" height="512"/>\n  </tileset>\n'
         '  <layer id="1" name="%s" width="%d" height="%d">\n    <data encoding="csv">\n%s\n</data>\n  </layer>\n</map>\n'
         % (w * PLACE_W, h * PLACE_H, prop('layer', entry['layer']['src']), prop('rooms', rooms),
-           prop('exported_places', '%dx%d' % (w, h)), tiles_png, name_of(entry)[-1], w * PLACE_W, h * PLACE_H, data))
+           prop('exported_places', '%dx%d' % (w, h)) + prop('room_places', '%dx%d' % room_size(entry)),
+           tiles_png, name_of(entry)[-1], w * PLACE_W, h * PLACE_H, data))
 
 def export(assets):
     D = load(assets)
@@ -228,10 +234,14 @@ def read(assets):
         ew, eh = (int(v) for v in props.get('exported_places', '%dx%d' % grid_size(entry)).split('x'))
         orig = {p: c for p, c in entry['layer']['places'].items() if int(p) % GRID < ew and int(p) // GRID < eh}
         resized = (w, h) != (ew, eh)
-        if places == orig and not resized: continue
+        try: rw, rh = (int(v) for v in props.get('room_places', '%dx%d' % room_size(entry)).split('x'))
+        except ValueError: raise TiledError('%s: room_places is WxH, in places (1x1, 4x2, ...)' % f)
+        if not (1 <= rw <= GRID and 1 <= rh <= GRID): raise TiledError('%s: room_places %dx%d: 1 to 8 each' % (f, rw, rh))
+        room = (rw, rh) if (rw, rh) != room_size(entry) else None
+        if places == orig and not resized and not room: continue
         if not resized:                             # the places outside the map it shows stay
             places.update({p: c for p, c in entry['layer']['places'].items() if p not in orig})
-        out[src] = dict(places=places, size=(w, h) if resized else None, file=f)
+        out[src] = dict(places=places, size=room, file=f)
     return out
 
 if __name__ == '__main__':
