@@ -7195,6 +7195,18 @@ static void start_entry(void)
     c->a[0] = 0x8FAA + sx(c->d[0]);
     put16m(0xFFFF9676u, next16(0));
 }
+/* widescreen: walking in through an exit (arrival 2) at the edge of a room widened by its painted
+ * sides, the player starts as far out in them as its exits are moved (trig_exit); asked once the
+ * layers are set up ($9808), which the sides' check reads */
+static void wide_arrival(void)
+{
+    int w = port_wide_sides();
+    if (!w || rd8(0xFFFF9678u) != 2) return;
+    uint32_t e = sx(rd16(0xFFFF9EEEu)) - 0x3800;
+    int x = rd16(e), right = 0x1000 + (rd16(LAYER_A + 0x44) + 1) * 16;
+    if (x >= right - 16) wr16(e, (uint16_t)(x + w));
+    else if (x < 0x1000 + 16) wr16(e, (uint16_t)(x - w));
+}
 /* $8EE6: a room entered: loaded ($9330) with its layers, events, script, gates and things, its
  * palettes, its music (unless a message $9686 comes first), then the arrival by $9678 */
 static void room_enter(void)
@@ -7207,6 +7219,7 @@ static void room_enter(void)
     call(0xDBBE);
     call(0x9720);
     call(0x9808);
+    wide_arrival();
     call(0xABBE);
     call(0xC75C);
     call(0x97F0);

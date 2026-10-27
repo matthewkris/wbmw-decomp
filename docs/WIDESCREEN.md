@@ -94,9 +94,14 @@ rows, as in every wide room. Such a room's sides are walked into: `wide_room` an
 and the room's triggers (`trig_exit`, `port_wide_sides`) move an exit whose zone lies beyond the
 room's columns out by the side's 72 pixels, so the room changes at the wide picture's edge, not
 at the 256's (at first it changed there, with the painted side still ahead of the player).
-Collision past the room's edge is the edge column's, as in the original. Checked (2026-10-27,
-the owner's slot 2 in area 0's room 0): walking right, the room changes at x $1148 instead of
-$1100; with widescreen off at $1100 as before. One exception: area
+Collision past the room's edge is the edge column's, as in the original. Walking in through an
+exit (arrival 2) near such a room's edge, the player starts as far out (`wide_arrival`, in
+`room_enter` once `$9808` has set the layers up, which the sides' check reads). For the fade out
+`wide_room` keeps the loaded room's answer: the game sets the next room's number as the player
+walks out, before its maps load, and the sides went black for the fade. Checked (2026-10-27,
+area 0's room 0): walking right, the room changes at x $1148 instead of $1100, wide through the
+fade; walking back from area 1 the player arrives at $1140 instead of $10F8, wide through the
+fade in; with widescreen off at $1100 and $10F8 as before. One exception: area
 15 (its moving floor is placed from the screen's edge, `$18C8C`). Houses and shops are not rooms
 of their own: their picture opens over the room outside (`$BE6C`, which sets `$9659` bit 4 while
 inside), so they stay as wide as it. (At first bit 4 was taken for "a boss's scripted room" and
