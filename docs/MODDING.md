@@ -6,6 +6,9 @@ The game plays from `assets/game.pak`, which `tools/pack.py` builds from the fil
     make -C native                (or: python tools/pack.py)
     work/native/wbmw
 
+(`make` is MSYS2's: run it in the MSYS2 UCRT64 shell, or in PowerShell after
+`$env:PATH = "C:\msys64\ucrt64\bin;C:\msys64\usr\bin;" + $env:PATH`, as the README says.)
+
 `assets/` is your own copy of the game's data: it is git-ignored, and nothing in it is ever
 committed. Keep a copy of your changes somewhere else too.
 
