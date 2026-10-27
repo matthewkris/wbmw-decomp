@@ -140,8 +140,24 @@ animated tiles. Lists and scripts can be any length: add enemies, take some away
   kind, x and y, in the room's coordinates as its neighbours have them. Copy an entry and change
   its x to add one more. Codes $F8-$FE are commands (some jump on game flags) and $FF the end.
   `sprites/enemies/enemies.json` names the kinds (`CCKK`).
-* **Event lists** (`events`): the room's doors, exits, chests, signs, things to pick up and their
-  conditions, read by the game as `tools/assetfmt.py` (`event_fmt`) lays them out.
+* **Event lists** (`events`): the room's exits, doors, chests, things and their conditions, each
+  entry by name (`"event"`) with its fields. Places are in 16-pixel steps: a `zone` is `[x, y]`
+  from the list's last `origin` (itself `[x, y]` in screens, the first screen being 1), and as wide and high as the last
+  `zone_width` and `zone_height` (in 16s; back to 1 after each event).
+  * `exit_down`, `exit_across`, `exit` (`exit_push` adds a `push`): touching the zone takes the
+    player to `area` and `room`, at `x`, `y` there (in 8s), keeping the player's height
+    (`exit_down`) or place across (`exit_across`).
+  * `door` (up goes to start point `point`, `rooms/start_points.json`), `warp` (at once),
+    `entrance` (a start point's entrance), `house` (a house's or shop's door: `house` its
+    number in `rooms/house_pictures.json`).
+  * `chest` (`flag`: the game flag that marks it opened; `thing`: what is in it), `switch`,
+    `gate`, `flag_picture` (a picture shown until its flag is set), `sound`.
+  * Commands: `thing` (puts a thing: its `kind`, `x`, `y`), `object`, `effects`, `blocks` (sets
+    map blocks), `picture`; `set_flag`, `set_room_flag`; and jumps (`"to"`: a label, as below):
+    `if_flag`, `if_room_flag`, `if_owns` (a `thing`), `if_equipped`, `if_form`, `if_zone`,
+    `jump`; `end`.
+  * `bytes`: fields whose meaning is not known yet, as they are. `up_event` is a room's own
+    scripted event, by `number`.
 * **Jumps and pointers by name.** A jump in a list goes to an entry by its label: `{"j": "L9"}`
   goes to the entry with `"label": "L9"` (`"end"`: past the last). Move the label with its
   entry; a new label is any name, put once. An entry that points at other data names it:
@@ -248,7 +264,7 @@ The plan, in the order the owner chose (2026-10-26):
 2. **Graphics as pictures** (done): the tiles as PNG files in their real colours, read back.
 3. **Text as text** (done): `messages.txt` and `phrases.txt` read back, at any length.
 4. **Levels**: lists, room scripts and the houses' lists of any length (done); the maps in
-   Tiled, any size up to 8 x 8 places (done). Open: new rooms (their numbers, and the tables the
-   game keeps per room), and the events' formats by name.
+   Tiled, any size up to 8 x 8 places (done); the events by name (done). Open: new rooms (their
+   numbers, and the tables the game keeps per room).
 5. **Balance by name** (done): the monsters' health, defence, damage, speeds and drops, and the
    prices, in `tables/balance.json`.

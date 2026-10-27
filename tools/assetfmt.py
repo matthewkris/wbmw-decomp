@@ -245,6 +245,93 @@ def event_fmt(it):
     if c == 0xFD: return 'bbj' if len(it['args']) == 3 else 'bbbj'                   # (its kind negative: no flag byte)
     return EVENT_CMDS.get(c, '')
 
+# the events by name (docs/MODDING.md, "Levels"; port/rooms.c, batches T16 and T32-T33): each
+# kind's fields in order: 'z' a zone's place (a byte: x its low nibble, y its high, in 16s from the
+# origin), 'Z' the origin (x the high nibble, y the low), 'b' a byte, 'w' a word, 'j' a jump, 'o'
+# an offset to data, a digit n: n bytes not named yet ('bytes')
+_EXIT = [('zone', 'z'), ('area', 'b'), ('room', 'b'), ('x', 'b'), ('y', 'b')]
+EVENT_NAMES = {
+    0: ('exit_across', _EXIT), 1: ('exit_down', _EXIT), 2: ('exit', _EXIT), 3: ('exit_push', _EXIT + [('push', 'w')]),
+    4: ('warp', [('point', 'w')]), 5: ('door', [('zone', 'z'), ('point', 'w')]),
+    6: ('house', [('zone', 'z'), ('style', 'b'), ('house', 'w')]),
+    7: ('chest', [('zone', 'z'), ('flag', 'b'), ('thing', 'b')]),
+    8: ('switch', [('zone', 'z'), ('flag', 'b'), ('look', 'b')]),
+    9: ('entrance', [('point', 'w'), ('word', 'w')]),
+    10: ('up_event', [('number', 'w')]), 11: ('up_event_held', []),
+    12: ('flag_picture', [('flag', 'w'), ('x', 'b'), ('y', 'b'), ('width', 'b'), ('picture', 'o')]),
+    13: ('gate', [('bytes', '6')]), 14: ('sound', [('sound', 'b')]),
+    0xE0: ('origin', [('origin', 'Z')]), 0xE2: ('width', [('width', 'b')]), 0xE3: ('height', [('height', 'b')]),
+    0xE8: ('object', [('bytes', '9')]), 0xE9: ('effects', [('cells', 'o')]),
+    0xEA: ('thing', [('kind', 'b'), ('word', 'w'), ('x', 'b'), ('y', 'b'), ('a0e0', 'b')]),
+    0xEB: ('blocks', [('x', 'b'), ('y', 'b'), ('width', 'b'), ('height', 'b'), ('block', 'w')]),
+    0xEC: ('picture', [('x', 'b'), ('y', 'b'), ('picture', 'o')]),
+    0xF6: ('if_equipped', [('equipment', 'b'), ('to', 'j')]), 0xF7: ('if_form', [('to', 'j')]),
+    0xF8: ('if_room_flag', [('flag', 'b'), ('to', 'j')]), 0xF9: ('if_flag', [('flag', 'b'), ('to', 'j')]),
+    0xFA: ('set_room_flag', [('flag', 'b')]), 0xFB: ('set_flag', [('flag', 'b')]),
+    0xFC: ('if_owns', [('thing', 'b'), ('to', 'j')]), 0xFE: ('jump', [('to', 'j')]), 0xFF: ('end', [])}
+EVENT_CODES = {v[0]: k for k, v in EVENT_NAMES.items()}
+
+def event_named(it):
+    """an event list's item (code, args) by name; one with no name stays as it is"""
+    c, a = it.get('code'), list(it.get('args', []))
+    out = {'label': it['label']} if 'label' in it else {}
+    if c is None: return it
+    if 0xC0 <= c < 0xE0:                            # the zone's size, in 16s
+        out.update({'event': 'zone_width' if c < 0xD0 else 'zone_height', 'size': (c & 15) + 1}); return out
+    if c == 0xFD:                                   # inside a zone: jump if its flag (1 or 2 bytes)
+        out.update(event='if_zone', zone=[a[0] & 15, a[0] >> 4], flag=a[1:-1], to=a[-1]); return out
+    if c not in EVENT_NAMES: return it
+    name, fields = EVENT_NAMES[c]
+    out['event'] = name
+    fmt, k = event_fmt(dict(code=c, args=a)), 0
+    for fname, t in fields:
+        if t == 'z': out[fname] = [a[k] & 15, a[k] >> 4]; k += 1
+        elif t == 'Z': out[fname] = [a[k] >> 4, a[k] & 15]; k += 1
+        elif t == 'w' and fmt[k] == 'b': out[fname] = a[k] << 8 | a[k + 1]; k += 2
+        elif t.isdigit(): out[fname] = a[k:k + int(t)]; k += int(t)
+        else: out[fname] = a[k]; k += 1
+    if k != len(a): return it                       # (not as expected: kept as it is)
+    return out
+
+def event_raw(it):
+    """an item by name back to its code and args"""
+    if 'event' not in it: return it
+    out = {'label': it['label']} if 'label' in it else {}
+    e = it['event']
+    def need(k):
+        if k not in it: raise ValueError('an event "%s" without its "%s"' % (e, k))
+        return it[k]
+    def zone(k, swap=False):
+        x, y = need(k)
+        if not (0 <= x < 16 and 0 <= y < 16): raise ValueError('an event "%s": %s is [x, y], 0-15 each' % (e, k))
+        return (x << 4 | y) if swap else (y << 4 | x)
+    if e in ('zone_width', 'zone_height'):
+        n = need('size')
+        if not 1 <= n <= 16: raise ValueError('a zone\'s size is 1 to 16')
+        out.update(code=(0xC0 if e == 'zone_width' else 0xD0) + n - 1, args=[]); return out
+    if e == 'if_zone':
+        out.update(code=0xFD, args=[zone('zone')] + list(need('flag')) + [need('to')]); return out
+    if e not in EVENT_CODES: raise ValueError('no event is called "%s"' % e)
+    c = EVENT_CODES[e]
+    args = []
+    for fname, t in EVENT_NAMES[c][1]:
+        v = need(fname)
+        if t == 'z': args.append(zone(fname))
+        elif t == 'Z': args.append(zone(fname, swap=True))
+        elif t == 'w': args.append(v)
+        elif t.isdigit():
+            if len(v) != int(t): raise ValueError('an event "%s": %s are %s bytes' % (e, fname, t))
+            args += list(v)
+        else: args.append(v)
+    fmt = event_fmt(dict(code=c, args=[0] * 9))     # a word where the game reads two bytes: split it
+    raw, k = [], 0
+    for fname, t in EVENT_NAMES[c][1]:
+        n = int(t) if t.isdigit() else 1
+        if t == 'w' and fmt[len(raw)] == 'b': raw += [args[k] >> 8 & 255, args[k] & 255]; k += 1
+        else: raw += args[k:k + n]; k += n
+    out.update(code=c, args=raw)
+    return out
+
 def _event_step(d, p):
     c = d[p]
     fmt = ('bbj' if d[p + 2] & 0x80 else 'bbbj') if c == 0xFD else event_fmt(dict(code=c, args=[]))

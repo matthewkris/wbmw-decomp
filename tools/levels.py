@@ -29,6 +29,7 @@ class LevelError(Exception): pass
 
 def encode(kind, v, at, where=None):
     """a list's bytes at address at; where: KIND/ADDRESS -> where that data is now"""
+    if kind == 'events': return assetfmt.flow_encode([assetfmt.event_raw(it) for it in v['items']], FMT[kind], at, where)
     if kind in FMT: return assetfmt.flow_encode(v['items'], FMT[kind], at, where)
     if kind == 'slots': return assetfmt.slots_encode(v['items'])
     if kind in ('tile_anims', 'cell_lists'): return b''.join(struct.pack('>H', w) for w in v['words'])
@@ -40,8 +41,8 @@ def encode(kind, v, at, where=None):
 def children(v):
     """the data a list's items point at: KIND/ADDRESS keys, in order"""
     out = []
-    for it in v.get('items', []):
-        for a in it.get('args', []):
+    for it in v.get('items', []):                   # in args, or in a named event's fields
+        for a in list(it.get('args', [])) + [x for k, x in it.items() if k not in ('args', 'label')]:
             if isinstance(a, dict) and 'o' in a and a['o'] not in out: out.append(a['o'])
     return out
 

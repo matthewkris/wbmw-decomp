@@ -63,7 +63,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 import gfx, rooms, text, sprites, assetfmt, codetables, music, soundtables, gfxpng, msgtext, balance
 
 EXPECTED_SHA1 = '87a968f773c7e807e647c0737132457b06b78276'
-FORMAT = 13                                  # raised whenever what this writes changes: pack.py wants the same
+FORMAT = 14                                  # raised whenever what this writes changes: pack.py wants the same
 Z80_DRIVER = (0x098000, 0x099A77)            # docs/NOTES.md, the memory map; the data after it: music.DATA
 
 def sheet(d, rows, tile, colours, base=0):
@@ -171,6 +171,7 @@ def room_lists(d, allrooms, extra=()):
                                ('spawns', assetfmt.spawn_fmt, assetfmt.spawn_kind),
                                ('walk_scripts', lambda it: assetfmt.WALK_FMT[it['code']], lambda it: None)):
         for key, v in out[kind].items(): v['items'] = assetfmt.flow_symbolic(v['items'], fmt, int(key, 16), kind_of)
+    for v in out['events'].values(): v['items'] = [assetfmt.event_named(it) for it in v['items']]   # by name
     return out, odd
 
 def main():
