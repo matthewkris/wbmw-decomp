@@ -148,7 +148,7 @@ one-time step could unpack the ROM into ordinary files, and the game would load 
   tiles, the maps, the text) without the game using them, to see the formats and check the
   decoding.
 
-### Steady camera (asked 2026-10-23): for later
+### Steady camera (asked 2026-10-23): tried and removed (2026-10-28)
 
 In some rooms taller than the screen (area 12 room 0, for one) the original's camera follows
 Wonder Boy up when he jumps, about 38 lines, and eases back down when he lands. It is smooth and
@@ -158,6 +158,13 @@ its view (onto a higher ledge), as most later platformers do. It would change th
 (`layer_y` in `port/rooms.c` reads it; the camera itself is the game's), so it goes behind a
 setting with the normal camera kept for comparisons. The cost: it hides terrain above that the
 original shows.
+
+Tried on 2026-10-28 as a menu option (off by default): in the air the camera held its height,
+followed falls at once and rose only to keep him below the HUD, gliding (easing in and out) to
+the original's on landing. After smoothing it worked as intended, but the owner preferred the
+original's camera and had it removed; revisit if it comes up again. The code is in the git history
+(the merges `steady-camera` and `steady-glide`, reverted in `steady-undo`): `steady` in
+`port/rooms.c`, called from `camera()` ($9720), and the host's `port_steady_top`.
 
 ### New rooms for modding (asked 2026-10-27): a future idea
 

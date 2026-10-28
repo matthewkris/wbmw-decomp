@@ -62,7 +62,8 @@ Open, all optional: a timing model for the C (`--timing` is off: it counted the 
 code's cycles; without it the native build plays like the harness's replace mode, never slowing
 down); the music and the driver's tables are decoded (`docs/SOUND.md`: `tools/z80dis.py`,
 `tools/music.py`, `tools/soundtables.py`, `tools/midi.py`: all of it, the effects named, MIDI files); the driver in C, which the native build plays on (2026-10-26: `port/sounddrv.c`, checked routine by routine with `WBMW_Z80_SHADOW=1` and tick by tick with `=tick`, `tools/sndaccept.py [--tick]`; `--z80-sound` for the emulated Z80; `docs/SOUND.md`); the ideas in
-`docs/IDEAS.md` (a steady camera; new rooms for modding, a future idea, not this phase); the owner playing the native
+`docs/IDEAS.md` (a steady camera: tried and removed 2026-10-28, the owner prefers the original's;
+new rooms for modding, a future idea, not this phase); the owner playing the native
 build at length, and sending a save state (they keep slot 2 for that) whenever something looks
 off: each has found a case the headless checks missed. The history below is kept as it was.
 
