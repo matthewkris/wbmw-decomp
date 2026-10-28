@@ -27,7 +27,6 @@
  * Ported register for register, with every register and flag in the contract. */
 #include <stdio.h>
 #include <stdlib.h>
-#include <math.h>
 #include "world.h"
 #include "task.h"
 
@@ -1260,47 +1259,26 @@ static uint32_t swap_l(uint32_t v) { uint32_t r = v << 16 | v >> 16; F_L(r); ret
  * for the player in a0, from the y the original would take (follow, 16.16: his feet 112 lines
  * below the screen's top). In the air (state 3: a jump or a fall) it holds the height it had,
  * follows down at once (falls and pits show), and up only as far as keeps his head
- * port_steady_top + 4 lines down the screen (below the HUD); on the ground it glides to where the
- * original's would be (a higher ledge reached): from still, gaining STEADY_ACCEL a frame up to
- * STEADY_MAX, and slowing to stop on it (at first it went a sixth of the way each frame: it set
- * off at 6 lines a frame from still and hopped the last 3, which read as a jerk on each step). A
- * room change, a loaded state or a jump of more than 96 lines takes the original's at once. */
-#define STEADY_ACCEL 0x4000                         /* up: a quarter line a frame, each frame (16.16) */
-#define STEADY_MAX   0x40000                        /* up: 4 lines a frame */
-#define STEADY_ACCEL_DOWN 0x8000                    /* down, after a fall or a knock-back: twice as quick, */
-#define STEADY_MAX_DOWN   0x80000                   /* to 8 lines a frame (at 4 it fell 32 lines behind) */
+ * port_steady_top + 4 lines down the screen (below the HUD); on the ground it eases to where the
+ * original's would be (a higher ledge reached), a sixth of the way a frame. A room change, a
+ * loaded state or a jump of more than 96 lines takes the original's at once. */
 int port_steady_top;
 static uint32_t steady(uint32_t follow)
 {
     static int have;
-    static uint32_t held, goal;
-    static int32_t vel;
+    static uint32_t held;
     static uint16_t where;
     uint16_t now = rd16(0xFFFF9668u);
     int32_t d = (int32_t)(follow - held);
-    if (!have || now != where || d > 0x600000 || d < -0x600000) { have = 1; where = now; vel = 0; return held = goal = follow; }
+    if (!have || now != where || d > 0x600000 || d < -0x600000) { have = 1; where = now; return held = follow; }
     uint8_t h = rd8(c->a[0] - 0x34FD);
-    uint32_t feet = rd32(c->a[0] - 0x3700) + ((uint32_t)h << 16);
-    uint32_t lim = feet - ((uint32_t)(port_steady_top + 4 + h) << 16);   /* the highest the camera may be: his head 4 lines below the HUD */
-    /* where it glides to: the original's on the ground; in the air where it was, lower if he
-     * falls below it, higher only as he nears the HUD (a jump mid-glide carries on gliding: at
-     * first the camera froze in the air, stopping dead from 2 lines a frame) */
-    if (rd8(c->a[0] - 0x31FF) != 3) goal = follow;
-    else if ((int32_t)(follow - goal) > 0) goal = follow;
-    if ((int32_t)(goal - lim) > 0) goal = lim;
-    /* never far behind: at most 32 lines above the original's in a fall, never letting him under the HUD */
-    if ((int32_t)(follow - held) > 0x200000) { held = follow - 0x200000; if (vel < 0) vel = 0; }
-    if ((int32_t)(held - lim) > 0x40000) { held = lim + 0x40000; if (vel > 0) vel = 0; }
-    d = (int32_t)(goal - held);
-    double dist = d / 65536.0, v = vel / 65536.0, a = (d > 0 ? STEADY_ACCEL_DOWN : STEADY_ACCEL) / 65536.0;
-    double top = (d > 0 ? STEADY_MAX_DOWN : STEADY_MAX) / 65536.0;
-    double want = sqrt(2 * a * (dist < 0 ? -dist : dist));     /* the speed it can still stop from */
-    if (want > top) want = top;
-    if (dist < 0) want = -want;
-    v = v < want ? (v + a < want ? v + a : want) : (v - a > want ? v - a : want);
-    int32_t step = (int32_t)(v * 65536.0);
-    if ((d >= 0 && step >= d) || (d <= 0 && step <= d) || (d > -0x4000 && d < 0x4000)) { held = goal; vel = 0; }
-    else { held += (uint32_t)step; vel = step; }
+    if (rd8(c->a[0] - 0x31FF) == 3) {
+        if (d > 0) held = follow;
+        uint32_t feet = rd32(c->a[0] - 0x3700) + ((uint32_t)h << 16);
+        uint32_t lim = feet - ((uint32_t)(port_steady_top + 4 + h) << 16);
+        if ((int32_t)(held - lim) > 0) held = lim;
+    } else if (d >= -0x40000 && d <= 0x40000) held = follow;
+    else held += (uint32_t)(d / 6);
     return held;
 }
 
