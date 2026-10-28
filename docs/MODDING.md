@@ -306,7 +306,7 @@ The plan, in the order the owner chose (2026-10-26):
 3. **Text as text** (done): `messages.txt` and `phrases.txt` read back, at any length.
 4. **Levels**: lists, room scripts and the houses' lists of any length (done); the maps in
    Tiled, any size up to 8 x 8 places (done); the events by name (done); a narrow room's
-   widescreen sides painted (done). Open: new rooms (their numbers, and the tables the game keeps
-   per room).
+   widescreen sides and the rows above a room painted (done). New rooms: a future idea
+   (`docs/IDEAS.md`), not this phase.
 5. **Balance by name** (done): the monsters' health, defence, damage, speeds and drops, and the
    prices, in `tables/balance.json`.
