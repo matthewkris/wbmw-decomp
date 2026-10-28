@@ -148,7 +148,7 @@ one-time step could unpack the ROM into ordinary files, and the game would load 
   tiles, the maps, the text) without the game using them, to see the formats and check the
   decoding.
 
-### Steady camera (asked 2026-10-23): done (2026-10-28), off by default
+### Steady camera (asked 2026-10-23): for later
 
 In some rooms taller than the screen (area 12 room 0, for one) the original's camera follows
 Wonder Boy up when he jumps, about 38 lines, and eases back down when he lands. It is smooth and
@@ -158,17 +158,6 @@ its view (onto a higher ledge), as most later platformers do. It would change th
 (`layer_y` in `port/rooms.c` reads it; the camera itself is the game's), so it goes behind a
 setting with the normal camera kept for comparisons. The cost: it hides terrain above that the
 original shows.
-
-Done as **Steady camera** in the menu (`steady_camera` in `wbmw.ini`, `--steady-camera`): `steady`
-in `port/rooms.c`, called from `camera()` ($9720) when the host sets `port_steady_top` (the play
-field's first line shown: 32 under the wide HUD, 64 under the original's; 0 off, and always in
-the attract demo). In the air (player state 3) the camera holds its height, follows down at once
-and up only as far as keeps his head 4 lines below that line; on the ground it eases to the
-original's camera, a sixth of the way a frame; a room change, a loaded state or a gap over 96
-lines takes the original's at once. Checked (area 12 room 0, warped in): a standing jump moves
-the original's camera 39 lines and the steady one none with widescreen (11 lines in 4:3, under the
-taller HUD); walking and jumping across the room it never moves more than 12 lines in 3 frames;
-with the option off the camera is the original's (the code is skipped).
 
 ### New rooms for modding (asked 2026-10-27): a future idea
 

@@ -1255,33 +1255,6 @@ static uint16_t mem_sub_w(uint32_t a, uint32_t v) { uint16_t r = (uint16_t)sub_w
 static uint16_t mem_add_w(uint32_t a, uint32_t v) { uint16_t r = (uint16_t)add_w(&c->ccr, v, rd16(a)); wr16(a, r); return r; }
 static uint32_t swap_l(uint32_t v) { uint32_t r = v << 16 | v >> 16; F_L(r); return r; }
 
-/* steady camera (world.h; the host's option, 0 in the harness and with it off): the camera's y
- * for the player in a0, from the y the original would take (follow, 16.16: his feet 112 lines
- * below the screen's top). In the air (state 3: a jump or a fall) it holds the height it had,
- * follows down at once (falls and pits show), and up only as far as keeps his head
- * port_steady_top + 4 lines down the screen (below the HUD); on the ground it eases to where the
- * original's would be (a higher ledge reached), a sixth of the way a frame. A room change, a
- * loaded state or a jump of more than 96 lines takes the original's at once. */
-int port_steady_top;
-static uint32_t steady(uint32_t follow)
-{
-    static int have;
-    static uint32_t held;
-    static uint16_t where;
-    uint16_t now = rd16(0xFFFF9668u);
-    int32_t d = (int32_t)(follow - held);
-    if (!have || now != where || d > 0x600000 || d < -0x600000) { have = 1; where = now; return held = follow; }
-    uint8_t h = rd8(c->a[0] - 0x34FD);
-    if (rd8(c->a[0] - 0x31FF) == 3) {
-        if (d > 0) held = follow;
-        uint32_t feet = rd32(c->a[0] - 0x3700) + ((uint32_t)h << 16);
-        uint32_t lim = feet - ((uint32_t)(port_steady_top + 4 + h) << 16);
-        if ((int32_t)(held - lim) > 0) held = lim;
-    } else if (d >= -0x40000 && d <= 0x40000) held = follow;
-    else held += (uint32_t)(d / 6);
-    return held;
-}
-
 /* $9720: the camera ($972C, $9730: 16.16, from the player at $FF9EEE, or $985A/$985E when
  * $9858 says so) plus the shakes ($9734, $9738) */
 static void camera(void)
@@ -1332,7 +1305,6 @@ add:
         c->d[2] = set_w(c->d[2], sub_w(&c->ccr, 0x70, c->d[2]));
         c->d[2] = swap_l(c->d[2]);
         c->d[1] = add_l(&c->ccr, c->d[2], c->d[1]);
-        if (port_steady_top) c->d[1] = steady(c->d[1]);   /* steady camera, the host's option */
     }
     c->d[2] = rd32(0xFFFF9738u); F_L(c->d[2]);
     f_bit(rd8(0xFFFF9858u) >> 3 & 1);
