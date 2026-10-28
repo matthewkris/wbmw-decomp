@@ -27,7 +27,6 @@
  * Ported register for register, with every register and flag in the contract. */
 #include <stdio.h>
 #include <stdlib.h>
-#include <math.h>
 #include "world.h"
 #include "task.h"
 
@@ -1256,54 +1255,6 @@ static uint16_t mem_sub_w(uint32_t a, uint32_t v) { uint16_t r = (uint16_t)sub_w
 static uint16_t mem_add_w(uint32_t a, uint32_t v) { uint16_t r = (uint16_t)add_w(&c->ccr, v, rd16(a)); wr16(a, r); return r; }
 static uint32_t swap_l(uint32_t v) { uint32_t r = v << 16 | v >> 16; F_L(r); return r; }
 
-/* steady camera (world.h; the host's option, 0 in the harness and with it off): the camera's y
- * for the player in a0, from the y the original would take (follow, 16.16: his feet 112 lines
- * below the screen's top). In the air (state 3: a jump or a fall) it holds the height it had,
- * follows down at once (falls and pits show), and up only as far as keeps his head
- * port_steady_top + 4 lines down the screen (below the HUD); on the ground it glides to where the
- * original's would be (a higher ledge reached): from still, gaining STEADY_ACCEL a frame up to
- * STEADY_MAX, and slowing to stop on it (at first it went a sixth of the way each frame: it set
- * off at 6 lines a frame from still and hopped the last 3, which read as a jerk on each step). A
- * room change, a loaded state or a jump of more than 96 lines takes the original's at once. */
-#define STEADY_ACCEL 0x4000                         /* up: a quarter line a frame, each frame (16.16) */
-#define STEADY_MAX   0x40000                        /* up: 4 lines a frame */
-#define STEADY_ACCEL_DOWN 0x8000                    /* down, after a fall or a knock-back: twice as quick, */
-#define STEADY_MAX_DOWN   0x80000                   /* to 8 lines a frame (at 4 it fell 32 lines behind) */
-int port_steady_top;
-static uint32_t steady(uint32_t follow)
-{
-    static int have;
-    static uint32_t held, goal;
-    static int32_t vel;
-    static uint16_t where;
-    uint16_t now = rd16(0xFFFF9668u);
-    int32_t d = (int32_t)(follow - held);
-    if (!have || now != where || d > 0x600000 || d < -0x600000) { have = 1; where = now; vel = 0; return held = goal = follow; }
-    uint8_t h = rd8(c->a[0] - 0x34FD);
-    uint32_t feet = rd32(c->a[0] - 0x3700) + ((uint32_t)h << 16);
-    uint32_t lim = feet - ((uint32_t)(port_steady_top + 4 + h) << 16);   /* the highest the camera may be: his head 4 lines below the HUD */
-    /* where it glides to: the original's on the ground; in the air where it was, lower if he
-     * falls below it, higher only as he nears the HUD (a jump mid-glide carries on gliding: at
-     * first the camera froze in the air, stopping dead from 2 lines a frame) */
-    if (rd8(c->a[0] - 0x31FF) != 3) goal = follow;
-    else if ((int32_t)(follow - goal) > 0) goal = follow;
-    if ((int32_t)(goal - lim) > 0) goal = lim;
-    /* never far behind: at most 32 lines above the original's in a fall, never letting him under the HUD */
-    if ((int32_t)(follow - held) > 0x200000) { held = follow - 0x200000; if (vel < 0) vel = 0; }
-    if ((int32_t)(held - lim) > 0x40000) { held = lim + 0x40000; if (vel > 0) vel = 0; }
-    d = (int32_t)(goal - held);
-    double dist = d / 65536.0, v = vel / 65536.0, a = (d > 0 ? STEADY_ACCEL_DOWN : STEADY_ACCEL) / 65536.0;
-    double top = (d > 0 ? STEADY_MAX_DOWN : STEADY_MAX) / 65536.0;
-    double want = sqrt(2 * a * (dist < 0 ? -dist : dist));     /* the speed it can still stop from */
-    if (want > top) want = top;
-    if (dist < 0) want = -want;
-    v = v < want ? (v + a < want ? v + a : want) : (v - a > want ? v - a : want);
-    int32_t step = (int32_t)(v * 65536.0);
-    if ((d >= 0 && step >= d) || (d <= 0 && step <= d) || (d > -0x4000 && d < 0x4000)) { held = goal; vel = 0; }
-    else { held += (uint32_t)step; vel = step; }
-    return held;
-}
-
 /* $9720: the camera ($972C, $9730: 16.16, from the player at $FF9EEE, or $985A/$985E when
  * $9858 says so) plus the shakes ($9734, $9738) */
 static void camera(void)
@@ -1354,7 +1305,6 @@ add:
         c->d[2] = set_w(c->d[2], sub_w(&c->ccr, 0x70, c->d[2]));
         c->d[2] = swap_l(c->d[2]);
         c->d[1] = add_l(&c->ccr, c->d[2], c->d[1]);
-        if (port_steady_top) c->d[1] = steady(c->d[1]);   /* steady camera, the host's option */
     }
     c->d[2] = rd32(0xFFFF9738u); F_L(c->d[2]);
     f_bit(rd8(0xFFFF9858u) >> 3 & 1);

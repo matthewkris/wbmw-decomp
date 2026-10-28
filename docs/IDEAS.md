@@ -148,7 +148,7 @@ one-time step could unpack the ROM into ordinary files, and the game would load 
   tiles, the maps, the text) without the game using them, to see the formats and check the
   decoding.
 
-### Steady camera (asked 2026-10-23): done (2026-10-28), off by default
+### Steady camera (asked 2026-10-23): tried and removed (2026-10-28)
 
 In some rooms taller than the screen (area 12 room 0, for one) the original's camera follows
 Wonder Boy up when he jumps, about 38 lines, and eases back down when he lands. It is smooth and
@@ -159,21 +159,12 @@ its view (onto a higher ledge), as most later platformers do. It would change th
 setting with the normal camera kept for comparisons. The cost: it hides terrain above that the
 original shows.
 
-Done as **Steady camera** in the menu (`steady_camera` in `wbmw.ini`, `--steady-camera`): `steady`
-in `port/rooms.c`, called from `camera()` ($9720) when the host sets `port_steady_top` (the play
-field's first line shown: 32 under the wide HUD, 64 under the original's; 0 off, and always in
-the attract demo). In the air (player state 3) the camera holds its height, follows down at once
-and up only as far as keeps his head 4 lines below that line; it glides to its goal (the
-original's camera on the ground, held in the air), gaining a quarter line a frame up to 4 a frame
-going up and twice that going down, and slowing to stop on it; never more than 32 lines behind a
-fall, never letting him under the HUD; a room change, a loaded state or a gap over 96 lines takes
-the original's at once. At first it eased a sixth of the way a frame from a standstill once he
-landed and froze in the air: the owner found jumping up area 12 room 5's steps jerky (it set off at
-6 lines a frame and stopped dead when he jumped mid-glide); with the glide the largest change of
-speed between frames went from 6 lines to 0.8 there. Checked (area 12 room 0, warped in): a standing jump moves
-the original's camera 39 lines and the steady one none with widescreen (11 lines in 4:3, under the
-taller HUD); walking and jumping across the room it never moves more than 12 lines in 3 frames;
-with the option off the camera is the original's (the code is skipped).
+Tried on 2026-10-28 as a menu option (off by default): in the air the camera held its height,
+followed falls at once and rose only to keep him below the HUD, gliding (easing in and out) to
+the original's on landing. After smoothing it worked as intended, but the owner preferred the
+original's camera and had it removed; revisit if it comes up again. The code is in the git history
+(the merges `steady-camera` and `steady-glide`, reverted in `steady-undo`): `steady` in
+`port/rooms.c`, called from `camera()` ($9720), and the host's `port_steady_top`.
 
 ### New rooms for modding (asked 2026-10-27): a future idea
 
