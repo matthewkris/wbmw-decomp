@@ -159,6 +159,14 @@ its view (onto a higher ledge), as most later platformers do. It would change th
 setting with the normal camera kept for comparisons. The cost: it hides terrain above that the
 original shows.
 
+### New rooms for modding (asked 2026-10-27): a future idea
+
+This phase mods the game's existing rooms only (the owner's choice, 2026-10-28). Adding a room
+would need its own number in an area, a script and map, its enemies and things, exits and doors
+leading to it, and entries in whatever tables the game keeps per room (music, start points and
+the like). The tools already relocate an area's data, so space is not the question; the first
+step, when it comes, is a survey of every place the game indexes by room.
+
 ### Widescreen pictures for one-screen rooms (asked 2026-10-26): on hold
 
 Rooms too narrow for widescreen (one-screen rooms, such as area 0 room 0, where a new game
