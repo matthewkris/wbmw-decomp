@@ -27,8 +27,8 @@ emulated Z80 instead.
 
 ## Added features
 
-On top of the original game. They are all on by default; each can be turned off in the menu
-(Esc), and the setting is kept.
+On top of the original game. They are all on by default except the steady camera; each can be
+turned on or off in the menu (Esc), and the setting is kept.
 
 * **Pause menu** (Esc, or Back/Select on a controller) with a confirmation before exiting.
 * **Custom controls**: set a key and a controller button, stick direction or trigger for each game
@@ -46,6 +46,11 @@ On top of the original game. They are all on by default; each can be turned off 
   number (gold for the blow that defeats it), and a small bar over it shows the health it has
   left for two seconds: green, then yellow below two thirds, red below one third. Bosses have
   them too. They stay under the text boxes and the status bar. See `docs/ENEMYHEALTH.md`.
+* **Steady camera** (off by default): in the original, the screen follows Wonder Boy up every
+  time he jumps and back down as he lands. With this on, it stays still for ordinary jumps, still
+  following him down at once (falls and pits stay in view), up only as far as keeps him below the
+  status bar, and easing up when he lands on higher ground. It changes the original's camera, so
+  it is off unless you choose it; the attract demo always uses the original's.
 * **Talk zoom (experimental)**: during a conversation with an ordinary character (not bosses),
   the view eases in on Wonder Boy and the one he is talking to over about a second, with the
   text box kept at its own size. It stays zoomed through a conversation that ends with a fade to
@@ -187,7 +192,7 @@ so Start stays the game's own: it opens the item screen.
   its picture with "Overwrite slot N?" (No / Yes). The slot you choose becomes the current one,
   which quick save and quick load use.
 * **Show FPS, Full screen, Whole pixels** (every pixel the same size), **Widescreen**, **Talk
-  zoom**, **Enemy health** (the health bars and damage numbers): on or off. Widescreen is
+  zoom**, **Enemy health** (the health bars and damage numbers), **Steady camera**: on or off. Widescreen is
   experimental: see **Added features** above.
 * **Volume**, **Music**, **Effects**: from 0 to 100 in tens (left and right, or Enter to step up);
   Volume at 0 is the sound off.
@@ -220,7 +225,7 @@ Use `--save FILE` for a different file.
 ### Options
 
 ```
-wbmw [ROM] [--pack FILE] [--windowed] [--widescreen] [--talk-zoom] [--enemy-health] [--scale N] [--integer-scale] [--fps] [--mute] [--save FILE] [--state FILE] [--load] [--config FILE] [--z80-sound]
+wbmw [ROM] [--pack FILE] [--windowed] [--widescreen] [--talk-zoom] [--enemy-health] [--steady-camera] [--scale N] [--integer-scale] [--fps] [--mute] [--save FILE] [--state FILE] [--load] [--config FILE] [--z80-sound]
 ```
 
 * `ROM`: play from this ROM instead of `assets/game.pak`. `--pack FILE`: play from this pack.
@@ -228,8 +233,9 @@ wbmw [ROM] [--pack FILE] [--windowed] [--widescreen] [--talk-zoom] [--enemy-heal
 * `--windowed`: start in a window instead of full screen. `--scale N` sets the window's size, N
   times 256×224.
 * `--integer-scale`: scale only by whole numbers, so every pixel is the same size.
-* `--no-widescreen`, `--no-talk-zoom`, `--no-enemy-health`: turn that feature off for this run
-  (`--widescreen`, `--talk-zoom` and `--enemy-health` turn it on).
+* `--no-widescreen`, `--no-talk-zoom`, `--no-enemy-health`, `--no-steady-camera`: turn that
+  feature off for this run (`--widescreen`, `--talk-zoom`, `--enemy-health` and `--steady-camera`
+  turn it on).
 * `--fps`: show the frame rate from the start. `--mute`: no sound. `--volume N`,
   `--music-volume N`, `--effects-volume N`: the volumes for this run (0-100). `--z80-sound`: the
   game's original sound driver on an emulated Z80, in place of the C driver.

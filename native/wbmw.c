@@ -154,6 +154,8 @@ extern int port_wide_px;                        /* port/rooms.c (port/world.h) *
 extern int (*port_wide_room)(int area, int room);
 extern int port_found_gold, port_found_thing;   /* port/message.c (port/world.h) */
 static int widescreen;
+static int steady_camera;                           /* the camera still for ordinary jumps (Steady camera; port/rooms.c) */
+extern int port_steady_top;                         /* port/rooms.c (port/world.h) */
 /* Whether a room's layers allow it, from its script in the ROM (the area blocks at the data
  * directory's slots 8-26; the commands as $93C4 reads them): plane A following the camera across
  * and drawn as screens (its kind 0 or 2: $94CC) and at least two screens wide; plane B repeated
@@ -298,6 +300,9 @@ static void wide_frame(void)
     last_frame = frame;
     vdp_pad_fill = widescreen && wide_room(shown_area, shown_room);
     vdp_band_colour = band_colour(shown_area, shown_room);
+    /* steady camera: the play field's first line shown (under the one-row HUD with widescreen,
+     * else the original's 64); never in the attract demo, whose recording needs the original's */
+    port_steady_top = !steady_camera || (ram[0x8A50] & 0x80) ? 0 : widescreen ? 32 : 64;
     int top[2] = {0, 0};                            /* each plane's first line with its map (a repeated one: 0) */
     for (int k = 0; k < 2 && vdp_pad_fill; k++) {
         const uint8_t *l = &ram[k ? 0x97D4 : 0x9754];
@@ -494,8 +499,8 @@ static const char *pad_label(int p)
  * a setting for one run without changing the file: cfg is what the file holds. */
 /* the added features (widescreen, talk zoom, enemy health) on unless turned off; headless runs
  * never read the file, so they stay the original's unless their flags say otherwise */
-static struct { int fullscreen, show_fps, integer_scale, widescreen, talk_zoom, enemy_health, volume, music_volume, effects_volume; }
-    cfg = {1, 0, 0, 1, 1, 1, 100, 100, 100};
+static struct { int fullscreen, show_fps, integer_scale, widescreen, talk_zoom, enemy_health, volume, music_volume, effects_volume, steady_camera; }
+    cfg = {1, 0, 0, 1, 1, 1, 100, 100, 100, 0};    /* steady camera off unless chosen: it changes the original's camera */
 static char ini_path[4096];
 static int ini_dirty;
 
@@ -533,6 +538,7 @@ static void settings_save(void)
     fprintf(f, "fullscreen=%d\nshow_fps=%d\ninteger_scale=%d\nwidescreen=%d\ntalk_zoom=%d\nenemy_health=%d\nstick_moves=%d\n",
             cfg.fullscreen, cfg.show_fps, cfg.integer_scale, cfg.widescreen, cfg.talk_zoom, cfg.enemy_health, stick_moves);
     fprintf(f, "volume=%d\nmusic_volume=%d\neffects_volume=%d\n", cfg.volume, cfg.music_volume, cfg.effects_volume);
+    fprintf(f, "steady_camera=%d\n", cfg.steady_camera);
     fprintf(f, "slot=%d\n", slot);
     for (int a = 0; a < ACTIONS; a++) {
         char pad[64]; pad_name(pad_bind[a], pad, sizeof pad);
@@ -563,6 +569,7 @@ static void settings_open(const char *path)
             else if (!strcmp(line, "widescreen")) cfg.widescreen = atoi(v);
             else if (!strcmp(line, "talk_zoom")) cfg.talk_zoom = atoi(v);
             else if (!strcmp(line, "enemy_health")) cfg.enemy_health = atoi(v);
+            else if (!strcmp(line, "steady_camera")) cfg.steady_camera = atoi(v);
             else if (!strcmp(line, "stick_moves")) stick_moves = atoi(v);
             else if (!strcmp(line, "volume")) cfg.volume = volume_clamp(atoi(v));
             else if (!strcmp(line, "music_volume")) cfg.music_volume = volume_clamp(atoi(v));
@@ -578,7 +585,7 @@ static void settings_open(const char *path)
     }
     if (old_mute) { cfg.volume = 0; ini_dirty = 1; }
     fullscreen = cfg.fullscreen; show_fps = cfg.show_fps; integer_scale = cfg.integer_scale;
-    widescreen = cfg.widescreen; talk_zoom = cfg.talk_zoom; enemy_health = cfg.enemy_health;
+    widescreen = cfg.widescreen; talk_zoom = cfg.talk_zoom; enemy_health = cfg.enemy_health; steady_camera = cfg.steady_camera;
     volume = cfg.volume; music_volume = cfg.music_volume; effects_volume = cfg.effects_volume;
 }
 
@@ -1136,9 +1143,9 @@ static void draw_frame(int x0, int y0, int w, int h, uint32_t edge)
 /* the menu's screens: the main one, the exit question, the controls, the controls waiting for a
  * press (capture), the slots (to save or to load: col), and the question before a save over one */
 enum { SCR_MAIN, SCR_ASK, SCR_CONTROLS, SCR_CAPTURE, SCR_SLOTS, SCR_OVERWRITE, SCR_LOAD_ASK };
-enum { MI_SAVE, MI_LOAD, MI_FPS, MI_FULL, MI_PIXELS, MI_WIDE, MI_ZOOM, MI_HEALTH, MI_VOLUME, MI_MUSIC, MI_EFFECTS, MI_CONTROLS, MI_EXIT, MAIN_N };
+enum { MI_SAVE, MI_LOAD, MI_FPS, MI_FULL, MI_PIXELS, MI_WIDE, MI_ZOOM, MI_HEALTH, MI_CAMERA, MI_VOLUME, MI_MUSIC, MI_EFFECTS, MI_CONTROLS, MI_EXIT, MAIN_N };
 static const char *const MAIN_ITEM[MAIN_N] = {"SAVE STATE", "LOAD STATE", "SHOW FPS", "FULL SCREEN", "WHOLE PIXELS", "WIDESCREEN",
-                                              "TALK ZOOM", "ENEMY HEALTH", "VOLUME", "  MUSIC", "  EFFECTS", "CONTROLS", "EXIT GAME"};
+                                              "TALK ZOOM", "ENEMY HEALTH", "STEADY CAMERA", "VOLUME", "  MUSIC", "  EFFECTS", "CONTROLS", "EXIT GAME"};
 /* a volume item's value (0-100), or NULL for the others */
 static int *menu_volume(int item)
 {
@@ -1162,7 +1169,7 @@ static void draw_menu(const Menu *m)
         for (int i = 0; i < MAIN_N; i++) {
             uint32_t col = i == m->item ? MENU_GOLD : MENU_WHITE;
             int y = y0 + 22 + i * 13;
-            int on = i == MI_FPS ? show_fps : i == MI_FULL ? fullscreen : i == MI_PIXELS ? integer_scale : i == MI_WIDE ? widescreen : i == MI_ZOOM ? talk_zoom : i == MI_HEALTH ? enemy_health : -1;
+            int on = i == MI_FPS ? show_fps : i == MI_FULL ? fullscreen : i == MI_PIXELS ? integer_scale : i == MI_WIDE ? widescreen : i == MI_ZOOM ? talk_zoom : i == MI_HEALTH ? enemy_health : i == MI_CAMERA ? steady_camera : -1;
             if (i == m->item) draw_text(x0 + 12, y, ">", col);
             draw_text(x0 + 24, y, MAIN_ITEM[i], col);
             if (on >= 0) draw_text(x0 + w - 12 - 18, y, on ? "ON" : "OFF", col);
@@ -1302,6 +1309,7 @@ static int menu_step(Menu *m, int only_asking, int up, int down, int left, int r
             case MI_WIDE: widescreen = cfg.widescreen = !widescreen; wide_apply(); ini_dirty = 1; break;
             case MI_ZOOM: talk_zoom = cfg.talk_zoom = !talk_zoom; ini_dirty = 1; break;
             case MI_HEALTH: enemy_health = cfg.enemy_health = !enemy_health; ini_dirty = 1; break;
+            case MI_CAMERA: steady_camera = cfg.steady_camera = !steady_camera; ini_dirty = 1; break;
             case MI_VOLUME: case MI_MUSIC: case MI_EFFECTS: {
                 int *vol = menu_volume(m->item);
                 *vol = left ? volume_clamp(*vol - 10) : right ? volume_clamp(*vol + 10) : *vol >= 100 ? 0 : *vol + 10;
@@ -2121,6 +2129,8 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--no-widescreen")) widescreen = 0;
         else if (!strcmp(argv[i], "--enemy-health")) enemy_health = 1;
         else if (!strcmp(argv[i], "--no-enemy-health")) enemy_health = 0;
+        else if (!strcmp(argv[i], "--steady-camera")) steady_camera = 1;
+        else if (!strcmp(argv[i], "--no-steady-camera")) steady_camera = 0;
         else if (!strcmp(argv[i], "--timing")) fprintf(stderr, "wbmw: --timing counts the translated code's cycles; the hand-written code has none, so it is off\n");
         else if (!strcmp(argv[i], "--state") && i + 1 < argc) state_path = argv[++i];
         else if (!strcmp(argv[i], "--load")) load_path = state_path_ptr;
