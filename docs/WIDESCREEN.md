@@ -2,7 +2,7 @@
 
 The native build can show the game 400 pixels wide (16:9 at the game's 224 lines) instead of
 256: 72 more pixels at each side. It is an option (menu: **Widescreen**, `--widescreen`, or
-`widescreen=0` in `wbmw.ini` turns it off), on by default. 121 of the 170 rooms use the extra
+`widescreen=0` in `wbmw.ini` turns it off), on by default. 119 of the 170 rooms use the extra
 width (a rule on their layers, below); the rest show the normal picture centred with black sides.
 
 ## How the game draws, and what changes
@@ -79,7 +79,8 @@ fixed plane B is one screen that stays put, but the map lookup wraps its columns
 show it repeated: area 5's castle wall behind its bridge carries on seamlessly (at first these
 six rooms were left at the 256). A narrower plane A, or one that stays put, would show what is
 beyond its map at the sides: those rooms (one-screen rooms, shafts) keep the 256 with black
-sides. 121 of the 170 rooms qualify. A narrow room also qualifies when its sides are painted
+sides. 119 of the 170 rooms qualify (counted by the rule over the ROM's scripts, 2026-10-29;
+the 121 written earlier was stale). A narrow room also qualifies when its sides are painted
 (2026-10-27, `docs/MODDING.md`, "Widescreen sides"): each narrow plane drawn as screens (and a
 plane A that stays put) has a place just beyond its width in every band of its map, which the
 camera never reaches; `port/map.c` (`port_margin_draw`, set only while `port/rooms.c` draws the
@@ -111,8 +112,12 @@ fade; walking back from area 1 the player arrives at $1140 instead of $10F8, wid
 fade in; with widescreen off at $1100 and $10F8 as before. The attract demo is never wide (`$8A50` bit 7, its recorded input): a recording of buttons only
 fits the original's game, and things waking at the wider view's edges threw it off (2026-10-27:
 Wonder Boy stuck at the start and hurt instead of walking into the shop); with it narrow the
-game's RAM is identical to a run with widescreen off at every frame checked. One exception: area
-15 (its moving floor is placed from the screen's edge, `$18C8C`). Houses and shops are not rooms
+game's RAM is identical to a run with widescreen off at every frame checked. One exception: the moving floor
+(room script 16, set by room command 13: area 15 room 14 and area 18 room 9, the Fan Dragon):
+the game draws the floor's coming blocks just past the 256's right edge as it moves, so a wider
+view showed them appear; `layers_wide_why` leaves those rooms narrow. (At first all of area 15
+was left out for it, though its other rooms are ordinary: 7 of them go wide now, and area 18 room
+9, wide until 2026-10-29, showed the blocks appear and Wonder Boy misplaced.) Houses and shops are not rooms
 of their own: their picture opens over the room outside (`$BE6C`, which sets `$9659` bit 4 while
 inside), so they stay as wide as it. (At first bit 4 was taken for "a boss's scripted room" and
 turned widescreen off, which only ever happened at a door: the sides went black at once, a jarring
@@ -217,7 +222,7 @@ area 6's temple.
 
 ## Not done yet
 
-* The rooms are chosen by the rule above (121 of 170), not one at a time; the owner's play finds
+* The rooms are chosen by the rule above (119 of 170), not one at a time; the owner's play finds
   what is left. Things to look out for: code that places something from the screen's edge itself
   rather than through `OffScreenXAt` (one found: the moving floor of area $0F, `port/objhelp.c`,
   placed from plane A's x + $70, so that area stays narrow), and enemies or bosses that come in

@@ -34,7 +34,7 @@ machine core (C in the native build, the 68000's in the harness by design), dead
 - **Added features**, all in the host or behind an option, on by default, each in the menu and
   `wbmw.ini`: settings and controls, quick save and load (asking before an overwrite), enemy
   health bars and damage numbers (`docs/ENEMYHEALTH.md`), talk zoom (`docs/TALKZOOM.md`) and
-  widescreen (`docs/WIDESCREEN.md`: 121 of 170 rooms wide by a rule on their layers, a one-row
+  widescreen (`docs/WIDESCREEN.md`: 119 of 170 rooms wide by a rule on their layers, a one-row
   HUD, gold as a rising number). With them off the build is the original's frame for frame.
 - **The game plays from extracted files.** `tools/extract.py` writes all the game's data into
   `assets/` (git-ignored), `tools/rebuild.py` proves the files complete (built back against the

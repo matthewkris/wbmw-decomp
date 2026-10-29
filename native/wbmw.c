@@ -202,6 +202,10 @@ static int layers_wide_why(int area, int room, int *narrow)
                 *narrow = (*narrow & 2) | ((kind <= 2 && w < 2) || kind == 1);   /* (fixed: one screen that stays) */
             }
         }
+        /* room script 16 (command 13's byte: $9682), the moving floor (area 15 room 14, area 18
+         * room 9: the Fan Dragon): the game draws the floor's coming blocks just past the 256's
+         * right edge as it moves, so a wider view showed them appear */
+        if (c == 13 && rd8(p) == 16) { *narrow = 0; return 0; }
         int n = args[c];
         if (n == -1) n = rd8(p) ? 5 : 3;            /* a pointer */
         else if (n == -3) n = (rd8(p) ? 5 : 3) + 2; /* command 11: a pointer and two bytes */
@@ -213,15 +217,16 @@ static int layers_wide_why(int area, int room, int *narrow)
     return a_ok && b_ok;
 }
 
-/* the rooms shown wide (1, or 2 for a narrow room with its sides painted): every room whose layers allow it, but not area 15 (its moving floor is
- * placed from the screen's edge, $18C8C). Inside a house or shop ($9659 bit 4, set by $BE6C and
+/* the rooms shown wide (1, or 2 for a narrow room with its sides painted): every room whose layers allow it,
+ * but not the moving floor's (room script 16, layers_wide_why; at first all of area 15 was left
+ * out for it, though only its room 14 has one). Inside a house or shop ($9659 bit 4, set by $BE6C and
  * $C634) the room stays wide: the house's picture is drawn over the room, which shows around it
  * as in the original (at first bit 4 was taken for a boss's room, and the sides went black at
  * once as the player went through a door) */
 static int wide_room(int area, int room)
 {
     static signed char known[19][64];               /* 0 not yet, 1 yes, -1 no, else 2 + its narrow planes */
-    if (area < 0 || area >= 19 || room < 0 || room >= 64 || area == 15) return 0;
+    if (area < 0 || area >= 19 || room < 0 || room >= 64) return 0;
     /* the attract demo ($8A50 bit 7: its input from a recording, $4DE2) plays as the original:
      * a recording of buttons only fits the original's game, and things waking at the wider
      * view's edges threw it off (Wonder Boy stuck at the start, hurt, instead of in the shop) */
@@ -267,6 +272,7 @@ static const struct { uint8_t area, room; int8_t colour; } band_colours[] = {
     {1, 6, 34}, {8, 4, 34},                         /* caves with water: their ceiling's dark navy (line 2 entry 2, $200) */
     {8, 7, 26},                                     /* the sea by a rock wall: the sea's navy, as the other seas */
     {14, 1, 64},                                    /* the dark crystal room: its dark purple sky */
+    {15, 0, 64},                                    /* the pink crystals again, as area 14's */
     {2, 1, 58},                                     /* the red-striped sky: its red (line 3 entry 10) */
 };
 static int band_colour(int area, int room)
