@@ -51,7 +51,7 @@ On top of the original game. They are all on by default; each can be turned off 
   text box kept at its own size. It stays zoomed through a conversation that ends with a fade to
   black, such as the inn's. See `docs/TALKZOOM.md`.
 * **Widescreen (experimental)**: a 16:9 picture. See `docs/WIDESCREEN.md`.
-  * **Most rooms fill it**: 121 of the 170, those whose maps are wide enough. One-screen rooms
+  * **Most rooms fill it**: 119 of the 170, those whose maps are wide enough. One-screen rooms
     keep the original picture with black sides, unless their sides are painted (in Tiled:
     `docs/MODDING.md`, "Widescreen sides"); then they fill it too, and you can walk into the sides. Houses and shops open over the room outside, as
     in the original, so they stay wide. Rooms switch between wide and narrow only while the
