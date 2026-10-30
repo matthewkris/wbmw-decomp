@@ -8533,8 +8533,8 @@ EXIT_AT(ExitArriveAtF86E, exit_arrive, 0xF86E)
  * Kind 2 walks after the player along a trail of its cells ($9F34: up to 15 longs, $9F74 the
  * bytes used; $9F76 negative while it is not kept). It walks ($101F2), runs ($1023C), jumps to
  * the trail's next point ($10296), waits for a trail ($10424), sits and drops things ($10366),
- * hops on the spot ($10444) and dives ($103F6). Kind 6 shares five of its states; its own two
- * ($1000C, $1005C) are not traced code and stay the original's. $10550, $10572 and $108B8
+ * hops on the spot ($10444) and dives ($103F6). Kind 6 shares five of its states and has two of
+ * its own, a pause ($1000C) and flying in ($1005C). $10550, $10572 and $108B8
  * return from their callers when they act (addq #4,a7), as $108A2 does. The trail's path
  * ($1061E) stays the original's. */
 
@@ -9021,6 +9021,85 @@ static void companion_kind_2(void)
     default: call(c->a[0]); break;                  /* past the table: as the original jumps */
     }
 }
+/* $1000C (kind 6, state 8): 1-4 turns of animation 6, each ended by 4 frames of animation 0; then
+ * waiting (state 10) */
+static void companion_pause_turn(void)
+{
+    put8(p4(-0x27FF), 0);
+    put8(p4(-0x25FD), 1);
+    c->d[0] = 6; F_L(6);
+    call(SET_ANIM);
+}
+static void companion_pause(void)
+{
+    if (!begun()) {
+        call(0x5D8);
+        and_b(0, 3);
+        put8(p4(-0x2800), c->d[0]);
+        companion_pause_turn();
+        return;
+    }
+    F_B(rd8(p4(-0x25FD)));
+    if (!(rd8(p4(-0x25FD)) & 0x80)) return;
+    F_B(rd8(p4(-0x27FF)));
+    if (!rd8(p4(-0x27FF))) {
+        put8(p4(-0x27FF), 4);
+        c->d[0] = 0; F_L(0);
+        call(SET_ANIM);
+        return;
+    }
+    if (mem_dec8(p4(-0x27FF))) return;
+    if (!(mem_dec8(p4(-0x2800)) & 0x80)) { companion_pause_turn(); return; }
+    put8(p4(-0x2BFF), 0xA);
+}
+/* $1005C (kind 6, state 12): the look $400's ($4910), flying left a pixel a frame to X $1158; there
+ * 30 frames, sound $43, animation 4; when that ends, its palette, animation 0 and waiting (state 10) */
+static void companion_fly_in(void)
+{
+    F_B(rd8(p4(-0x2BFF)));
+    if (rd8(p4(-0x2BFF)) & 0x80) {
+        F_B(rd8(p4(-0x2800)));
+        if (rd8(p4(-0x2800))) {
+            if (mem_dec8(p4(-0x2800))) return;
+            c->d[0] = 0x43; F_L(0x43);
+            call(QUEUE_SOUND);
+            c->d[0] = 4; F_L(4);
+            call(SET_ANIM);
+            return;
+        }
+        F_B(rd8(p4(-0x3A00)));
+        if (rd8(p4(-0x3A00))) return;
+        put8(p4(-0x2BFF), 0xA);
+        put16m(p4(-0x3DFE), 0);
+        companion_palette();
+        c->d[0] = 0; F_L(0);
+        call(SET_ANIM);
+        return;
+    }
+    f_bit(rd8(p4(-0x4000)) >> 6 & 1);
+    if (!(rd8(p4(-0x4000)) & 0x40)) {
+        c->d[1] = set_w(c->d[1], 0x400); F_W(0x400);
+        call(0x4910);
+        put16m(p4(-0x3DFE), rd16(c->a[0]));
+        mem_or8(p4(-0x3FFE), 8);
+        put16m(p4(-0x3D00), 0x1618);
+        c->d[0] = 0; F_L(0);
+        call(0x7FC);
+        c->d[0] = 0; F_L(0);
+        move_b(0, rd8(p4(-0x34FD)));
+        c->d[0] = set_w(c->d[0], sub_w(&c->ccr, c->d[0], 0));
+        wr16(p4(-0x3700), (uint16_t)add_w(&c->ccr, c->d[0], rd16(p4(-0x3700))));
+        mem_or8(p4(-0x4000), 0x40);
+        put8(p4(-0x2F00), 3);
+    }
+    mem_sub_w(p4(-0x3800), 1);
+    cmp_w(&c->ccr, 0x1158, rd16(p4(-0x3800)));
+    if (rd16(p4(-0x3800)) >= 0x1158) return;
+    put8(p4(-0x2800), 0x1E);
+    mem_or8(p4(-0x2BFF), 0x80);
+    c->d[0] = 2; F_L(2);
+    call(SET_ANIM);
+}
 /* $FFE6: kind 6: the trail kept, then its state (the table at $FFFE) */
 static void companion_kind_6(void)
 {
@@ -9035,12 +9114,16 @@ static void companion_kind_6(void)
     case 0x1023C: companion_run(); break;
     case 0x10296: companion_jump(); break;
     case 0x10424: companion_wait(); break;
-    default: call(c->a[0]); break;                  /* $1000C, $1005C: the original's */
+    case 0x1000C: companion_pause(); break;
+    case 0x1005C: companion_fly_in(); break;
+    default: call(c->a[0]); break;                  /* past the table: as the original jumps */
     }
 }
 
 ENTRY(CompanionKind2, companion_kind_2)            /* $100F2 */
 ENTRY(CompanionKind6, companion_kind_6)            /* $FFE6 */
+ENTRY(CompanionPause, companion_pause)             /* $1000C */
+ENTRY(CompanionFlyIn, companion_fly_in)            /* $1005C */
 ENTRY(CompanionEnter, companion_enter)             /* $1011E */
 ENTRY(CompanionWalk, companion_walk)               /* $101F2 */
 ENTRY(CompanionStep, companion_step)               /* $1021A */

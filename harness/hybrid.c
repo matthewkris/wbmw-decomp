@@ -1445,13 +1445,21 @@ int hybrid_fuzz(const char *name, long count)
         }
         if (!strncmp(name, "Companion", 9)) {       /* kinds 2 and 6: states of their tables, a trail, enemies to shoot at */
             char key[40]; snprintf(key, sizeof key, "|%s|", name + 9);
-            if (strstr("|Kind2|Kind6|Enter|Walk|Step|Run|Jump|Jumping|Sit|Edge|Dive|Wait|Hop|Place|ChanceSit|Spit|TrailStart|Trail|Fell|", key)) {
+            if (strstr("|Kind2|Kind6|Pause|FlyIn|Enter|Walk|Step|Run|Jump|Jumping|Sit|Edge|Dive|Wait|Hop|Place|ChanceSit|Spit|TrailStart|Trail|Fell|", key)) {
                 uint32_t slot = (uint32_t)ram[0x9F30] << 8 | ram[0x9F31], pl = (uint32_t)ram[0x9EEE] << 8 | ram[0x9EEF];
                 uint32_t kind = !strcmp(name, "CompanionKind6") ? 6 : !strcmp(name, "CompanionKind2") ? 2 : rnd() % 2 ? 2 : 6;
-                static const uint8_t st6[] = { 0, 2, 4, 6, 10 }, pst[] = { 0, 9, 0xD, 0xF, 1, 2 };
+                static const uint8_t st6[] = { 0, 2, 4, 6, 8, 10, 12 }, pst[] = { 0, 9, 0xD, 0xF, 1, 2 };
                 ram[0xC000 + slot] = (uint8_t)((rnd() % 8 ? 0x80 : 0) | (rnd() & 0x41));
                 put_word(0xD402 + slot, kind);
-                ram[0xD401 + slot] = (uint8_t)((kind == 6 ? st6[rnd() % 5] : 2 * (rnd() % 10)) | (rnd() & 0x80));
+                ram[0xD401 + slot] = (uint8_t)((kind == 6 ? st6[rnd() % 7] : 2 * (rnd() % 10)) | (rnd() & 0x80));
+                if (!strcmp(name, "CompanionPause") || !strcmp(name, "CompanionFlyIn")) {   /* its own: past or at X $1158, the animation running or over */
+                    put_word(0xD402 + slot, 6);
+                    ram[0xD401 + slot] = (uint8_t)((!strcmp(name, "CompanionPause") ? 8 : 12) | (rnd() & 0x80));
+                    ram[0xDA03 + slot] = (uint8_t)(rnd() % 2 ? 0x80 : rnd() % 3);
+                    ram[0xC600 + slot] = (uint8_t)(rnd() % 2 ? 0 : rnd());
+                    if (rnd() % 2) put_word(0xC800 + slot, 0x1157 + rnd() % 3);
+                }
+                if ((ram[0xD401 + slot] & 0x7F) == 12) ram[0xC000 + slot] |= 0x40;   /* past $4910, which hangs on a look not loaded: the run from grandson.state covers it */
                 put_word(0xC300 + slot, rnd() % 2 ? 0x200 + kind : 0x1208);   /* its animation set, as the game gives it */
                 put_word(0x965A, rnd() % 2 ? rnd() & ~0x1Fu : rnd());   /* the every-32-frames chances */
                 if (rnd() % 2) {                            /* on the screen */
@@ -1467,7 +1475,7 @@ int hybrid_fuzz(const char *name, long count)
                     put_word(0x9F36 + 4 * k4, ((uint32_t)ram[0x9F1A] << 8 | ram[0x9F1B]) + 0x40 * (rnd() % 5) - 0x80);
                 }
                 ram[0xD801 + slot] = (uint8_t)(rnd() % 2 ? 0 : rnd());
-                ram[0xD800 + slot] = (uint8_t)(rnd() % 3 ? 1 + rnd() % 2 : rnd());
+                ram[0xD800 + slot] = (uint8_t)(rnd() % 3 ? rnd() % 3 : rnd());
                 put_word(0xD802 + slot, rnd() % 3 ? 1 + rnd() % 2 : rnd());
                 uint32_t hop = rnd() % 0x40;                /* the thing the hop waits for */
                 put_word(0xD500 + slot, hop); ram[0xA15C + hop] = (uint8_t)((ram[0xA15C + hop] & ~0x10) | (rnd() & 0x10));
