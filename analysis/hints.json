@@ -54,6 +54,20 @@
    "fmt": "l_abs"
   }
  ],
+ "dead_reads": [
+  {
+   "addr": "5A0",
+   "reg": "d0",
+   "parts": [2],
+   "why": "SetVRAMWrite: asl.l #2, lsr.w, ori.w, swap, andi.w #3 keep only bits 0-15 of d0; lsr.w replaces asl's flags"
+  },
+  {
+   "addr": "4CAE",
+   "reg": "d0",
+   "parts": [1],
+   "why": "A task's end; only $70D0 comes here without setting d0, and $8068 is tested only after a task that sets it has ended"
+  }
+ ],
  "data_ranges": [
   [
    "E2FC",

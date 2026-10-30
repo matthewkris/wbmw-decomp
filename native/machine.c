@@ -103,7 +103,8 @@ static int system_tasks(void)
     wr8(0xFFFF8A48u, 0x80);
     c->a[5] = 0xFFFF8048u;
     do {
-        if (rd8(c->a[5]) & 0x80) {
+        c->d[0] = (c->d[0] & ~0xFFu) | (rd8(c->a[5]) & 0x80);   /* a task may end on this d0 ($70D0) */
+        if (c->d[0] & 0x80) {
             wr16(0xFFFF8A4Cu, (uint16_t)c->a[5]);
             c->a[0] = rd32(c->a[5] + 0xC);
             c->ret = 0;
@@ -120,7 +121,8 @@ static int system_tasks(void)
 static int user_task(void)
 {
     wr8(0xFFFF8A49u, 0);
-    if (rd8(c->a[5]) & 0x80) {
+    c->d[0] = (c->d[0] & ~0xFFu) | (rd8(c->a[5]) & 0x80);
+    if (c->d[0] & 0x80) {
         wr16(0xFFFF8A4Cu, (uint16_t)c->a[5]);
         c->a[0] = rd32(c->a[5] + 0xC);
         wr8(0xFFFF8A48u, rd8(0xFFFF8A4Au));
