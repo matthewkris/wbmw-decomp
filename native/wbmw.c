@@ -1862,6 +1862,15 @@ static void fail(const char *msg)
 #endif
 }
 
+/* the same for something the player should know before the game carries on */
+static void warn(const char *msg)
+{
+    fprintf(stderr, "wbmw: warning: %s\n", msg);
+#ifndef WBMW_HEADLESS_ONLY
+    if (!headless) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING, "Wonder Boy in Monster World", msg, NULL);
+#endif
+}
+
 /* SHA-1 (FIPS 180-1), to tell the player whether their ROM is the dump this port was made from */
 static void sha1(const uint8_t *data, size_t len, uint8_t out[20])
 {
@@ -2180,9 +2189,12 @@ int main(int argc, char **argv)
             uint8_t d[20]; char hex[41];
             sha1(rom, rom_size, d);
             for (int i = 0; i < 20; i++) snprintf(hex + 2 * i, 3, "%02x", d[i]);
-            if (strcmp(hex, ROM_SHA1))
-                fprintf(stderr, "wbmw: warning: %s is not the expected dump (SHA-1 %s, expected " ROM_SHA1 "): "
-                                "the port reads the game's data from it at fixed places, so another version will not work right\n", rom_path, hex);
+            if (strcmp(hex, ROM_SHA1)) {
+                char m[4400];
+                snprintf(m, sizeof m, "This is not the expected ROM, so the game may not work right. It reads its data from "
+                                      "fixed places, which only the USA/Europe version has.\n\n%s\nSHA-1 %s\nExpected " ROM_SHA1, rom_path, hex);
+                warn(m);
+            }
         }
     }
     wide_apply();
