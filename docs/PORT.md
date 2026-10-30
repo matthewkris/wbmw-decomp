@@ -2634,8 +2634,10 @@ thirteen runs, no problems.
     * `$10366`: sits and drops 1-8 things.
     * `$103B8`, `$103F6`: walks to an edge and dives.
     * `$10444`, `$1051A`: hops on the spot until a thing is set, and stands on its spot.
-  * Kind 6 shares five of these states. Its own two (`$1000C`, `$1005C`) are not traced code and
-    stay the original's.
+  * Kind 6 shares five of these states. Its own two are `$1000C` (a pause) and `$1005C` (flying
+    in). The tracer read one entry of their table at `$FFFE`, so they stayed untraced until the
+    native build crashed there on the owner's save (2026-10-30: the dragon's grandson joins the
+    player in area 12 room 3). The table is a hint now, and `tools/tablecheck.py` looks for others.
   * `$10550` (a chance to sit), `$10572` (a shot, item `$20E`, at an enemy within `$18` by
     `$30`) and `$108B8` (fallen below the view) return from their callers when they act, as
     `$108A2` does. The trail's path (`$1061E`) stays the original's.

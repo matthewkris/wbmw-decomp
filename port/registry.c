@@ -102,7 +102,7 @@ void RoomPlayer(Cpu *), PlayerPlace(Cpu *), PlayerMoved(Cpu *), PlayerPlaceResta
 void CompanionRoom(Cpu *), CompanionGfx0(Cpu *), CompanionGfx6(Cpu *), CompanionGfx4(Cpu *), CompanionGfx(Cpu *), CompanionRoom2(Cpu *), CompanionAt(Cpu *), CompanionJoin(Cpu *), CompanionHide(Cpu *), CompanionPalette(Cpu *), CompanionAgain(Cpu *), CompanionMake(Cpu *), CompanionNewA(Cpu *), CompanionNewB(Cpu *);
 void CompanionFrame(Cpu *), CompanionKind4(Cpu *), CompanionShoot(Cpu *), CompanionAppear4(Cpu *), CompanionAppeared4(Cpu *), CompanionKind0(Cpu *), CompanionAppear0(Cpu *), CompanionRest(Cpu *), CompanionOverPlayer(Cpu *), CompanionShown(Cpu *), CompanionFollow(Cpu *), CompanionReturn(Cpu *), CompanionDrop(Cpu *), CompanionGrab(Cpu *), CompanionChase(Cpu *), CompanionRide(Cpu *), CompanionChanceAway(Cpu *), CompanionChanceEnemy(Cpu *), CompanionChanceArea(Cpu *), CompanionNear(Cpu *), CompanionGone(Cpu *);
 void PoseKeep(Cpu *), PoseFree(Cpu *), ExitRoom(Cpu *), ExitArrive(Cpu *), PlayerPickups(Cpu *);
-void CompanionKind6(Cpu *), CompanionKind2(Cpu *), CompanionEnter(Cpu *), CompanionWalk(Cpu *), CompanionStep(Cpu *), CompanionRun(Cpu *), CompanionJump(Cpu *), CompanionJumping(Cpu *), CompanionSit(Cpu *), CompanionEdge(Cpu *), CompanionDive(Cpu *), CompanionWait(Cpu *), CompanionHop(Cpu *), CompanionPlace(Cpu *), CompanionChanceSit(Cpu *), CompanionSpit(Cpu *), CompanionTrailStart(Cpu *), CompanionTrail(Cpu *), CompanionFell(Cpu *);
+void CompanionKind6(Cpu *), CompanionPause(Cpu *), CompanionFlyIn(Cpu *), CompanionKind2(Cpu *), CompanionEnter(Cpu *), CompanionWalk(Cpu *), CompanionStep(Cpu *), CompanionRun(Cpu *), CompanionJump(Cpu *), CompanionJumping(Cpu *), CompanionSit(Cpu *), CompanionEdge(Cpu *), CompanionDive(Cpu *), CompanionWait(Cpu *), CompanionHop(Cpu *), CompanionPlace(Cpu *), CompanionChanceSit(Cpu *), CompanionSpit(Cpu *), CompanionTrailStart(Cpu *), CompanionTrail(Cpu *), CompanionFell(Cpu *);
 void RecordStart(Cpu *), DemoStart(Cpu *), RecordStep(Cpu *), DemoStep(Cpu *), TasksStart(Cpu *), Clear9996(Cpu *), SoundStop25(Cpu *), PadWhich(Cpu *), ScreenReset(Cpu *), ScreenNew(Cpu *), ReadPads(Cpu *), ReadPad(Cpu *), Presses(Cpu *), FrameWork(Cpu *), ScrollUpload(Cpu *), HScrollUpload(Cpu *), VdpRegs(Cpu *), PaletteUpload(Cpu *), ClearEntities(Cpu *), SpritesUpload(Cpu *), PaletteClear(Cpu *), PaletteCopy(Cpu *), FadeReset(Cpu *);
 void ColourFrame(Cpu *), ColorScriptStart(Cpu *), ColorEnd(Cpu *), ColorScripts(Cpu *), CycleStart(Cpu *), CyclesRun(Cpu *), FadeIn(Cpu *), FadeOut(Cpu *), FadeOutSlow(Cpu *), FadeOwner(Cpu *), FadeInStep(Cpu *), FadeOutStep(Cpu *), FadeApply(Cpu *), ColorAdjust(Cpu *), PaletteWhite(Cpu *);
 void CellVram(Cpu *), PlaneAClear(Cpu *), PlaneBClear(Cpu *), WindowClear(Cpu *), ScrollClear(Cpu *), ScrollClearPair(Cpu *), DrawLayout(Cpu *), GfxTablesReset(Cpu *), TileAnimsClear(Cpu *), TileAnimsTask(Cpu *), SegaTask(Cpu *);
@@ -1215,7 +1215,9 @@ const PortRoutine port_routines[] = {
     {0x00FF96, 0x00FFC6, "CompanionChanceArea", CompanionChanceArea, CT_SP},
     {0x00FFC6, 0x00FFE6, "CompanionNear", CompanionNear, CT_SP},
     {0x0108A2, 0x0108B8, "CompanionGone", CompanionGone, CT_SP},   /* returns from its caller when it resets the state */
-    {0x00FFE6, 0x01000C, "CompanionKind6", CompanionKind6, CT_SP},   /* rooms.c: the companion each frame, kinds 2 and 6 ($1000C, $1005C: not traced code, the original's) */
+    {0x00FFE6, 0x01000C, "CompanionKind6", CompanionKind6, CT_SP},   /* rooms.c: the companion each frame, kinds 2 and 6 */
+    {0x01000C, 0x01005C, "CompanionPause", CompanionPause, CT_SP},
+    {0x01005C, 0x0100F2, "CompanionFlyIn", CompanionFlyIn, CT_SP},
     {0x0100F2, 0x01011E, "CompanionKind2", CompanionKind2, CT_SP},
     {0x01011E, 0x0101F2, "CompanionEnter", CompanionEnter, CT_SP},
     {0x0101F2, 0x01021A, "CompanionWalk", CompanionWalk, CT_SP},

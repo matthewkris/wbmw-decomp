@@ -32,6 +32,12 @@
  ],
  "tables": [
   {
+   "addr": "FFFE",
+   "base": "FFFE",
+   "count": 7,
+   "fmt": "w_rel"
+  },
+  {
    "addr": "10A5E",
    "base": "10A5A",
    "count": 27,

@@ -364,6 +364,9 @@ and the music's format are in `docs/SOUND.md` (`tools/z80dis.py`, `tools/music.p
 
 ## Open items
 
+* Kind 6 companion ($9F32 = 6, the dragon's grandson, given in area 12 room 3): the table at `$FFFE` has 7 entries. State 12 (`$1005C`) flies it in from X `$1210` to `$1158`; state 8 (`$1000C`) is a pause of 1-4 turns.
+* Untraced and unreferenced (no pointer, branch or table finds them, so dead): `$3E3E-$3E4B`, `$14B5C-$14B7D`.
+
 * Short data blocks stored to `-$2900`/`-$2A00` sit right before the code that uses them
   ($18BB8, $1A3DE); the tracer read two of them as code until the fields were hinted. What
   interprets that data is not yet known.
