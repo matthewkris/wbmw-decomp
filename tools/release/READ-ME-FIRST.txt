@@ -1,0 +1,21 @@
+Wonder Boy in Monster World: native PC port (Windows, 64-bit)
+
+This download has no game data. You need your own dump of the cartridge.
+
+1. Make a folder called rom next to wbmw.exe.
+2. Put your dump in it, named exactly:
+
+       Wonder Boy in Monster World (USA, Europe).md
+
+   It must be the USA/Europe version: 786,432 bytes, with SHA-1
+   87a968f773c7e807e647c0737132457b06b78276. Another version will not work right.
+
+3. Run wbmw.exe.
+
+It starts full screen. Esc opens the menu, with the settings and the controls. Settings are kept in
+wbmw.ini, and saves next to the game.
+
+Source, documentation and how to build it:
+https://github.com/matthewkris/wbmw-decomp
+
+The licences are in the licences folder. Nothing here grants any rights in the original game.
