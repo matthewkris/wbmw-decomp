@@ -1,0 +1,7 @@
+decompilation
+sega-genesis
+mega-drive
+reverse-engineering
+native-port
+68000
+sdl2
