@@ -365,6 +365,7 @@ and the music's format are in `docs/SOUND.md` (`tools/z80dis.py`, `tools/music.p
 ## Open items
 
 * Kind 6 companion ($9F32 = 6, the dragon's grandson, given in area 12 room 3): the table at `$FFFE` has 7 entries. State 12 (`$1005C`) flies it in from X `$1210` to `$1158`; state 8 (`$1000C`) is a pause of 1-4 turns.
+* `$8068` (a task's end code, `$4CA8`): `$70D0` ends the opening without setting d0, so it stores d0 as the scheduler left it. The scheduler's `move.b (a5),d0; andi.b #$80,d0` makes the low byte `$80`; the high byte is what the last pass left (`$FF` in the original, `$00` in C). Dead: the opening's scene never tests `$8068`, and the two tests (`$4CF8`, `$50B4`) run only after a task that sets d0 has ended. The native build keeps that one byte different.
 * Untraced and unreferenced (no pointer, branch or table finds them, so dead): `$3E3E-$3E4B`, `$14B5C-$14B7D`.
 
 * Short data blocks stored to `-$2900`/`-$2A00` sit right before the code that uses them

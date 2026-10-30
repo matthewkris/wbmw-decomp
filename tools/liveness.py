@@ -25,7 +25,7 @@ indirect jump keeps everything live, and a byte or word write to a data register
 (the rest of the register is kept). The flags are two units, NZVC and X (X is kept by moves,
 compares and logic, and read by ADDX, SUBX, NEGX, ROXL and ROXR). Game-independent.
 """
-import sys, json, re
+import sys, json, os, re
 
 REGS = ['d%d' % i for i in range(8)] + ['a%d' % i for i in range(8)]
 NZVC, XF = 1 << 16, 1 << 17
@@ -181,6 +181,16 @@ def lane_use_def3(mn, ops):
         use, defs = lane_use_def(mn, ops)
         own = lanes(p[1].strip())
         return (use & ~own) | value, defs, flags
+    if base == 'andi' and len(p) == 2 and p[0].startswith('#') and re.fullmatch(r'd[0-7]', p[1].strip()):
+        # what the mask clears is not read: the result and the flags come from the rest
+        n = int(p[0][1:].lstrip('$') or '0', 16 if '$' in p[0] else 10) & 0xFFFFFFFF
+        r = p[1].strip()
+        s = {'b': 8, 'w': 16, 'l': 32}[suf if suf in PARTS else 'l']
+        kept = 0
+        for i in range(s):
+            if n >> i & 1: kept |= bit_range_lanes(r, i, i)
+        use, defs = lane_use_def(mn, ops)
+        return (use & ~lanes(r)) | kept, defs, 0
     use, defs = lane_use_def(mn, ops)
     return use, defs, 0
 
@@ -298,9 +308,30 @@ def main():
     if len(sys.argv) > 3 and sys.argv[2] == '--usedef':
         import struct
         table = bytearray(0x10000 * 24)
+        entries = {}
         for a, (sz, mn, ops) in m['insn'].items():
             a = int(a, 16)
-            if a < 0x20000: struct.pack_into('<QQQ', table, (a >> 1) * 24, *lane_use_def3(mn, ops))
+            if a < 0x20000: entries[a] = list(lane_use_def3(mn, ops))
+        # a save straight back into the same registers (a delay) reads and writes none of them
+        a7 = lanes('a7')
+        for a, (sz, mn, ops) in m['insn'].items():
+            a = int(a, 16)
+            n = m['insn'].get('%06X' % (a + sz)) or m['insn'].get('%X' % (a + sz))
+            if mn.startswith('movem') and n and n[1] == mn and a + sz in entries:
+                p, q = split_ops(ops), split_ops(n[2])
+                if p[1].strip() == '-(sp)' or p[1].strip() == '-(a7)':
+                    if q[1] == p[0] and q[0].strip() in ('(sp)+', '(a7)+'):
+                        entries[a] = [a7, a7, 0]; entries[a + sz] = [a7, a7, 0]
+        # reads no result depends on, shown by hand (analysis/hints.json "dead_reads"): parts 0, 1,
+        # 2 are bits 0-7, 8-15, 16-31
+        hints = json.load(open(os.path.join(os.path.dirname(sys.argv[1]), '..', 'analysis', 'hints.json')))
+        for h in hints.get('dead_reads', []):
+            e = entries[int(h['addr'], 16)]
+            for part in h['parts']:
+                bit = 1 << (3 * int(h['reg'][1]) + part)
+                e[0] &= ~bit; e[1] |= bit; e[2] &= ~bit
+        for a, e in entries.items():
+            struct.pack_into('<QQQ', table, (a >> 1) * 24, *e)
         open(sys.argv[3], 'wb').write(table)
         return
     ins = {int(a, 16): v for a, v in m['insn'].items()}

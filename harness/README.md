@@ -107,7 +107,9 @@ game reads it before writing it. Data registers are watched in three parts (bits
 `work/usedef.bin` (`python tools/liveness.py work/map.json --usedef work/usedef.bin`, after
 every map change, and after updating: the table's format changed twice on 2026-10-11). The
 watch follows a difference that is only saved and restored (`link`/`unlk`), shifted into the
-flags, or moved between a register's parts (`swap`, `ext`).
+flags, or moved between a register's parts (`swap`, `ext`). The table does not count bits an
+`andi` clears, or a `movem` straight back into the same registers; `dead_reads` in
+`analysis/hints.json` lists reads shown by hand to change nothing, each with its reason.
 
 * `WBMW_WATCH_BREAK=NAME`: self-test of the register watch. Scrambles every register outside
   that routine's contract in its C result, which the watch must then report as `CONTRACT`.
